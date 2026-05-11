@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.DS_Store
+.local/
+*.db
+*.db-*
+*.log
+*.tgz
+coverage/
+examples/*/workspace/
+examples/*/memory/

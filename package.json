@@ -1,0 +1,76 @@
+{
+	"name": "heypi",
+	"version": "0.1.0",
+	"description": "Governed chat agents on top of Pi.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"development": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE"
+	],
+	"sideEffects": false,
+	"engines": {
+		"node": ">=22"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com/hunvreus/heypi.git"
+	},
+	"bugs": {
+		"url": "https://github.com/hunvreus/heypi/issues"
+	},
+	"homepage": "https://heypi.dev",
+	"keywords": [
+		"agent",
+		"ai",
+		"chatbot",
+		"pi",
+		"slack",
+		"telegram",
+		"tools"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/drizzle && cp drizzle/*.sql dist/drizzle/",
+		"prepack": "pnpm run build",
+		"dev": "tsx --conditions development watch examples/slack-devops/index.ts",
+		"check": "biome check .",
+		"fmt": "biome format --write .",
+		"typecheck": "pnpm run build && tsc --noEmit",
+		"db:generate": "drizzle-kit generate",
+		"dev:slack": "tsx --conditions development watch examples/slack-devops/index.ts",
+		"dev:telegram": "tsx --conditions development watch examples/telegram-workout/index.ts",
+		"start:slack": "tsx --conditions development examples/slack-devops/index.ts",
+		"start:telegram": "tsx --conditions development examples/telegram-workout/index.ts",
+		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
+	},
+	"dependencies": {
+		"@libsql/client": "^0.17.3",
+		"@mariozechner/pi-coding-agent": "^0.73.0",
+		"@sinclair/typebox": "^0.34.49",
+		"@slack/bolt": "^4.7.2",
+		"drizzle-orm": "^0.45.2",
+		"just-bash": "^2.14.4"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.14",
+		"@types/node": "^25.6.0",
+		"drizzle-kit": "^0.31.10",
+		"tsx": "^4.21.0",
+		"typescript": "^6.0.3"
+	},
+	"packageManager": "pnpm@10.17.1"
+}
