@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, lt, ne } from "drizzle-orm";
 import { message } from "../db/schema.js";
 import type { Db } from "./db.js";
-import { decode } from "./transcript.js";
 import type { HistoryMessage } from "./types.js";
 
 export type MessageRow = typeof message.$inferSelect;
@@ -16,6 +15,7 @@ export class MessageRepo {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
+		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -30,34 +30,41 @@ export class MessageRepo {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
+		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
 		createdAt?: number;
 	}): Promise<{ row: MessageRow; inserted: boolean }> {
 		const existing = input.providerEventId
-			? await this.getByProviderEvent(input.provider, input.providerEventId)
+			? await this.getByProviderEvent(input.provider, input.threadId, input.providerEventId)
 			: undefined;
 		if (existing) return { row: existing, inserted: false };
 
 		const id = randomUUID();
 		const now = input.createdAt ?? Date.now();
-		await this.db.insert(message).values({
-			id,
-			threadId: input.threadId,
-			provider: input.provider,
-			providerEventId: input.providerEventId,
-			role: input.role,
-			actor: input.actor,
-			text: input.text,
-			data: input.data,
-			state: input.state ?? "done",
-			createdAt: now,
-			updatedAt: now,
-		});
-		const row = await this.get(id);
+		await this.db
+			.insert(message)
+			.values({
+				id,
+				threadId: input.threadId,
+				provider: input.provider,
+				providerEventId: input.providerEventId,
+				role: input.role,
+				actor: input.actor,
+				toolCallId: input.toolCallId,
+				text: input.text,
+				data: input.data,
+				state: input.state ?? "done",
+				createdAt: now,
+				updatedAt: now,
+			})
+			.onConflictDoNothing();
+		const row = input.providerEventId
+			? await this.getByProviderEvent(input.provider, input.threadId, input.providerEventId)
+			: await this.get(id);
 		if (!row) throw new Error("message insert failed");
-		return { row, inserted: true };
+		return { row, inserted: row.id === id };
 	}
 
 	async get(id: string): Promise<MessageRow | undefined> {
@@ -65,11 +72,13 @@ export class MessageRepo {
 		return rows[0];
 	}
 
-	async getByProviderEvent(provider: string, eventId: string): Promise<MessageRow | undefined> {
+	async getByProviderEvent(provider: string, threadId: string, eventId: string): Promise<MessageRow | undefined> {
 		const rows = await this.db
 			.select()
 			.from(message)
-			.where(and(eq(message.provider, provider), eq(message.providerEventId, eventId)))
+			.where(
+				and(eq(message.provider, provider), eq(message.threadId, threadId), eq(message.providerEventId, eventId)),
+			)
 			.limit(1);
 		return rows[0];
 	}
@@ -115,15 +124,16 @@ export class MessageRepo {
 	}
 
 	async getToolResult(threadId: string, toolCallId: string): Promise<MessageRow | undefined> {
-		const rows = await this.listForThread(threadId, { limit: 200 });
-		return rows.find((row) => {
-			if (row.role !== "toolResult") return false;
-			const pi = decode(row.data);
-			return hasToolCallId(pi) && pi.toolCallId === toolCallId;
-		});
+		const rows = await this.db
+			.select()
+			.from(message)
+			.where(and(eq(message.threadId, threadId), eq(message.toolCallId, toolCallId), eq(message.role, "toolResult")))
+			.limit(1);
+		return rows[0];
 	}
 
 	async update(id: string, input: { text: string; data?: string; state?: string; createdAt?: number }): Promise<void> {
+		// toolCallId is a create-time lookup key and is intentionally immutable.
 		const values = {
 			text: input.text,
 			data: input.data,
@@ -137,13 +147,4 @@ export class MessageRepo {
 
 function isToolRole(role: string): boolean {
 	return role === "tool" || role === "toolResult";
-}
-
-function hasToolCallId(value: unknown): value is { toolCallId: string } {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		"toolCallId" in value &&
-		typeof (value as { toolCallId?: unknown }).toolCallId === "string"
-	);
 }

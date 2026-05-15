@@ -155,11 +155,12 @@ function runtimeTools(
 				offset: Type.Optional(Type.Number()),
 				limit: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params) => {
+			execute: async (_id, params, signal) => {
 				const result = await read({
 					path: stringParam(params, "path"),
 					offset: numberParam(params, "offset"),
 					limit: numberParam(params, "limit"),
+					signal,
 				});
 				return text(result?.text ?? "");
 			},
@@ -215,11 +216,12 @@ function runtimeTools(
 				path: Type.Optional(Type.String()),
 				maxResults: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params) => {
+			execute: async (_id, params, signal) => {
 				const result = await grep({
 					query: stringParam(params, "query"),
 					path: optionalString(params, "path"),
 					maxResults: numberParam(params, "maxResults"),
+					signal,
 				});
 				return text(
 					(result?.hits ?? []).map((hit) => `${hit.path}:${hit.line} ${hit.text}`).join("\n") || "no matches",
@@ -238,11 +240,12 @@ function runtimeTools(
 				path: Type.Optional(Type.String()),
 				maxResults: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params) => {
+			execute: async (_id, params, signal) => {
 				const result = await find({
 					pattern: optionalString(params, "pattern"),
 					path: optionalString(params, "path"),
 					maxResults: numberParam(params, "maxResults"),
+					signal,
 				});
 				return text((result?.paths ?? []).join("\n") || "no files");
 			},
@@ -255,8 +258,8 @@ function runtimeTools(
 			label: "List",
 			description: "List files in the runtime workspace.",
 			parameters: Type.Object({ path: Type.Optional(Type.String()) }),
-			execute: async (_id, params) => {
-				const result = await ls({ path: optionalString(params, "path") });
+			execute: async (_id, params, signal) => {
+				const result = await ls({ path: optionalString(params, "path"), signal });
 				return text((result?.entries ?? []).map((entry) => `${entry.type}\t${entry.path}`).join("\n") || "empty");
 			},
 		});

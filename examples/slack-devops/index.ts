@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
+import { agentFrom, consoleLogger, createHeypi, slack, sqliteStore, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
-import { agentFrom, consoleLogger, createHeypi, slack, sqliteStore, tool, workspace } from "heypi";
 
 loadEnv("examples/slack-devops/.env");
 loadEnv(".env");
@@ -44,7 +44,14 @@ const app = createHeypi({
 			signingSecret: required("SLACK_SIGNING_SECRET"),
 			mode: "socket",
 			appToken: required("SLACK_APP_TOKEN"),
+			allow: {
+				teams: list("HEYPI_SLACK_TEAMS"),
+				channels: list("HEYPI_SLACK_CHANNELS"),
+				users: list("HEYPI_SLACK_USERS"),
+			},
+			trigger: "mention",
 			reply: "thread",
+			streaming: true,
 			progress: { reaction: "eyes", message: "Thinking..." },
 		}),
 		// Production HTTP mode:
@@ -76,3 +83,6 @@ const app = createHeypi({
 });
 
 await app.start();
+
+process.once("SIGTERM", () => void app.stop().finally(() => process.exit(0)));
+process.once("SIGINT", () => void app.stop().finally(() => process.exit(0)));

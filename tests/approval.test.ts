@@ -87,13 +87,15 @@ test("authorized approval executes a confirmed custom tool", async () => {
 		noLogger(),
 	);
 
+	const execute = async (args: Record<string, unknown>) => ({ out: `deleted=${args.id}` });
+	callRunner.register("delete_ticket", execute);
 	const requested = await callRunner.tool({
 		channel: "C1",
 		actor: "U_REQUESTER",
 		name: "delete_ticket",
 		args: { id: "T1" },
 		confirm: { reason: "Deletes a ticket" },
-		execute: async (args) => ({ out: `deleted=${args.id}` }),
+		execute,
 	});
 	assert.equal(requested.approval?.id, approvals.rows[0]?.id);
 
@@ -122,6 +124,8 @@ test("approved tool call returns continuation metadata when it came from Pi", as
 		noLogger(),
 	);
 
+	const execute = async (args: Record<string, unknown>) => ({ out: `deleted=${args.id}` });
+	callRunner.register("delete_ticket", execute);
 	await callRunner.tool({
 		channel: "C1",
 		actor: "U_REQUESTER",
@@ -129,7 +133,7 @@ test("approved tool call returns continuation metadata when it came from Pi", as
 		args: { id: "T1" },
 		confirm: { reason: "Deletes a ticket" },
 		context: { thread: "thread-1", toolCall: "tool-call-1" },
-		execute: async (args) => ({ out: `deleted=${args.id}` }),
+		execute,
 	});
 	const approved = await callRunner.handle({
 		kind: "approve",
@@ -285,11 +289,12 @@ class FakeApprovals implements Approvals {
 		return this.rows.filter((row) => row.state === "pending" && (!input.threadId || row.threadId === input.threadId));
 	}
 
-	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<void> {
+	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean> {
 		const row = await this.get(id);
-		if (!row) return;
+		if (!row || row.state !== "pending") return false;
 		row.state = state;
 		row.resolvedBy = actor;
 		row.resolvedAt = Date.now();
+		return true;
 	}
 }

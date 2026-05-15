@@ -6,6 +6,10 @@ test("chunkText keeps short text intact", () => {
 	assert.deepEqual(chunkText("hello", 10), ["hello"]);
 });
 
+test("chunkText drops empty text", () => {
+	assert.deepEqual(chunkText("", 10), []);
+});
+
 test("chunkText splits on paragraph boundaries when possible", () => {
 	const text = ["alpha beta", "gamma delta", "epsilon"].join("\n\n");
 

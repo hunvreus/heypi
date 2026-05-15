@@ -11,6 +11,7 @@ import type {
 	NetworkConfig,
 } from "just-bash";
 import type { Logger } from "./core/log.js";
+import type { SchedulerConfig } from "./core/scheduler.js";
 import type { AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
 import type { RuntimeName } from "./runtime/types.js";
@@ -44,13 +45,25 @@ export type JustBashConfig = {
 	defenseInDepth?: BashOptions["defenseInDepth"];
 };
 
+export type RuntimeLimits = {
+	maxFileBytes?: number;
+	maxScanBytes?: number;
+	maxEntries?: number;
+};
+
 export type RuntimeConfig = {
 	name?: RuntimeName;
 	root: string;
 	timeoutMs?: number;
 	maxConcurrent?: number;
 	maxConcurrentPerChat?: number;
+	limits?: RuntimeLimits;
 	justBash?: JustBashConfig;
+	hostEnv?: Record<string, string>;
+};
+
+export type AttachmentConfig = {
+	maxBytes?: number;
 };
 
 export type ApprovalConfig = {
@@ -64,7 +77,10 @@ export type HeypiConfig = {
 	agent: AgentConfig;
 	runtime: RuntimeConfig;
 	attachments?: AttachmentStore;
+	attachment?: AttachmentConfig;
 	approval?: ApprovalConfig;
+	scheduler?: Omit<SchedulerConfig, "jobs">;
+	jobs?: SchedulerConfig["jobs"];
 	logger?: Logger;
 };
 
@@ -76,7 +92,9 @@ export type AgentFromOptions = Partial<Omit<AgentConfig, "directory" | "model">>
 export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? basename(directory) ?? "agent";
-	const model = modelConfig(options.model ?? process.env.HEYPI_MODEL ?? "openai/gpt-5-mini");
+	const selectedModel = options.model ?? process.env.HEYPI_MODEL;
+	if (!selectedModel) throw new Error("agent model is required; pass agentFrom(..., { model }) or set HEYPI_MODEL");
+	const model = modelConfig(selectedModel);
 	return {
 		id,
 		model,

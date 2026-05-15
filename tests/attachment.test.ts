@@ -33,6 +33,21 @@ test("runtimeAttachments writes sanitized files under runtime root", async () =>
 	assert.equal(await readFile(join(root, "incoming/slack/1700.1/F123-hello_world.txt"), "utf8"), "hello");
 });
 
+test("runtimeAttachments rejects oversized inbound files", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-attachments-limit-"));
+	const store = runtimeAttachments(runtime(root, "just-bash"), { maxBytes: 4 });
+
+	await assert.rejects(
+		() =>
+			store.save({
+				provider: "slack",
+				name: "hello.txt",
+				data: new TextEncoder().encode("hello"),
+			}),
+		/exceeds limit/,
+	);
+});
+
 test("runtimeAttachments resolves outbound files under runtime root", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-outbound-"));
 	await writeFile(join(root, "report.txt"), "hello");

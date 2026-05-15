@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { Logger } from "../src/core/log.js";
 import type { Confirm } from "../src/core/types.js";
+import { hostBash } from "../src/runtime/host-bash.js";
 import { justBash } from "../src/runtime/just-bash.js";
 import { tools } from "../src/runtime/tools.js";
 import type { Runtime } from "../src/runtime/types.js";
@@ -39,6 +40,58 @@ test("just-bash runtime persists files and exposes file operations", async () =>
 		const found = await runtime.find?.({ pattern: "**/*.txt" });
 		assert.deepEqual(found?.paths, ["src/a.txt"]);
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("runtime file tools enforce size limits", async () => {
+	const root = await temp();
+	try {
+		const runtime = hostBash({ root, limits: { maxFileBytes: 4, maxScanBytes: 8, maxEntries: 10 } });
+		await writeFile(join(root, "big.txt"), "hello", "utf8");
+
+		await assert.rejects(() => runtime.read!({ path: "big.txt" }), /exceeds limit/);
+		await assert.rejects(() => runtime.write!({ path: "big.txt", content: "hello" }), /exceeds limit/);
+		await assert.rejects(() => runtime.edit!({ path: "big.txt", oldText: "h", newText: "H" }), /exceeds limit/);
+		await assert.rejects(() => runtime.grep!({ query: "hello" }), /exceeds limit/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("just-bash file tools enforce write and edit size limits", async () => {
+	const root = await temp();
+	try {
+		const runtime = justBash({ root, limits: { maxFileBytes: 4 } });
+		await writeFile(join(root, "small.txt"), "hey", "utf8");
+		await writeFile(join(root, "big.txt"), "hello", "utf8");
+
+		await assert.rejects(() => runtime.write!({ path: "big.txt", content: "hello" }), /exceeds limit/);
+		await assert.rejects(() => runtime.edit!({ path: "big.txt", oldText: "h", newText: "H" }), /exceeds limit/);
+		await assert.rejects(
+			() => runtime.edit!({ path: "small.txt", oldText: "hey", newText: "hello" }),
+			/exceeds limit/,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("host-bash uses a minimal environment unless hostEnv is configured", async () => {
+	const root = await temp();
+	const previous = process.env.HEYPI_SECRET_TEST;
+	process.env.HEYPI_SECRET_TEST = "hidden";
+	try {
+		const runtime = hostBash({ root });
+		const hidden = await runtime.bash?.({ command: "printenv HEYPI_SECRET_TEST || true" });
+		assert.equal(hidden?.out, "");
+
+		const configured = hostBash({ root, env: { HEYPI_SECRET_TEST: "visible" } });
+		const visible = await configured.bash?.({ command: "printenv HEYPI_SECRET_TEST" });
+		assert.equal(visible?.out, "visible\n");
+	} finally {
+		if (previous === undefined) delete process.env.HEYPI_SECRET_TEST;
+		else process.env.HEYPI_SECRET_TEST = previous;
 		await rm(root, { recursive: true, force: true });
 	}
 });

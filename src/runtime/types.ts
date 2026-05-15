@@ -13,7 +13,7 @@ export type Capabilities = {
 export type BashInput = { command: string; timeoutMs?: number; signal?: AbortSignal };
 export type BashResult = { code: number; out: string; err: string; ms: number };
 
-export type ReadInput = { path: string; offset?: number; limit?: number };
+export type ReadInput = { path: string; offset?: number; limit?: number; signal?: AbortSignal };
 export type ReadResult = { text: string; path: string; lines?: number };
 
 export type WriteInput = { path: string; content: string };
@@ -22,14 +22,14 @@ export type WriteResult = { path: string; bytes: number };
 export type EditInput = { path: string; oldText: string; newText: string; replaceAll?: boolean };
 export type EditResult = { path: string; replacements: number };
 
-export type GrepInput = { query: string; path?: string; maxResults?: number };
+export type GrepInput = { query: string; path?: string; maxResults?: number; signal?: AbortSignal };
 export type GrepHit = { path: string; line: number; text: string };
 export type GrepResult = { hits: GrepHit[] };
 
-export type FindInput = { pattern?: string; path?: string; maxResults?: number };
+export type FindInput = { pattern?: string; path?: string; maxResults?: number; signal?: AbortSignal };
 export type FindResult = { paths: string[] };
 
-export type LsInput = { path?: string };
+export type LsInput = { path?: string; signal?: AbortSignal };
 export type LsEntry = { name: string; path: string; type: "file" | "directory" | "other"; size?: number };
 export type LsResult = { entries: LsEntry[] };
 

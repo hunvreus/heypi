@@ -1,5 +1,6 @@
 import type { ModelConfig } from "../config.js";
 import type { Reply } from "../core/types.js";
+import type { ReplyStream } from "../io/reply-stream.js";
 import type { StoredMessage } from "../store/types.js";
 
 export type AgentReq = {
@@ -12,6 +13,7 @@ export type AgentReq = {
 	text: string;
 	model?: ModelConfig;
 	signal?: AbortSignal;
+	stream?: ReplyStream;
 };
 
 export type AgentRes = Reply & { messages?: StoredMessage[] };

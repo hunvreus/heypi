@@ -1,6 +1,7 @@
 /** Splits provider-bound text into deterministic chunks no longer than `limit`. */
 export function chunkText(text: string, limit: number): string[] {
 	if (!Number.isInteger(limit) || limit < 1) throw new Error(`invalid chunk limit: ${limit}`);
+	if (text.length === 0) return [];
 	if (text.length <= limit) return [text];
 
 	const normalized = text.replace(/\r\n/g, "\n");

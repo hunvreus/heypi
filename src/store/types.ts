@@ -7,6 +7,7 @@ export type Thread = {
 	id: string;
 	agent: string;
 	provider: string;
+	team: string | null;
 	channel: string;
 	actor: string | null;
 	key: string;
@@ -21,6 +22,7 @@ export type Message = {
 	providerEventId: string | null;
 	role: string;
 	actor: string | null;
+	toolCallId: string | null;
 	text: string;
 	data: string | null;
 	state: string;
@@ -94,15 +96,57 @@ export type Lock = {
 	updatedAt: number;
 };
 
+export type JobState = "active" | "paused";
+export type JobRunState = "running" | "done" | "failed" | "skipped";
+export type DeliveryState = "pending" | "delivered" | "failed" | "none";
+
+export type Job = {
+	id: string;
+	agent: string;
+	kind: string;
+	schedule: string;
+	scope: string | null;
+	target: string | null;
+	prompt: string;
+	state: string;
+	nextAt: number | null;
+	lastAt: number | null;
+	idleMs: number | null;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type JobRun = {
+	id: string;
+	jobId: string;
+	threadId: string | null;
+	trace: string;
+	state: string;
+	output: string | null;
+	error: string | null;
+	deliveryState: string;
+	startedAt: number;
+	endedAt: number | null;
+};
+
 /** Thread identity store. Creates stable provider/thread mappings for later session replay. */
 export interface Threads {
 	getOrCreate(input: {
 		agent: string;
 		provider: string;
+		team?: string;
 		channel: string;
 		actor?: string;
 		key: string;
 	}): Promise<Thread>;
+	list(input?: {
+		agent?: string;
+		providers?: string[];
+		teams?: string[];
+		channels?: string[];
+		users?: string[];
+		limit?: number;
+	}): Promise<Thread[]>;
 }
 
 /** Message transcript store. Provides append-once semantics for provider retry dedupe. */
@@ -113,6 +157,7 @@ export interface Messages {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
+		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -124,6 +169,7 @@ export interface Messages {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
+		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -206,7 +252,7 @@ export interface Approvals {
 	getByChannel(channel: string, id: string): Promise<Approval | undefined>;
 	getPending(channel: string, id: string): Promise<Approval | undefined>;
 	listPending(input?: { threadId?: string; limit?: number }): Promise<Approval[]>;
-	resolve(id: string, state: "approved" | "denied", actor: string): Promise<void>;
+	resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean>;
 }
 
 /** Durable concurrency guard for logical conversation processing across processes. */
@@ -214,6 +260,44 @@ export interface Locks {
 	acquire(input: { key: string; owner: string; ttlMs?: number }): Promise<Lock | undefined>;
 	get(key: string): Promise<Lock | undefined>;
 	release(input: { key: string; owner: string }): Promise<void>;
+}
+
+export type SchedulerStore = Store & {
+	jobs: Jobs;
+	jobRuns: JobRuns;
+	locks: Locks;
+};
+
+/** Scheduled and heartbeat job store. Jobs create synthetic chat turns when due. */
+export interface Jobs {
+	upsert(input: {
+		id: string;
+		agent: string;
+		kind: string;
+		schedule: string;
+		scope?: string;
+		target?: string;
+		prompt: string;
+		state?: JobState;
+		nextAt?: number;
+		idleMs?: number;
+	}): Promise<Job>;
+	due(now: number, limit?: number): Promise<Job[]>;
+	get(id: string): Promise<Job | undefined>;
+	list(input?: { limit?: number }): Promise<Job[]>;
+	setState(id: string, state: JobState): Promise<void>;
+	runNow(id: string): Promise<void>;
+	finish(id: string, input: { nextAt?: number; lastAt: number }): Promise<void>;
+}
+
+/** Durable history for one scheduled job attempt. */
+export interface JobRuns {
+	create(input: { jobId: string; threadId?: string; trace: string }): Promise<{ row: JobRun; inserted: boolean }>;
+	finish(
+		id: string,
+		input: { state: JobRunState; output?: string; error?: string; deliveryState?: DeliveryState },
+	): Promise<void>;
+	lastForJob(jobId: string): Promise<JobRun | undefined>;
 }
 
 /** Complete persistence boundary used by heypi core. Implementations may use SQLite, libSQL, or other stores. */
@@ -224,6 +308,13 @@ export interface Store {
 	turns: Turns;
 	calls: Calls;
 	approvals: Approvals;
+	/** Required when scheduled jobs are enabled. */
+	jobs?: Jobs;
+	/** Required when scheduled jobs are enabled. */
+	jobRuns?: JobRuns;
+	/** Required for thread locking and scheduled job claims. */
 	locks?: Locks;
+	/** Runs related store writes atomically. Nested transactions are not supported. */
+	transaction?<T>(fn: (store: Store) => Promise<T>): Promise<T>;
 	setup(): Promise<void>;
 }

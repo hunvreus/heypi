@@ -20,6 +20,7 @@ export type PolicyDecision =
 export type Reply = {
 	text: string;
 	private?: boolean;
+	silent?: boolean;
 	approval?: ApprovalPrompt;
 	attachments?: ReplyAttachment[];
 	continuation?: ToolContinuation;
@@ -40,10 +41,7 @@ export type ApprovalPrompt = {
 	allowed: string[];
 };
 
-export type Confirm =
-	| { reason: string }
-	| false
-	| ((input: Record<string, unknown>) => { reason: string } | false | undefined);
+export type Confirm = { reason: string } | ((input: Record<string, unknown>) => { reason: string } | false | undefined);
 
 export type ToolExecute = (
 	args: Record<string, unknown>,

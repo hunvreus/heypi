@@ -6,13 +6,16 @@ export const thread = sqliteTable(
 		id: text("id").primaryKey(),
 		agent: text("agent").notNull(),
 		provider: text("provider").notNull(),
+		team: text("team").notNull().default(""),
 		channel: text("channel").notNull(),
 		actor: text("actor"),
 		key: text("key").notNull(),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
-	(table) => [uniqueIndex("thread_agent_provider_key_idx").on(table.agent, table.provider, table.key)],
+	(table) => [
+		uniqueIndex("thread_agent_provider_team_key_idx").on(table.agent, table.provider, table.team, table.key),
+	],
 );
 
 export const message = sqliteTable(
@@ -24,13 +27,17 @@ export const message = sqliteTable(
 		providerEventId: text("provider_event_id"),
 		role: text("role").notNull(),
 		actor: text("actor"),
+		toolCallId: text("tool_call_id"),
 		text: text("text").notNull(),
 		data: text("data"),
 		state: text("state").notNull(),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
-	(table) => [uniqueIndex("message_provider_event_idx").on(table.provider, table.providerEventId)],
+	(table) => [
+		uniqueIndex("message_provider_event_idx").on(table.provider, table.threadId, table.providerEventId),
+		index("message_tool_call_idx").on(table.threadId, table.toolCallId),
+	],
 );
 
 export const turn = sqliteTable(
@@ -108,3 +115,40 @@ export const lock = sqliteTable("lock", {
 	createdAt: integer("created_at").notNull(),
 	updatedAt: integer("updated_at").notNull(),
 });
+
+export const job = sqliteTable(
+	"job",
+	{
+		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
+		kind: text("kind").notNull(),
+		schedule: text("schedule").notNull(),
+		scope: text("scope"),
+		target: text("target"),
+		prompt: text("prompt").notNull(),
+		state: text("state").notNull(),
+		nextAt: integer("next_at"),
+		lastAt: integer("last_at"),
+		idleMs: integer("idle_ms"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [index("job_state_next_idx").on(table.state, table.nextAt)],
+);
+
+export const jobRun = sqliteTable(
+	"job_run",
+	{
+		id: text("id").primaryKey(),
+		jobId: text("job_id").notNull(),
+		threadId: text("thread_id"),
+		trace: text("trace").notNull(),
+		state: text("state").notNull(),
+		output: text("output"),
+		error: text("error"),
+		deliveryState: text("delivery_state").notNull(),
+		startedAt: integer("started_at").notNull(),
+		endedAt: integer("ended_at"),
+	},
+	(table) => [index("job_run_job_idx").on(table.jobId), uniqueIndex("job_run_trace_idx").on(table.trace)],
+);

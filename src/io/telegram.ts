@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import { chunkText } from "../render/chunk.js";
 import type { Attachment, AttachmentStore, ResolvedAttachment } from "./attachments.js";
-import type { Adapter, AdapterStart, Handler, Outbound } from "./handler.js";
+import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
+import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
+import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "approve";
 const DENY = "deny";
@@ -15,7 +17,19 @@ export type TelegramConfig = {
 	token: string;
 	apiUrl?: string;
 	pollTimeoutSeconds?: number;
+	allow?: TelegramAllow;
+	trigger?: TelegramTrigger;
 	progress?: TelegramProgress | false;
+	streaming?: ReplyStreamOption;
+	delivery?: DeliveryConfig | false;
+};
+
+export type TelegramTrigger = "mention" | "message";
+
+export type TelegramAllow = {
+	chats?: Array<string | number>;
+	users?: Array<string | number>;
+	dms?: boolean;
 };
 
 export type TelegramProgress = {
@@ -29,40 +43,97 @@ export function telegram(input: TelegramConfig): Adapter {
 	let stopped = false;
 	let loop: Promise<void> | undefined;
 	let activeLogger: Logger | undefined;
+	let delivery = new DeliveryQueue(input.delivery);
 
 	return {
+		name: "telegram",
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
+			delivery = new DeliveryQueue(input.delivery, start.logger);
 			stopped = false;
 			start.logger.info("adapter.start", { adapter: "telegram" });
-			loop = poll({ client, start, config: input, stopped: () => stopped });
+			loop = poll({ client, start, config: input, delivery, stopped: () => stopped });
 		},
 		async stop(): Promise<void> {
 			stopped = true;
 			await loop;
 			activeLogger?.info("adapter.stop", { adapter: "telegram" });
 		},
+		async send(target: AdapterTarget, out: Outbound, start?: AdapterStart): Promise<void> {
+			const chatId = telegramTargetChat(target);
+			const threadId = numberOrUndefined(target.thread);
+			const log = start?.logger ?? activeLogger;
+			await sendTargetChunks({
+				client,
+				chatId,
+				threadId,
+				text: out.text,
+				approval: out.approval,
+				logger: log,
+				context: { adapter: "telegram", channel: String(chatId), thread: target.thread },
+				delivery,
+			});
+			if (out.attachments?.length) {
+				start?.logger.warn("telegram.scheduled_attachments_unsupported", {
+					adapter: "telegram",
+					channel: target.channel,
+					thread: target.thread,
+				});
+			}
+			log?.debug("adapter.send", {
+				adapter: "telegram",
+				channel: String(chatId),
+				thread: target.thread,
+				chars: out.text.length,
+			});
+		},
 	};
+}
+
+function telegramTargetChat(target: AdapterTarget): number {
+	const raw = target.channel ?? target.user;
+	if (!raw) throw new Error("Telegram scheduled target requires channel");
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed)) throw new Error(`Invalid Telegram channel: ${raw}`);
+	return parsed;
+}
+
+function numberOrUndefined(input?: string): number | undefined {
+	if (!input) return undefined;
+	const parsed = Number(input);
+	return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function poll(input: {
 	client: TelegramClient;
 	start: AdapterStart;
 	config: TelegramConfig;
+	delivery: DeliveryQueue;
 	stopped: () => boolean;
 }): Promise<void> {
 	let offset = 0;
 	const timeout = input.config.pollTimeoutSeconds ?? 25;
+	let backoffMs = 1000;
+	const bot = await input.client.getMe().catch((error) => {
+		input.start.logger.warn("telegram.get_me_failed", { adapter: "telegram", error: errorMessage(error) });
+		return undefined;
+	});
 	while (!input.stopped()) {
 		try {
 			const updates = await input.client.getUpdates({ offset, timeout });
 			for (const update of updates) {
 				offset = Math.max(offset, update.update_id + 1);
-				await handleUpdate({ ...input, update });
+				await handleUpdate({ ...input, update, botUsername: bot?.username });
 			}
+			backoffMs = 1000;
 		} catch (error) {
-			input.start.logger.warn("telegram.poll_failed", { adapter: "telegram", error: errorMessage(error) });
-			await sleep(1000);
+			input.start.logger.warn("telegram.poll_failed", {
+				adapter: "telegram",
+				error: errorMessage(error),
+				retryMs: backoffMs,
+			});
+			await sleep(backoffMs);
+			backoffMs = Math.min(backoffMs * 2, 60_000);
 		}
 	}
 }
@@ -71,8 +142,10 @@ async function handleUpdate(input: {
 	client: TelegramClient;
 	start: AdapterStart;
 	config: TelegramConfig;
+	delivery: DeliveryQueue;
 	update: TelegramUpdate;
 	stopped: () => boolean;
+	botUsername?: string;
 }): Promise<void> {
 	const callback = input.update.callback_query;
 	if (callback) {
@@ -82,6 +155,7 @@ async function handleUpdate(input: {
 			logger: input.start.logger,
 			store: input.start.attachments,
 			callback,
+			delivery: input.delivery,
 		});
 		return;
 	}
@@ -91,7 +165,30 @@ async function handleUpdate(input: {
 	const actor = String(msg.from?.id ?? "unknown");
 	const thread = threadKey(msg);
 	const trace = `telegram:${msg.message_id}`;
-	const progress = input.config.progress === false ? undefined : input.config.progress;
+	const allow = telegramAllowed(input.config.allow, { chat: channel, user: actor, isDm: telegramDm(msg) });
+	if (!allow.ok) {
+		input.start.logger.debug("adapter.drop", { trace, adapter: "telegram", channel, actor, reason: allow.reason });
+		return;
+	}
+	const trigger = telegramTriggered(input.config.trigger, {
+		text: textOf(msg),
+		isDm: telegramDm(msg),
+		botUsername: input.botUsername,
+	});
+	if (!trigger.ok) {
+		input.start.logger.debug("adapter.drop", { trace, adapter: "telegram", channel, actor, reason: trigger.reason });
+		return;
+	}
+	const streaming = streamingEnabled(input.config.streaming);
+	const progress = telegramProgress(input.config.progress, streaming);
+	const stream = telegramReplyStream({
+		config: input.config.streaming,
+		client: input.client,
+		message: msg,
+		logger: input.start.logger,
+		context: { trace, adapter: "telegram", channel, thread },
+		delivery: input.delivery,
+	});
 	const pending = startProgress({
 		client: input.client,
 		chatId: msg.chat.id,
@@ -101,6 +198,7 @@ async function handleUpdate(input: {
 		progress,
 		logger: input.start.logger,
 		context: { trace, adapter: "telegram", channel, thread, event: input.update.update_id },
+		delivery: input.delivery,
 	});
 	try {
 		const attachments = await telegramAttachments({
@@ -121,18 +219,34 @@ async function handleUpdate(input: {
 			text: textOf(msg),
 			attachments,
 			data: msg,
+			stream,
 		});
 		if (out) {
-			const edited = await pending.update(out);
-			await sendTelegramOutput({
-				client: input.client,
-				store: input.start.attachments,
-				message: msg,
-				out,
-				skipFirst: edited,
-				logger: input.start.logger,
-				context: { trace, adapter: "telegram", channel, thread },
-			});
+			if (stream?.complete?.() && !out.approval) {
+				await pending.stop();
+				await uploadTelegramAttachments({
+					client: input.client,
+					store: input.start.attachments,
+					message: msg,
+					attachments: out.attachments,
+					logger: input.start.logger,
+					context: { trace, adapter: "telegram", channel, thread },
+					delivery: input.delivery,
+				});
+			} else {
+				if (out.private) await stream?.clear?.();
+				const edited = await pending.update(out);
+				await sendTelegramOutput({
+					client: input.client,
+					store: input.start.attachments,
+					message: msg,
+					out,
+					skipFirst: edited,
+					logger: input.start.logger,
+					context: { trace, adapter: "telegram", channel, thread },
+					delivery: input.delivery,
+				});
+			}
 		}
 	} catch (error) {
 		input.start.logger.error("adapter.error", {
@@ -144,7 +258,15 @@ async function handleUpdate(input: {
 		});
 		const text = userError("handler");
 		const edited = await pending.update({ text });
-		await sendChunks({ client: input.client, message: msg, text, skipFirst: edited });
+		await sendChunks({
+			client: input.client,
+			message: msg,
+			text,
+			skipFirst: edited,
+			logger: input.start.logger,
+			context: { trace, adapter: "telegram", channel, thread },
+			delivery: input.delivery,
+		});
 	} finally {
 		await pending.stop();
 	}
@@ -156,9 +278,10 @@ async function handleCallback(input: {
 	logger: Logger;
 	store?: AttachmentStore;
 	callback: TelegramCallbackQuery;
+	delivery: DeliveryQueue;
 }): Promise<void> {
 	const msg = input.callback.message;
-	const action = parseCallback(input.callback.data);
+	const action = parseTelegramCallback(input.callback.data);
 	if (!msg || !action) {
 		await input.client.answerCallbackQuery({ callback_query_id: input.callback.id, text: "Unknown action" });
 		return;
@@ -179,24 +302,40 @@ async function handleCallback(input: {
 			data: input.callback,
 		});
 		if (!out) {
-			await input.client.answerCallbackQuery({ callback_query_id: input.callback.id });
-			return;
-		}
-		if (out.private) {
-			await input.client.answerCallbackQuery({
-				callback_query_id: input.callback.id,
-				text: truncate(out.text, TELEGRAM_CALLBACK_LIMIT),
-				show_alert: true,
+			await input.delivery.run(() => input.client.answerCallbackQuery({ callback_query_id: input.callback.id }), {
+				trace,
+				adapter: "telegram",
+				channel,
 			});
 			return;
 		}
-		await input.client.answerCallbackQuery({ callback_query_id: input.callback.id });
-		await input.client.editMessageText({
-			chat_id: msg.chat.id,
-			message_id: msg.message_id,
-			text: firstChunk(out.text, Boolean(out.approval)),
-			reply_markup: out.approval ? approvalMarkup(out.approval) : undefined,
+		if (out.private) {
+			await input.delivery.run(
+				() =>
+					input.client.answerCallbackQuery({
+						callback_query_id: input.callback.id,
+						text: truncate(out.text, TELEGRAM_CALLBACK_LIMIT),
+						show_alert: true,
+					}),
+				{ trace, adapter: "telegram", channel },
+			);
+			return;
+		}
+		await input.delivery.run(() => input.client.answerCallbackQuery({ callback_query_id: input.callback.id }), {
+			trace,
+			adapter: "telegram",
+			channel,
 		});
+		await input.delivery.run(
+			() =>
+				input.client.editMessageText({
+					chat_id: msg.chat.id,
+					message_id: msg.message_id,
+					text: firstChunk(out.text, Boolean(out.approval)),
+					reply_markup: out.approval ? approvalMarkup(out.approval) : undefined,
+				}),
+			{ trace, adapter: "telegram", channel },
+		);
 		await sendTelegramOutput({
 			client: input.client,
 			store: input.store,
@@ -205,6 +344,7 @@ async function handleCallback(input: {
 			skipFirst: true,
 			logger: input.logger,
 			context: { trace, adapter: "telegram", channel, thread },
+			delivery: input.delivery,
 		});
 	} catch (error) {
 		input.logger.error("adapter.error", {
@@ -214,11 +354,15 @@ async function handleCallback(input: {
 			thread,
 			error: errorMessage(error),
 		});
-		await input.client.answerCallbackQuery({
-			callback_query_id: input.callback.id,
-			text: userError("handler"),
-			show_alert: true,
-		});
+		await input.delivery.run(
+			() =>
+				input.client.answerCallbackQuery({
+					callback_query_id: input.callback.id,
+					text: userError("handler"),
+					show_alert: true,
+				}),
+			{ trace, adapter: "telegram", channel },
+		);
 	}
 }
 
@@ -230,6 +374,7 @@ async function sendTelegramOutput(input: {
 	skipFirst?: boolean;
 	logger: Logger;
 	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
 }): Promise<void> {
 	await sendChunks({
 		client: input.client,
@@ -237,6 +382,9 @@ async function sendTelegramOutput(input: {
 		text: input.out.text,
 		approval: input.out.approval,
 		skipFirst: input.skipFirst,
+		logger: input.logger,
+		context: input.context,
+		delivery: input.delivery,
 	});
 	await uploadTelegramAttachments({
 		client: input.client,
@@ -245,6 +393,7 @@ async function sendTelegramOutput(input: {
 		attachments: input.out.attachments,
 		logger: input.logger,
 		context: input.context,
+		delivery: input.delivery,
 	});
 }
 
@@ -254,17 +403,107 @@ async function sendChunks(input: {
 	text: string;
 	approval?: Outbound["approval"];
 	skipFirst?: boolean;
+	logger?: Logger;
+	context?: Record<string, unknown>;
+	delivery: DeliveryQueue;
 }): Promise<void> {
 	const chunks = telegramChunks(input.text, Boolean(input.approval));
 	for (let index = input.skipFirst ? 1 : 0; index < chunks.length; index++) {
-		await input.client.sendMessage({
-			chat_id: input.message.chat.id,
-			message_thread_id: input.message.message_thread_id,
-			text: chunks[index],
-			reply_to_message_id: input.message.message_id,
-			reply_markup: index === 0 && input.approval ? approvalMarkup(input.approval) : undefined,
-		});
+		await input.delivery.run(
+			() =>
+				input.client.sendMessage({
+					chat_id: input.message.chat.id,
+					message_thread_id: input.message.message_thread_id,
+					text: chunks[index],
+					reply_to_message_id: input.message.message_id,
+					reply_markup: index === 0 && input.approval ? approvalMarkup(input.approval) : undefined,
+				}),
+			{ ...input.context, retry: "send" },
+		);
 	}
+}
+
+async function sendTargetChunks(input: {
+	client: TelegramClient;
+	chatId: number;
+	threadId?: number;
+	text: string;
+	approval?: Outbound["approval"];
+	logger?: Logger;
+	context?: Record<string, unknown>;
+	delivery: DeliveryQueue;
+}): Promise<void> {
+	const chunks = telegramChunks(input.text, Boolean(input.approval));
+	for (let index = 0; index < chunks.length; index++) {
+		await input.delivery.run(
+			() =>
+				input.client.sendMessage({
+					chat_id: input.chatId,
+					message_thread_id: input.threadId,
+					text: chunks[index],
+					reply_markup: index === 0 && input.approval ? approvalMarkup(input.approval) : undefined,
+				}),
+			{ ...input.context, retry: "send" },
+		);
+	}
+}
+
+function telegramReplyStream(input: {
+	config?: ReplyStreamOption;
+	client: TelegramClient;
+	message: TelegramMessage;
+	logger: Logger;
+	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
+}) {
+	if (!input.config || (typeof input.config === "object" && input.config.enabled === false)) return undefined;
+	return new DraftReplyStream(
+		{
+			limit: TELEGRAM_TEXT_LIMIT,
+			create: async (text) => {
+				const res = await input.delivery.run(
+					() =>
+						input.client.sendMessage({
+							chat_id: input.message.chat.id,
+							message_thread_id: input.message.message_thread_id,
+							text,
+							reply_to_message_id: input.message.message_id,
+						}),
+					{ ...input.context, retry: "send" },
+				);
+				return String(res.message_id);
+			},
+			edit: async (id, text) => {
+				await input.delivery.run(
+					() =>
+						input.client.editMessageText({
+							chat_id: input.message.chat.id,
+							message_id: Number(id),
+							text,
+						}),
+					input.context,
+				);
+			},
+			delete: async (id) => {
+				await input.delivery.run(
+					() => input.client.deleteMessage({ chat_id: input.message.chat.id, message_id: Number(id) }),
+					input.context,
+				);
+			},
+		},
+		input.config,
+		input.logger,
+		input.context,
+	);
+}
+
+function streamingEnabled(input?: ReplyStreamOption): boolean {
+	return Boolean(input && (input === true || typeof input !== "object" || input.enabled !== false));
+}
+
+function telegramProgress(input: TelegramConfig["progress"], streaming: boolean): TelegramProgress | undefined {
+	if (input === false || streaming) return undefined;
+	return input;
 }
 
 async function uploadTelegramAttachments(input: {
@@ -274,6 +513,7 @@ async function uploadTelegramAttachments(input: {
 	attachments?: Array<{ path: string; name?: string; mimeType?: string }>;
 	logger: Logger;
 	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
 }): Promise<void> {
 	if (!input.attachments?.length) return;
 	if (!input.store) {
@@ -292,13 +532,26 @@ async function uploadTelegramAttachments(input: {
 			});
 			continue;
 		}
-		try {
-			await input.client.sendDocument({
-				chat_id: input.message.chat.id,
-				message_thread_id: input.message.message_thread_id,
-				reply_to_message_id: input.message.message_id,
-				document: file,
+		if (input.store.maxBytes !== undefined && file.size > input.store.maxBytes) {
+			input.logger.warn("telegram.attachment_upload_too_large", {
+				...input.context,
+				path: attachment.path,
+				size: file.size,
+				maxBytes: input.store.maxBytes,
 			});
+			continue;
+		}
+		try {
+			await input.delivery.run(
+				() =>
+					input.client.sendDocument({
+						chat_id: input.message.chat.id,
+						message_thread_id: input.message.message_thread_id,
+						reply_to_message_id: input.message.message_id,
+						document: file,
+					}),
+				{ ...input.context, retry: "send" },
+			);
 		} catch (error) {
 			input.logger.warn("telegram.attachment_upload_failed", { ...input.context, error: errorMessage(error) });
 		}
@@ -314,6 +567,7 @@ function startProgress(input: {
 	progress?: TelegramProgress;
 	logger: Logger;
 	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
 }) {
 	let active = true;
 	let placeholder: number | undefined;
@@ -326,14 +580,18 @@ function startProgress(input: {
 					resolve();
 					return;
 				}
-				input.client
-					.sendMessage({
-						chat_id: input.chatId,
-						message_thread_id: input.threadId,
-						reply_to_message_id: input.replyTo,
-						text: message,
-						reply_markup: progressMarkup(input.cancelId),
-					})
+				input.delivery
+					.run(
+						() =>
+							input.client.sendMessage({
+								chat_id: input.chatId,
+								message_thread_id: input.threadId,
+								reply_to_message_id: input.replyTo,
+								text: message,
+								reply_markup: progressMarkup(input.cancelId),
+							}),
+						{ ...input.context, delivery: "progress", retry: "send" },
+					)
 					.then((out) => {
 						placeholder = out.message_id;
 					})
@@ -355,12 +613,16 @@ function startProgress(input: {
 			const messageId = placeholder;
 			placeholder = undefined;
 			try {
-				await input.client.editMessageText({
-					chat_id: input.chatId,
-					message_id: messageId,
-					text: firstChunk(out.text, Boolean(out.approval)),
-					reply_markup: out.approval ? approvalMarkup(out.approval) : undefined,
-				});
+				await input.delivery.run(
+					() =>
+						input.client.editMessageText({
+							chat_id: input.chatId,
+							message_id: messageId,
+							text: firstChunk(out.text, Boolean(out.approval)),
+							reply_markup: out.approval ? approvalMarkup(out.approval) : undefined,
+						}),
+					{ ...input.context, delivery: "progress_update" },
+				);
 				return true;
 			} catch (error) {
 				input.logger.warn("telegram.progress.update_failed", { ...input.context, error: errorMessage(error) });
@@ -371,9 +633,15 @@ function startProgress(input: {
 			active = false;
 			await task;
 			if (!placeholder) return;
-			await input.client.deleteMessage({ chat_id: input.chatId, message_id: placeholder }).catch((error) => {
-				input.logger.warn("telegram.progress.delete_failed", { ...input.context, error: errorMessage(error) });
-			});
+			const messageId = placeholder;
+			await input.delivery
+				.run(() => input.client.deleteMessage({ chat_id: input.chatId, message_id: messageId }), {
+					...input.context,
+					delivery: "progress_delete",
+				})
+				.catch((error) => {
+					input.logger.warn("telegram.progress.delete_failed", { ...input.context, error: errorMessage(error) });
+				});
 		},
 	};
 }
@@ -391,6 +659,16 @@ async function telegramAttachments(input: {
 	if (!files.length) return undefined;
 	const out: Attachment[] = [];
 	for (const file of files) {
+		if (input.store.maxBytes !== undefined && file.size !== undefined && file.size > input.store.maxBytes) {
+			input.logger.warn("telegram.attachment_too_large", {
+				trace: input.trace,
+				adapter: "telegram",
+				file: file.id,
+				size: file.size,
+				maxBytes: input.store.maxBytes,
+			});
+			continue;
+		}
 		try {
 			const found = await input.client.getFile({ file_id: file.id });
 			const data = await input.client.downloadFile(found.file_path);
@@ -422,6 +700,35 @@ function textOf(msg: TelegramMessage): string {
 
 function threadKey(msg: TelegramMessage): string {
 	return `${msg.chat.id}:${msg.message_thread_id ?? msg.chat.id}`;
+}
+
+function telegramDm(msg: TelegramMessage): boolean {
+	return msg.chat.type === "private";
+}
+
+export function telegramAllowed(
+	allow: TelegramAllow | undefined,
+	event: { chat: string; user: string; isDm: boolean },
+): { ok: true } | { ok: false; reason: string } {
+	if (event.isDm && allow?.dms === false) return { ok: false, reason: "dm_not_allowed" };
+	if (!event.isDm && !included(allow?.chats, event.chat)) return { ok: false, reason: "chat_not_allowed" };
+	if (!included(allow?.users, event.user)) return { ok: false, reason: "user_not_allowed" };
+	return { ok: true };
+}
+
+export function telegramTriggered(
+	trigger: TelegramTrigger | undefined,
+	event: { text?: string; isDm: boolean; botUsername?: string },
+): { ok: true } | { ok: false; reason: string } {
+	if (event.isDm) return { ok: true };
+	if ((trigger ?? "mention") === "message") return { ok: true };
+	if (event.botUsername && telegramMentions(event.text, event.botUsername)) return { ok: true };
+	return { ok: false, reason: "mention_required" };
+}
+
+function telegramMentions(text = "", username: string): boolean {
+	const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`(^|\\s)@${escaped}\\b`, "i").test(text);
 }
 
 function actionText(action: TelegramAction): string {
@@ -466,10 +773,6 @@ type TelegramAction =
 	| { kind: "status" };
 
 export function parseTelegramCallback(input?: string): TelegramAction | undefined {
-	return parseCallback(input);
-}
-
-function parseCallback(input?: string): TelegramAction | undefined {
 	if (!input) return undefined;
 	if (input === STATUS) return { kind: STATUS };
 	const index = input.indexOf(":");
@@ -481,19 +784,25 @@ function parseCallback(input?: string): TelegramAction | undefined {
 	return undefined;
 }
 
-function filesOf(msg: TelegramMessage): Array<{ id: string; name: string; mimeType?: string }> {
-	const out: Array<{ id: string; name: string; mimeType?: string }> = [];
+function filesOf(msg: TelegramMessage): Array<{ id: string; name: string; mimeType?: string; size?: number }> {
+	const out: Array<{ id: string; name: string; mimeType?: string; size?: number }> = [];
 	if (msg.document) {
 		out.push({
 			id: msg.document.file_id,
 			name: msg.document.file_name ?? `${msg.document.file_id}.bin`,
 			mimeType: msg.document.mime_type,
+			size: msg.document.file_size,
 		});
 	}
 	if (msg.photo?.length) {
 		const photo = [...msg.photo].sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0))[0];
 		if (photo)
-			out.push({ id: photo.file_id, name: `${photo.file_unique_id ?? photo.file_id}.jpg`, mimeType: "image/jpeg" });
+			out.push({
+				id: photo.file_id,
+				name: `${photo.file_unique_id ?? photo.file_id}.jpg`,
+				mimeType: "image/jpeg",
+				size: photo.file_size,
+			});
 	}
 	return out;
 }
@@ -518,6 +827,11 @@ class TelegramClient {
 
 	async getUpdates(input: { offset: number; timeout: number }): Promise<TelegramUpdate[]> {
 		const out = await this.call<{ result: TelegramUpdate[] }>("getUpdates", input);
+		return out.result;
+	}
+
+	async getMe(): Promise<TelegramUser> {
+		const out = await this.call<{ result: TelegramUser }>("getMe", {});
 		return out.result;
 	}
 
@@ -577,15 +891,21 @@ class TelegramClient {
 			body: JSON.stringify(body),
 		});
 		const parsed = (await response.json()) as TelegramResponse<T>;
-		if (!response.ok || !parsed.ok) throw new Error(parsed.description ?? `Telegram API failed: ${response.status}`);
+		if (!response.ok || !parsed.ok) throw telegramError(parsed, response.status);
 		return parsed as T;
 	}
 
 	private async callForm(method: string, body: FormData): Promise<void> {
 		const response = await fetch(`${this.base}/${method}`, { method: "POST", body });
 		const parsed = (await response.json()) as TelegramResponse<unknown>;
-		if (!response.ok || !parsed.ok) throw new Error(parsed.description ?? `Telegram API failed: ${response.status}`);
+		if (!response.ok || !parsed.ok) throw telegramError(parsed, response.status);
 	}
+}
+
+function telegramError(input: TelegramResponse<unknown>, status: number): Error {
+	const error = new Error(input.description ?? `Telegram API failed: ${status}`) as Error & { retryAfter?: number };
+	error.retryAfter = input.parameters?.retry_after;
+	return error;
 }
 
 function compact<T extends Record<string, unknown>>(input: T): T {
@@ -594,7 +914,11 @@ function compact<T extends Record<string, unknown>>(input: T): T {
 	return out as T;
 }
 
-type TelegramResponse<T> = T & { ok?: boolean; description?: string };
+function included(allowlist: Array<string | number> | undefined, value: string): boolean {
+	return !allowlist?.length || allowlist.map(String).includes(value);
+}
+
+type TelegramResponse<T> = T & { ok?: boolean; description?: string; parameters?: { retry_after?: number } };
 
 type TelegramUpdate = {
 	update_id: number;
@@ -612,6 +936,7 @@ type TelegramCallbackQuery = {
 type TelegramUser = {
 	id: number;
 	is_bot?: boolean;
+	username?: string;
 };
 
 type TelegramMessage = {
@@ -625,6 +950,7 @@ type TelegramMessage = {
 		file_id: string;
 		file_name?: string;
 		mime_type?: string;
+		file_size?: number;
 	};
 	photo?: Array<{
 		file_id: string;

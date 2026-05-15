@@ -1,4 +1,6 @@
+import { textContent } from "../core/content.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
+import type { ReplyStream } from "../io/reply-stream.js";
 import type { Agent, AgentRes } from "../runtime/agent.js";
 import type { Message, Store, StoredMessage } from "./types.js";
 
@@ -11,6 +13,7 @@ export type ContinueInput = {
 	trace: string;
 	turn: string;
 	continuation: ToolContinuation;
+	stream?: ReplyStream;
 };
 
 export type SaveInput = {
@@ -27,7 +30,7 @@ export async function continueTool(input: ContinueInput): Promise<AgentRes> {
 		input.continuation.threadId,
 		input.continuation.toolCallId,
 	);
-	if (!existing) return { text: input.continuation.out, continuation: input.continuation };
+	if (!existing) throw new Error(`tool result not found: ${input.continuation.toolCallId}`);
 	await input.store.messages.update(existing.id, {
 		text: messageText(message),
 		data: encode(message, { trace: input.trace }),
@@ -40,6 +43,7 @@ export async function continueTool(input: ContinueInput): Promise<AgentRes> {
 		channel: input.channel,
 		actor: input.actor,
 		trace: input.trace,
+		stream: input.stream,
 	});
 }
 
@@ -67,6 +71,7 @@ export async function saveReply(input: SaveInput): Promise<Message> {
 			provider: input.provider,
 			role: message.role,
 			actor: "heypi",
+			toolCallId: toolCallId(message),
 			text: messageText(message),
 			data: encode(message),
 			state: "done",
@@ -95,12 +100,7 @@ export function decode(data: string | null): StoredMessage | undefined {
 
 export function messageText(message: StoredMessage): string {
 	if (!("content" in message)) return "";
-	if (typeof message.content === "string") return message.content;
-	if (!Array.isArray(message.content)) return "";
-	return message.content
-		.map((part) => (part.type === "text" ? part.text : ""))
-		.filter(Boolean)
-		.join("\n");
+	return textContent(message.content);
 }
 
 function toolResult(input: ToolContinuation): StoredMessage {
@@ -113,4 +113,9 @@ function toolResult(input: ToolContinuation): StoredMessage {
 		isError: input.isError,
 		timestamp: Date.now(),
 	} as StoredMessage;
+}
+
+function toolCallId(message: StoredMessage): string | undefined {
+	if (!("toolCallId" in message)) return undefined;
+	return typeof message.toolCallId === "string" ? message.toolCallId : undefined;
 }

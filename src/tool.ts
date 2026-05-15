@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { textContent } from "./core/content.js";
 import type { Confirm } from "./core/types.js";
 import { type ConfirmableToolDefinition, TOOL_EXECUTE } from "./tool-internal.js";
 
@@ -41,8 +42,5 @@ export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDef
 
 function resultText(result: ToolResult): string {
 	if (typeof result === "string") return result;
-	return (result.content ?? [])
-		.map((item) => (item.type === "text" ? item.text : ""))
-		.filter(Boolean)
-		.join("\n");
+	return textContent(result.content);
 }

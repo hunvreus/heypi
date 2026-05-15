@@ -1,11 +1,14 @@
 {
-	"name": "heypi",
-	"version": "0.1.0",
+	"name": "@hunvreus/heypi",
+	"version": "0.1.0-alpha.0",
 	"description": "Governed chat agents on top of Pi.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"bin": {
+		"heypi": "dist/cli.js"
+	},
 	"exports": {
 		".": {
 			"development": "./src/index.ts",
@@ -15,8 +18,8 @@
 	},
 	"files": [
 		"dist",
+		"docs",
 		"README.md",
-		"CHANGELOG.md",
 		"LICENSE"
 	],
 	"sideEffects": false,
@@ -46,6 +49,8 @@
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/drizzle && cp drizzle/*.sql dist/drizzle/",
 		"prepack": "pnpm run build",
+		"pack:dry": "npm pack --dry-run",
+		"publish:dry": "npm publish --dry-run --access public",
 		"dev": "tsx --conditions development watch examples/slack-devops/index.ts",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
@@ -62,6 +67,8 @@
 		"@mariozechner/pi-coding-agent": "^0.73.0",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
+		"cac": "^7.0.0",
+		"croner": "^10.0.1",
 		"drizzle-orm": "^0.45.2",
 		"just-bash": "^2.14.4"
 	},

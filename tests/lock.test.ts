@@ -61,7 +61,7 @@ test("handler returns private busy reply when a thread lock is held", async () =
 			key: "C1:T1",
 		});
 		assert.ok(store.locks);
-		await store.locks.acquire({ key: `thread:a:slack:C1:${thread.id}`, owner: "other" });
+		await store.locks.acquire({ key: `thread:${thread.id}`, owner: "other" });
 
 		const handler = createHandler({
 			agentId: "a",

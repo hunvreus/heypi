@@ -6,6 +6,8 @@ test("redact removes provider secrets from logged errors", () => {
 	assert.equal(redact("bad key sk-proj-abc123"), "bad key sk-<redacted>");
 	assert.equal(redact("bad token xoxb-abc123"), "bad token xoxb-<redacted>");
 	assert.equal(redact("bad app xapp-abc123"), "bad app xapp-<redacted>");
+	assert.equal(redact("bad aws AKIA1234567890ABCDEF"), "bad aws AKIA<redacted>");
+	assert.equal(redact("bad jwt eyJabc.def_ghi.jkl-mno"), "bad jwt jwt:<redacted>");
 });
 
 test("user errors are generic", () => {

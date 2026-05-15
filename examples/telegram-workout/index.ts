@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
+import { agentFrom, consoleLogger, createHeypi, sqliteStore, telegram, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
-import { agentFrom, consoleLogger, createHeypi, sqliteStore, telegram, tool, workspace } from "heypi";
 
 loadEnv("examples/telegram-workout/.env");
 loadEnv(".env");
@@ -18,7 +18,73 @@ function required(name: string): string {
 	return value;
 }
 
+function list(name: string): string[] {
+	return (process.env[name] ?? "")
+		.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean);
+}
+
 const logPath = resolve("./examples/telegram-workout/memory/workouts.md");
+const profilePath = resolve("./examples/telegram-workout/memory/profile.md");
+
+const getProfile = tool({
+	name: "get_profile",
+	description: "Read the saved workout profile and plan.",
+	parameters: Type.Object({}),
+	execute: async () => {
+		try {
+			return await readFile(profilePath, "utf8");
+		} catch {
+			return "No saved profile yet.";
+		}
+	},
+});
+
+const saveProfile = tool<{
+	goal: string;
+	plan: string;
+	equipment?: string;
+	age?: number;
+	weight?: string;
+	schedule?: string;
+	preferences?: string;
+	constraints?: string;
+}>({
+	name: "save_profile",
+	description: "Save the user's workout profile, constraints, and current plan.",
+	parameters: Type.Object({
+		goal: Type.String({ description: "Primary training goal." }),
+		plan: Type.String({ description: "Concise current workout plan." }),
+		equipment: Type.Optional(Type.String({ description: "Available gym/home/outdoor equipment." })),
+		age: Type.Optional(Type.Number({ description: "Age if shared." })),
+		weight: Type.Optional(Type.String({ description: "Weight if shared, including unit if known." })),
+		schedule: Type.Optional(Type.String({ description: "Training days, rest days, and usual session length." })),
+		preferences: Type.Optional(Type.String({ description: "Workout preferences and dislikes." })),
+		constraints: Type.Optional(Type.String({ description: "Injuries, time, travel, sleep, or other constraints." })),
+	}),
+	execute: async (input) => {
+		await mkdir(dirname(profilePath), { recursive: true });
+		const body = [
+			`# Workout Profile`,
+			``,
+			`Updated: ${new Date().toISOString()}`,
+			`Goal: ${input.goal}`,
+			input.age ? `Age: ${input.age}` : undefined,
+			input.weight ? `Weight: ${input.weight}` : undefined,
+			input.equipment ? `Equipment: ${input.equipment}` : undefined,
+			input.schedule ? `Schedule: ${input.schedule}` : undefined,
+			input.preferences ? `Preferences: ${input.preferences}` : undefined,
+			input.constraints ? `Constraints: ${input.constraints}` : undefined,
+			``,
+			`## Plan`,
+			input.plan,
+			``,
+		].filter((line) => line !== undefined);
+		await writeFile(profilePath, `${body.join("\n")}\n`, "utf8");
+		return "profile saved";
+	},
+});
 
 const logWorkout = tool<{
 	activity: string;
@@ -53,8 +119,31 @@ const logWorkout = tool<{
 const app = createHeypi({
 	store: sqliteStore({ path: resolve("./examples/telegram-workout/heypi.db") }),
 	logger: consoleLogger({ level: "debug", format: "pretty" }),
-	adapters: [telegram({ token: required("TELEGRAM_BOT_TOKEN"), progress: { message: "Thinking..." } })],
-	agent: agentFrom("./examples/telegram-workout/agent", { model: "openai/gpt-5-mini", tools: [logWorkout] }),
+	adapters: [
+		telegram({
+			token: required("TELEGRAM_BOT_TOKEN"),
+			allow: { chats: list("HEYPI_TELEGRAM_CHATS"), users: list("HEYPI_TELEGRAM_USERS") },
+			trigger: "mention",
+			streaming: true,
+			progress: { message: "Thinking..." },
+		}),
+	],
+	agent: agentFrom("./examples/telegram-workout/agent", {
+		model: "openai/gpt-5-mini",
+		tools: [getProfile, saveProfile, logWorkout],
+	}),
+	jobs: [
+		{
+			id: "daily-workout-checkin",
+			kind: "heartbeat",
+			everyMs: 24 * 60 * 60 * 1000,
+			idleMs: 8 * 60 * 60 * 1000,
+			scope: { adapters: ["telegram"] },
+			prompt:
+				"Use the daily-checkin skill. Review the saved profile and decide whether to check in today based on the plan, rest days, and recent context.",
+		},
+	],
+	scheduler: { pollMs: 60_000 },
 	runtime: {
 		name: "just-bash",
 		root: workspace("./examples/telegram-workout/workspace"),
@@ -66,3 +155,6 @@ const app = createHeypi({
 });
 
 await app.start();
+
+process.once("SIGTERM", () => void app.stop().finally(() => process.exit(0)));
+process.once("SIGINT", () => void app.stop().finally(() => process.exit(0)));

@@ -4,22 +4,24 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	ModelRegistry,
+	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "../config.js";
 import type { CallRunner } from "../core/calls.js";
-import { type Logger, logError, logger, userError } from "../core/log.js";
+import { type Logger, logError, logger, redact, userError } from "../core/log.js";
+import type { ReplyStream } from "../io/reply-stream.js";
 import type { Messages, Sessions, StoredMessage } from "../store/types.js";
 import type { Agent, AgentReq, AgentRes } from "./agent.js";
 import { tools } from "./tools.js";
 import type { Runtime } from "./types.js";
 
 const DEFAULT_SYSTEM = [
-	"You are heypi, a concise DevOps assistant.",
-	"Use tool bash when the user asks to execute shell commands.",
-	"If approval is required, tell the user to use approve <id>.",
-	"Keep responses short and operational.",
+	"You are a concise team assistant.",
+	"Use available tools when they are needed to answer or act.",
+	"If approval is required, tell the user how to approve or deny the action.",
+	"Keep responses short, accurate, and task-focused.",
 ].join("\n");
 
 export type PiAgentInput = {
@@ -104,9 +106,20 @@ export class PiAgent implements Agent {
 					tool: event.toolName,
 				});
 			}
-			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-				out += event.assistantMessageEvent.delta;
-			}
+			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
+				out = streamTextDelta({
+					current: out,
+					delta: event.assistantMessageEvent.delta,
+					stream: req.stream,
+					logger: log,
+					context: {
+						agent: this.input.agent.id,
+						trace: req.trace,
+						channel: req.channel,
+						thread: req.threadId,
+						turn: req.turnId,
+					},
+				});
 		});
 		const abort = () => {
 			void session.abort().catch((error) => {
@@ -161,6 +174,7 @@ export class PiAgent implements Agent {
 			return { text: userError("model") };
 		}
 		const text = out.trim();
+		const silent = silentReply(text);
 		log.debug("agent.end", {
 			agent: this.input.agent.id,
 			trace: req.trace,
@@ -171,7 +185,7 @@ export class PiAgent implements Agent {
 			actor: req.actor,
 			chars: text.length,
 		});
-		return { text, messages };
+		return { text: silent ? "" : text, silent, messages };
 	}
 
 	private async create(
@@ -199,20 +213,7 @@ export class PiAgent implements Agent {
 		const models = ModelRegistry.inMemory(auth);
 		const model = models.find(modelConfig.provider, modelConfig.name);
 		if (!model) throw new Error(`unknown model: ${modelConfig.provider}/${modelConfig.name}`);
-		const loader = new DefaultResourceLoader({
-			cwd: agent.directory,
-			agentDir: agent.directory,
-			settingsManager: settings,
-			noExtensions: true,
-			noSkills: true,
-			noPromptTemplates: true,
-			additionalExtensionPaths: agent.extensions ?? [],
-			additionalSkillPaths: agent.skills ?? [],
-			systemPromptOverride: () => agent.systemPrompt ?? DEFAULT_SYSTEM,
-			appendSystemPromptOverride: () => (agent.prompt ? [agent.prompt] : []),
-			agentsFilesOverride: () => ({ agentsFiles: [] }),
-		});
-		await loader.reload();
+		const loader = await resourceLoader(agent, settings, log);
 		const customTools = tools({
 			runtime: this.input.runtime,
 			callRunner: this.input.callRunner,
@@ -243,7 +244,25 @@ export class PiAgent implements Agent {
 	}
 }
 
-function extensionToolNames(loader: DefaultResourceLoader): string[] {
+async function resourceLoader(agent: AgentConfig, settings: SettingsManager, _log: Logger): Promise<ResourceLoader> {
+	const loader = new DefaultResourceLoader({
+		cwd: agent.directory,
+		agentDir: agent.directory,
+		settingsManager: settings,
+		noExtensions: true,
+		noSkills: true,
+		noPromptTemplates: true,
+		additionalExtensionPaths: agent.extensions ?? [],
+		additionalSkillPaths: agent.skills ?? [],
+		systemPromptOverride: () => agent.systemPrompt ?? DEFAULT_SYSTEM,
+		appendSystemPromptOverride: () => (agent.prompt ? [agent.prompt] : []),
+		agentsFilesOverride: () => ({ agentsFiles: [] }),
+	});
+	await loader.reload();
+	return loader;
+}
+
+function extensionToolNames(loader: ResourceLoader): string[] {
 	return loader.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]);
 }
 
@@ -276,4 +295,25 @@ function lastText(messages: StoredMessage[]): string {
 		if (text.trim()) return text;
 	}
 	return "";
+}
+
+function silentReply(text: string): boolean {
+	return text.trim() === "[SILENT]";
+}
+
+export function streamTextDelta(input: {
+	current: string;
+	delta: string;
+	stream?: ReplyStream;
+	logger: Pick<Logger, "warn">;
+	context: Record<string, unknown>;
+}): string {
+	const out = input.current + input.delta;
+	void input.stream?.update(redact(out)).catch((error) => {
+		input.logger.warn("agent.stream_failed", {
+			...input.context,
+			error: error instanceof Error ? error.message : String(error),
+		});
+	});
+	return out;
 }

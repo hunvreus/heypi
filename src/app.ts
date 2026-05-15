@@ -2,7 +2,7 @@ import type { HeypiConfig } from "./config.js";
 import { ActiveRuns } from "./core/active.js";
 import { CallRunner } from "./core/calls.js";
 import { logger } from "./core/log.js";
-import type { ToolExecute } from "./core/types.js";
+import { createScheduler } from "./core/scheduler.js";
 import { runtimeAttachments } from "./io/attachments.js";
 import { createHandler } from "./io/handler.js";
 import { createRuntime } from "./runtime/index.js";
@@ -24,14 +24,22 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		app: process.cwd(),
 		agent: config.agent.directory,
 	});
-	const attachments = config.attachments ?? runtimeAttachments(runtime);
+	const attachments = config.attachments ?? runtimeAttachments(runtime, config.attachment);
 	const queue = new Queue({
 		maxConcurrent: config.runtime.maxConcurrent ?? 12,
 		maxPerChat: config.runtime.maxConcurrentPerChat ?? 1,
 	});
-	const callRunner = new CallRunner(config.store.calls, config.store.approvals, queue, runtime, config.approval, log);
+	const callRunner = new CallRunner(
+		config.store.calls,
+		config.store.approvals,
+		queue,
+		runtime,
+		config.approval,
+		log,
+		config.store.transaction,
+	);
 	for (const tool of config.agent.tools ?? []) {
-		const execute = replay(tool);
+		const execute = toolRunner(tool);
 		if (execute) callRunner.register(tool.name, execute);
 	}
 	const agent = new PiAgent({
@@ -50,24 +58,57 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		active,
 		logger: log,
 	});
+	const starts = new Map();
+	const scheduler = createScheduler({
+		agent: config.agent.id,
+		store: config.store,
+		handler,
+		adapters: config.adapters,
+		starts,
+		logger: log,
+		config: { ...(config.scheduler ?? {}), jobs: config.jobs },
+	});
+
+	let ready: Promise<void> | undefined;
+	async function start(): Promise<void> {
+		await config.store.setup();
+		log.info("app.start", {
+			agent: config.agent.id,
+			runtime: runtime.name,
+			adapters: config.adapters.length,
+			jobs: config.jobs?.length ?? 0,
+		});
+		const started: typeof config.adapters = [];
+		try {
+			for (const adapter of config.adapters) {
+				const start = { handler, logger: log, attachments };
+				starts.set(adapter, start);
+				await adapter.start(start);
+				started.push(adapter);
+			}
+			await scheduler?.start();
+		} catch (error) {
+			await Promise.allSettled(started.reverse().map((adapter) => adapter.stop?.()));
+			for (const adapter of started) starts.delete(adapter);
+			ready = undefined;
+			throw error;
+		}
+	}
+	function ensureStarted(): Promise<void> {
+		ready ??= start();
+		return ready;
+	}
 
 	return {
 		async start(): Promise<void> {
-			await config.store.setup();
-			log.info("app.start", {
-				agent: config.agent.id,
-				runtime: runtime.name,
-				adapters: config.adapters.length,
-			});
-			await Promise.all(config.adapters.map((adapter) => adapter.start({ handler, logger: log, attachments })));
+			await ensureStarted();
 		},
 		async stop(): Promise<void> {
 			log.info("app.stop", { agent: config.agent.id });
-			await Promise.all(config.adapters.map((adapter) => adapter.stop?.()));
+			await scheduler?.stop();
+			await Promise.allSettled(config.adapters.map((adapter) => adapter.stop?.()));
+			starts.clear();
+			ready = undefined;
 		},
 	};
-}
-
-function replay(tool: unknown): ToolExecute | undefined {
-	return toolRunner(tool);
 }

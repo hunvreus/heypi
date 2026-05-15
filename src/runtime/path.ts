@@ -5,13 +5,15 @@ export function inside(root: string, path: string): boolean {
 	return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
 }
 
-export function safeRoot(input: { root: string; app: string; agent: string }): string {
+export function safeRoot(input: { root: string; app: string; agent?: string }): string {
 	const root = resolve(input.root);
 	const app = resolve(input.app);
-	const agent = resolve(input.agent);
 	if (root === app || inside(root, app)) throw new Error(`runtime root contains app directory: ${root}`);
-	if (root === agent || inside(root, agent) || inside(agent, root)) {
-		throw new Error(`runtime root overlaps agent directory: ${root}`);
+	if (input.agent) {
+		const agent = resolve(input.agent);
+		if (root === agent || inside(root, agent) || inside(agent, root)) {
+			throw new Error(`runtime root overlaps agent directory: ${root}`);
+		}
 	}
 	return root;
 }

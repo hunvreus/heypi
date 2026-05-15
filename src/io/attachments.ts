@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import type { AttachmentConfig } from "../config.js";
 import type { ReplyAttachment } from "../core/types.js";
 import { hostPath, virtualPath } from "../runtime/path.js";
 import type { Runtime } from "../runtime/types.js";
@@ -26,6 +27,7 @@ export type AttachmentSaveInput = {
 };
 
 export interface AttachmentStore {
+	maxBytes?: number;
 	save(input: AttachmentSaveInput): Promise<Attachment>;
 	resolve(input: ReplyAttachment): Promise<ResolvedAttachment>;
 }
@@ -38,9 +40,14 @@ export type ResolvedAttachment = {
 };
 
 /** Creates a workspace-backed attachment store. Writes files under `incoming/`. */
-export function runtimeAttachments(runtime: Runtime): AttachmentStore {
+export function runtimeAttachments(runtime: Runtime, config: AttachmentConfig = {}): AttachmentStore {
+	const maxBytes = config.maxBytes ?? 25_000_000;
 	return {
+		maxBytes,
 		async save(input): Promise<Attachment> {
+			if (input.data.byteLength > maxBytes) {
+				throw new Error(`attachment exceeds limit: ${input.data.byteLength} > ${maxBytes}`);
+			}
 			const name = safeName(input.name);
 			const message = safeSegment(input.messageId ?? "unknown");
 			const provider = safeSegment(input.provider);

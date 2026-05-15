@@ -19,6 +19,20 @@ SLACK_SIGNING_SECRET=...
 SLACK_APP_TOKEN=...
 OPENAI_API_KEY=...
 HEYPI_APPROVERS=U123456,U234567
+HEYPI_SLACK_TEAMS=
+HEYPI_SLACK_CHANNELS=
+HEYPI_SLACK_USERS=
+```
+
+Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which teams, channels, or users may trigger the agent.
+
+This example enables `streaming: true`, so Slack replies are posted as draft messages and edited while Pi emits text. Delivery pacing and rate-limit retries use heypi's defaults.
+
+Check setup:
+
+```bash
+pnpm exec heypi slack check --env examples/slack-devops/.env
+pnpm exec heypi slack manifest --url https://<host>/slack/events
 ```
 
 Try:
@@ -41,7 +55,14 @@ slack({
 	mode: "http",
 	port: Number(process.env.PORT ?? 3000),
 	path: "/slack/events",
+	allow: {
+		teams: list("HEYPI_SLACK_TEAMS"),
+		channels: list("HEYPI_SLACK_CHANNELS"),
+		users: list("HEYPI_SLACK_USERS"),
+	},
+	trigger: "mention",
 	reply: "thread",
+	streaming: true,
 });
 ```
 

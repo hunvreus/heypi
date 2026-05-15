@@ -1,4 +1,5 @@
-const SECRET = /(?:sk|xox[baprs]?|xapp)-[A-Za-z0-9_*.-]+/g;
+const SECRET =
+	/(?:sk|xox[baprs]?|xapp)-[A-Za-z0-9_*.-]+|gh[pousr]_[A-Za-z0-9_]+|(?:AKIA|ASIA)[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
 
 export type Level = "debug" | "info" | "warn" | "error";
 export type Format = "pretty" | "json";
@@ -40,7 +41,17 @@ export function message(error: unknown): string {
 }
 
 export function redact(text: string): string {
-	return text.replace(SECRET, (value) => `${value.slice(0, value.indexOf("-") + 1)}<redacted>`);
+	return text.replace(SECRET, (value) => `${prefix(value)}<redacted>`);
+}
+
+function prefix(value: string): string {
+	if (value.startsWith("eyJ")) return "jwt:";
+	if (value.startsWith("AKIA") || value.startsWith("ASIA")) return value.slice(0, 4);
+	const dash = value.indexOf("-");
+	if (dash > 0) return value.slice(0, dash + 1);
+	const underscore = value.indexOf("_");
+	if (underscore > 0) return value.slice(0, underscore + 1);
+	return "";
 }
 
 function write(level: Level, min: number, format: Format, event: string, input: Record<string, unknown> = {}): void {

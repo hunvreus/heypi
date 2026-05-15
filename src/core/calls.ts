@@ -1,7 +1,7 @@
 import type { ApprovalConfig } from "../config.js";
 import type { Queue } from "../runtime/queue.js";
 import type { Runtime } from "../runtime/types.js";
-import type { Approvals, Calls } from "../store/types.js";
+import type { Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { renderCall } from "./format.js";
 import { type Logger, logger } from "./log.js";
@@ -40,6 +40,7 @@ export class CallRunner {
 		private readonly runtime: Runtime,
 		private readonly approval: ApprovalConfig = {},
 		private readonly log: Logger = logger,
+		private readonly transaction?: Store["transaction"],
 	) {}
 
 	register(tool: string, execute: ToolExecute): void {
@@ -52,7 +53,7 @@ export class CallRunner {
 		signal?: AbortSignal,
 	): Promise<Reply> {
 		if (intent.kind === "bash") return this.bash(intent.channel, intent.actor, intent.cmd, context, signal);
-		if (intent.kind === "approve") return this.handleApprove(intent);
+		if (intent.kind === "approve") return this.handleApprove(intent, signal);
 		if (intent.kind === "deny") return this.handleDeny(intent);
 		return this.handleStatus(intent);
 	}
@@ -100,7 +101,6 @@ export class CallRunner {
 		execute: ToolExecute;
 		signal?: AbortSignal;
 	}): Promise<Reply> {
-		this.register(input.name, input.execute);
 		const confirmation = confirm(input.confirm, input.args);
 		const base = {
 			channel: input.channel,
@@ -253,7 +253,7 @@ export class CallRunner {
 		}
 	}
 
-	private async handleApprove(intent: Extract<Intent, { kind: "approve" }>): Promise<Reply> {
+	private async handleApprove(intent: Extract<Intent, { kind: "approve" }>, signal?: AbortSignal): Promise<Reply> {
 		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId);
 		if (!approval) return { text: "approval not found", private: true };
 		if (approval.state !== "pending") {
@@ -263,23 +263,26 @@ export class CallRunner {
 			return renderCall({ callId: approval.callId, state: "unauthorized", approvers: this.approvers() });
 		}
 		if (this.expired(approval.expiresAt)) {
-			await this.approvals.resolve(approval.id, "denied", "heypi");
-			await this.calls.setState(approval.callId, "blocked");
+			const resolved = await this.updateApprovalCall(approval.id, "denied", "heypi", approval.callId, "blocked");
+			if (!resolved) {
+				return { text: "approval already resolved", private: true };
+			}
 			return { text: "approval expired", private: true };
 		}
 		const current = await this.calls.get(approval.callId);
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "running");
-		await this.approvals.resolve(approval.id, "approved", intent.actor);
-		await this.calls.setState(approval.callId, "running");
+		if (!(await this.updateApprovalCall(approval.id, "approved", intent.actor, approval.callId, "running"))) {
+			return { text: "approval already resolved", private: true };
+		}
 		if (current.tool === "bash") {
 			if (approval.runtime !== this.runtime.name) throw new Error(`approval runtime mismatch: ${approval.runtime}`);
 			if (!current.command) throw new Error("approved bash call missing command");
-			return this.executeBash(approval.callId, approval.channel, current.command, context(current));
+			return this.executeBash(approval.callId, approval.channel, current.command, context(current), signal);
 		}
 		const execute = this.executes.get(current.tool);
 		if (!execute) throw new Error(`approved tool not registered: ${current.tool}`);
-		return this.executeTool(approval.callId, current.tool, args(current.args), execute, context(current));
+		return this.executeTool(approval.callId, current.tool, args(current.args), execute, context(current), signal);
 	}
 
 	private async handleDeny(intent: Extract<Intent, { kind: "deny" }>): Promise<Reply> {
@@ -294,9 +297,29 @@ export class CallRunner {
 		const current = await this.calls.get(approval.callId);
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "blocked");
-		await this.approvals.resolve(approval.id, "denied", intent.actor);
-		await this.calls.setState(approval.callId, "blocked");
+		if (!(await this.updateApprovalCall(approval.id, "denied", intent.actor, approval.callId, "blocked"))) {
+			return { text: "approval already resolved", private: true };
+		}
 		return renderCall({ callId: approval.callId, state: "blocked", reason: "denied" });
+	}
+
+	private async updateApprovalCall(
+		approvalId: string,
+		approvalState: "approved" | "denied",
+		actor: string,
+		callId: string,
+		callState: "running" | "blocked",
+	): Promise<boolean> {
+		if (!this.transaction) {
+			const resolved = await this.approvals.resolve(approvalId, approvalState, actor);
+			if (resolved) await this.calls.setState(callId, callState);
+			return resolved;
+		}
+		return await this.transaction(async (store) => {
+			const resolved = await store.approvals.resolve(approvalId, approvalState, actor);
+			if (resolved) await store.calls.setState(callId, callState);
+			return resolved;
+		});
 	}
 
 	private canApprove(actor: string): boolean {

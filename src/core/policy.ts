@@ -1,6 +1,6 @@
 import type { PolicyDecision } from "./types.js";
 
-const BLOCK_PATTERNS: RegExp[] = [/\brm\s+-rf\s+\/$/i, /\bmkfs\b/i, /\bshutdown\b/i, /\breboot\b/i];
+const BLOCK_PATTERNS: RegExp[] = [/\brm\s+-rf\s+\/(?:\s|$)/i, /\bmkfs\b/i, /\bshutdown\b/i, /\breboot\b/i];
 
 const APPROVAL_PATTERNS: RegExp[] = [
 	/\bcurl\b/i,

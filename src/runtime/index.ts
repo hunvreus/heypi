@@ -11,11 +11,18 @@ export function runtimeName(input?: string): RuntimeName {
 	throw new Error(`unknown runtime: ${value}`);
 }
 
-export function createRuntime(input: RuntimeConfig & { app: string; agent: string }): Runtime {
+export function createRuntime(input: RuntimeConfig & { app: string; agent?: string }): Runtime {
 	const name = runtimeName(input.name);
 	const root = safeRoot({ root: input.root, app: input.app, agent: input.agent });
-	if (name === "just-bash") return justBash({ root, timeoutMs: input.timeoutMs, options: input.justBash });
-	return hostBash({ root, guarded: name === "guarded-bash", timeoutMs: input.timeoutMs });
+	if (name === "just-bash")
+		return justBash({ root, timeoutMs: input.timeoutMs, options: input.justBash, limits: input.limits });
+	return hostBash({
+		root,
+		guarded: name === "guarded-bash",
+		timeoutMs: input.timeoutMs,
+		env: input.hostEnv,
+		limits: input.limits,
+	});
 }
 
 export function workspace(path = "./workspace"): string {

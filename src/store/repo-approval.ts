@@ -75,10 +75,13 @@ export class ApprovalRepo {
 			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
 	}
 
-	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<void> {
+	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean> {
+		const resolvedAt = Date.now();
 		await this.db
 			.update(approval)
-			.set({ state, resolvedBy: actor, resolvedAt: Date.now() })
-			.where(eq(approval.id, id));
+			.set({ state, resolvedBy: actor, resolvedAt })
+			.where(and(eq(approval.id, id), eq(approval.state, "pending")));
+		const row = await this.get(id);
+		return row?.state === state && row.resolvedBy === actor && row.resolvedAt === resolvedAt;
 	}
 }

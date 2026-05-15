@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Type } from "@sinclair/typebox";
 import {
 	type Adapter,
 	type AttachmentStore,
@@ -13,7 +12,8 @@ import {
 	sqliteStore,
 	tool,
 	workspace,
-} from "heypi";
+} from "@hunvreus/heypi";
+import { Type } from "@sinclair/typebox";
 
 test("public package entrypoint supports a minimal app config", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-"));
@@ -32,7 +32,7 @@ test("public package entrypoint supports a minimal app config", async () => {
 			store: sqliteStore({ path: join(root, "heypi.db") }),
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
-			agent: agentFrom("./examples/slack-devops/agent", { tools: [lookup] }),
+			agent: agentFrom("./examples/slack-devops/agent", { model: "openai/gpt-5-mini", tools: [lookup] }),
 			runtime: {
 				name: "just-bash",
 				root: workspace(join(root, "workspace")),
@@ -63,7 +63,7 @@ test("createHeypi passes injected attachment store to adapters", async () => {
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
 			attachments,
-			agent: agentFrom("./examples/slack-devops/agent"),
+			agent: agentFrom("./examples/slack-devops/agent", { model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -73,6 +73,39 @@ test("createHeypi passes injected attachment store to adapters", async () => {
 		await app.start();
 
 		assert.equal(received, attachments);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi stops started adapters when a later adapter fails to start", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-startup-"));
+	try {
+		let stopped = false;
+		const first: Adapter = {
+			start: async () => undefined,
+			stop: async () => {
+				stopped = true;
+			},
+		};
+		const second: Adapter = {
+			start: async () => {
+				throw new Error("boom");
+			},
+		};
+		const app = createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			adapters: [first, second],
+			agent: agentFrom("./examples/slack-devops/agent", { model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		await assert.rejects(() => app.start(), /boom/);
+		assert.equal(stopped, true);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

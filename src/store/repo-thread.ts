@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { thread } from "../db/schema.js";
 import type { Db } from "./db.js";
 
@@ -11,35 +11,74 @@ export class ThreadRepo {
 	async getOrCreate(input: {
 		agent: string;
 		provider: string;
+		team?: string;
 		channel: string;
 		actor?: string;
 		key: string;
 	}): Promise<ThreadRow> {
-		const found = await this.getByKey(input.agent, input.provider, input.key);
+		const team = input.team ?? "";
+		const found = await this.getByKey(input.agent, input.provider, team, input.key);
 		if (found) return found;
 
 		const id = randomUUID();
 		const now = Date.now();
-		await this.db.insert(thread).values({
-			id,
-			agent: input.agent,
-			provider: input.provider,
-			channel: input.channel,
-			actor: input.actor,
-			key: input.key,
-			createdAt: now,
-			updatedAt: now,
-		});
-		const row = await this.getByKey(input.agent, input.provider, input.key);
+		await this.db
+			.insert(thread)
+			.values({
+				id,
+				agent: input.agent,
+				provider: input.provider,
+				team,
+				channel: input.channel,
+				actor: input.actor,
+				key: input.key,
+				createdAt: now,
+				updatedAt: now,
+			})
+			.onConflictDoNothing();
+		const row = await this.getByKey(input.agent, input.provider, team, input.key);
 		if (!row) throw new Error("thread insert failed");
 		return row;
 	}
 
-	async getByKey(agent: string, provider: string, key: string): Promise<ThreadRow | undefined> {
+	async list(
+		input: {
+			agent?: string;
+			providers?: string[];
+			teams?: string[];
+			channels?: string[];
+			users?: string[];
+			limit?: number;
+		} = {},
+	): Promise<ThreadRow[]> {
+		const filters = [];
+		if (input.agent) filters.push(eq(thread.agent, input.agent));
+		if (input.providers?.length) filters.push(inArray(thread.provider, input.providers));
+		if (input.teams?.length) filters.push(inArray(thread.team, input.teams));
+		if (input.channels?.length) filters.push(inArray(thread.channel, input.channels));
+		if (input.users?.length) filters.push(inArray(thread.actor, input.users));
+		const query = this.db.select().from(thread);
+		const withFilter = filters.length ? query.where(and(...filters)) : query;
+		return await withFilter.limit(Math.min(Math.max(input.limit ?? 100, 1), 1000));
+	}
+
+	async getByKey(
+		agent: string,
+		provider: string,
+		team: string | undefined,
+		key: string,
+	): Promise<ThreadRow | undefined> {
 		const rows = await this.db
 			.select()
 			.from(thread)
-			.where(and(eq(thread.agent, agent), eq(thread.provider, provider), eq(thread.key, key)))
+			.where(
+				and(
+					eq(thread.agent, agent),
+					eq(thread.provider, provider),
+					eq(thread.team, team ?? ""),
+					eq(thread.key, key),
+				),
+			)
 			.limit(1);
 		return rows[0];
 	}
