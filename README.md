@@ -179,10 +179,6 @@ All Slack modes use the same bot token, signing secret, message handling, approv
 
 See [`docs/SLACK.md`](docs/SLACK.md) for scopes, events, manifests, and common setup failures.
 
-## Serverless
-
-Cloudflare Workers and other serverless Fetch runtimes are not supported yet. The current adapters assume either a long-running process or a Node HTTP server. Serverless support is planned, but it needs a complete adapter, scheduler, storage, attachment, and deployment story before it should be used in production.
-
 Inbound Slack messages can be restricted with `allow`. Omitted `teams`, `channels`, and `users` allow all delivered events for that dimension. `channels` applies to non-DM channels only. `allow.dms` defaults to `true`. `trigger` defaults to `"mention"` for channels; accepted DMs always trigger.
 
 ### Telegram
@@ -226,7 +222,7 @@ Custom adapters implement:
 type Adapter = {
 	name?: string;
 	start(input: { handler: Handler; logger: Logger; attachments?: AttachmentStore }): Promise<void>;
-	send?(target: AdapterTarget, out: Outbound): Promise<void>;
+	send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
 	stop?(): Promise<void>;
 };
 ```
@@ -338,6 +334,10 @@ sqliteStore({ path: "./heypi.db" })
 For multi-instance deployments, implement the exported `Store` interface with durable shared storage and `locks` for thread serialization. Custom stores should implement `transaction()` for atomic multi-table updates; nested transactions are not supported. Scheduler-capable stores must provide `jobs`, `jobRuns`, `locks`, and persist `Job.idleMs`.
 
 Chat output and logs are redacted before user-facing delivery, but the SQLite transcript stores raw model/tool text for audit and replay fidelity. Protect the database as sensitive data.
+
+## Serverless
+
+Cloudflare Workers and other serverless Fetch runtimes are not supported yet. The current adapters assume either a long-running process or a Node HTTP server. Serverless support is planned, but it needs a complete adapter, scheduler, storage, attachment, and deployment story before it should be used in production.
 
 ## Examples
 
