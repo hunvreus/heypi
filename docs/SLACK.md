@@ -31,7 +31,9 @@ SLACK_BOT_TOKEN=xoxb-...
 
 ## Signing Secret
 
-Under **Basic Information**, copy the signing secret:
+HTTP mode requires Slack's signing secret so heypi can verify incoming Slack requests. Socket Mode receives events over the websocket authenticated by `SLACK_APP_TOKEN`, so a signing secret is not required for Socket Mode.
+
+For HTTP mode, copy the signing secret under **Basic Information**:
 
 ```bash
 SLACK_SIGNING_SECRET=...
@@ -52,7 +54,6 @@ Use:
 ```ts
 slack({
   botToken: process.env.SLACK_BOT_TOKEN!,
-  signingSecret: process.env.SLACK_SIGNING_SECRET!,
   mode: "socket",
   appToken: process.env.SLACK_APP_TOKEN!,
   allow: { channels: ["C123"] },

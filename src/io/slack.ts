@@ -15,7 +15,6 @@ const SLACK_BLOCK_TEXT_LIMIT = 3000;
 
 export type SlackConfig = {
 	botToken: string;
-	signingSecret: string;
 	allow?: SlackAllow;
 	trigger?: SlackTrigger;
 	reply?: SlackReply;
@@ -28,10 +27,12 @@ export type SlackConfig = {
 export type SlackSocketConfig = {
 	mode?: "socket";
 	appToken: string;
+	signingSecret?: string;
 };
 
 export type SlackHttpConfig = {
 	mode: "http";
+	signingSecret: string;
 	port?: number | string;
 	path?: string | string[];
 };
@@ -55,13 +56,7 @@ export type SlackProgress = {
 /** Creates the Slack adapter using Socket Mode or Slack's HTTP receiver. */
 export function slack(input: SlackConfig): Adapter {
 	const setup = slackSetup(input);
-	const app = new App({
-		token: input.botToken,
-		signingSecret: input.signingSecret,
-		socketMode: setup.mode === "socket",
-		appToken: setup.appToken,
-		endpoints: setup.endpoints,
-	});
+	let app: App | undefined;
 	let activeLogger: Logger | undefined;
 	let delivery = new DeliveryQueue(input.delivery);
 	let botUserId: string | undefined;
@@ -73,24 +68,26 @@ export function slack(input: SlackConfig): Adapter {
 			activeLogger = log;
 			delivery = new DeliveryQueue(input.delivery, log);
 			log.info("adapter.start", { adapter: "slack", mode: setup.mode });
-			botUserId = await slackBotUserId(app.client, log);
-			app.action(APPROVE, async ({ ack, body, action, client }) => {
+			const bolt = createSlackApp(input, setup);
+			app = bolt;
+			botUserId = await slackBotUserId(bolt.client, log);
+			bolt.action(APPROVE, async ({ ack, body, action, client }) => {
 				await ack();
 				await handleAction({ kind: "approve", body, action, client, handler, logger: log, delivery });
 			});
-			app.action(DENY, async ({ ack, body, action, client }) => {
+			bolt.action(DENY, async ({ ack, body, action, client }) => {
 				await ack();
 				await handleAction({ kind: "deny", body, action, client, handler, logger: log, delivery });
 			});
-			app.action(CANCEL, async ({ ack, body, action, client }) => {
+			bolt.action(CANCEL, async ({ ack, body, action, client }) => {
 				await ack();
 				await handleAction({ kind: "cancel", body, action, client, handler, logger: log, delivery });
 			});
-			app.action(STATUS, async ({ ack, body, action, client }) => {
+			bolt.action(STATUS, async ({ ack, body, action, client }) => {
 				await ack();
 				await handleAction({ kind: "status", body, action, client, handler, logger: log, delivery });
 			});
-			app.message(async ({ event, client, body }) => {
+			bolt.message(async ({ event, client, body }) => {
 				const msg = event as {
 					subtype?: string;
 					bot_id?: string;
@@ -268,18 +265,20 @@ export function slack(input: SlackConfig): Adapter {
 					await pending.stop();
 				}
 			});
-			if (setup.mode === "http") await app.start(setup.port);
-			else await app.start();
+			if (setup.mode === "http") await bolt.start(setup.port);
+			else await bolt.start();
 		},
 		async stop(): Promise<void> {
-			await app.stop();
+			await app?.stop();
+			app = undefined;
 			activeLogger?.info("adapter.stop", { adapter: "slack", mode: setup.mode });
 		},
 		async send(target: AdapterTarget, out: Outbound, start?: AdapterStart): Promise<void> {
 			const log = start?.logger ?? activeLogger;
-			const channel = await slackTargetChannel(app.client, target, delivery);
+			const bolt = requiredSlackApp(app);
+			const channel = await slackTargetChannel(bolt.client, target, delivery);
 			await postPublicChunks({
-				client: app.client,
+				client: bolt.client,
 				channel,
 				text: out.text,
 				approval: out.approval,
@@ -290,7 +289,7 @@ export function slack(input: SlackConfig): Adapter {
 				delivery,
 			});
 			await uploadSlackAttachments({
-				client: app.client,
+				client: bolt.client,
 				store: start?.attachments,
 				channel,
 				thread: target.mode === "channel" ? undefined : target.thread,
@@ -328,9 +327,30 @@ function slackSetup(
 	| { mode: "socket"; appToken: string; endpoints?: undefined; port?: undefined }
 	| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port: number | string } {
 	if (input.mode === "http") {
+		if (!input.signingSecret) throw new Error("Slack HTTP mode requires signingSecret");
 		return { mode: "http", endpoints: input.path ?? "/slack/events", port: input.port ?? 3000 };
 	}
 	return { mode: "socket", appToken: input.appToken };
+}
+
+function createSlackApp(
+	input: SlackConfig,
+	setup:
+		| { mode: "socket"; appToken: string; endpoints?: undefined; port?: undefined }
+		| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port: number | string },
+): App {
+	return new App({
+		token: input.botToken,
+		signingSecret: input.signingSecret ?? "",
+		socketMode: setup.mode === "socket",
+		appToken: setup.appToken,
+		endpoints: setup.endpoints,
+	});
+}
+
+function requiredSlackApp(app: App | undefined): App {
+	if (!app) throw new Error("Slack adapter is not started");
+	return app;
 }
 
 function streamingEnabled(input?: ReplyStreamOption): boolean {

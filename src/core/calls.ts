@@ -5,9 +5,9 @@ import type { Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { renderCall } from "./format.js";
 import { type Logger, logger } from "./log.js";
-import { decidePolicy } from "./policy.js";
+import { classifyCommand } from "./policy.js";
 import { assertTransition, parseCallState } from "./state.js";
-import type { Confirm, Intent, Reply, ToolExecute } from "./types.js";
+import type { CommandPolicyConfig, Confirm, Intent, Reply, ToolExecute } from "./types.js";
 
 export type CallContext = {
 	trace?: string;
@@ -41,6 +41,7 @@ export class CallRunner {
 		private readonly approval: ApprovalConfig = {},
 		private readonly log: Logger = logger,
 		private readonly transaction?: Store["transaction"],
+		private readonly policy: CommandPolicyConfig = {},
 	) {}
 
 	register(tool: string, execute: ToolExecute): void {
@@ -66,14 +67,14 @@ export class CallRunner {
 		signal?: AbortSignal,
 	): Promise<Reply> {
 		if (!this.runtime.bash) throw new Error(`runtime ${this.runtime.name} does not support bash`);
-		const decision = decidePolicy(command);
+		const risk = classifyCommand(command, this.policy);
 		this.log.debug("call.policy", {
 			...context,
 			channel,
 			tool: "bash",
 			runtime: this.runtime.name,
-			decision: decision.kind,
-			reason: decision.reason,
+			risk: risk.risk,
+			reason: risk.reason,
 		});
 		const base = {
 			channel,
@@ -82,11 +83,11 @@ export class CallRunner {
 			command,
 			args: { command },
 			runtime: this.runtime.name,
-			policyReason: decision.reason,
+			policyReason: risk.reason,
 			context,
 		};
-		if (decision.kind === "block") return this.block(base, decision.reason);
-		if (decision.kind === "need_approval") return this.requestApproval(base, decision.reason);
+		if (risk.risk === "block") return this.block(base, risk.reason);
+		if (risk.risk === "approval") return this.requestApproval(base, risk.reason);
 		const row = await this.createCall(base, "running");
 		return this.executeBash(row.id, channel, command, context, signal);
 	}
@@ -257,24 +258,69 @@ export class CallRunner {
 		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId);
 		if (!approval) return { text: "approval not found", private: true };
 		if (approval.state !== "pending") {
+			this.log.info("approval.already_resolved", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				state: approval.state,
+				resolvedBy: approval.resolvedBy ?? undefined,
+			});
 			return { text: `approval already ${approval.state} by ${approval.resolvedBy ?? "unknown"}`, private: true };
 		}
 		if (!this.canApprove(intent.actor)) {
+			this.log.warn("approval.unauthorized", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				requestedBy: approval.requestedBy ?? undefined,
+			});
 			return renderCall({ callId: approval.callId, state: "unauthorized", approvers: this.approvers() });
 		}
 		if (this.expired(approval.expiresAt)) {
 			const resolved = await this.updateApprovalCall(approval.id, "denied", "heypi", approval.callId, "blocked");
 			if (!resolved) {
+				this.log.info("approval.already_resolved", {
+					approval: approval.id,
+					call: approval.callId,
+					channel: approval.channel,
+					actor: intent.actor,
+					state: "resolved",
+				});
 				return { text: "approval already resolved", private: true };
 			}
+			this.log.info("approval.expired", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				expiresAt: approval.expiresAt ?? undefined,
+			});
 			return { text: "approval expired", private: true };
 		}
 		const current = await this.calls.get(approval.callId);
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "running");
 		if (!(await this.updateApprovalCall(approval.id, "approved", intent.actor, approval.callId, "running"))) {
+			this.log.info("approval.already_resolved", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				state: "resolved",
+			});
 			return { text: "approval already resolved", private: true };
 		}
+		this.log.info("approval.approved", {
+			approval: approval.id,
+			call: approval.callId,
+			channel: approval.channel,
+			actor: intent.actor,
+			tool: current.tool,
+			thread: current.threadId ?? undefined,
+			turn: current.turnId ?? undefined,
+		});
 		if (current.tool === "bash") {
 			if (approval.runtime !== this.runtime.name) throw new Error(`approval runtime mismatch: ${approval.runtime}`);
 			if (!current.command) throw new Error("approved bash call missing command");
@@ -289,17 +335,48 @@ export class CallRunner {
 		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId);
 		if (!approval) return { text: "approval not found", private: true };
 		if (approval.state !== "pending") {
+			this.log.info("approval.already_resolved", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				state: approval.state,
+				resolvedBy: approval.resolvedBy ?? undefined,
+			});
 			return { text: `approval already ${approval.state} by ${approval.resolvedBy ?? "unknown"}`, private: true };
 		}
 		if (!this.canApprove(intent.actor)) {
+			this.log.warn("approval.unauthorized", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				requestedBy: approval.requestedBy ?? undefined,
+			});
 			return renderCall({ callId: approval.callId, state: "unauthorized", approvers: this.approvers() });
 		}
 		const current = await this.calls.get(approval.callId);
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "blocked");
 		if (!(await this.updateApprovalCall(approval.id, "denied", intent.actor, approval.callId, "blocked"))) {
+			this.log.info("approval.already_resolved", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				state: "resolved",
+			});
 			return { text: "approval already resolved", private: true };
 		}
+		this.log.info("approval.denied", {
+			approval: approval.id,
+			call: approval.callId,
+			channel: approval.channel,
+			actor: intent.actor,
+			tool: current.tool,
+			thread: current.threadId ?? undefined,
+			turn: current.turnId ?? undefined,
+		});
 		return renderCall({ callId: approval.callId, state: "blocked", reason: "denied" });
 	}
 

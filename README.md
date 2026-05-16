@@ -4,6 +4,8 @@ Chat agents on top of [Pi](https://github.com/earendil-works/pi).
 
 heypi adds adapters, persistence, governed tools, approvals, and runtime-backed workspace access to Pi.
 
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the process model, module boundaries, request flow, and security model.
+
 ## Features
 
 - Pi-backed agent loop via `@mariozechner/pi-coding-agent`
@@ -33,7 +35,6 @@ const app = createHeypi({
 	adapters: [
 		slack({
 			botToken: process.env.SLACK_BOT_TOKEN!,
-			signingSecret: process.env.SLACK_SIGNING_SECRET!,
 			mode: "socket",
 			appToken: process.env.SLACK_APP_TOKEN!,
 			allow: { channels: ["C123"] },
@@ -128,6 +129,8 @@ cancel <turn-id-or-trace>
 
 Slack and Telegram also render provider-native buttons.
 
+See [`docs/EXTENDING.md`](docs/EXTENDING.md) for custom tools, confirmation, and command risk classification.
+
 ## Adapters
 
 Slack and Telegram adapters both handle inbound messages, provider-native approval buttons, progress updates, and outbound attachments.
@@ -139,7 +142,6 @@ Slack supports Socket Mode for local development:
 ```ts
 slack({
 	botToken: process.env.SLACK_BOT_TOKEN!,
-	signingSecret: process.env.SLACK_SIGNING_SECRET!,
 	mode: "socket",
 	appToken: process.env.SLACK_APP_TOKEN!,
 	allow: {
@@ -175,7 +177,8 @@ In Slack app settings:
 - Socket Mode: enable Socket Mode and create an app-level token with `connections:write`.
 - HTTP mode: set Event Subscriptions and Interactivity URLs to `https://<host>/slack/events`, or to the custom `path` you configured.
 
-All Slack modes use the same bot token, signing secret, message handling, approvals, and reply behavior. HTTP mode starts Bolt's built-in Node HTTP receiver.
+All Slack modes use the same bot token, message handling, approvals, and reply behavior. HTTP mode starts Bolt's built-in Node HTTP receiver.
+Socket Mode does not require a signing secret unless you also use HTTP interactivity. HTTP mode requires `signingSecret` to verify Slack requests.
 
 See [`docs/SLACK.md`](docs/SLACK.md) for scopes, events, manifests, and common setup failures.
 
@@ -305,6 +308,20 @@ runtime: {
 	},
 }
 ```
+
+Command policy can be customized separately from runtime selection:
+
+```ts
+policy: {
+	command: {
+		allow: [/^curl -I https:\/\/status\.example\.com\b/],
+		approve: [/\bmake deploy\b/],
+		block: [/\bgh repo delete\b/],
+	},
+}
+```
+
+Custom `block` patterns and built-in hard blocks win first. Custom `allow` patterns can bypass approval patterns, but cannot bypass block patterns.
 
 `just-bash` is the default production runtime. `guarded-bash` and `host-bash` execute host bash from the configured workspace root; they are not OS isolation. Host runtimes receive a minimal environment by default; pass `hostEnv` to expose specific variables.
 

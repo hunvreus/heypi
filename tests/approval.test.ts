@@ -19,6 +19,7 @@ function runtime(): Runtime {
 test("approval approvers reject unauthorized actors and keep approval pending", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
+	const events: LogEvent[] = [];
 	const callRunner = new CallRunner(
 		calls,
 		approvals,
@@ -27,7 +28,7 @@ test("approval approvers reject unauthorized actors and keep approval pending", 
 		{
 			approvers: ["U_ALLOWED"],
 		},
-		noLogger(),
+		captureLogger(events),
 	);
 
 	const requested = await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -43,11 +44,16 @@ test("approval approvers reject unauthorized actors and keep approval pending", 
 	assert.match(denied.text, /not allowed/i);
 	assert.equal(approvals.rows[0].state, "pending");
 	assert.equal(calls.rows[0].state, "pending_approval");
+	assert.equal(
+		events.some((event) => event.event === "approval.unauthorized"),
+		true,
+	);
 });
 
 test("authorized approval executes the pending command", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
+	const events: LogEvent[] = [];
 	const callRunner = new CallRunner(
 		calls,
 		approvals,
@@ -56,7 +62,7 @@ test("authorized approval executes the pending command", async () => {
 		{
 			approvers: ["U_ALLOWED"],
 		},
-		noLogger(),
+		captureLogger(events),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -71,6 +77,31 @@ test("authorized approval executes the pending command", async () => {
 	assert.equal(approvals.rows[0].state, "approved");
 	assert.equal(approvals.rows[0].resolvedBy, "U_ALLOWED");
 	assert.equal(calls.rows[0].state, "done");
+	assert.equal(
+		events.some((event) => event.event === "approval.approved"),
+		true,
+	);
+});
+
+test("command policy allow pattern bypasses default approval pattern", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{},
+		noLogger(),
+		undefined,
+		{ allow: [/^curl -I /] },
+	);
+
+	const reply = await callRunner.bash("C1", "U_REQUESTER", "curl -I https://example.com");
+
+	assert.match(reply.text, /state=done/);
+	assert.equal(approvals.rows.length, 0);
+	assert.equal(calls.rows[0].policyReason, "allowed by /^curl -I /");
 });
 
 test("authorized approval executes a confirmed custom tool", async () => {
@@ -110,6 +141,100 @@ test("authorized approval executes a confirmed custom tool", async () => {
 	assert.equal(calls.rows[0].tool, "delete_ticket");
 	assert.equal(calls.rows[0].state, "done");
 	assert.equal(approvals.rows[0].state, "approved");
+});
+
+test("authorized denial logs approval.denied", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const events: LogEvent[] = [];
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["U_ALLOWED"] },
+		captureLogger(events),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const denied = await callRunner.handle({
+		kind: "deny",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ALLOWED",
+	});
+
+	assert.match(denied.text, /state=blocked/);
+	assert.equal(approvals.rows[0].state, "denied");
+	assert.equal(
+		events.some((event) => event.event === "approval.denied"),
+		true,
+	);
+});
+
+test("expired approval logs approval.expired", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const events: LogEvent[] = [];
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
+		captureLogger(events),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const expired = await callRunner.handle({
+		kind: "approve",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ALLOWED",
+	});
+
+	assert.equal(expired.private, true);
+	assert.match(expired.text, /expired/);
+	assert.equal(approvals.rows[0].state, "denied");
+	assert.equal(
+		events.some((event) => event.event === "approval.expired"),
+		true,
+	);
+});
+
+test("resolved approval logs approval.already_resolved", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const events: LogEvent[] = [];
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["U_ALLOWED"] },
+		captureLogger(events),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	await callRunner.handle({
+		kind: "deny",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ALLOWED",
+	});
+	const resolved = await callRunner.handle({
+		kind: "approve",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ALLOWED",
+	});
+
+	assert.equal(resolved.private, true);
+	assert.match(resolved.text, /already denied/);
+	assert.equal(
+		events.some((event) => event.event === "approval.already_resolved"),
+		true,
+	);
 });
 
 test("approved tool call returns continuation metadata when it came from Pi", async () => {
@@ -234,6 +359,17 @@ function noLogger(): Logger {
 		info: () => undefined,
 		warn: () => undefined,
 		error: () => undefined,
+	};
+}
+
+type LogEvent = { level: keyof Logger; event: string; input?: Record<string, unknown> };
+
+function captureLogger(events: LogEvent[]): Logger {
+	return {
+		debug: (event, input) => events.push({ level: "debug", event, input }),
+		info: (event, input) => events.push({ level: "info", event, input }),
+		warn: (event, input) => events.push({ level: "warn", event, input }),
+		error: (event, input) => events.push({ level: "error", event, input }),
 	};
 }
 

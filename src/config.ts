@@ -12,6 +12,7 @@ import type {
 } from "just-bash";
 import type { Logger } from "./core/log.js";
 import type { SchedulerConfig } from "./core/scheduler.js";
+import type { CommandPolicyConfig } from "./core/types.js";
 import type { AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
 import type { RuntimeName } from "./runtime/types.js";
@@ -71,11 +72,16 @@ export type ApprovalConfig = {
 	expiresInMs?: number;
 };
 
+export type PolicyConfig = {
+	command?: CommandPolicyConfig;
+};
+
 export type HeypiConfig = {
 	store: Store;
 	adapters: Adapter[];
 	agent: AgentConfig;
 	runtime: RuntimeConfig;
+	policy?: PolicyConfig;
 	attachments?: AttachmentStore;
 	attachment?: AttachmentConfig;
 	approval?: ApprovalConfig;

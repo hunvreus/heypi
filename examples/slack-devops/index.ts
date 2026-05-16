@@ -41,7 +41,6 @@ const app = createHeypi({
 	adapters: [
 		slack({
 			botToken: required("SLACK_BOT_TOKEN"),
-			signingSecret: required("SLACK_SIGNING_SECRET"),
 			mode: "socket",
 			appToken: required("SLACK_APP_TOKEN"),
 			allow: {

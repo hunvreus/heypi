@@ -15,7 +15,6 @@ Required env vars:
 
 ```bash
 SLACK_BOT_TOKEN=...
-SLACK_SIGNING_SECRET=...
 SLACK_APP_TOKEN=...
 OPENAI_API_KEY=...
 HEYPI_APPROVERS=U123456,U234567
@@ -25,6 +24,8 @@ HEYPI_SLACK_USERS=
 ```
 
 Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which teams, channels, or users may trigger the agent.
+
+`SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`.
 
 This example enables `streaming: true`, so Slack replies are posted as draft messages and edited while Pi emits text. Delivery pacing and rate-limit retries use heypi's defaults.
 

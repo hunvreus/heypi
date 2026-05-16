@@ -37,6 +37,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		config.approval,
 		log,
 		config.store.transaction,
+		config.policy?.command,
 	);
 	for (const tool of config.agent.tools ?? []) {
 		const execute = toolRunner(tool);

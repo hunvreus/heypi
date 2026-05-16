@@ -12,10 +12,16 @@ export type Intent =
 	| { kind: "thread_status"; channel: string; actor: string }
 	| { kind: "status"; callId: string; channel: string };
 
-export type PolicyDecision =
-	| { kind: "allow"; reason: string }
-	| { kind: "need_approval"; reason: string }
-	| { kind: "block"; reason: string };
+export type CommandPolicyConfig = {
+	allow?: RegExp[];
+	approve?: RegExp[];
+	block?: RegExp[];
+};
+
+export type CommandRisk = {
+	risk: "allow" | "approval" | "block";
+	reason: string;
+};
 
 export type Reply = {
 	text: string;

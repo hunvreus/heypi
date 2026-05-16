@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { slackAllowed, slackTriggered } from "../src/io/slack.js";
+import { slack, slackAllowed, slackTriggered } from "../src/io/slack.js";
 import { telegramAllowed, telegramTriggered } from "../src/io/telegram.js";
 
 test("Slack allowlists default to accepting delivered message events", () => {
@@ -44,6 +44,19 @@ test("Slack trigger defaults to mention for channels and message for DMs", () =>
 	assert.deepEqual(slackTriggered(undefined, { text: "hello <@UBOT>", isDm: false, botUserId: "UBOT" }), { ok: true });
 	assert.deepEqual(slackTriggered("message", { text: "hello", isDm: false, botUserId: "UBOT" }), { ok: true });
 	assert.deepEqual(slackTriggered(undefined, { text: "hello", isDm: true, botUserId: "UBOT" }), { ok: true });
+});
+
+test("Slack HTTP mode requires a signing secret at runtime", () => {
+	assert.throws(
+		() =>
+			slack({
+				botToken: "xoxb-test",
+				mode: "http",
+				signingSecret: "",
+			}),
+		/Slack HTTP mode requires signingSecret/,
+	);
+	assert.equal(slack({ botToken: "xoxb-test", mode: "socket", appToken: "xapp-test" }).name, "slack");
 });
 
 test("Telegram allowlists default to accepting delivered message events", () => {

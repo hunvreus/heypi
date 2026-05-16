@@ -121,7 +121,11 @@ async function slackCheck(flags: Flags): Promise<void> {
 	const signingSecret = secret(flags, "signing-secret", "SLACK_SIGNING_SECRET");
 	const auth = await slackCall<{ ok: boolean; team?: string; user?: string; bot_id?: string }>(token, "auth.test", {});
 	line(ok(`Slack auth ok: team=${auth.team ?? "?"} user=${auth.user ?? "?"} bot=${auth.bot_id ?? "?"}`));
-	line(signingSecret ? ok("SLACK_SIGNING_SECRET present") : warn("SLACK_SIGNING_SECRET missing"));
+	line(
+		signingSecret
+			? ok("SLACK_SIGNING_SECRET present")
+			: warn("SLACK_SIGNING_SECRET missing; required only for HTTP mode"),
+	);
 	line(
 		appToken
 			? ok("SLACK_APP_TOKEN present for Socket Mode")
@@ -163,7 +167,6 @@ settings:
 
 function slackEnv(): void {
 	line(`SLACK_BOT_TOKEN=xoxb-...
-SLACK_SIGNING_SECRET=...
 SLACK_APP_TOKEN=xapp-... # Socket Mode only`);
 }
 
