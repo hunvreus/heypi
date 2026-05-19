@@ -1,8 +1,19 @@
 # Slack DevOps
 
-Slack incident-response assistant for a small fictional Atlas API platform. It demonstrates scoped Slack behavior, runbook search, governed bash, approvals, and server inventory from files.
+Slack DevOps assistant for configured Linux/VPS hosts. It demonstrates scoped Slack behavior, runbook search, governed local bash, approval-gated remote host tools, SSH public-key onboarding, and file-backed host inventory.
 
 This example uses Slack Socket Mode so it can run locally without a public HTTPS URL.
+
+## How It Works
+
+The agent loads:
+
+- `SYSTEM.md` and `AGENTS.md` for role, scope, and safety constraints.
+- `skills/incident-triage/SKILL.md` for the incident workflow.
+- Markdown runbooks from `runbooks/`, searched through the `runbook_search` Pi extension.
+- Custom host tools from `host-tools.ts` for SSH key onboarding, host inventory, and remote SSH execution.
+
+Runbooks are still supported. In this example they are plain Markdown files under `agent/runbooks/`, exposed to the agent through `agent/extensions/runbook-tools.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
 ## Run
 
@@ -41,18 +52,43 @@ pnpm heypi slack check --env examples/slack-devops/.env
 pnpm heypi slack manifest --url https://<host>/slack/events
 ```
 
+Invite the Slack app to any channel where it should answer. heypi's allowlists filter events after Slack delivers them; they do not make Slack send events for channels the bot has not joined.
+
 Try:
 
 ```text
 help
-Search runbooks for server inventory
-Which servers run atlas-api?
-Search runbooks for gateway 5xx
-We are seeing elevated p95 latency on atlas-api
+Search runbooks for host onboarding
+Show configured hosts
+Generate the public SSH key for default
+Add web-1 at 203.0.113.10 as deploy and tag it web,prod
+Run uptime on web-1
+Search runbooks for disk space
+Check Linux health on prod hosts
 bash find . -maxdepth 3 -type f
 ```
 
-The demo knows servers from `examples/slack-devops/agent/runbooks/server-inventory.md`. It does not discover live infrastructure.
+Live host inventory and generated SSH keys are stored under `examples/slack-devops/state/`, which is gitignored.
+The first host uses the `default` key unless you provide another key name. Keys are generated once and reused; `hosts.json` stores the key name and public key, not private key material.
+
+First host setup:
+
+1. Ask the bot to add the host, for example: `Add web-1 at 203.0.113.10 as deploy and tag it web,prod`.
+2. Approve the `hosts_upsert` request if approvals are enabled.
+3. Copy the public key returned by Slack into `~/.ssh/authorized_keys` for that SSH user on the VPS.
+4. Tell the bot the key is installed. It can then test the connection with a safe command.
+
+Host tools:
+
+- `host_key_ensure`: creates a named SSH keypair if missing and returns only the public key.
+- `host_key_public`: shows the public key to add to `~/.ssh/authorized_keys` on a VPS.
+- `hosts_list` / `hosts_lookup`: inspect file-backed host inventory.
+- `hosts_upsert` / `hosts_remove`: add, update, or remove hosts. These require approval. `hosts_upsert` also ensures the named key exists and returns the public key to install.
+- `host_exec`: runs commands over SSH from the heypi Node process. Risky commands require approval; blocked commands do not run.
+
+`just-bash` remains the local workspace runtime. Remote SSH commands do not run inside `just-bash`; they run through `host_exec`.
+
+This example is intentionally more involved than the Telegram example: it shows custom tools, tool confirmation, file-backed state, SSH key generation, and a separate remote execution surface next to the local `just-bash` runtime.
 
 ## Slack HTTP Mode
 

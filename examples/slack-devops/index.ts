@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { agentFrom, consoleLogger, createHeypi, slack, sqliteStore, workspace } from "@hunvreus/heypi";
+import { createHostTools } from "./host-tools.js";
 
 loadEnv("examples/slack-devops/.env");
 loadEnv(".env");
@@ -22,6 +23,22 @@ function list(name: string): string[] {
 		.map((value) => value.trim())
 		.filter(Boolean);
 }
+
+const commandPolicy = {
+	approve: [
+		/\bsystemctl\s+(restart|stop|start|reload|enable|disable|mask|unmask)\b/i,
+		/\bdocker\s+(restart|stop|rm|compose\s+up|compose\s+down|prune)\b/i,
+		/\bapt(?:-get)?\s+(install|remove|purge|upgrade|dist-upgrade|autoremove)\b/i,
+		/\byum\s+(install|remove|update|upgrade)\b/i,
+	],
+	block: [/\bcat\s+.*(?:\.env|id_rsa|id_ed25519)\b/i, /\bchmod\s+777\b/i],
+};
+
+const hostTools = createHostTools({
+	root: resolve("./examples/slack-devops/state"),
+	commandPolicy,
+	timeoutMs: 60_000,
+});
 
 const app = createHeypi({
 	store: sqliteStore({ path: resolve("./examples/slack-devops/heypi.db") }),
@@ -58,10 +75,11 @@ const app = createHeypi({
 		// 	streaming: true,
 		// }),
 	],
-	agent: agentFrom("./examples/slack-devops/agent", { model: "openai/gpt-5-mini" }),
+	agent: agentFrom("./examples/slack-devops/agent", { model: "openai/gpt-5-mini", tools: hostTools }),
 	approval: {
 		approvers: list("HEYPI_APPROVERS"),
 		expiresInMs: 10 * 60 * 1000,
+		commands: commandPolicy,
 	},
 	runtime: {
 		name: "just-bash",

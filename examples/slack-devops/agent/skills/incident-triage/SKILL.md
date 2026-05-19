@@ -1,11 +1,11 @@
 ---
 name: incident-triage
-description: Triage Atlas API production incidents by checking bundled runbooks, resolving known servers, running safe diagnostics, and proposing a minimal remediation plan.
+description: Triage Linux/VPS incidents by checking bundled runbooks, resolving configured hosts, running safe diagnostics, and proposing a minimal remediation plan.
 ---
 
 # Incident Triage
 
-Use this skill when the user reports an Atlas API outage, degraded service, elevated errors, deployment issue, host issue, or unknown production behavior.
+Use this skill when the user reports a host issue, service outage, degraded service, elevated errors, deployment issue, disk pressure, resource saturation, or unknown production behavior.
 
 ## Objectives
 
@@ -18,20 +18,21 @@ Use this skill when the user reports an Atlas API outage, degraded service, elev
 ## Workflow
 
 1. Clarify incident context
-- Ask for service/system name, observed symptom, start time, and impact.
+- Ask for host id or tag, service name if relevant, observed symptom, start time, and impact.
 - If unknown, state assumptions explicitly.
 
 2. Load relevant runbook context
-- Use `runbook_search` with concrete keywords (`api`, `gateway`, `worker`, `postgres`, `redis`, `error`, `timeout`, `deployment`, etc.).
+- Use `runbook_search` with concrete keywords (`host onboarding`, `linux health`, `disk`, `service`, `logs`, `rollback`, `ssh`, etc.).
 - Prefer runbook procedures over ad-hoc steps.
-- Use only the services and servers listed in the bundled runbooks.
+- Use runbooks for operational context and hosts_list/hosts_lookup for configured remote hosts.
 
 3. Execute safe diagnostics first
 - Use `bash` for read-only checks against the configured workspace (`ls`, `cat`, `grep`, `find`, log inspection).
+- Use `host_exec` for read-only remote checks such as `hostname`, `uptime`, `df -h`, `free -m`, `systemctl status`, and log inspection.
 - Keep commands scoped and auditable.
 
 4. Propose minimal remediation
-- If action is risky (deploy/restart/write/network changes), ask for approval and explain why.
+- If action is risky (restart/deploy/write/network/package changes), ask for approval and explain why.
 - If blocked or denied, offer fallback checks and escalation steps.
 
 5. Close with status

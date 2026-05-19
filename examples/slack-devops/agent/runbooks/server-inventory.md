@@ -1,29 +1,32 @@
 # Server Inventory
 
-The agent only knows about the servers listed here. If a user names another host, ask them to add it to the runbook inventory outside Slack before acting on it.
+The live remote-host inventory is stored in `examples/slack-devops/state/hosts.json` and managed through `hosts_list`, `hosts_lookup`, `hosts_upsert`, and `hosts_remove`.
 
-## Services
+If a user names a host that is not configured, ask for the missing host fields before using `hosts_upsert`.
 
-| Service | Hosts | Owner | Notes |
-| --- | --- | --- | --- |
-| atlas-api | api-1, api-2 | api-platform | Public API workers behind gateway |
-| gateway | gw-1 | edge-platform | Routes external traffic to atlas-api |
-| atlas-postgres | db-1 | data-platform | Primary PostgreSQL instance |
-| atlas-redis | cache-1 | data-platform | Shared API cache |
+## Host Fields
 
-## Hosts
+| Field | Required | Notes |
+| --- | --- | --- |
+| id | yes | Stable short name such as `web-1`, `db-1`, or `worker-a` |
+| address | yes | DNS name or IP address |
+| user | no | SSH user, defaults to `deploy` |
+| port | no | SSH port, defaults to `22` |
+| key | no | Key name, defaults to `default` |
+| tags | no | Useful groups such as `prod`, `web`, `db`, `worker` |
+| cwd | no | Remote working directory for commands |
 
-| Host | Role | Environment | Safe diagnostics |
-| --- | --- | --- | --- |
-| api-1 | atlas-api worker | production | logs, error rate, latency summary |
-| api-2 | atlas-api worker | production | logs, error rate, latency summary |
-| gw-1 | gateway | production | routing errors, upstream timeout counts |
-| db-1 | postgres | production | connection saturation, slow query count |
-| cache-1 | redis | production | hit rate, evictions, latency |
+## Onboarding Flow
+
+1. Ask for host id, address, SSH user, SSH port if non-default, and tags.
+2. Use `hosts_upsert` to save the host. This requires approval.
+3. After approval, `hosts_upsert` returns the public key to install.
+4. Tell the user to append that public key to `~/.ssh/authorized_keys` for the configured SSH user.
+5. After the user confirms the key was installed, test with a safe command through `host_exec`, such as `hostname && uptime`.
 
 ## Rules
 
 - Do not invent host names.
-- Do not run commands against hosts that are not listed here.
+- Do not run commands against hosts that are not configured in the host inventory.
 - Do not restart, deploy, roll back, or change config without explicit approval.
-- Prefer service-level diagnosis before host-level remediation.
+- Prefer read-only diagnostics before remediation.

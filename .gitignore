@@ -10,3 +10,4 @@ dist/
 coverage/
 examples/*/workspace/
 examples/*/memory/
+examples/*/state/

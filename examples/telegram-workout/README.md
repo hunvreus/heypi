@@ -7,6 +7,18 @@ The `save_profile` tool writes goals, equipment, schedule, preferences, and cons
 
 The daily check-in is configured as a heartbeat job. It applies to known Telegram chats after the user has messaged the bot once.
 
+## How It Works
+
+This is the simpler boilerplate example. It shows the normal heypi shape without extra infrastructure tools:
+
+- Telegram long polling adapter.
+- `SYSTEM.md` / `AGENTS.md` prompt files.
+- Two small custom tools for local Markdown memory.
+- A heartbeat job for daily check-ins.
+- Optional chat/user allowlists.
+
+Unlike the Slack DevOps example, it does not define remote execution tools, SSH keys, runbooks, or approval-heavy workflows.
+
 ## Run
 
 ```bash

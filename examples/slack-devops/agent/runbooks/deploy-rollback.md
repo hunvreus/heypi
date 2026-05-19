@@ -1,24 +1,23 @@
 # Deploy Rollback Runbook
 
-Service: atlas-api
-Primary hosts: api-1, api-2
+Use this runbook when a user suspects a deploy caused an incident.
 
-## When to consider rollback
+## When To Consider Rollback
 
-- Error rate or latency increased immediately after a deploy.
+- Error rate, latency, or service failures increased immediately after a deploy.
 - The bad version is known.
-- Dependency health is normal.
-- The on-call owner agrees rollback is lower risk than forward fix.
+- Dependency and host health checks do not explain the issue.
+- The rollback command and target host/service are explicit.
 
-## Safe checks
+## Safe Checks
 
-1. Search runbooks for `server inventory`.
-2. Confirm the affected service and deploy window.
-3. Inspect local example logs or release notes if available.
+1. Confirm host or tag, service name, deploy window, and known bad version.
+2. Use `hosts_lookup` to resolve the target.
+3. Use `host_exec` for read-only checks such as service status and recent logs.
 4. State what evidence links the deploy to the incident.
 
-## Approval boundary
+## Approval Boundary
 
 Rollback, restart, deploy, config writes, database changes, and cache flushes require approval.
 
-This demo does not include a real deploy tool. If asked to roll back, explain the evidence needed and the approval path instead of pretending to perform a rollback.
+Do not invent a rollback command. If the command is not provided or documented, ask for it.

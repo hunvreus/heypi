@@ -428,7 +428,7 @@ Cloudflare Workers and other serverless Fetch runtimes are not supported yet. Th
 
 ## Examples
 
-- [`examples/slack-devops`](examples/slack-devops): Slack incident-response assistant with runbook search, governed bash, approvals, and file-backed server inventory.
+- [`examples/slack-devops`](examples/slack-devops): Slack DevOps assistant with runbook search, governed local bash, approval-gated SSH host tools, public-key onboarding, and file-backed host inventory.
 - [`examples/telegram-workout`](examples/telegram-workout): Telegram fitness coach with onboarding, saved profile/plan, daily heartbeat check-ins, and a local workout log.
 
 ## Why heypi?
