@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { commandConfirm } from "./core/policy.js";
 import type { Confirm } from "./core/types.js";
 

@@ -201,3 +201,5 @@ const deploy = tool<{ command: string }>({
 - Custom attachment stores implement `AttachmentStore` and are configured with `attachments: { store }`.
 - Attachment processing is configured with `attachments.process`; document conversion is optional and should run through a local converter with byte, time, and output limits.
 - Runtime behavior is configured through `runtime`, including `justBash`, `hostEnv`, timeouts, concurrency, and file limits.
+- Pi extensions are loaded from explicit `agent.extensions` paths or `agent/extensions/`. heypi disables Pi's default/global extension discovery; configure each chat agent's extension set directly.
+  Extension code runs in-process and should be treated as trusted application code. Interactive Pi extension UI and slash-command flows are not exposed as first-class chat features.

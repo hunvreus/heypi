@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Logger } from "../src/core/log.js";
 import type { Confirm } from "../src/core/types.js";
 import { hostBash } from "../src/runtime/host-bash.js";
@@ -349,10 +349,6 @@ class FakeMessages implements Messages {
 			.filter((row) => input.includeTools || (row.role !== "tool" && row.role !== "toolResult"))
 			.filter((row) => !query || `${row.role}\n${row.actor ?? ""}\n${row.text}`.toLowerCase().includes(query))
 			.slice(-(input.limit ?? 20));
-	}
-
-	async getToolResult(): Promise<Message | undefined> {
-		throw new Error("not implemented");
 	}
 
 	async update(): Promise<void> {

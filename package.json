@@ -65,22 +65,22 @@
 		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {
+		"@earendil-works/pi-coding-agent": "^0.75.4",
 		"@libsql/client": "^0.17.3",
-		"@mariozechner/pi-coding-agent": "^0.73.0",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
 		"cac": "^7.0.0",
 		"croner": "^10.0.1",
 		"discord.js": "^14.26.4",
 		"drizzle-orm": "^0.45.2",
-		"just-bash": "^2.14.4",
+		"just-bash": "^3.0.1",
 		"unbash": "3.0.0"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.14",
-		"@types/node": "^25.6.0",
+		"@biomejs/biome": "^2.4.15",
+		"@types/node": "^25.9.1",
 		"drizzle-kit": "^0.31.10",
-		"tsx": "^4.21.0",
+		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
 	},
 	"packageManager": "pnpm@10.17.1"

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, modelConfig } from "../src/config.js";
+import { agentFrom, DEFAULT_SOUL, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
-import { approvalFromMessages, renderContextBlock } from "../src/runtime/pi-agent.js";
+import { approvalFromMessages, renderContextBlock, runtimeSystemPrompt } from "../src/runtime/pi-agent.js";
 
 test("agentFrom requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
@@ -21,6 +24,31 @@ test("modelConfig preserves explicit verbosity", () => {
 		name: "gpt-5-mini",
 		verbosity: "low",
 	});
+});
+
+test("agentFrom loads SOUL.md separately from AGENTS.md and SYSTEM.md", () => {
+	const root = join(tmpdir(), `heypi-agent-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+	mkdirSync(root, { recursive: true });
+	writeFileSync(join(root, "SOUL.md"), "voice");
+	writeFileSync(join(root, "AGENTS.md"), "ops");
+	writeFileSync(join(root, "SYSTEM.md"), "runtime");
+
+	const agent = agentFrom(root, { model: "openai/gpt-5-mini" });
+	assert.equal(agent.soul, "voice");
+	assert.equal(agent.prompt, "ops");
+	assert.equal(agent.systemPrompt, "runtime");
+});
+
+test("agentFrom uses a default SOUL.md fallback", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	const agent = agentFrom(root, { model: "openai/gpt-5-mini" });
+	assert.equal(agent.soul, DEFAULT_SOUL);
+});
+
+test("runtimeSystemPrompt generates core tool guidance from active tools", () => {
+	assert.match(runtimeSystemPrompt(["bash", "read", "grep"]), /prefer them over shell commands/i);
+	assert.match(runtimeSystemPrompt(["bash"]), /shell commands and file exploration/i);
+	assert.doesNotMatch(runtimeSystemPrompt(["read"]), /shell commands/i);
 });
 
 test("renderContextBlock formats dynamic agent context", () => {

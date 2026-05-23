@@ -161,8 +161,11 @@ async function handleMessage(input: {
 			eventId: msg.id,
 			team,
 			channel,
+			channelName: discordChannelName(msg.channel),
 			actor,
+			actorName: msg.author.username,
 			thread: threadKey(msg),
+			threadName: discordThreadName(msg.channel),
 			text: msg.content,
 			attachments,
 			data: {
@@ -595,6 +598,14 @@ function sendTo(
 
 function threadKey(msg: Message): string {
 	return msg.channelId;
+}
+
+function discordChannelName(channel: TextBasedChannel): string | undefined {
+	return "name" in channel && typeof channel.name === "string" ? channel.name : undefined;
+}
+
+function discordThreadName(channel: TextBasedChannel): string | undefined {
+	return typeof channel.isThread === "function" && channel.isThread() ? discordChannelName(channel) : undefined;
 }
 
 function isDm(msg: Message): boolean {

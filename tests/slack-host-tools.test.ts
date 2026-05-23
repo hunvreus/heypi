@@ -4,8 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { createHostContext, createHostTools, HostStore } from "../examples/slack-devops/host-tools.js";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createHostContext, createHostTools, HostStore } from "../examples/slack-devops/tools/host.js";
 
 async function tempRoot(): Promise<{ path: string; cleanup: () => Promise<void> }> {
 	const path = await mkdtemp(join(tmpdir(), "heypi-host-tools-"));
@@ -93,7 +93,7 @@ test("host context summarizes configured hosts for the prompt", async () => {
 			aliases: ["primary-db"],
 		});
 		const context = createHostContext({ root: root.path });
-		const out = await context({ channel: "slack:T1:C1", actor: "U1", threadId: "thread-1" });
+		const out = await context({ provider: "slack", channel: "slack:T1:C1", actor: "U1", threadId: "thread-1" });
 		assert.deepEqual(out, {
 			title: "Known hosts",
 			text: "- db-1 deploy@203.0.113.20:22 tags=db,prod aliases=primary-db",
@@ -126,7 +126,7 @@ test("host context includes cached facts", async () => {
 		});
 
 		const context = createHostContext({ root: root.path });
-		const out = await context({ channel: "slack:T1:C1", actor: "U1", threadId: "thread-1" });
+		const out = await context({ provider: "slack", channel: "slack:T1:C1", actor: "U1", threadId: "thread-1" });
 
 		assert.equal(
 			typeof out === "object" && out ? out.text : "",

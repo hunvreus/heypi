@@ -6,7 +6,7 @@ heypi is a thin Node.js wrapper around Pi for team chat agents. The library keep
 
 - Keep agent setup code-first and close to Pi conventions.
 - Keep adapters provider-specific and the agent handler provider-neutral.
-- Persist enough state for audit, retries, approvals, scheduling, and transcript replay.
+- Persist enough state for audit, retries, approvals, scheduling, and Pi session routing.
 - Run commands and file tools inside one configured workspace runtime.
 - Prefer explicit safety boundaries over model-only policy.
 
@@ -39,13 +39,23 @@ The current production runtime target is a hosted Node process. Slack HTTP mode 
 
 ```text
 agent/
+  SOUL.md
   SYSTEM.md
   AGENTS.md
   skills/
   extensions/
 ```
 
-`agentFrom()` resolves files and folders at process startup. Missing files are ignored. The model must be passed explicitly or through `HEYPI_MODEL`. Programmatic `context` providers run once per turn and append compact dynamic system-prompt blocks before Pi builds the provider request.
+`agentFrom()` resolves files and folders at process startup. Missing files are ignored, except `SOUL.md`: when it is absent, heypi uses a short built-in concise-assistant identity. The model must be passed explicitly or through `HEYPI_MODEL`.
+
+Prompt layers are intentionally split:
+
+- heypi runtime prompt: short built-in tool/protocol guidance, generated from active core tools.
+- `SOUL.md`: identity, role, voice, and communication style. Missing `SOUL.md` falls back to the built-in concise identity.
+- `AGENTS.md`: operating rules, domain/project instructions, and standing orders.
+- `SYSTEM.md`: advanced full override of the heypi runtime prompt. Use it only when replacing the runtime prompt is intentional.
+
+Programmatic `context` providers run once per turn and append compact dynamic system-prompt blocks before Pi builds the provider request. The handler also injects a small current-channel context block with provider, channel/thread ids or names when available, and sender id or name when available.
 
 ### Adapters
 
@@ -62,7 +72,7 @@ type Adapter = {
 };
 ```
 
-Inbound allowlists and channel membership are adapter concerns. Once an event is accepted, the shared handler owns turn creation, intent handling, locking, transcript writes, and agent execution.
+Inbound allowlists and channel membership are adapter concerns. Once an event is accepted, the shared handler owns turn creation, intent handling, locking, audit writes, and agent execution.
 
 ### Handler
 
@@ -74,14 +84,14 @@ Inbound allowlists and channel membership are adapter concerns. Once an event is
 - de-duplicates provider events
 - acquires a per-thread lock when the store supports locks
 - starts the Pi turn or tool approval continuation
-- writes transcript, turn, call, and approval state
+- writes audit, turn, call, and approval state
 - returns redacted outbound text to the adapter
 
 The handler is intentionally the only place where inbound provider messages become durable turns.
 
 ### Pi Runtime
 
-`src/runtime/pi-agent.ts` adapts heypi threads to Pi `AgentSession`s. It loads transcript history through the store session adapter, creates a Pi session, registers heypi tools, subscribes to Pi events for logging and optional text streaming, and returns the assistant reply plus generated messages for persistence.
+`src/runtime/pi-agent.ts` adapts heypi threads to Pi `AgentSession`s. It opens the Pi session path stored on the thread route, registers heypi tools, subscribes to Pi events for logging and optional text streaming, and returns the assistant reply. Pi `SessionManager` is the canonical model transcript store; SQLite rows are not replayed as provider protocol history.
 
 heypi does not expose Pi's raw tool runtime directly to users. It registers Pi-compatible tools backed by the configured heypi runtime and call runner.
 
@@ -117,13 +127,17 @@ File tools run under the configured workspace root and enforce size, lexical tra
 
 `src/store/` defines the store interfaces and SQLite implementation. The store persists:
 
-- threads and messages
+- thread routes with Pi `sessionId`/`sessionPath`
+- message audit/search/status rows
 - turns
 - tool calls
 - approvals
 - jobs and job runs
 - locks
-- Pi session history
+
+Pi session history lives in JSONL files under the configured runtime root, for example `sessions/<session-id>.jsonl`. The per-thread lock gates writes to the corresponding Pi session file.
+
+Thread routes store both `sessionId` and `sessionPath`. New routes use a random session id and a relative path under the runtime root; absolute session paths are resolved as-is by the Pi runtime adapter. SQLite is operational state and audit/search/status data only. It is not replayed as Pi protocol history.
 
 The SQLite store supports local single-process deployments. Multi-instance deployments need a shared durable store with lock semantics. Custom stores should implement `transaction()` for atomic handler, call, and scheduler updates.
 
@@ -154,10 +168,10 @@ Slack / Telegram / Discord event
   -> handler(Inbound)
   -> thread + message + turn persistence
   -> PiAgent.ask()
-  -> Pi session + heypi tools
+  -> Pi SessionManager + heypi tools
   -> CallRunner for governed tools
   -> runtime / approval / continuation
-  -> transcript persistence
+  -> audit persistence
   -> adapter sends Outbound
 ```
 

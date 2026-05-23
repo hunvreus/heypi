@@ -15,7 +15,6 @@ export class MessageRepo {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
-		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -30,7 +29,6 @@ export class MessageRepo {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
-		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -52,7 +50,6 @@ export class MessageRepo {
 				providerEventId: input.providerEventId,
 				role: input.role,
 				actor: input.actor,
-				toolCallId: input.toolCallId,
 				text: input.text,
 				data: input.data,
 				state: input.state ?? "done",
@@ -123,17 +120,7 @@ export class MessageRepo {
 		return out.reverse();
 	}
 
-	async getToolResult(threadId: string, toolCallId: string): Promise<MessageRow | undefined> {
-		const rows = await this.db
-			.select()
-			.from(message)
-			.where(and(eq(message.threadId, threadId), eq(message.toolCallId, toolCallId), eq(message.role, "toolResult")))
-			.limit(1);
-		return rows[0];
-	}
-
 	async update(id: string, input: { text: string; data?: string; state?: string; createdAt?: number }): Promise<void> {
-		// toolCallId is a create-time lookup key and is intentionally immutable.
 		const values = {
 			text: input.text,
 			data: input.data,

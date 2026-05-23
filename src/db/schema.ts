@@ -10,6 +10,8 @@ export const thread = sqliteTable(
 		channel: text("channel").notNull(),
 		actor: text("actor"),
 		key: text("key").notNull(),
+		sessionId: text("session_id").notNull(),
+		sessionPath: text("session_path").notNull(),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
@@ -27,17 +29,13 @@ export const message = sqliteTable(
 		providerEventId: text("provider_event_id"),
 		role: text("role").notNull(),
 		actor: text("actor"),
-		toolCallId: text("tool_call_id"),
 		text: text("text").notNull(),
 		data: text("data"),
 		state: text("state").notNull(),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
-	(table) => [
-		uniqueIndex("message_provider_event_idx").on(table.provider, table.threadId, table.providerEventId),
-		index("message_tool_call_idx").on(table.threadId, table.toolCallId),
-	],
+	(table) => [uniqueIndex("message_provider_event_idx").on(table.provider, table.threadId, table.providerEventId)],
 );
 
 export const turn = sqliteTable(

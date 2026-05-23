@@ -218,8 +218,11 @@ async function handleUpdate(input: {
 			provider: "telegram",
 			eventId: String(input.update.update_id),
 			channel,
+			channelName: telegramChatName(msg.chat),
 			actor,
+			actorName: telegramUserName(msg.from),
 			thread,
+			threadName: msg.message_thread_id ? `topic ${msg.message_thread_id}` : undefined,
 			text: textOf(msg),
 			attachments,
 			data: msg,
@@ -1044,7 +1047,7 @@ type TelegramMessage = {
 	message_id: number;
 	message_thread_id?: number;
 	from?: TelegramUser;
-	chat: { id: number; type?: string };
+	chat: { id: number; type?: string; title?: string; username?: string; first_name?: string };
 	text?: string;
 	caption?: string;
 	document?: {
@@ -1059,6 +1062,15 @@ type TelegramMessage = {
 		file_size?: number;
 	}>;
 };
+
+function telegramUserName(user: TelegramUser | undefined): string | undefined {
+	if (!user) return undefined;
+	return user.username ? `@${user.username}` : user.first_name;
+}
+
+function telegramChatName(chat: TelegramMessage["chat"]): string | undefined {
+	return chat.title ?? (chat.username ? `@${chat.username}` : chat.first_name);
+}
 
 type TelegramReplyMarkup = {
 	inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;

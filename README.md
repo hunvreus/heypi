@@ -16,12 +16,12 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the process model, module
 
 ## Features
 
-- Pi-backed agent loop via `@mariozechner/pi-coding-agent`
+- Pi-backed agent loop via `@earendil-works/pi-coding-agent`
 - Slack adapter with Socket Mode and HTTP receiver modes
 - Telegram long-polling adapter
 - Discord gateway adapter
 - Generic HTTP webhook adapter
-- SQLite store for threads, messages, turns, calls, approvals, scheduled jobs, job runs, and locks
+- SQLite store for thread routes, message audit/search rows, turns, calls, approvals, scheduled jobs, job runs, and locks
 - Pi-compatible tools: `bash`, `read`, `write`, `edit`, `grep`, `find`, `ls`, `history`
 - Static runtime selection: `just-bash`, `docker-bash`, `guarded-bash`, or `host-bash`
 - Human approval flow for tool calls that require confirmation
@@ -83,13 +83,26 @@ await app.start();
 
 ```text
 agent/
+  SOUL.md
   SYSTEM.md
   AGENTS.md
   skills/
   extensions/
 ```
 
-Missing files/folders are ignored. You can override everything in code:
+Missing files/folders are ignored. If `SOUL.md` is missing, heypi uses this built-in default:
+
+```text
+You are a concise, practical assistant.
+Answer directly and accurately. Say when you are uncertain or blocked.
+Use plain language and keep responses focused on the user's goal.
+```
+
+- `SOUL.md` defines identity, role, voice, and communication style.
+- `AGENTS.md` defines operating rules, domain/project instructions, and standing orders.
+- `SYSTEM.md` is an advanced full override for heypi's runtime prompt. Avoid it unless you intentionally want to replace the built-in tool/protocol guidance.
+
+You can override everything in code:
 
 ```ts
 import { coreTools } from "@hunvreus/heypi";
@@ -97,12 +110,14 @@ import { coreTools } from "@hunvreus/heypi";
 agentFrom("./agent", {
 	id: "devops",
 	model: "openai/gpt-5-mini",
-	systemPrompt: "You are a concise DevOps assistant.",
+	soul: "You are a concise DevOps assistant.",
 	prompt: "Prefer safe, auditable actions.",
 	context: [
-		async ({ channel }) => ({
+		async ({ provider, channel, actorName }) => ({
 			title: "Runtime context",
-			text: `Current channel: ${channel}`,
+			text: [`Provider: ${provider}`, `Current channel: ${channel}`, actorName ? `Sender: ${actorName}` : undefined]
+				.filter(Boolean)
+				.join("\n"),
 		}),
 	],
 	skills: ["./shared/skills"],
@@ -112,7 +127,17 @@ agentFrom("./agent", {
 ```
 
 Pass `model` explicitly or set `HEYPI_MODEL`. heypi does not choose a provider/model implicitly.
-Use `context` for small dynamic system-prompt blocks such as known hosts, tenant metadata, user profile, or channel policy. Context providers run once per agent turn.
+Use `context` for small dynamic system-prompt blocks such as known hosts, tenant metadata, user profile, or channel policy. Context providers run once per agent turn. heypi also injects current channel context automatically, including provider, channel/thread ids or names when available, and sender id or name when available.
+
+Default runtime prompt:
+
+```text
+Use available tools when needed. Prefer the narrowest available tool that directly matches the task. Do not say you used a tool unless you actually called it.
+
+Approvals are handled by the runtime. Do not ask users to approve tool calls in plain text.
+```
+
+heypi appends short conditional guidance for active core tools. For example, when both shell and dedicated file/search tools are active, it tells the model to prefer dedicated file/search tools for file exploration and use shell tools for shell-specific work.
 
 ## Tools And Approvals
 
@@ -496,9 +521,17 @@ The built-in SQLite store is local-first:
 sqliteStore({ path: "./heypi.db" })
 ```
 
+The filename is only a convention. `heypi.db`, `heypi.sqlite`, or any other SQLite filename works as long as the configured path is stable.
+
 For multi-instance deployments, implement the exported `Store` interface with durable shared storage and `locks` for thread serialization. Custom stores should implement `transaction()` for atomic multi-table updates; nested transactions are not supported. Scheduler-capable stores must provide `jobs`, `jobRuns`, `locks`, and persist `Job.idleMs`.
 
-Chat output and logs are redacted before user-facing delivery, but the SQLite transcript stores raw model/tool text for audit and replay fidelity. Protect the database as sensitive data.
+SQLite stores thread routes, including the Pi `sessionId` and `sessionPath`. New threads get a random session id and a relative session path like `sessions/<session-id>.jsonl`. Relative session paths are resolved under the configured runtime root; absolute paths are also supported by the runtime adapter. Chat output and logs are redacted before user-facing delivery. SQLite stores raw audit/search/status text, while Pi session JSONL files store the canonical model transcript. Protect both the database and session files as sensitive data.
+
+## Pi Extensions
+
+heypi loads explicit Pi extension paths from `agent.extensions` or `agent/extensions/`. It disables Pi's default/global extension discovery so a chat agent only gets the extensions configured for that agent.
+
+Extensions can register additional Pi tools and lifecycle hooks. Treat extension code as trusted application code: it runs in-process with access to the agent runtime. Interactive Pi extension UI and slash-command flows are not exposed as first-class chat features.
 
 ## Serverless
 

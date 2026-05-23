@@ -89,7 +89,6 @@ CREATE TABLE `message` (
 	`provider_event_id` text,
 	`role` text NOT NULL,
 	`actor` text,
-	`tool_call_id` text,
 	`text` text NOT NULL,
 	`data` text,
 	`state` text NOT NULL,
@@ -97,8 +96,7 @@ CREATE TABLE `message` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-	CREATE UNIQUE INDEX `message_provider_event_idx` ON `message` (`provider`,`thread_id`,`provider_event_id`);--> statement-breakpoint
-CREATE INDEX `message_tool_call_idx` ON `message` (`thread_id`,`tool_call_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `message_provider_event_idx` ON `message` (`provider`,`thread_id`,`provider_event_id`);--> statement-breakpoint
 CREATE TABLE `thread` (
 	`id` text PRIMARY KEY NOT NULL,
 	`agent` text NOT NULL,
@@ -107,6 +105,8 @@ CREATE TABLE `thread` (
 	`channel` text NOT NULL,
 	`actor` text,
 	`key` text NOT NULL,
+	`session_id` text NOT NULL,
+	`session_path` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );

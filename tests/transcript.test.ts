@@ -5,29 +5,60 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Agent } from "../src/runtime/agent.js";
 import { sqliteStore } from "../src/store/sqlite.js";
-import { continueTool, decode, encode, messageText, saveReply } from "../src/store/transcript.js";
-import type { Messages, Store, StoredMessage } from "../src/store/types.js";
+import { continueTool, saveReply } from "../src/store/transcript.js";
 
-test("transcript encode/decode preserves raw Pi tool result messages", () => {
-	const message = {
-		role: "toolResult",
-		toolCallId: "tool-call-1",
-		toolName: "delete_ticket",
-		content: [{ type: "text", text: "deleted=T1" }],
-		details: { state: "done" },
-		isError: false,
-		timestamp: 123,
-	} as StoredMessage;
+test("continueTool passes Pi session route to the agent", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-transcript-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const thread = await store.threads.getOrCreate({
+			agent: "a",
+			provider: "test",
+			channel: "C1",
+			key: "T1",
+		});
+		let request: Awaited<Parameters<Agent["continue"]>[0]> | undefined;
+		await continueTool({
+			store,
+			agent: {
+				ask: async () => ({ text: "unused" }),
+				continue: async (req) => {
+					request = req;
+					return { text: "ok" };
+				},
+			},
+			provider: "test",
+			channel: "C1",
+			actor: "U1",
+			trace: "trace-1",
+			turn: "turn-1",
+			continuation: {
+				threadId: thread.id,
+				toolCallId: "tool-call-1",
+				tool: "bash",
+				out: "ok",
+				err: "",
+				isError: false,
+			},
+		});
 
-	assert.deepEqual(decode(encode(message, { trace: "trace-1" })), message);
-	assert.equal(messageText(message), "deleted=T1");
+		assert.equal(request?.threadId, thread.id);
+		assert.equal(request?.sessionId, thread.sessionId);
+		assert.equal(request?.sessionPath, thread.sessionPath);
+		assert.equal(request?.continuation?.toolCallId, "tool-call-1");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
 });
 
-test("continueTool throws when the pending tool result is missing", async () => {
+test("continueTool throws when the thread route is missing", async () => {
 	await assert.rejects(
 		() =>
 			continueTool({
-				store: { messages: new EmptyMessages() } as unknown as Store,
+				store: { threads: { get: async () => undefined } } as unknown as Parameters<
+					typeof continueTool
+				>[0]["store"],
 				agent: { continue: async () => ({ text: "unused" }) } as unknown as Agent,
 				provider: "test",
 				channel: "C1",
@@ -43,11 +74,11 @@ test("continueTool throws when the pending tool result is missing", async () => 
 					isError: false,
 				},
 			}),
-		/tool result not found/,
+		/thread not found/,
 	);
 });
 
-test("saveReply indexes tool result messages by tool call id", async () => {
+test("saveReply stores a single assistant audit row", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-transcript-"));
 	try {
 		const store = sqliteStore({ path: join(root, "heypi.db") });
@@ -59,33 +90,16 @@ test("saveReply indexes tool result messages by tool call id", async () => {
 			key: "T1",
 		});
 
-		await saveReply({
+		const row = await saveReply({
 			store,
 			threadId: thread.id,
 			provider: "test",
-			reply: {
-				text: "",
-				messages: [
-					{
-						role: "toolResult",
-						toolCallId: "tool-call-1",
-						toolName: "lookup",
-						content: [{ type: "text", text: "ok" }],
-						timestamp: 123,
-					} as StoredMessage,
-				],
-			},
+			reply: { text: "done" },
 		});
 
-		const found = await store.messages.getToolResult(thread.id, "tool-call-1");
-		assert.equal(found?.toolCallId, "tool-call-1");
+		assert.equal(row.role, "assistant");
+		assert.equal(row.text, "done");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
-
-class EmptyMessages implements Partial<Messages> {
-	async getToolResult() {
-		return undefined;
-	}
-}

@@ -8,7 +8,6 @@ import { LockRepo } from "./repo-lock.js";
 import { MessageRepo } from "./repo-message.js";
 import { ThreadRepo } from "./repo-thread.js";
 import { TurnRepo } from "./repo-turn.js";
-import { SessionStore } from "./session-store.js";
 import type { Store } from "./types.js";
 
 /** Creates the built-in SQLite file store. */
@@ -22,7 +21,6 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 	return {
 		threads: new ThreadRepo(db),
 		messages,
-		sessions: new SessionStore(messages),
 		turns: new TurnRepo(db),
 		calls: new CallRepo(db),
 		approvals: new ApprovalRepo(db),

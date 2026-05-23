@@ -21,6 +21,7 @@ export class ThreadRepo {
 		if (found) return found;
 
 		const id = randomUUID();
+		const sessionId = randomUUID();
 		const now = Date.now();
 		await this.db
 			.insert(thread)
@@ -32,6 +33,8 @@ export class ThreadRepo {
 				channel: input.channel,
 				actor: input.actor,
 				key: input.key,
+				sessionId,
+				sessionPath: `sessions/${sessionId}.jsonl`,
 				createdAt: now,
 				updatedAt: now,
 			})
@@ -80,6 +83,11 @@ export class ThreadRepo {
 				),
 			)
 			.limit(1);
+		return rows[0];
+	}
+
+	async get(id: string): Promise<ThreadRow | undefined> {
+		const rows = await this.db.select().from(thread).where(eq(thread.id, id)).limit(1);
 		return rows[0];
 	}
 }

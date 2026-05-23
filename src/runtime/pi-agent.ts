@@ -1,3 +1,4 @@
+import { dirname, isAbsolute, resolve } from "node:path";
 import {
 	type AgentSession,
 	AuthStorage,
@@ -7,35 +8,29 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AgentConfig, AgentContextBlock, AgentContextInput, ModelConfig } from "../config.js";
 import type { CallRunner } from "../core/calls.js";
-import { textContent } from "../core/content.js";
 import { type Logger, logError, logger, redact, userError } from "../core/log.js";
-import type { ApprovalPrompt } from "../core/types.js";
+import type { ApprovalPrompt, ToolContinuation } from "../core/types.js";
 import { splitTools } from "../core-tools.js";
 import { type AttachmentProcessingConfig, attachmentInput } from "../io/attachments.js";
 import type { ReplyStream } from "../io/reply-stream.js";
-import type { Messages, Sessions, StoredMessage } from "../store/types.js";
+import type { Messages, StoredMessage } from "../store/types.js";
 import type { Agent, AgentReq, AgentRes } from "./agent.js";
 import { tools } from "./tools.js";
 import type { Runtime } from "./types.js";
 
 const DEFAULT_SYSTEM = [
-	"You are a concise assistant.",
-	"Use available tools when they are needed to answer or act.",
-	"Prefer dedicated read, search, find, and list tools over bash for file exploration.",
-	"Use bash for shell tasks, command-line inspection, and public documentation lookup when appropriate.",
-	"If approval is required, tell the user how to approve or deny the action.",
-	"Keep responses short, accurate, and task-focused.",
-].join("\n");
+	"Use available tools when needed. Prefer the narrowest available tool that directly matches the task. Do not say you used a tool unless you actually called it.",
+	"Approvals are handled by the runtime. Do not ask users to approve tool calls in plain text.",
+].join("\n\n");
 
 export type PiAgentInput = {
 	agent: AgentConfig;
 	callRunner: CallRunner;
 	runtime: Runtime;
 	messages: Messages;
-	sessions: Sessions;
 	attachments?: AttachmentProcessingConfig;
 	logger?: Logger;
 };
@@ -44,29 +39,44 @@ export class PiAgent implements Agent {
 	constructor(private readonly input: PiAgentInput) {}
 
 	async ask(req: AgentReq): Promise<AgentRes> {
-		const history = await this.input.sessions.load(req.threadId, req.inputMessageId);
-		const replayHistory = promptReplayHistory(history);
-		const session = await this.create(req.channel, req.actor, replayHistory, {
+		const session = await this.create(req.channel, req.actor, req, {
 			trace: req.trace,
 			agent: this.input.agent.id,
+			provider: req.provider,
+			channelName: req.channelName,
 			thread: req.threadId,
+			providerThread: req.thread,
+			threadName: req.threadName,
 			turn: req.turnId,
 			message: req.inputMessageId,
+			actorName: req.actorName,
 			model: req.model,
 		});
-		return await this.run({ mode: "prompt", session, generatedAt: replayHistory.length + 1, req });
+		return await this.run({ mode: "prompt", session, generatedAt: session.messages.length + 1, req });
 	}
 
-	async continue(req: Omit<AgentReq, "text" | "inputMessageId">): Promise<AgentRes> {
-		const history = await this.input.sessions.load(req.threadId);
-		const session = await this.create(req.channel, req.actor, history, {
+	async continue(
+		req: Omit<AgentReq, "text" | "inputMessageId"> & { continuation?: ToolContinuation },
+	): Promise<AgentRes> {
+		if (req.continuation) appendToolResult(this.sessionManager(req), req.continuation);
+		const session = await this.create(req.channel, req.actor, req, {
 			trace: req.trace,
 			agent: this.input.agent.id,
+			provider: req.provider,
+			channelName: req.channelName,
 			thread: req.threadId,
+			providerThread: req.thread,
+			threadName: req.threadName,
 			turn: req.turnId,
+			actorName: req.actorName,
 			model: req.model,
 		});
-		return await this.run({ mode: "continue", session, generatedAt: history.length, req: { ...req, text: "" } });
+		return await this.run({
+			mode: "continue",
+			session,
+			generatedAt: session.messages.length,
+			req: { ...req, text: "" },
+		});
 	}
 
 	private async run(input: {
@@ -203,19 +213,24 @@ export class PiAgent implements Agent {
 			actor: req.actor,
 			chars: text.length,
 		});
-		return { text: silent ? "" : text, silent, approval, messages };
+		return { text: silent ? "" : text, silent, approval };
 	}
 
 	private async create(
 		channel: string,
 		actor: string,
-		history: StoredMessage[],
+		req: Pick<AgentReq, "sessionId" | "sessionPath">,
 		context: {
 			trace?: string;
 			agent: string;
+			provider: string;
 			thread: string;
+			providerThread?: string;
+			threadName?: string;
+			channelName?: string;
 			turn?: string;
 			message?: string;
+			actorName?: string;
 			model?: AgentReq["model"];
 		},
 	): Promise<AgentSession> {
@@ -233,13 +248,17 @@ export class PiAgent implements Agent {
 		if (!model) throw new Error(`unknown model: ${modelConfig.provider}/${modelConfig.name}`);
 		const contextBlocks = await agentContext(agent, {
 			channel,
+			channelName: context.channelName,
 			actor,
+			actorName: context.actorName,
+			provider: context.provider,
+			thread: context.providerThread,
+			threadName: context.threadName,
 			threadId: context.thread,
 			turnId: context.turn,
 			inputMessageId: context.message,
 			trace: context.trace,
 		});
-		const loader = await resourceLoader(agent, settings, log, contextBlocks);
 		const agentTools = splitTools(agent.tools);
 		const customTools = tools({
 			runtime: this.input.runtime,
@@ -252,7 +271,10 @@ export class PiAgent implements Agent {
 			custom: agentTools.custom,
 			logger: log,
 		});
+		const activeToolNames: string[] = [];
+		const loader = await resourceLoader(agent, settings, log, contextBlocks, () => activeToolNames);
 		const activeTools = [...extensionToolNames(loader), ...customTools.map((tool) => tool.name)];
+		activeToolNames.push(...activeTools);
 
 		const { session, modelFallbackMessage } = await createAgentSession({
 			cwd: agent.directory,
@@ -262,15 +284,62 @@ export class PiAgent implements Agent {
 			modelRegistry: models,
 			model,
 			tools: activeTools,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: this.sessionManager(req),
 			customTools,
 		});
 		if (modelFallbackMessage) throw new Error(modelFallbackMessage);
 		configureModelPayload(session, modelConfig);
 		session.setActiveToolsByName(activeTools);
-		session.state.messages = history;
 		return session;
 	}
+
+	private sessionManager(input: Pick<AgentReq, "sessionPath">): SessionManager {
+		const path = sessionPath(this.input.runtime.root, input.sessionPath);
+		return SessionManager.open(path, dirname(path), this.input.agent.directory);
+	}
+}
+
+function sessionPath(root: string, path: string): string {
+	return isAbsolute(path) ? path : resolve(root, path);
+}
+
+function appendToolResult(session: SessionManager, input: ToolContinuation): void {
+	const branch = toolCallEntryId(session, input.toolCallId);
+	if (!branch) throw new Error(`tool call not found in Pi session: ${input.toolCallId}`);
+	session.branch(branch);
+	session.appendMessage(toolResult(input) as Parameters<SessionManager["appendMessage"]>[0]);
+}
+
+function toolCallEntryId(session: SessionManager, toolCallId: string): string | undefined {
+	for (const entry of [...session.getEntries()].reverse()) {
+		if (entry.type !== "message") continue;
+		const message = entry.message;
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		if (
+			message.content.some(
+				(part) =>
+					Boolean(part) &&
+					typeof part === "object" &&
+					(part as { type?: unknown }).type === "toolCall" &&
+					(part as { id?: unknown }).id === toolCallId,
+			)
+		) {
+			return entry.id;
+		}
+	}
+	return undefined;
+}
+
+function toolResult(input: ToolContinuation): StoredMessage {
+	return {
+		role: "toolResult",
+		toolCallId: input.toolCallId,
+		toolName: input.tool,
+		content: [{ type: "text", text: input.isError ? input.err : input.out }],
+		details: { state: input.isError ? "failed" : "done" },
+		isError: input.isError,
+		timestamp: Date.now(),
+	} as StoredMessage;
 }
 
 function configureModelPayload(session: AgentSession, model: ModelConfig): void {
@@ -298,6 +367,7 @@ async function resourceLoader(
 	settings: SettingsManager,
 	_log: Logger,
 	contextBlocks: string[] = [],
+	activeTools: () => string[] = () => [],
 ): Promise<ResourceLoader> {
 	const loader = new DefaultResourceLoader({
 		cwd: agent.directory,
@@ -308,23 +378,62 @@ async function resourceLoader(
 		noPromptTemplates: true,
 		additionalExtensionPaths: agent.extensions ?? [],
 		additionalSkillPaths: agent.skills ?? [],
-		systemPromptOverride: () => agent.systemPrompt ?? DEFAULT_SYSTEM,
+		systemPromptOverride: () => agent.systemPrompt ?? runtimeSystemPrompt(activeTools()),
 		appendSystemPromptOverride: () =>
-			[agent.prompt, ...contextBlocks].filter((text): text is string => Boolean(text)),
+			[agent.soul, agent.prompt, ...contextBlocks].filter((text): text is string => Boolean(text)),
 		agentsFilesOverride: () => ({ agentsFiles: [] }),
 	});
 	await loader.reload();
 	return loader;
 }
 
+export function runtimeSystemPrompt(activeTools: string[]): string {
+	const tools = new Set(activeTools);
+	const guidance = [DEFAULT_SYSTEM];
+	const fileTools = ["read", "grep", "find", "ls"].filter((tool) => tools.has(tool));
+	if (tools.has("bash") && fileTools.length > 0) {
+		guidance.push(
+			"If dedicated file/search tools are available, prefer them over shell commands for file exploration.",
+		);
+		guidance.push(
+			"Use shell tools for commands, package managers, process inspection, and tasks not covered by narrower tools.",
+		);
+	} else if (tools.has("bash")) {
+		guidance.push("Use shell tools for shell commands and file exploration tasks.");
+	} else if (fileTools.length > 0) {
+		guidance.push("Use dedicated file/search tools for file exploration.");
+	}
+	return guidance.join("\n\n");
+}
+
 async function agentContext(agent: AgentConfig, input: AgentContextInput): Promise<string[]> {
 	const out: string[] = [];
+	const channel = channelContext(input);
+	if (channel) out.push(channel);
 	for (const provider of agent.context ?? []) {
 		const block = await provider(input);
 		const rendered = renderContextBlock(block);
 		if (rendered) out.push(rendered);
 	}
 	return out;
+}
+
+function channelContext(input: AgentContextInput): string | undefined {
+	const lines = [
+		"This message arrived through an external chat or webhook adapter. Replies are sent back to the same provider, channel, and thread unless the user or runtime routes them elsewhere.",
+		`Provider: ${input.provider}`,
+		input.channelName ? `Channel: ${input.channelName} (${input.channel})` : `Channel id: ${input.channel}`,
+		input.threadName
+			? `Thread: ${input.threadName}${input.thread ? ` (${input.thread})` : ""}`
+			: input.thread
+				? `Thread id: ${input.thread}`
+				: undefined,
+		input.actorName ? `Sender: ${input.actorName} (${input.actor})` : `Sender id: ${input.actor}`,
+	];
+	return renderContextBlock({
+		title: "Current Channel",
+		text: lines.filter((line): line is string => Boolean(line)).join("\n"),
+	});
 }
 
 export function renderContextBlock(block: AgentContextBlock | undefined | null | false): string | undefined {
@@ -343,37 +452,6 @@ export function approvalFromMessages(messages: StoredMessage[]): ApprovalPrompt 
 		if (approval) return approval;
 	}
 	return undefined;
-}
-
-/**
- * Converts persisted history for a new user prompt into plain replayable context.
- * Side effect: old tool calls/results are not replayed as provider tool protocol.
- */
-export function promptReplayHistory(messages: StoredMessage[]): StoredMessage[] {
-	return messages.flatMap((message) => {
-		if (message.role === "toolResult") {
-			const text = textContent(message.content).trim();
-			if (!text) return [];
-			const tool = typeof message.toolName === "string" && message.toolName ? message.toolName : "tool";
-			return [
-				{
-					role: "user",
-					content: `[${tool} result]\n${text}`,
-					timestamp: message.timestamp,
-				} as StoredMessage,
-			];
-		}
-		if (message.role !== "assistant" || !Array.isArray(message.content)) return [message];
-		const content = message.content.filter(
-			(part): part is { type: "text"; text: string } =>
-				Boolean(part) &&
-				typeof part === "object" &&
-				(part as { type?: unknown }).type === "text" &&
-				typeof (part as { text?: unknown }).text === "string" &&
-				(part as { text: string }).text.trim().length > 0,
-		);
-		return content.length > 0 ? [{ ...message, content } as StoredMessage] : [];
-	});
 }
 
 function approvalFromDetails(details: unknown): ApprovalPrompt | undefined {

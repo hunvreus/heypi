@@ -1,4 +1,4 @@
-import type { SessionMessageEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { CallState, TurnState } from "../core/types.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
@@ -11,6 +11,8 @@ export type Thread = {
 	channel: string;
 	actor: string | null;
 	key: string;
+	sessionId: string;
+	sessionPath: string;
 	createdAt: number;
 	updatedAt: number;
 };
@@ -22,7 +24,6 @@ export type Message = {
 	providerEventId: string | null;
 	role: string;
 	actor: string | null;
-	toolCallId: string | null;
 	text: string;
 	data: string | null;
 	state: string;
@@ -129,7 +130,7 @@ export type JobRun = {
 	endedAt: number | null;
 };
 
-/** Thread identity store. Creates stable provider/thread mappings for later session replay. */
+/** Thread identity store. Creates stable provider/thread mappings to Pi session files. */
 export interface Threads {
 	getOrCreate(input: {
 		agent: string;
@@ -139,6 +140,7 @@ export interface Threads {
 		actor?: string;
 		key: string;
 	}): Promise<Thread>;
+	get(id: string): Promise<Thread | undefined>;
 	getByKey(agent: string, provider: string, team: string | undefined, key: string): Promise<Thread | undefined>;
 	list(input?: {
 		agent?: string;
@@ -159,7 +161,6 @@ export interface Messages {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
-		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -171,7 +172,6 @@ export interface Messages {
 		providerEventId?: string;
 		role: string;
 		actor?: string;
-		toolCallId?: string;
 		text: string;
 		data?: string;
 		state?: string;
@@ -185,13 +185,7 @@ export interface Messages {
 		before?: number;
 		includeTools?: boolean;
 	}): Promise<HistoryMessage[]>;
-	getToolResult(threadId: string, toolCallId: string): Promise<Message | undefined>;
 	update(id: string, input: { text: string; data?: string; state?: string; createdAt?: number }): Promise<void>;
-}
-
-/** Session view over stored messages. Returns Pi-compatible history for one agent turn. */
-export interface Sessions {
-	load(threadId: string, inputMessageId?: string): Promise<StoredMessage[]>;
 }
 
 /** Agent turn store. One turn is one provider input processed by the agent/core. */
@@ -309,7 +303,6 @@ export interface JobRuns {
 export interface Store {
 	threads: Threads;
 	messages: Messages;
-	sessions: Sessions;
 	turns: Turns;
 	calls: Calls;
 	approvals: Approvals;

@@ -8,14 +8,14 @@ This example uses Slack Socket Mode so it can run locally without a public HTTPS
 
 The agent loads:
 
-- `SYSTEM.md` and `AGENTS.md` for role, scope, and safety constraints.
+- `SOUL.md` and `AGENTS.md` for role, style, scope, and operating constraints. `SYSTEM.md` is only for advanced runtime-prompt overrides.
 - `skills/incident-triage/SKILL.md` for the incident workflow.
 - Markdown runbooks from `runbooks/`, searched through the `runbook_search` custom tool.
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
-- Custom host tools from `host-tools.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
+- Custom host tools from `tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
 - Core runtime tools through `coreTools({ bash: true })`. Local bash is enabled without command confirmation in this example; remote SSH commands are governed by `host_exec`.
 
-Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `runbook-tools.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
+Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
 ## Run
 

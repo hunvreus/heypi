@@ -51,7 +51,6 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		callRunner,
 		runtime,
 		messages: config.store.messages,
-		sessions: config.store.sessions,
 		attachments: config.attachments?.process,
 		logger: log,
 	});

@@ -24,8 +24,13 @@ export type ModelConfig = {
 };
 
 export type AgentContextInput = {
+	provider: string;
 	channel: string;
+	channelName?: string;
 	actor: string;
+	actorName?: string;
+	thread?: string;
+	threadName?: string;
 	threadId: string;
 	turnId?: string;
 	inputMessageId?: string;
@@ -48,6 +53,7 @@ export type AgentConfig = {
 	model: ModelConfig;
 	directory: string;
 	systemPrompt?: string;
+	soul?: string;
 	prompt?: string;
 	context?: AgentContextProvider[];
 	skills?: string[];
@@ -120,7 +126,13 @@ export type AgentFromOptions = Partial<Omit<AgentConfig, "directory" | "model">>
 	model?: string | ModelConfig;
 };
 
-/** Loads an agent from a folder convention: SYSTEM.md, AGENTS.md, skills/, extensions/. */
+export const DEFAULT_SOUL = [
+	"You are a concise, practical assistant.",
+	"Answer directly and accurately. Say when you are uncertain or blocked.",
+	"Use plain language and keep responses focused on the user's goal.",
+].join("\n");
+
+/** Loads an agent from a folder convention: SOUL.md, AGENTS.md, SYSTEM.md, skills/, extensions/. */
 export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? basename(directory) ?? "agent";
@@ -132,6 +144,7 @@ export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentCo
 		model,
 		directory,
 		systemPrompt: options.systemPrompt ?? readIfFile(resolve(directory, "SYSTEM.md")),
+		soul: options.soul ?? readIfFile(resolve(directory, "SOUL.md")) ?? DEFAULT_SOUL,
 		prompt: options.prompt ?? readIfFile(resolve(directory, "AGENTS.md")),
 		skills: options.skills ?? dirList(resolve(directory, "skills")),
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),

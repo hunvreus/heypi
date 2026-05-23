@@ -18,8 +18,11 @@ export type Inbound = {
 	eventId?: string;
 	team?: string;
 	channel: string;
+	channelName?: string;
 	actor: string;
+	actorName?: string;
 	thread: string;
+	threadName?: string;
 	text: string;
 	model?: ModelConfig;
 	attachments?: Attachment[];
@@ -239,10 +242,17 @@ export function createHandler(input: {
 					: intent.kind === "ask"
 						? await input.agent.ask({
 								threadId: thread.id,
+								sessionId: thread.sessionId,
+								sessionPath: thread.sessionPath,
 								inputMessageId: inbound.row.id,
 								turnId: currentTurn.id,
+								provider: msg.provider,
 								channel: scopeKey(msg),
+								channelName: msg.channelName,
+								thread: msg.thread,
+								threadName: msg.threadName,
 								actor: intent.actor,
+								actorName: msg.actorName,
 								trace,
 								text: messageText,
 								model: msg.model,
@@ -263,8 +273,8 @@ export function createHandler(input: {
 				reply = await continueTool({
 					store: input.store,
 					agent: input.agent,
-					provider: msg.provider,
 					channel: scopeKey(msg),
+					provider: msg.provider,
 					actor: msg.actor,
 					trace,
 					turn: currentTurn.id,
