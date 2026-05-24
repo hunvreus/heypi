@@ -8,9 +8,9 @@
 
 # heypi
 
-Stateful team-chat agents with governed tool use, powered by [Pi](https://github.com/earendil-works/pi).
+Chat agents for your team, with approvals and sandboxed tools. Slack, Discord, Telegram, webhooks.
 
-heypi gives Pi a production chat shell: Slack, Telegram, Discord, and webhook adapters; persisted threads; safe tool execution; approvals; scheduled turns; and attachment handling.
+heypi gives [Pi](https://github.com/earendil-works/pi) a production chat shell: persisted threads, runtime-backed tools, human approval flows, scheduled turns, and attachment handling.
 
 ## Install
 

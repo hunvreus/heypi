@@ -1,6 +1,6 @@
 # Architecture
 
-heypi is a thin Node.js wrapper around Pi for team chat agents. The library keeps the Pi agent loop behind a small app API and adds provider adapters, persistence, governed tools, approvals, scheduling, and runtime-backed workspace access.
+heypi is a thin Node.js wrapper around Pi for team chat agents. The library keeps the Pi agent loop behind a small app API and adds provider adapters, persistence, approvals, scheduling, sandboxed command/file tools, and runtime-backed workspace access.
 
 ## Goals
 
@@ -113,7 +113,7 @@ heypi does not expose Pi's raw tool runtime directly to users. It registers Pi-c
 
 ### Tools And Approvals
 
-`src/core/calls.ts` owns governed tool execution. Tool calls pass through:
+`src/core/calls.ts` owns tool policy, approvals, and execution audit. Tool calls pass through:
 
 ```text
 Pi tool call
@@ -187,7 +187,7 @@ Slack / Telegram / Discord event
   -> thread + message + turn persistence
   -> PiAgent.ask()
   -> Pi SessionManager + heypi tools
-  -> CallRunner for governed tools
+  -> CallRunner for tool policy and approvals
   -> runtime / approval / continuation
   -> audit persistence
   -> adapter sends Outbound
@@ -195,7 +195,7 @@ Slack / Telegram / Discord event
 
 ## Security Model
 
-heypi's safety comes from layered runtime and governance boundaries:
+heypi's safety model is concrete and layered:
 
 - provider allowlists decide which delivered events are accepted
 - thread locks prevent overlapping turns in one conversation

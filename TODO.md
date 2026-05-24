@@ -10,6 +10,11 @@
   - Image availability check in CLI health.
 ## Later
 
+- Add local web admin.
+  - Start from `heypi admin --db ./heypi.db --runtime ./workspace`.
+  - Bind to `127.0.0.1` by default; require a token for non-local bind.
+  - Read-only first: threads, turns, messages, calls, approvals, jobs, and Pi session JSONL transcripts.
+  - Use `thread.sessionPath` for transcript links; add per-turn Pi entry IDs or JSONL offsets later if deep links are needed.
 - Add memory primitives.
   - Conversation summarization.
   - Thread memory notes.

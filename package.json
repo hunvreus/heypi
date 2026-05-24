@@ -1,7 +1,7 @@
 {
 	"name": "@hunvreus/heypi",
 	"version": "0.1.0-alpha.0",
-	"description": "Governed chat agents on top of Pi.",
+	"description": "Chat agents for your team, with approvals and sandboxed tools.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/index.js",

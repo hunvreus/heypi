@@ -13,7 +13,7 @@ The agent loads:
 - Markdown runbooks from `runbooks/`, searched through the `runbook_search` custom tool.
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
 - Custom host tools from `tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
-- Core runtime tools through `coreTools({ bash: true })`. Local bash is enabled without command confirmation in this example; remote SSH commands are governed by `host_exec`.
+- Core runtime tools through `coreTools({ bash: true })`. Local bash is enabled without command confirmation in this example; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
 
 Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
