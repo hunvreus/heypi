@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
@@ -12,6 +12,7 @@ import {
 	consoleLogger,
 	coreTools,
 	createHeypi,
+	runHeypi,
 	sqliteStore,
 	tool,
 	workspace,
@@ -48,7 +49,39 @@ test("public package entrypoint supports a minimal app config", async () => {
 		});
 		assert.equal(typeof app.start, "function");
 		assert.equal(typeof app.stop, "function");
+		assert.equal(typeof runHeypi, "function");
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi defaults to ./heypi.db SQLite store", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-default-store-"));
+	const cwd = process.cwd();
+	try {
+		process.chdir(root);
+		const adapter: Adapter = {
+			name: "test",
+			kind: "test",
+			start: async () => undefined,
+			stop: async () => undefined,
+		};
+		const app = createHeypi({
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			adapters: [adapter],
+			agent: agentFrom(join(cwd, "examples/slack-devops/agent"), { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		assert.equal((await stat(join(root, "heypi.db"))).isFile(), true);
+	} finally {
+		process.chdir(cwd);
 		await rm(root, { recursive: true, force: true });
 	}
 });
@@ -268,6 +301,32 @@ test("createHeypi refuses to start when another app instance holds the lock", as
 
 		await assert.rejects(() => app.start(), /app lock is held/);
 		assert.equal((await store.locks?.get("app:default"))?.owner, "other-process");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi clears stale app locks owned by a dead same-host pid", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-stale-app-lock-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.locks?.acquire({ key: "app:default", owner: `${hostname()}:2147483647:stale`, ttlMs: 60_000 });
+		const app = createHeypi({
+			store,
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		assert.equal(await store.locks?.get("app:default"), undefined);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

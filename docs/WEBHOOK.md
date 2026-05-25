@@ -2,6 +2,8 @@
 
 The webhook adapter exposes a generic JSON HTTP interface for internal systems.
 
+For a tiny runnable app with curl examples, see [`../examples/webhook-notes`](../examples/webhook-notes).
+
 ```ts
 import { webhook } from "@hunvreus/heypi";
 
@@ -151,7 +153,11 @@ When a turn is waiting for approval, the run response includes structured approv
 	"approval": {
 		"id": "...",
 		"callId": "...",
-		"reason": "..."
+		"reason": "Run deployment command.",
+		"details": [
+			{ "label": "Target", "value": "prod-web-1" },
+			{ "label": "Command", "value": "systemctl restart app", "format": "code" }
+		]
 	}
 }
 ```

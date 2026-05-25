@@ -19,6 +19,7 @@ export class ApprovalRepo {
 		command: string;
 		runtime: string;
 		reason: string;
+		details?: string;
 	}): Promise<ApprovalRow> {
 		const id = randomUUID();
 		await this.db.insert(approval).values({
@@ -31,6 +32,7 @@ export class ApprovalRepo {
 			command: input.command,
 			runtime: input.runtime,
 			reason: input.reason,
+			details: input.details,
 			state: "pending",
 			requestedBy: input.requestedBy,
 			expiresAt: input.expiresAt,

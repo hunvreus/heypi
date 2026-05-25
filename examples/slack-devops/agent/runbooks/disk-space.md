@@ -15,8 +15,8 @@ Run these through `host_exec`:
 
 - Prefer identifying the filesystem first.
 - Prefer logs and temporary files before application data.
-- Do not delete files until the user approves a specific deletion command.
+- Do not delete files until the user has requested a specific deletion or cleanup.
 
 ## Approval Boundary
 
-Deletion, truncation, package cleanup, Docker prune, and journal vacuum commands require approval.
+For deletion, truncation, package cleanup, Docker prune, and journal vacuum commands, call the relevant tool with the concrete command. Do not ask for a plain-text "yes"; the app handles the gate.

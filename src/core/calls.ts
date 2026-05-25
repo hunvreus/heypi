@@ -3,10 +3,11 @@ import type { Queue } from "../runtime/queue.js";
 import type { Runtime } from "../runtime/types.js";
 import type { Approval, Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
+import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
 import { renderCall } from "./format.js";
 import { type Logger, logger } from "./log.js";
 import { assertTransition, parseCallState } from "./state.js";
-import type { Confirm, Intent, Reply, ToolExecute } from "./types.js";
+import type { ApprovalDetail, ApprovalResolution, Confirm, Intent, Reply, ToolExecute } from "./types.js";
 
 export type CallContext = {
 	trace?: string;
@@ -24,6 +25,7 @@ type CallBase = {
 	args: Record<string, unknown>;
 	command?: string;
 	runtime?: string;
+	details?: ApprovalDetail[];
 	policyReason: string;
 	context?: CallContext;
 };
@@ -69,6 +71,7 @@ export class CallRunner {
 	): Promise<Reply> {
 		if (!this.runtime.bash) throw new Error(`runtime ${this.runtime.name} does not support bash`);
 		const confirmation = confirm(this.bashConfirm, { command });
+		const details = normalizeConfirmationDetails(confirmation?.details);
 		const base = {
 			channel,
 			actor,
@@ -76,6 +79,7 @@ export class CallRunner {
 			command,
 			args: { command },
 			runtime: this.runtime.name,
+			details,
 			policyReason: confirmation?.policyReason ?? confirmation?.reason ?? "tool default",
 			context,
 		};
@@ -96,11 +100,13 @@ export class CallRunner {
 		signal?: AbortSignal;
 	}): Promise<Reply> {
 		const confirmation = confirm(input.confirm, input.args);
+		const details = normalizeConfirmationDetails(confirmation?.details);
 		const base = {
 			channel: input.channel,
 			actor: input.actor,
 			tool: input.name,
 			args: input.args,
+			details,
 			policyReason: confirmation?.policyReason ?? confirmation?.reason ?? "tool default",
 			context: input.context,
 		};
@@ -128,6 +134,7 @@ export class CallRunner {
 			command: input.command ?? input.tool,
 			runtime: input.runtime ?? "tool",
 			reason,
+			details: serializeApprovalDetails(input.details),
 		});
 		this.log.info("approval.created", {
 			...input.context,
@@ -144,6 +151,8 @@ export class CallRunner {
 			command: input.command ?? `${input.tool} ${JSON.stringify(input.args)}`,
 			runtime: input.runtime ?? "tool",
 			approvers: this.approvers(),
+			requestedBy: input.actor,
+			details: normalizeConfirmationDetails(input.details),
 		});
 	}
 
@@ -302,7 +311,7 @@ export class CallRunner {
 		});
 		if (onApproved) {
 			try {
-				await onApproved(this.approvalSummary(approval, current));
+				await onApproved(this.approvalSummary(approval, current, "approved"));
 			} catch (error) {
 				this.log.warn("approval.ack_failed", {
 					approval: approval.id,
@@ -373,7 +382,7 @@ export class CallRunner {
 			thread: current.threadId ?? undefined,
 			turn: current.turnId ?? undefined,
 		});
-		return this.approvalSummary(approval, current);
+		return this.approvalSummary(approval, current, "rejected");
 	}
 
 	private async updateApprovalCall(
@@ -441,11 +450,13 @@ export class CallRunner {
 			expiresAt: approval.expiresAt ?? undefined,
 		});
 		const current = await this.calls.get(approval.callId);
-		const summary = current ? this.approvalSummary(approval, current).text : "";
+		const summary = current ? this.approvalSummary(approval, current, "expired") : undefined;
 		const reply = {
-			text: [summary, "⏱️ Approval expired. Ask me to try again if this is still needed."]
+			...(summary ?? {}),
+			text: [summary?.text, "⏱️ Approval expired. Ask me to try again if this is still needed."]
 				.filter(Boolean)
 				.join("\n\n"),
+			approvalResolution: "expired" as const,
 		};
 		if (onExpired) {
 			try {
@@ -465,19 +476,31 @@ export class CallRunner {
 	}
 
 	private approvalSummary(
-		approval: { id: string; callId: string; reason: string; runtime: string },
+		approval: {
+			id: string;
+			callId: string;
+			reason: string;
+			runtime: string;
+			requestedBy?: string | null;
+			details?: string | null;
+		},
 		call: { tool: string; command: string | null; args: string | null },
+		resolution?: ApprovalResolution,
 	): Reply {
-		return renderCall({
-			callId: approval.callId,
-			state: "pending_approval",
-			approvalId: approval.id,
-			reason: approval.reason,
-			command: call.command ?? `${call.tool} ${call.args ?? ""}`.trim(),
-			runtime: approval.runtime,
-			approvers: this.approvers(),
-			instructions: false,
-		});
+		return {
+			...renderCall({
+				callId: approval.callId,
+				state: "pending_approval",
+				approvalId: approval.id,
+				reason: approval.reason,
+				command: call.command ?? `${call.tool} ${call.args ?? ""}`.trim(),
+				runtime: approval.runtime,
+				approvers: this.approvers(),
+				requestedBy: approval.requestedBy ?? undefined,
+				details: parseApprovalDetails(approval.details),
+			}),
+			approvalResolution: resolution,
+		};
 	}
 
 	private async handleStatus(intent: Extract<Intent, { kind: "status" }>): Promise<Reply> {
@@ -502,6 +525,7 @@ function confirm(
 			reason: string;
 			policyReason?: string;
 			block?: string;
+			details?: ApprovalDetail[];
 	  }
 	| undefined {
 	if (!input) return undefined;
@@ -511,7 +535,13 @@ function confirm(
 		reason: out.message ?? out.reason ?? "Approval required.",
 		policyReason: out.policyReason,
 		block: out.block,
+		details: out.details,
 	};
+}
+
+function normalizeConfirmationDetails(details: ApprovalDetail[] | undefined): ApprovalDetail[] | undefined {
+	if (details === undefined) return undefined;
+	return parseApprovalDetails(serializeApprovalDetails(details)) ?? [];
 }
 
 function args(input: string | null): Record<string, unknown> {

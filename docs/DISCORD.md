@@ -20,6 +20,8 @@ Check:
 pnpm exec heypi discord check --env .env
 ```
 
+For a runnable app, see [`../examples/discord-project`](../examples/discord-project). It includes streaming, core tools, and an approval-gated status update tool.
+
 Generate an invite URL:
 
 ```bash

@@ -28,7 +28,7 @@ test("webhook creates server-side threads and exposes async run status", async (
 	try {
 		const first = await post(port, "/hook/messages", secret, { user: "alice", text: "hello" });
 		assert.equal(first.status, 202);
-		assert.match(first.body.threadId, /^whth_/);
+		assert.match(String(first.body.threadId), /^whth_/);
 		assert.equal(first.body.status, "running");
 
 		const done = await poll(port, `/hook/threads/${first.body.threadId}/runs/${first.body.runId}`, secret);
@@ -90,6 +90,44 @@ test("webhook run status reads from adapter status lookup", async () => {
 			status: "done",
 			text: "from store",
 		});
+	} finally {
+		await adapter.stop?.();
+	}
+});
+
+test("webhook returns structured approval details", async () => {
+	const port = await freePort();
+	const secret = "test-secret";
+	const approval = {
+		id: "approval-1",
+		callId: "call-1",
+		command: "set_project_status",
+		runtime: "tool",
+		reason: "Update project status.",
+		allowed: ["alice"],
+		requestedBy: "alice",
+		details: [
+			{ label: "Project", value: "mobile-beta", format: "text" as const },
+			{ label: "Command", value: "deploy --check", format: "code" as const },
+		],
+	};
+	const adapter = webhook({ secret, port });
+	await adapter.start({
+		handler: async () => ({
+			text: "approval required",
+			approval,
+		}),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/messages", secret, {
+			user: "alice",
+			text: "set status",
+			sync: true,
+		});
+		assert.equal(response.status, 200);
+		assert.deepEqual(response.body.approval, approval);
+		assert.equal(response.body.status, "pending_approval");
 	} finally {
 		await adapter.stop?.();
 	}
@@ -168,7 +206,7 @@ async function post(
 	path: string,
 	secret: string,
 	body: Record<string, unknown>,
-): Promise<{ status: number; body: Record<string, string> }> {
+): Promise<{ status: number; body: Record<string, unknown> }> {
 	const response = await fetch(`http://127.0.0.1:${port}${path}`, {
 		method: "POST",
 		headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },

@@ -10,6 +10,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig, AgentContextBlock, AgentContextInput, ModelConfig } from "../config.js";
+import { normalizeApprovalDetails } from "../core/approval-view.js";
 import type { CallRunner } from "../core/calls.js";
 import { type Logger, logError, logger, redact, userError } from "../core/log.js";
 import type { ApprovalPrompt, ToolContinuation } from "../core/types.js";
@@ -477,6 +478,8 @@ function approvalFromDetails(details: unknown): ApprovalPrompt | undefined {
 		runtime: input.runtime,
 		reason: input.reason,
 		allowed: input.allowed.filter((item): item is string => typeof item === "string"),
+		...(typeof input.requestedBy === "string" ? { requestedBy: input.requestedBy } : {}),
+		...(Array.isArray(input.details) ? { details: normalizeApprovalDetails(input.details) ?? [] } : {}),
 	};
 }
 

@@ -8,6 +8,7 @@ CREATE TABLE `approval` (
 	`command` text NOT NULL,
 	`runtime` text NOT NULL,
 	`reason` text NOT NULL,
+	`details` text,
 	`state` text NOT NULL,
 	`requested_by` text,
 	`requested_at` integer NOT NULL,

@@ -1,13 +1,13 @@
-export { createHeypi, type HeypiApp } from "./app.js";
+export { createHeypi, type HeypiApp, runHeypi } from "./app.js";
 export {
 	type AgentConfig,
 	type AgentContextBlock,
 	type AgentContextInput,
 	type AgentContextProvider,
+	type AppLockConfig,
 	type ApprovalConfig,
 	type AttachmentConfig,
 	agentFrom,
-	type AppLockConfig,
 	type BusyBehavior,
 	type ConcurrencyConfig,
 	type ConcurrencyMessages,
@@ -21,7 +21,7 @@ export {
 } from "./config.js";
 export { consoleLogger, type Format, type Level, type Logger } from "./core/log.js";
 export { classifyCommand, commandConfirm } from "./core/policy.js";
-export type { CommandPolicyConfig, CommandRisk, Confirm, ReplyAttachment } from "./core/types.js";
+export type { ApprovalDetail, CommandPolicyConfig, CommandRisk, Confirm, ReplyAttachment } from "./core/types.js";
 export {
 	type AgentToolDefinition,
 	type CoreToolConfig,

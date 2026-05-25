@@ -12,6 +12,8 @@ import { createHttpServerRegistry } from "./io/http.js";
 import { createRuntime } from "./runtime/index.js";
 import { PiAgent } from "./runtime/pi-agent.js";
 import { Queue } from "./runtime/queue.js";
+import { sqliteStore } from "./store/sqlite.js";
+import type { Store } from "./store/types.js";
 import { toolRunner } from "./tool-internal.js";
 
 export type HeypiApp = {
@@ -19,12 +21,15 @@ export type HeypiApp = {
 	stop(): Promise<void>;
 };
 
+type ShutdownSignal = "SIGINT" | "SIGTERM";
+
 const DEFAULT_APP_LOCK_TTL_MS = 60_000;
 const DEFAULT_DRAIN_MS = 30_000;
 
 /** Builds a heypi process from code-first config. Starts storage, runtime, handler, and adapters. */
 export function createHeypi(config: HeypiConfig): HeypiApp {
 	const log = config.logger ?? logger;
+	const store = config.store ?? sqliteStore({ path: "./heypi.db" });
 	const active = new ActiveRuns();
 	const runtime = createRuntime({
 		...config.runtime,
@@ -39,13 +44,13 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	const agentTools = splitTools(config.agent.tools);
 	const bashConfirm = agentTools.core.find((tool) => tool.name === "bash")?.confirm;
 	const callRunner = new CallRunner(
-		config.store.calls,
-		config.store.approvals,
+		store.calls,
+		store.approvals,
 		queue,
 		runtime,
 		config.approval,
 		log,
-		config.store.transaction,
+		store.transaction,
 		bashConfirm,
 	);
 	for (const tool of agentTools.custom) {
@@ -56,13 +61,13 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		agent: config.agent,
 		callRunner,
 		runtime,
-		messages: config.store.messages,
+		messages: store.messages,
 		attachments: config.attachments?.process,
 		logger: log,
 	});
 	const handler = createHandler({
 		agentId: config.agent.id,
-		store: config.store,
+		store,
 		callRunner,
 		agent,
 		approval: config.approval,
@@ -71,11 +76,11 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		lockMs: config.runtime.timeoutMs,
 		logger: log,
 	});
-	const status = createStatus({ agentId: config.agent.id, store: config.store });
+	const status = createStatus({ agentId: config.agent.id, store });
 	const starts = new Map();
 	const scheduler = createScheduler({
 		agent: config.agent.id,
-		store: config.store,
+		store,
 		handler,
 		adapters: config.adapters,
 		starts,
@@ -89,13 +94,13 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	let ready: Promise<void> | undefined;
 	let stopping: Promise<void> | undefined;
 	async function start(): Promise<void> {
-		await config.store.setup();
+		await store.setup();
 		const started: typeof config.adapters = [];
 		let locked = false;
 		try {
 			await acquireAppLock({
 				lock: appLock,
-				store: config.store,
+				store,
 				logger: log,
 				onLost: () => {
 					log.error("app.lock_lost_shutdown", { agent: config.agent.id });
@@ -103,7 +108,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 				},
 			});
 			locked = appLock.enabled;
-			await recoverStartup({ agent: config.agent.id, store: config.store, logger: log });
+			await recoverStartup({ agent: config.agent.id, store, logger: log });
 			log.info("app.start", {
 				agent: config.agent.id,
 				runtime: runtime.name,
@@ -122,7 +127,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			await Promise.allSettled(started.reverse().map((adapter) => adapter.stop?.()));
 			await http.close();
 			for (const adapter of started) starts.delete(adapter);
-			if (locked) await releaseAppLock({ lock: appLock, store: config.store });
+			if (locked) await releaseAppLock({ lock: appLock, store });
 			ready = undefined;
 			throw error;
 		}
@@ -135,18 +140,21 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		if (stopping) return await stopping;
 		stopping = (async () => {
 			log.info("app.stop", { agent: config.agent.id, reason });
-			await scheduler?.stop();
-			await Promise.allSettled(config.adapters.map((adapter) => adapter.stop?.()));
-			await http.close();
-			const drained = await active.drain(appLock.drainMs);
-			if (!drained) {
-				const cancelled = active.abortAll();
-				log.warn("app.drain_cancelled", { agent: config.agent.id, runs: cancelled, reason });
-				await active.drain(Math.min(appLock.drainMs, 5_000));
+			try {
+				await scheduler?.stop();
+				await Promise.allSettled(config.adapters.map((adapter) => adapter.stop?.()));
+				await http.close();
+				const drained = await active.drain(appLock.drainMs);
+				if (!drained) {
+					const cancelled = active.abortAll();
+					log.warn("app.drain_cancelled", { agent: config.agent.id, runs: cancelled, reason });
+					await active.drain(Math.min(appLock.drainMs, 5_000));
+				}
+			} finally {
+				starts.clear();
+				await releaseAppLock({ lock: appLock, store });
+				ready = undefined;
 			}
-			starts.clear();
-			await releaseAppLock({ lock: appLock, store: config.store });
-			ready = undefined;
 		})();
 		try {
 			await stopping;
@@ -163,6 +171,33 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			await shutdown("stop");
 		},
 	};
+}
+
+/** Starts an app and installs process signal handlers that stop it before exit. */
+export async function runHeypi(app: HeypiApp): Promise<void> {
+	let stopping = false;
+	const shutdown = (signal: ShutdownSignal) => {
+		if (stopping) {
+			process.exit(signalExitCode(signal));
+		}
+		stopping = true;
+		void app
+			.stop()
+			.catch((error) => {
+				console.error(error);
+				process.exitCode = 1;
+			})
+			.finally(() => process.exit(process.exitCode ?? 0));
+	};
+	process.once("SIGINT", shutdown);
+	process.once("SIGTERM", shutdown);
+	try {
+		await app.start();
+	} catch (error) {
+		process.off("SIGINT", shutdown);
+		process.off("SIGTERM", shutdown);
+		throw error;
+	}
 }
 
 function validateAdapters(adapters: HeypiConfig["adapters"]): void {
@@ -198,7 +233,7 @@ function appLockState(agent: string, config: false | AppLockConfig | undefined):
 
 async function acquireAppLock(input: {
 	lock: AppLockState;
-	store: HeypiConfig["store"];
+	store: Store;
 	logger: Logger;
 	onLost: () => void;
 }): Promise<void> {
@@ -211,13 +246,42 @@ async function acquireAppLock(input: {
 	});
 	if (!acquired) {
 		const current = await input.store.locks.get(input.lock.key);
+		if (current && sameHostDeadOwner(current.owner)) {
+			await input.store.locks.release({ key: input.lock.key, owner: current.owner });
+			input.logger.warn("app.lock_stale_released", {
+				key: input.lock.key,
+				owner: current.owner,
+				expiresAt: current.expiresAt,
+			});
+			const retry = await input.store.locks.acquire({
+				key: input.lock.key,
+				owner: input.lock.owner,
+				ttlMs: input.lock.ttlMs,
+			});
+			if (retry) {
+				startAppLockRefresh(input);
+				return;
+			}
+		}
 		input.logger.error("app.locked", {
 			key: input.lock.key,
 			owner: current?.owner,
 			expiresAt: current?.expiresAt,
 		});
-		throw new Error(`heypi app lock is held: ${input.lock.key}`);
+		throw new Error(
+			[
+				`heypi app lock is held: ${input.lock.key}`,
+				current?.owner ? `owner=${current.owner}` : undefined,
+				current?.expiresAt ? `expiresAt=${new Date(current.expiresAt).toISOString()}` : undefined,
+			]
+				.filter(Boolean)
+				.join(" "),
+		);
 	}
+	startAppLockRefresh(input);
+}
+
+function startAppLockRefresh(input: { lock: AppLockState; store: Store; logger: Logger; onLost: () => void }): void {
 	const refreshMs = Math.max(10, Math.floor(input.lock.ttlMs / 3));
 	input.lock.timer = setInterval(() => {
 		void input.store.locks
@@ -233,7 +297,32 @@ async function acquireAppLock(input: {
 	input.lock.timer.unref?.();
 }
 
-async function releaseAppLock(input: { lock: AppLockState; store: HeypiConfig["store"] }): Promise<void> {
+function sameHostDeadOwner(owner: string): boolean {
+	const parsed = parseLockOwner(owner);
+	return Boolean(parsed && parsed.host === hostname() && !pidAlive(parsed.pid));
+}
+
+function parseLockOwner(owner: string): { host: string; pid: number } | undefined {
+	const [host, rawPid] = owner.split(":");
+	const pid = Number(rawPid);
+	if (!host || !Number.isInteger(pid) || pid <= 0) return undefined;
+	return { host, pid };
+}
+
+function pidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+function signalExitCode(signal: ShutdownSignal): number {
+	return signal === "SIGINT" ? 130 : 143;
+}
+
+async function releaseAppLock(input: { lock: AppLockState; store: Store }): Promise<void> {
 	if (input.lock.timer) {
 		clearInterval(input.lock.timer);
 		input.lock.timer = undefined;
@@ -242,7 +331,7 @@ async function releaseAppLock(input: { lock: AppLockState; store: HeypiConfig["s
 	await input.store.locks.release({ key: input.lock.key, owner: input.lock.owner });
 }
 
-async function recoverStartup(input: Pick<HeypiConfig, "store"> & { agent: string; logger: Logger }): Promise<void> {
+async function recoverStartup(input: { store: Store; agent: string; logger: Logger }): Promise<void> {
 	const turns = await input.store.turns.listRunning?.({ agent: input.agent, limit: 500 });
 	if (turns?.length) {
 		for (const turn of turns) {

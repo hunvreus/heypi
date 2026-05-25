@@ -43,6 +43,7 @@ test("Slack trigger defaults to mention for channels and message for DMs", () =>
 		reason: "mention_required",
 	});
 	assert.deepEqual(slackTriggered(undefined, { text: "hello <@UBOT>", isDm: false, botUserId: "UBOT" }), { ok: true });
+	assert.deepEqual(slackTriggered(undefined, { text: "approve A1", isDm: false, botUserId: "UBOT" }), { ok: true });
 	assert.deepEqual(slackTriggered("message", { text: "hello", isDm: false, botUserId: "UBOT" }), { ok: true });
 	assert.deepEqual(slackTriggered(undefined, { text: "hello", isDm: true, botUserId: "UBOT" }), { ok: true });
 	assert.deepEqual(slackTriggered(undefined, { text: "follow up", isDm: false, botUserId: "UBOT", thread: true }), {
@@ -114,6 +115,9 @@ test("Telegram trigger defaults to mention for groups and message for DMs", () =
 	assert.deepEqual(telegramTriggered(undefined, { text: "hello @my_bot", isDm: false, botUsername: "my_bot" }), {
 		ok: true,
 	});
+	assert.deepEqual(telegramTriggered(undefined, { text: "deny A1", isDm: false, botUsername: "my_bot" }), {
+		ok: true,
+	});
 	assert.deepEqual(telegramTriggered("message", { text: "hello", isDm: false, botUsername: "my_bot" }), { ok: true });
 	assert.deepEqual(telegramTriggered(undefined, { text: "hello", isDm: true, botUsername: "my_bot" }), { ok: true });
 	assert.deepEqual(
@@ -167,6 +171,7 @@ test("Discord trigger defaults to mention for channels and message for DMs", () 
 		reason: "mention required",
 	});
 	assert.deepEqual(discordTriggered(undefined, { text: "hello", isDm: false, mentioned: true }), { ok: true });
+	assert.deepEqual(discordTriggered(undefined, { text: "status", isDm: false, mentioned: false }), { ok: true });
 	assert.deepEqual(discordTriggered("message", { text: "hello", isDm: false, mentioned: false }), { ok: true });
 	assert.deepEqual(discordTriggered(undefined, { text: "hello", isDm: true, mentioned: false }), { ok: true });
 	assert.deepEqual(discordTriggered(undefined, { text: "follow up", isDm: false, mentioned: false, thread: true }), {

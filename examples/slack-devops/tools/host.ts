@@ -196,7 +196,15 @@ export function createHostTools(options: HostToolOptions) {
 				aliases: Type.Optional(Type.Array(Type.String())),
 				tags: Type.Optional(Type.Array(Type.String())),
 			}),
-			confirm: ({ id, address }) => ({ reason: `Add or update host ${String(id)} at ${String(address)}` }),
+			confirm: ({ id, address, user, port }) => ({
+				reason: `Add or update host ${String(id)}.`,
+				details: [
+					{ label: "Host", value: String(id) },
+					{ label: "Address", value: String(address) },
+					...(typeof user === "string" ? [{ label: "SSH user", value: user }] : []),
+					...(typeof port === "number" ? [{ label: "SSH port", value: String(port) }] : []),
+				],
+			}),
 			execute: async (input) => {
 				const host = await store.upsert(input);
 				return [
@@ -221,7 +229,10 @@ export function createHostTools(options: HostToolOptions) {
 			parameters: Type.Object({
 				host: Type.String({ description: "Exact host id to remove." }),
 			}),
-			confirm: ({ host }) => ({ reason: `Remove host ${String(host)}` }),
+			confirm: ({ host }) => ({
+				reason: `Remove host ${String(host)}.`,
+				details: [{ label: "Host", value: String(host) }],
+			}),
 			execute: async ({ host }) => {
 				const removed = await store.remove(hostId(host));
 				return removed ? `host removed: ${removed.id}` : `host not found: ${host}`;
@@ -245,7 +256,14 @@ export function createHostTools(options: HostToolOptions) {
 				const target = Array.isArray(hosts) ? hosts.map(String).join(", ") : String(hosts);
 				const message =
 					typeof purpose === "string" && purpose.trim() ? purpose.trim() : `Run remote command on ${target}.`;
-				return { ...confirmation, message };
+				return {
+					...confirmation,
+					message,
+					details: [
+						{ label: "Target", value: target },
+						{ label: "Command", value: String(command), format: "code" },
+					],
+				};
 			},
 			execute: async ({ hosts, command }, signal) => {
 				const risk = classifyCommand(command, options.commandPolicy);

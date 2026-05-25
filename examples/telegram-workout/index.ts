@@ -7,6 +7,7 @@ import {
 	consoleLogger,
 	coreTools,
 	createHeypi,
+	runHeypi,
 	sqliteStore,
 	telegram,
 	tool,
@@ -162,7 +163,4 @@ const app = createHeypi({
 	},
 });
 
-await app.start();
-
-process.once("SIGTERM", () => void app.stop().finally(() => process.exit(0)));
-process.once("SIGINT", () => void app.stop().finally(() => process.exit(0)));
+await runHeypi(app);

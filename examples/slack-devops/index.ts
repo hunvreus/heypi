@@ -1,7 +1,16 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, consoleLogger, coreTools, createHeypi, slack, sqliteStore, workspace } from "@hunvreus/heypi";
+import {
+	agentFrom,
+	consoleLogger,
+	coreTools,
+	createHeypi,
+	runHeypi,
+	slack,
+	sqliteStore,
+	workspace,
+} from "@hunvreus/heypi";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
@@ -108,7 +117,4 @@ const app = createHeypi({
 	},
 });
 
-await app.start();
-
-process.once("SIGTERM", () => void app.stop().finally(() => process.exit(0)));
-process.once("SIGINT", () => void app.stop().finally(() => process.exit(0)));
+await runHeypi(app);

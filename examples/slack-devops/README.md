@@ -89,7 +89,7 @@ Host tools:
 - `hosts_list` / `hosts_lookup`: inspect file-backed host inventory.
 - `hosts_upsert` / `hosts_remove`: add, update, or remove hosts. These require approval. `hosts_upsert` also ensures the named key exists and returns the public key to install.
 - `host_facts_refresh`: probes and persists hostname, OS, architecture, kernel, distro, package manager, service manager, container runtime/version, root disk, memory, ports 80/443, git user, and passwordless sudo availability.
-- `host_exec`: runs commands over SSH from the heypi Node process. Each call includes a human purpose. Risky commands require approval through `commandConfirm()`; blocked commands do not run.
+- `host_exec`: runs commands over SSH from the heypi Node process. Each call includes a human purpose. Risky commands require approval through `commandConfirm()` and show target/command approval details; blocked commands do not run.
 
 `just-bash` remains the local workspace runtime. Remote SSH commands do not run inside `just-bash`; they run through `host_exec`.
 

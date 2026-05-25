@@ -186,11 +186,30 @@ const deploy = tool<{ command: string }>({
 	parameters: Type.Object({ command: Type.String() }),
 	confirm: ({ command }) => {
 		const result = deployConfirm({ command });
-		return result ? { ...result, message: "Run deployment command." } : false;
+		return result
+			? {
+					...result,
+					message: "Run deployment command.",
+					details: [{ label: "Command", value: command, format: "code" }],
+				}
+			: false;
 	},
 	execute: async ({ command }) => `would run ${command}`,
 });
 ```
+
+Approval prompts render the same structured fields in Slack, Telegram, and Discord. `message` is the user-facing reason; `policyReason` is internal audit context. Use `details` for visible fields:
+
+```ts
+details: [
+	{ label: "Target", value: "prod-web-1" },
+	{ label: "Command", value: "systemctl restart app", format: "code" },
+]
+```
+
+Omit `details` when there is nothing useful to show. Core bash confirmations include a `Command` code field by default; custom tools should provide their own domain-specific details instead of relying on command parsing.
+
+Keep detail values concise. Adapters preserve the same fields, but provider message limits still apply; put large outputs in files or normal tool results, not approval cards.
 
 `classifyCommand()` is still exported for lower-level use, but most code should use `commandConfirm()`.
 

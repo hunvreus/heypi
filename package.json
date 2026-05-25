@@ -61,9 +61,13 @@
 		"typecheck": "pnpm run build && tsc --noEmit",
 		"db:generate": "drizzle-kit generate",
 		"dev:slack": "tsx watch --conditions development examples/slack-devops/index.ts",
+		"dev:discord": "tsx watch --conditions development examples/discord-project/index.ts",
 		"dev:telegram": "tsx watch --conditions development examples/telegram-workout/index.ts",
+		"dev:webhook": "tsx watch --conditions development examples/webhook-notes/index.ts",
 		"start:slack": "tsx --conditions development examples/slack-devops/index.ts",
+		"start:discord": "tsx --conditions development examples/discord-project/index.ts",
 		"start:telegram": "tsx --conditions development examples/telegram-workout/index.ts",
+		"start:webhook": "tsx --conditions development examples/webhook-notes/index.ts",
 		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {

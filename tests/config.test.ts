@@ -66,14 +66,19 @@ test("renderCall formats confirmed tool arguments for approvals", () => {
 		runtime: "tool",
 		reason: "Check host uptime.",
 		command: 'host_exec {"hosts":["web-1"],"purpose":"Check host uptime.","command":"hostname && uptime"}',
+		details: [
+			{ label: "Target", value: "web-1" },
+			{ label: "Command", value: "hostname && uptime", format: "code" },
+		],
 	});
 
 	assert.doesNotMatch(out.text, /Action: `host_exec`/);
 	assert.match(out.text, /Check host uptime/);
-	assert.match(out.text, /Target: `web-1`/);
+	assert.match(out.text, /Target:\nweb-1/);
 	assert.match(out.text, /Command:\n```\nhostname && uptime\n```/);
 	assert.doesNotMatch(out.text, /host_exec \\{/);
 	assert.doesNotMatch(out.text, /purpose/);
+	assert.doesNotMatch(out.text, /Use the buttons below/);
 });
 
 test("approvalFromMessages extracts approval metadata from terminated tool results", () => {

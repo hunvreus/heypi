@@ -5,6 +5,7 @@ import {
 	ButtonStyle,
 	ChannelType,
 	Client,
+	EmbedBuilder,
 	Events,
 	GatewayIntentBits,
 	type Interaction,
@@ -12,7 +13,9 @@ import {
 	Partials,
 	type TextBasedChannel,
 } from "discord.js";
+import { codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
+import type { ApprovalResolution } from "../core/types.js";
 import { chunkText } from "../render/chunk.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
@@ -25,6 +28,11 @@ import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 const APPROVE = "heypi_approve";
 const DENY = "heypi_deny";
 const DISCORD_TEXT_LIMIT = 2000;
+const DISCORD_EMBED_FIELD_LIMIT = 1024;
+const APPROVAL_PENDING_COLOR = 0xf59e0b;
+const APPROVAL_APPROVED_COLOR = 0x16a34a;
+const APPROVAL_REJECTED_COLOR = 0xdc2626;
+const APPROVAL_EXPIRED_COLOR = 0x6b7280;
 
 export type DiscordConfig = {
 	name?: string;
@@ -279,16 +287,18 @@ async function handleInteraction(input: {
 	const context = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
 	let acknowledged = false;
-	const acknowledge = async (text: string) => {
+	const acknowledge = async (out: Outbound) => {
 		await interaction.editReply({
-			content: firstChunk(actionResultText(action.kind, actor, text, action.id)),
+			content: "",
+			embeds: [approvalEmbed(out.approval, out.approvalResolution ?? "approved", actor)],
 			components: [],
 		});
 		acknowledged = true;
 	};
 	const replace = async (out: Outbound) => {
 		await interaction.editReply({
-			content: firstChunk(out.text),
+			content: "",
+			embeds: [approvalEmbed(out.approval, out.approvalResolution ?? actionResolution(action.kind), actor)],
 			components: [],
 		});
 	};
@@ -305,7 +315,7 @@ async function handleInteraction(input: {
 			thread: channel,
 			text: `${action.kind} ${action.id}`,
 			data: { customId: interaction.customId, messageId: interaction.message.id },
-			ack: action.kind === "approve" ? (out) => acknowledge(out.text) : undefined,
+			ack: action.kind === "approve" ? (out) => acknowledge(out) : undefined,
 			replace: action.kind === "approve" || action.kind === "deny" ? replace : undefined,
 		});
 		if (!out) return;
@@ -323,9 +333,18 @@ async function handleInteraction(input: {
 			return;
 		}
 		const rendered = out.private ? out : { ...out, text: actionResultText(action.kind, actor, out.text, action.id) };
+		if (action.kind === "deny" && !out.private) {
+			await interaction.editReply({
+				content: "",
+				embeds: [approvalEmbed(out.approval, out.approvalResolution ?? "rejected", actor)],
+				components: [],
+			});
+			return;
+		}
 		if (!out.private) {
 			await interaction.editReply({
-				content: firstChunk(rendered.text),
+				content: "",
+				embeds: rendered.approval ? [approvalEmbed(rendered.approval, "pending")] : [],
 				components: rendered.approval ? approvalComponents(rendered.approval) : [],
 			});
 			await sendDiscordOutput({
@@ -407,14 +426,24 @@ async function sendTextChunks(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	const chunks = chunkText(input.text, DISCORD_TEXT_LIMIT);
+	if (input.approval && !input.skipFirst) {
+		const approval = input.approval;
+		await input.delivery.run(
+			() =>
+				sendTo(input.channel, input.replyTo, {
+					embeds: [approvalEmbed(approval, "pending")],
+					components: approvalComponents(approval),
+				}),
+			{ ...input.context, retry: "send" },
+		);
+		return;
+	}
+	const chunks = chunkText(discordMarkdown(input.text), DISCORD_TEXT_LIMIT);
 	for (let index = input.skipFirst ? 1 : 0; index < chunks.length; index++) {
-		const components = index === 0 && input.approval ? approvalComponents(input.approval) : undefined;
 		await input.delivery.run(
 			() =>
 				sendTo(input.channel, input.replyTo, {
 					content: chunks[index],
-					components,
 				}),
 			{ ...input.context, retry: "send" },
 		);
@@ -480,16 +509,19 @@ function startProgress(input: {
 	return {
 		async update(out: Outbound): Promise<boolean> {
 			if (!id) return false;
+			const messageId = id;
 			try {
-				const msg = await input.message.channel.messages.fetch(id);
+				const msg = await input.message.channel.messages.fetch(messageId);
 				await input.delivery.run(
 					() =>
 						msg.edit({
-							content: firstChunk(out.text),
+							content: out.approval ? "" : firstChunk(out.text),
+							embeds: out.approval ? [approvalEmbed(out.approval, "pending")] : [],
 							components: out.approval ? approvalComponents(out.approval) : [],
 						}),
 					input.context,
 				);
+				id = undefined;
 				return true;
 			} catch (error) {
 				input.logger.warn("discord.progress.update_failed", { ...input.context, error: errorMessage(error) });
@@ -614,6 +646,56 @@ function approvalComponents(approval: NonNullable<Outbound["approval"]>) {
 	];
 }
 
+type ApprovalViewState = "pending" | "approved" | "rejected" | "expired";
+
+export function approvalView(input: { approval?: Outbound["approval"]; state: ApprovalViewState; actor?: string }): {
+	title: string;
+	color: number;
+	fields: Array<{ name: string; value: string; inline?: boolean }>;
+} {
+	const title =
+		input.state === "approved"
+			? "Approval approved"
+			: input.state === "rejected"
+				? "Approval rejected"
+				: input.state === "expired"
+					? "Approval expired"
+					: "Approval required";
+	const color =
+		input.state === "approved"
+			? APPROVAL_APPROVED_COLOR
+			: input.state === "rejected"
+				? APPROVAL_REJECTED_COLOR
+				: input.state === "expired"
+					? APPROVAL_EXPIRED_COLOR
+					: APPROVAL_PENDING_COLOR;
+	const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+	if (input.approval?.reason) fields.push({ name: "Reason", value: truncateEmbedValue(input.approval.reason) });
+	for (const detail of input.approval?.details ?? []) {
+		fields.push({
+			name: truncateEmbedValue(detail.label, 256),
+			value: detail.format === "code" ? codeValue(detail.value) : truncateEmbedValue(detail.value),
+		});
+	}
+	if (input.approval?.requestedBy) fields.push({ name: "Requested by", value: `<@${input.approval.requestedBy}>` });
+	if (input.actor && input.state !== "pending") {
+		fields.push({
+			name: input.state === "approved" ? "Approved by" : input.state === "rejected" ? "Rejected by" : "Resolved by",
+			value: `<@${input.actor}>`,
+		});
+	}
+	return { title, color, fields };
+}
+
+function approvalEmbed(approval: Outbound["approval"] | undefined, state: ApprovalViewState, actor?: string) {
+	const view = approvalView({ approval, state, actor });
+	return new EmbedBuilder().setTitle(view.title).setColor(view.color).addFields(view.fields);
+}
+
+function actionResolution(kind: "approve" | "deny"): ApprovalResolution {
+	return kind === "approve" ? "approved" : "rejected";
+}
+
 function parseAction(input: string): { kind: "approve" | "deny"; id: string } | undefined {
 	const [kind, id] = input.split(":");
 	if (kind === APPROVE && id) return { kind: "approve", id };
@@ -626,18 +708,26 @@ function actionResultText(kind: "approve" | "deny", actor: string, text: string,
 		const prefix = id ? `✅ Approval \`${id}\` approved by <@${actor}>.` : `✅ Approved by <@${actor}>.`;
 		return [prefix, text].filter(Boolean).join("\n\n");
 	}
-	const callId = rejectedCallId(text);
-	if (callId) return `⛔ Action \`${callId}\` rejected by <@${actor}>.`;
 	const prefix = id ? `⛔ Approval \`${id}\` rejected by <@${actor}>.` : `⛔ Rejected by <@${actor}>.`;
 	return [prefix, text].filter(Boolean).join("\n\n");
 }
 
-function rejectedCallId(text: string): string | undefined {
-	return /^Action `([^`]+)` rejected\./.exec(text.trim())?.[1];
+function codeValue(value: string): string {
+	const truncated = truncateEmbedValue(value, DISCORD_EMBED_FIELD_LIMIT - 10);
+	return codeFence(truncated);
+}
+
+function truncateEmbedValue(value: string, limit = DISCORD_EMBED_FIELD_LIMIT): string {
+	if (value.length <= limit) return value;
+	return `${value.slice(0, Math.max(0, limit - 1))}…`;
 }
 
 function firstChunk(text: string): string {
-	return chunkText(text, DISCORD_TEXT_LIMIT)[0] ?? "";
+	return chunkText(discordMarkdown(text), DISCORD_TEXT_LIMIT)[0] ?? "";
+}
+
+function discordMarkdown(text: string): string {
+	return text.replace(/^\*Approval required\*/m, "**Approval required**");
 }
 
 function sendTo(
@@ -714,6 +804,7 @@ export function discordTriggered(
 		thread: event.thread,
 		threadTrigger: event.threadTrigger,
 		mentioned: event.mentioned,
+		text: event.text,
 		reason: "mention required",
 	});
 }

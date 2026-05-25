@@ -29,6 +29,7 @@ export type Reply = {
 	private?: boolean;
 	silent?: boolean;
 	approval?: ApprovalPrompt;
+	approvalResolution?: ApprovalResolution;
 	attachments?: ReplyAttachment[];
 	continuation?: ToolContinuation;
 };
@@ -46,13 +47,24 @@ export type ApprovalPrompt = {
 	runtime: string;
 	reason: string;
 	allowed: string[];
+	requestedBy?: string;
+	details?: ApprovalDetail[];
 };
+
+export type ApprovalDetail = {
+	label: string;
+	value: string;
+	format?: "text" | "code";
+};
+
+export type ApprovalResolution = "approved" | "rejected" | "expired";
 
 export type ConfirmResult = {
 	message?: string;
 	reason?: string;
 	policyReason?: string;
 	block?: string;
+	details?: ApprovalDetail[];
 };
 
 export type ConfirmFunction = (input: Record<string, unknown>) => ConfirmResult | false | undefined;

@@ -21,6 +21,6 @@ Run these through `host_exec`:
 
 ## Remediation Boundary
 
-Restarting, reloading, changing config, rolling back, or deploying requires approval.
+For restarting, reloading, changing config, rolling back, or deploying, call the relevant tool with the concrete command. Do not ask for a plain-text "yes"; the app handles the gate.
 
 If the user asks to restart without diagnostic context, inspect status and recent logs first unless the situation is urgent.

@@ -63,7 +63,11 @@ export function commandConfirm(config: CommandPolicyConfig = {}): ConfirmFunctio
 		const risk = classifyCommand(command, config);
 		if (risk.risk === "allow") return false;
 		if (risk.risk === "block") return { block: risk.reason, policyReason: risk.reason };
-		return { message: "Run bash command.", policyReason: risk.reason };
+		return {
+			message: "Run bash command.",
+			policyReason: risk.reason,
+			details: command ? [{ label: "Command", value: command, format: "code" }] : undefined,
+		};
 	};
 }
 

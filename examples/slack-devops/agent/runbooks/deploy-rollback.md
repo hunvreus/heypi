@@ -18,6 +18,6 @@ Use this runbook when a user suspects a deploy caused an incident.
 
 ## Approval Boundary
 
-Rollback, restart, deploy, config writes, database changes, and cache flushes require approval.
+For rollback, restart, deploy, config writes, database changes, and cache flushes, call the relevant tool with the concrete command. Do not ask for a plain-text "yes"; the app handles the gate.
 
 Do not invent a rollback command. If the command is not provided or documented, ask for it.

@@ -2,6 +2,8 @@
 
 heypi supports Slack Socket Mode and Node HTTP mode.
 
+For a runnable Slack app, see [`../examples/slack-devops`](../examples/slack-devops).
+
 ## Create App
 
 1. Open <https://api.slack.com/apps>.

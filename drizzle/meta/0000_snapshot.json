@@ -70,6 +70,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "details": {
+          "name": "details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "state": {
           "name": "state",
           "type": "text",

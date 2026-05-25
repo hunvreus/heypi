@@ -21,10 +21,9 @@ npm install @hunvreus/heypi
 ## Quickstart
 
 ```ts
-import { agentFrom, createHeypi, slack, sqliteStore, workspace } from "@hunvreus/heypi";
+import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
-	store: sqliteStore({ path: "./heypi.db" }),
 	adapters: [
 		slack({
 			botToken: process.env.SLACK_BOT_TOKEN!,
@@ -45,10 +44,10 @@ const app = createHeypi({
 	},
 });
 
-await app.start();
+await runHeypi(app);
 ```
 
-`OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
+`OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly. `runHeypi(app)` starts the app and stops it cleanly on `SIGINT`/`SIGTERM`.
 
 ## Agent Folder
 
@@ -134,7 +133,13 @@ const pageService = tool<{ service: string; reason: string }>({
 		service: Type.String(),
 		reason: Type.String(),
 	}),
-	confirm: ({ service }) => ({ message: `Page ${service}.` }),
+	confirm: ({ service, reason }) => ({
+		message: "Page service.",
+		details: [
+			{ label: "Service", value: service },
+			{ label: "Reason", value: reason },
+		],
+	}),
 	execute: async ({ service, reason }) => `page recorded: service=${service} reason=${reason}`,
 });
 ```
@@ -162,7 +167,7 @@ Setup docs:
 - [`docs/DISCORD.md`](docs/DISCORD.md)
 - [`docs/WEBHOOK.md`](docs/WEBHOOK.md)
 
-Minimal adapter shapes:
+Example adapter configs:
 
 ```ts
 slack({
@@ -183,6 +188,8 @@ webhook({
 	replyHosts: ["internal.example.com"],
 });
 ```
+
+Slack is the representative chat-adapter example here. Telegram and Discord use the same `allow`, `trigger`, and `streaming` shape; their setup docs cover provider-specific IDs and tokens.
 
 ## Streaming And Busy Threads
 
@@ -253,9 +260,13 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for runtime boundaries, shutd
 
 ## Store
 
-Most apps should use SQLite:
+By default, `createHeypi()` uses SQLite at `./heypi.db`.
+
+Pass `store` when you need a different path or custom store:
 
 ```ts
+import { sqliteStore } from "@hunvreus/heypi";
+
 store: sqliteStore({ path: "./heypi.db" })
 ```
 
@@ -293,7 +304,9 @@ See [`docs/CLI.md`](docs/CLI.md).
 ## Examples
 
 - [`examples/slack-devops`](examples/slack-devops): Slack DevOps assistant with runbook search, approvals, SSH host tools, and host inventory.
+- [`examples/discord-project`](examples/discord-project): Discord project assistant with streaming, approvals, and simple project-state tools.
 - [`examples/telegram-workout`](examples/telegram-workout): Telegram fitness coach with onboarding, saved profile/plan, daily heartbeat check-ins, and a local workout log.
+- [`examples/webhook-notes`](examples/webhook-notes): tiny webhook note-taking agent with curl examples.
 
 ## Development
 

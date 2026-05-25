@@ -2,6 +2,8 @@
 
 heypi uses Telegram long polling.
 
+For a runnable Telegram app, see [`../examples/telegram-workout`](../examples/telegram-workout).
+
 ## Create Bot
 
 1. Open Telegram and message `@BotFather`.

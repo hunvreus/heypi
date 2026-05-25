@@ -1,5 +1,6 @@
+import { codeFence } from "./approval-view.js";
 import { redact } from "./log.js";
-import type { Reply } from "./types.js";
+import type { ApprovalDetail, Reply } from "./types.js";
 
 export type ApprovalSummary = {
 	id: string;
@@ -106,21 +107,18 @@ export function renderCall(input: {
 	command?: string;
 	runtime?: string;
 	approvers?: string[];
-	instructions?: boolean;
+	requestedBy?: string;
+	details?: ApprovalDetail[];
 }): Reply {
 	if (input.state === "pending_approval") {
 		const command = input.command ? redact(input.command) : undefined;
-		const tool = input.runtime === "tool" && command ? toolCall(command) : undefined;
-		const showCommand = command && input.runtime !== "tool";
 		const reason = input.reason ? redact(input.reason) : "Policy requires approval.";
 		return {
 			text: [
 				"*Approval required*",
 				reason,
-				...(tool ? toolLines(tool) : []),
-				showCommand ? ["", "Command:", codeBlock(command)].join("\n") : undefined,
+				...detailLines(input.details),
 				input.approvers?.length ? `Approvers: ${input.approvers.join(", ")}` : undefined,
-				input.instructions === false ? undefined : "Use the buttons below to continue.",
 			]
 				.filter((line): line is string => typeof line === "string")
 				.join("\n"),
@@ -132,6 +130,8 @@ export function renderCall(input: {
 						runtime: input.runtime ?? "",
 						reason: input.reason ?? "policy",
 						allowed: input.approvers ?? [],
+						...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
+						...(input.details !== undefined ? { details: input.details } : {}),
 					}
 				: undefined,
 		};
@@ -172,47 +172,13 @@ function codeBlock(value: string): string {
 	return ["```", value, "```"].join("\n");
 }
 
-function toolCall(value: string): { name: string; args: Record<string, unknown> } | undefined {
-	const index = value.indexOf(" ");
-	if (index <= 0) return { name: value, args: {} };
-	const name = value.slice(0, index);
-	const raw = value.slice(index + 1).trim();
-	if (!raw) return { name, args: {} };
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		return {
-			name,
-			args:
-				parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {},
-		};
-	} catch {
-		return { name, args: { input: raw } };
-	}
-}
-
-function toolLines(input: { name: string; args: Record<string, unknown> }): string[] {
-	const lines = [""];
-	const target = toolTarget(input.args);
-	if (target) lines.push(`Target: ${target}`);
-	if (typeof input.args.command === "string") lines.push("Command:", codeBlock(input.args.command));
-	const rest = Object.fromEntries(
-		Object.entries(input.args).filter(
-			([key]) => key !== "command" && key !== "host" && key !== "hosts" && key !== "purpose",
-		),
-	);
-	if (Object.keys(rest).length > 0) lines.push("Input:", codeBlock(JSON.stringify(rest, null, 2)));
-	return lines;
-}
-
-function toolTarget(args: Record<string, unknown>): string | undefined {
-	if (typeof args.host === "string") return `\`${args.host}\``;
-	if (Array.isArray(args.hosts) && args.hosts.length > 0) {
-		return args.hosts
-			.filter((item): item is string => typeof item === "string")
-			.map((item) => `\`${item}\``)
-			.join(", ");
-	}
-	return undefined;
+function detailLines(details: ApprovalDetail[] | undefined): string[] {
+	if (!details?.length) return [];
+	return details.flatMap((detail) => [
+		"",
+		`${detail.label}:`,
+		detail.format === "code" ? codeFence(redact(detail.value)) : redact(detail.value),
+	]);
 }
 
 function formatDuration(ms: number): string {

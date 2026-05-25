@@ -5,7 +5,7 @@ import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
 import { type Logger, logError, logger, message, redact, userError } from "../core/log.js";
-import type { ApprovalPrompt, Intent, ReplyAttachment } from "../core/types.js";
+import type { ApprovalPrompt, ApprovalResolution, Intent, ReplyAttachment } from "../core/types.js";
 import type { Agent } from "../runtime/agent.js";
 import { transaction } from "../store/transaction.js";
 import { continueTool, saveReply } from "../store/transcript.js";
@@ -40,6 +40,7 @@ export type Outbound = {
 	private?: boolean;
 	silent?: boolean;
 	approval?: ApprovalPrompt;
+	approvalResolution?: ApprovalResolution;
 	attachments?: ReplyAttachment[];
 	finalPlacement?: "progress" | "thread";
 };
@@ -485,6 +486,7 @@ async function finishReplyTurn(input: {
 		private?: boolean;
 		silent?: boolean;
 		approval?: ApprovalPrompt;
+		approvalResolution?: ApprovalResolution;
 		attachments?: ReplyAttachment[];
 	};
 	aborted: boolean;
@@ -518,6 +520,7 @@ async function finishReplyTurn(input: {
 		private: input.reply.private,
 		silent: input.reply.silent,
 		approval: input.reply.approval,
+		approvalResolution: input.reply.approvalResolution,
 		attachments: input.reply.attachments,
 		finalPlacement: input.finalPlacement,
 	};

@@ -148,6 +148,83 @@ test("authorized approval executes a confirmed custom tool", async () => {
 	assert.equal(approvals.rows[0].state, "approved");
 });
 
+test("approval details persist, normalize, and roundtrip through approval summaries", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["U_ALLOWED"] },
+		noLogger(),
+	);
+
+	const execute = async (args: Record<string, unknown>) => ({ out: `updated=${args.project}` });
+	callRunner.register("set_project_status", execute);
+	const requested = await callRunner.tool({
+		channel: "C1",
+		actor: "U_REQUESTER",
+		name: "set_project_status",
+		args: { project: "mobile-beta" },
+		confirm: {
+			reason: "Update project status.",
+			details: [
+				{ label: " Project ", value: "mobile-beta" },
+				{ label: "Command", value: "echo ```quoted```", format: "code" },
+				{ label: "Huge", value: "x".repeat(3000) },
+			],
+		},
+		execute,
+	});
+
+	assert.deepEqual(requested.approval?.details?.slice(0, 2), [
+		{ label: "Project", value: "mobile-beta", format: "text" },
+		{ label: "Command", value: "echo ```quoted```", format: "code" },
+	]);
+	assert.equal(requested.approval?.details?.[2]?.value.endsWith("…"), true);
+	assert.equal(JSON.parse(approvals.rows[0].details ?? "null")[0].label, "Project");
+
+	const denied = await callRunner.handle({
+		kind: "deny",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ALLOWED",
+	});
+
+	assert.equal(denied.approvalResolution, "rejected");
+	assert.match(denied.text, /Project:\nmobile-beta/);
+	assert.match(denied.text, /Command:\n```\necho `​``quoted`​``\n```/);
+	assert.equal(denied.approval?.details?.[0]?.label, "Project");
+});
+
+test("malformed persisted approval details are ignored", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	approvals.rows[0].details = "not json";
+	const denied = await callRunner.handle({
+		kind: "deny",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_REQUESTER",
+	});
+
+	assert.equal(denied.approval?.details, undefined);
+	assert.equal(denied.approvalResolution, "rejected");
+});
+
 test("authorized denial logs approval.denied", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
@@ -569,6 +646,7 @@ class FakeApprovals implements Approvals {
 		command: string;
 		runtime: string;
 		reason: string;
+		details?: string;
 	}): Promise<Approval> {
 		const row: Approval = {
 			id: `approval-${this.rows.length + 1}`,
@@ -580,6 +658,7 @@ class FakeApprovals implements Approvals {
 			command: input.command,
 			runtime: input.runtime,
 			reason: input.reason,
+			details: input.details ?? null,
 			state: "pending",
 			requestedBy: input.requestedBy ?? null,
 			requestedAt: Date.now(),

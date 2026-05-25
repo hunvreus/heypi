@@ -12,7 +12,7 @@ Use this skill when the user reports a host issue, service outage, degraded serv
 1. Confirm impact and scope quickly.
 2. Gather only the minimum diagnostics needed.
 3. Prefer safe, read-only checks first.
-4. Use approvals for risky or mutating actions.
+4. For risky or mutating actions, call the relevant tool with concrete inputs.
 5. End with a short remediation proposal and next verification checks.
 
 ## Workflow
@@ -32,7 +32,7 @@ Use this skill when the user reports a host issue, service outage, degraded serv
 - Keep commands scoped and auditable.
 
 4. Propose minimal remediation
-- If action is risky (restart/deploy/write/network/package changes), ask for approval and explain why.
+- If action is risky (restart/deploy/write/network/package changes), call the relevant tool with the concrete command and a concise purpose. Do not ask for a plain-text "yes"; the app handles the gate.
 - If blocked or denied, offer fallback checks and escalation steps.
 
 5. Close with status
@@ -40,7 +40,7 @@ Use this skill when the user reports a host issue, service outage, degraded serv
 
 ## Guardrails
 
-- Do not execute destructive commands unless explicitly required and approved.
+- Do not execute destructive commands unless explicitly required. Call the relevant tool with the concrete command.
 - Do not modify the agent's own files, prompts, runbooks, package files, or source code.
 - Keep command blast radius as small as possible.
 - Prefer deterministic, reversible changes.

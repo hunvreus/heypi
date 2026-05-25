@@ -63,6 +63,8 @@ cancel <turn-id-or-trace>
 
 Slack, Telegram, and Discord also render native approval buttons. Approve/reject actions edit the original approval message, keep the approval details visible, and remove the buttons.
 
+Approval cards show a reason plus optional structured details. Details are label/value fields; code details render as code blocks where the provider supports it. The shared runtime supplies core bash command details, and custom tools can provide domain-specific fields such as target host, service, or request scope.
+
 Permissions:
 
 - `approve`: configured `approval.approvers`, or open if none are configured

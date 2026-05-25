@@ -1,4 +1,5 @@
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
+import { codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import { chunkText } from "../render/chunk.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
@@ -517,7 +518,7 @@ async function postPublicChunks(input: {
 	client: SlackClient;
 	channel: string;
 	text: string;
-	approval?: { id: string; callId: string; reason: string; command: string };
+	approval?: Outbound["approval"];
 	thread?: string;
 	replyBroadcast?: boolean;
 	skipFirst?: boolean;
@@ -548,13 +549,13 @@ async function postEphemeralChunks(input: {
 	channel: string;
 	user: string;
 	text: string;
-	approval?: { id: string; callId: string; reason: string; command: string };
+	approval?: Outbound["approval"];
 	thread?: string;
 	delivery: DeliveryQueue;
 }): Promise<void> {
 	const chunks = slackChunks(input.text, Boolean(input.approval));
 	for (let index = 0; index < chunks.length; index++) {
-		const blocks = index === 0 ? approvalBlocks(chunks[index], input.approval) : undefined;
+		const blocks = index === 0 ? approvalBlocks(input.approval) : undefined;
 		const message = {
 			channel: input.channel,
 			user: input.user,
@@ -698,10 +699,7 @@ function startProgress(input: {
 	}
 
 	return {
-		async update(
-			text: string,
-			approval?: { id: string; callId: string; reason: string; command: string },
-		): Promise<boolean> {
+		async update(text: string, approval?: Outbound["approval"]): Promise<boolean> {
 			active = false;
 			await placeholderTask;
 			if (!placeholder) return false;
@@ -710,7 +708,7 @@ function startProgress(input: {
 			try {
 				const chunks = slackChunks(text, Boolean(approval));
 				const first = chunks[0] ?? "";
-				const blocks = approvalBlocks(first, approval);
+				const blocks = approvalBlocks(approval);
 				await input.delivery.run(
 					() =>
 						input.client.chat.update(
@@ -833,6 +831,7 @@ export function slackTriggered(
 		threadTrigger: event.threadTrigger,
 		mentioned:
 			event.type === "app_mention" || Boolean(event.botUserId && event.text?.includes(`<@${event.botUserId}>`)),
+		text: event.text,
 		reason: "mention_required",
 	});
 }
@@ -1115,16 +1114,10 @@ function actionResultText(
 		return [prefix, text].filter(Boolean).join("\n\n");
 	}
 	if (kind === "deny") {
-		const callId = rejectedCallId(text);
-		if (callId) return `⛔ Action \`${callId}\` rejected by <@${actor}>.`;
 		const prefix = id ? `⛔ Approval \`${id}\` rejected by <@${actor}>.` : `⛔ Rejected by <@${actor}>.`;
 		return [prefix, text].filter(Boolean).join("\n\n");
 	}
 	return text;
-}
-
-function rejectedCallId(text: string): string | undefined {
-	return /^Action `([^`]+)` rejected\./.exec(text.trim())?.[1];
 }
 
 function cancelBlocks(text: string, id: string): SlackBlock[] {
@@ -1154,11 +1147,11 @@ function cancelBlocks(text: string, id: string): SlackBlock[] {
 function slackMessage(input: {
 	channel: string;
 	text: string;
-	approval?: { id: string; callId: string; reason: string; command: string };
+	approval?: Outbound["approval"];
 	thread?: string;
 	replyBroadcast?: boolean;
 }): SlackMessage {
-	const blocks = approvalBlocks(input.text, input.approval);
+	const blocks = approvalBlocks(input.approval);
 	const base: Record<string, unknown> = {
 		channel: input.channel,
 		text: input.text,
@@ -1171,13 +1164,15 @@ function slackMessage(input: {
 	return base as unknown as SlackMessage;
 }
 
-function approvalBlocks(
-	text: string,
-	approval?: { id: string; callId: string; reason: string; command: string },
-): SlackBlock[] | undefined {
+function approvalBlocks(approval?: Outbound["approval"]): SlackBlock[] | undefined {
 	if (!approval) return undefined;
-	return [
-		{ type: "section", text: { type: "mrkdwn", text } },
+	const blocks: SlackBlock[] = [
+		{ type: "section", text: { type: "mrkdwn", text: "*Approval required*" } },
+		...(approval.reason ? labeledBlock("Reason", approval.reason) : []),
+		...(approval.details ?? []).flatMap((detail) =>
+			labeledBlock(detail.label, detail.format === "code" ? codeFence(detail.value) : detail.value),
+		),
+		...(approval.requestedBy ? contextBlock(`Requested by <@${approval.requestedBy}>`) : []),
 		{
 			type: "actions",
 			elements: [
@@ -1198,6 +1193,15 @@ function approvalBlocks(
 			],
 		},
 	];
+	return blocks;
+}
+
+function labeledBlock(label: string, value: string): SlackBlock[] {
+	return [{ type: "section", text: { type: "mrkdwn", text: `*${label}*\n${value}` } }];
+}
+
+function contextBlock(text: string): SlackBlock[] {
+	return [{ type: "context", elements: [{ type: "mrkdwn", text }] }];
 }
 
 function actionContext(body: unknown) {

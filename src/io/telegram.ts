@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import { chunkText } from "../render/chunk.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
@@ -383,7 +384,7 @@ async function handleCallback(input: {
 				input.client.editMessageText({
 					chat_id: msg.chat.id,
 					message_id: msg.message_id,
-					text: firstChunk(out.text, false),
+					text: firstChunk(telegramApprovalText(out.text, out.approval), Boolean(out.approval)),
 				}),
 			context(),
 		);
@@ -441,13 +442,14 @@ async function handleCallback(input: {
 				"id" in action ? action.id : undefined,
 			),
 		};
+		const approval = action.kind === "deny" ? undefined : rendered.approval;
 		await input.delivery.run(
 			() =>
 				input.client.editMessageText({
 					chat_id: msg.chat.id,
 					message_id: msg.message_id,
-					text: firstChunk(rendered.text, Boolean(rendered.approval)),
-					reply_markup: rendered.approval ? approvalMarkup(rendered.approval) : undefined,
+					text: firstChunk(telegramApprovalText(rendered.text, approval), Boolean(approval)),
+					reply_markup: approval ? approvalMarkup(approval) : undefined,
 				}),
 			context(),
 		);
@@ -522,7 +524,7 @@ async function sendChunks(input: {
 	context?: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	const chunks = telegramChunks(input.text, Boolean(input.approval));
+	const chunks = telegramChunks(telegramApprovalText(input.text, input.approval), Boolean(input.approval));
 	for (let index = input.skipFirst ? 1 : 0; index < chunks.length; index++) {
 		await input.delivery.run(
 			() =>
@@ -548,7 +550,7 @@ async function sendTargetChunks(input: {
 	context?: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	const chunks = telegramChunks(input.text, Boolean(input.approval));
+	const chunks = telegramChunks(telegramApprovalText(input.text, input.approval), Boolean(input.approval));
 	for (let index = 0; index < chunks.length; index++) {
 		await input.delivery.run(
 			() =>
@@ -733,7 +735,7 @@ function startProgress(input: {
 						input.client.editMessageText({
 							chat_id: input.chatId,
 							message_id: messageId,
-							text: firstChunk(out.text, Boolean(out.approval)),
+							text: firstChunk(telegramApprovalText(out.text, out.approval), Boolean(out.approval)),
 							reply_markup: out.approval ? approvalMarkup(out.approval) : undefined,
 						}),
 					{ ...input.context, delivery: "progress_update" },
@@ -857,6 +859,7 @@ export function telegramTriggered(
 		thread: event.thread,
 		threadTrigger: event.threadTrigger,
 		mentioned: Boolean(event.botUsername && telegramMentions(event.text, event.botUsername)),
+		text: event.text,
 		reason: "mention_required",
 	});
 }
@@ -877,16 +880,10 @@ function actionResultText(kind: TelegramAction["kind"], actor: string, text: str
 		return [prefix, text].filter(Boolean).join("\n\n");
 	}
 	if (kind === "deny") {
-		const callId = rejectedCallId(text);
-		if (callId) return `⛔ Action \`${callId}\` rejected by ${actor}.`;
 		const prefix = id ? `⛔ Approval \`${id}\` rejected by ${actor}.` : `⛔ Rejected by ${actor}.`;
 		return [prefix, text].filter(Boolean).join("\n\n");
 	}
 	return text;
-}
-
-function rejectedCallId(text: string): string | undefined {
-	return /^Action `([^`]+)` rejected\./.exec(text.trim())?.[1];
 }
 
 function telegramActor(user: TelegramUser): string {
@@ -899,6 +896,20 @@ export function telegramChunks(text: string, hasMarkup = false): string[] {
 
 function firstChunk(text: string, hasMarkup: boolean): string {
 	return telegramChunks(text, hasMarkup)[0] ?? "";
+}
+
+function telegramApprovalText(text: string, approval?: Outbound["approval"]): string {
+	if (!approval) return text;
+	return [
+		"*Approval required*",
+		approval.reason ? ["Reason:", approval.reason].join("\n") : undefined,
+		...(approval.details ?? []).map((detail) =>
+			[`${detail.label}:`, detail.format === "code" ? codeFence(detail.value) : detail.value].join("\n"),
+		),
+		approval.requestedBy ? `Requested by: ${approval.requestedBy}` : undefined,
+	]
+		.filter((line): line is string => typeof line === "string")
+		.join("\n\n");
 }
 
 function progressMarkup(id: string): TelegramReplyMarkup {
@@ -1075,10 +1086,6 @@ function compact<T extends Record<string, unknown>>(input: T): T {
 	const out: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(input)) if (value !== undefined) out[key] = value;
 	return out as T;
-}
-
-function included(allowlist: Array<string | number> | undefined, value: string): boolean {
-	return !allowlist?.length || allowlist.map(String).includes(value);
 }
 
 type TelegramResponse<T> = T & { ok?: boolean; description?: string; parameters?: { retry_after?: number } };

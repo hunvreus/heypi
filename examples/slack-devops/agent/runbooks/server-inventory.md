@@ -19,7 +19,7 @@ If a user names a host that is not configured, ask for the missing host fields b
 ## Onboarding Flow
 
 1. Ask for host id, address, SSH user, SSH port if non-default, and tags.
-2. Use `hosts_upsert` to save the host. This requires approval.
+2. Use `hosts_upsert` to save the host. The app handles the gate.
 3. After approval, `hosts_upsert` returns the public key to install.
 4. Tell the user to append that public key to `~/.ssh/authorized_keys` for the configured SSH user.
 5. After the user confirms the key was installed, test the connection and refresh cached host facts.
@@ -28,5 +28,5 @@ If a user names a host that is not configured, ask for the missing host fields b
 
 - Do not invent host names.
 - Do not run commands against hosts that are not configured in the host inventory.
-- Do not restart, deploy, roll back, or change config without explicit approval.
+- For restart, deploy, rollback, or config changes, call the relevant tool with the concrete command. Do not ask for a plain-text "yes"; the app handles the gate.
 - Prefer read-only diagnostics before remediation.

@@ -84,6 +84,7 @@ export type Approval = {
 	command: string;
 	runtime: string;
 	reason: string;
+	details: string | null;
 	state: string;
 	requestedBy: string | null;
 	requestedAt: number;
@@ -252,6 +253,7 @@ export interface Approvals {
 		command: string;
 		runtime: string;
 		reason: string;
+		details?: string;
 	}): Promise<Approval>;
 	get(id: string): Promise<Approval | undefined>;
 	getByChannel(channel: string, id: string): Promise<Approval | undefined>;

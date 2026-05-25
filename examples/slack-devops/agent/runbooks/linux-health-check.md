@@ -21,4 +21,4 @@ Run these through `host_exec` on configured hosts:
 
 ## Remediation Boundary
 
-Restarts, package installs, file deletion, config edits, service enable/disable, deploys, and rollbacks require approval.
+For restarts, package installs, file deletion, config edits, service enable/disable, deploys, and rollbacks, call the relevant tool with the concrete command. Do not ask for a plain-text "yes"; the app handles the gate.

@@ -130,7 +130,7 @@ export type AppLockConfig = {
 };
 
 export type HeypiConfig = {
-	store: Store;
+	store?: Store;
 	adapters: Adapter[];
 	agent: AgentConfig;
 	runtime: RuntimeConfig;
