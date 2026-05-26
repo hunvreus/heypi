@@ -5,22 +5,34 @@ The webhook adapter exposes a generic JSON HTTP interface for internal systems.
 For a tiny runnable app with curl examples, see [`../examples/webhook-notes`](../examples/webhook-notes).
 
 ```ts
-import { webhook } from "@hunvreus/heypi";
-
-webhook({
-	secret: process.env.HEYPI_WEBHOOK_SECRET!,
-	port: 3000,
-	host: "127.0.0.1",
-	path: "/webhook",
-	replyHosts: ["internal.example.com"],
+createHeypi({
+	http: { host: "127.0.0.1", port: 3000 },
+	adapters: [
+		webhook({
+			name: "internal",
+			secret: process.env.HEYPI_WEBHOOK_SECRET!,
+			replyHosts: ["internal.example.com"],
+		}),
+	],
 });
 ```
 
-Webhook registers routes on heypi's shared Node HTTP listener when it runs inside `createHeypi()`. Used directly, it starts its own Node HTTP server. It is not a Cloudflare Workers or Fetch adapter.
+Webhook registers routes on heypi's shared Node HTTP listener when it runs inside `createHeypi()`. Used directly, it starts its own Node HTTP server and requires `port`. It is not a Cloudflare Workers or Fetch adapter.
 
-By default, webhook binds to `127.0.0.1`. Set `host: "0.0.0.0"` only when an external proxy, gateway, or firewall is meant to expose it.
+By default, the shared HTTP listener binds to `127.0.0.1:3000`. Set `http.host: "0.0.0.0"` only when an external proxy, gateway, or firewall is meant to expose it.
 
-If you run multiple webhook adapters in one app, give each adapter a unique `name` and `path`.
+Routes are name-derived by default:
+
+```text
+POST /webhook/{name}
+POST /webhook/{name}/messages
+POST /webhook/{name}/threads/:threadId/messages
+GET  /webhook/{name}/threads/:threadId/runs/:runId
+```
+
+If you omit `name`, the default is `webhook`, so the route prefix is `/webhook/webhook`.
+
+If you run multiple webhook adapters in one app, give each adapter a unique `name`. A custom `path` is an escape hatch and must be paired with `unsafePathOverride: true`; it cannot use `/admin` or collide with another route.
 
 Webhook is inbound-only. It does not implement adapter `send()`, so scheduled jobs cannot target webhook adapters.
 
@@ -48,7 +60,6 @@ Defaults:
 
 - `maxBodyBytes: 1_000_000`
 - `maxInFlight: 32`
-- `host: "127.0.0.1"`
 
 Webhook payloads are for short JSON messages, not file uploads. Use provider attachments or a custom attachment store for files.
 
@@ -57,7 +68,7 @@ Webhook payloads are for short JSON messages, not file uploads. Use provider att
 Omit `threadId` to create a new server-side thread:
 
 ```bash
-curl -X POST http://localhost:3000/webhook/messages \
+curl -X POST http://localhost:3000/webhook/internal/messages \
   -H "authorization: Bearer $HEYPI_WEBHOOK_SECRET" \
   -H "content-type: application/json" \
   -d '{"user":"alice@example.com","text":"Start incident review"}'
@@ -79,7 +90,7 @@ Response:
 ## Follow Up
 
 ```bash
-curl -X POST http://localhost:3000/webhook/threads/<threadId>/messages \
+curl -X POST http://localhost:3000/webhook/internal/threads/<threadId>/messages \
   -H "authorization: Bearer $HEYPI_WEBHOOK_SECRET" \
   -H "content-type: application/json" \
   -d '{"user":"alice@example.com","text":"What changed?"}'
@@ -88,7 +99,7 @@ curl -X POST http://localhost:3000/webhook/threads/<threadId>/messages \
 ## Status
 
 ```bash
-curl http://localhost:3000/webhook/threads/<threadId>/runs/<runId> \
+curl http://localhost:3000/webhook/internal/threads/<threadId>/runs/<runId> \
   -H "authorization: Bearer $HEYPI_WEBHOOK_SECRET"
 ```
 
@@ -114,7 +125,6 @@ Callback URLs must use an allowed host:
 ```ts
 webhook({
   secret: process.env.HEYPI_WEBHOOK_SECRET!,
-  port: 3000,
   replyHosts: ["internal.example.com"],
 });
 ```

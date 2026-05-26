@@ -23,7 +23,7 @@ pnpm exec heypi telegram check --env examples/telegram-workout/.env
 
 ## Discover Chat ID
 
-Telegram bots cannot enumerate chats. The bot has to observe a message.
+Telegram bots cannot enumerate chats. The bot has to observe a message. The command uses `TELEGRAM_BOT_TOKEN` from the env file, deletes any active webhook for that bot token, then long-polls Telegram updates until it sees a DM, group, or channel message.
 
 Run:
 
@@ -34,10 +34,12 @@ pnpm exec heypi telegram observe --env examples/telegram-workout/.env
 Then send `/start` to the bot DM, or post in the target group. The CLI prints:
 
 ```ts
-target: { adapter: "telegram", channel: "123456789" }
+targets: { telegram: { channels: ["123456789"] } }
 ```
 
-Use that target for explicit cron jobs. Heartbeat jobs can target known chats after the bot has seen them once.
+The printed chat id is the value to use in `allow.chats` and scheduled job `targets.telegram.channels`.
+
+Use `targets` for explicit cron jobs. Heartbeat jobs can use `scope: { telegram: {} }` after the bot has seen the chat once.
 
 ## Inbound Access
 

@@ -1,14 +1,56 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { consoleLogger, type Handler, webhook } from "@hunvreus/heypi";
+import { consoleLogger, type Handler, type HttpRoute, webhook } from "@hunvreus/heypi";
+
+test("webhook uses the adapter name in the default route prefix", async () => {
+	const port = await freePort();
+	const secret = "test-secret";
+	const adapter = webhook({ name: "github", secret, port });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/github/messages", secret, { text: "hello" });
+		assert.equal(response.status, 202);
+	} finally {
+		await adapter.stop?.();
+	}
+});
+
+test("webhook can use the shared app HTTP listener defaults", async () => {
+	const routes: HttpRoute[] = [];
+	const adapter = webhook({ name: "notes", secret: "test-secret" });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+		http: {
+			register: (route) => routes.push(route),
+		},
+	});
+	assert.deepEqual(
+		routes.map((route) => [route.method, route.path, route.host, route.port]),
+		[
+			["POST", "/webhook/notes", undefined, undefined],
+			["POST", "/webhook/notes/messages", undefined, undefined],
+			["POST", "/webhook/notes/threads/:threadId/messages", undefined, undefined],
+			["GET", "/webhook/notes/threads/:threadId/runs/:runId", undefined, undefined],
+		],
+	);
+});
+
+test("webhook path overrides must be explicit", async () => {
+	const port = await freePort();
+	assert.throws(() => webhook({ secret: "test-secret", port, path: "/hook" }), /unsafePathOverride: true/);
+});
 
 test("webhook creates server-side threads and exposes async run status", async () => {
 	const port = await freePort();
 	const secret = "test-secret";
 	const seen: Array<{ channel: string; thread: string; text: string; actor: string }> = [];
 	const statuses = new Map<string, { ok: boolean; threadId: string; runId: string; status: string; text: string }>();
-	const adapter = webhook({ secret, port, path: "/hook" });
+	const adapter = webhook({ secret, port, path: "/hook", unsafePathOverride: true });
 	const handler: Handler = async (input) => {
 		seen.push({ channel: input.channel, thread: input.thread, text: input.text, actor: input.actor });
 		statuses.set(input.trace ?? "", {
@@ -58,7 +100,7 @@ test("webhook rejects requests without the configured secret", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const response = await fetch(`http://127.0.0.1:${port}/webhook/messages`, {
+		const response = await fetch(`http://127.0.0.1:${port}/webhook/webhook/messages`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ text: "hello" }),
@@ -79,7 +121,7 @@ test("webhook run status reads from adapter status lookup", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const response = await fetch(`http://127.0.0.1:${port}/webhook/threads/t1/runs/r1`, {
+		const response = await fetch(`http://127.0.0.1:${port}/webhook/webhook/threads/t1/runs/r1`, {
 			headers: { authorization: `Bearer ${secret}` },
 		});
 		assert.equal(response.status, 200);
@@ -120,7 +162,7 @@ test("webhook returns structured approval details", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const response = await post(port, "/webhook/messages", secret, {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
 			user: "alice",
 			text: "set status",
 			sync: true,
@@ -142,7 +184,7 @@ test("webhook rejects oversized bodies", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const response = await fetch(`http://127.0.0.1:${port}/webhook/messages`, {
+		const response = await fetch(`http://127.0.0.1:${port}/webhook/webhook/messages`, {
 			method: "POST",
 			headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
 			body: JSON.stringify({ text: "this is too large" }),
@@ -163,7 +205,7 @@ test("webhook rejects replyUrl hosts outside the allowlist", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const response = await post(port, "/webhook/messages", secret, {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
 			text: "hello",
 			replyUrl: "https://blocked.example.com/callback",
 		});
@@ -190,9 +232,9 @@ test("webhook caps in-flight async runs", async () => {
 		logger: consoleLogger({ level: "error", format: "pretty" }),
 	});
 	try {
-		const first = await post(port, "/webhook/messages", secret, { text: "first" });
+		const first = await post(port, "/webhook/webhook/messages", secret, { text: "first" });
 		assert.equal(first.status, 202);
-		const second = await post(port, "/webhook/messages", secret, { text: "second" });
+		const second = await post(port, "/webhook/webhook/messages", secret, { text: "second" });
 		assert.equal(second.status, 429);
 		assert.equal(second.body.error, "too many in-flight webhook runs");
 		release();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseTelegramCallback, telegramChunks } from "../src/io/telegram.js";
+import { parseTelegramCallback, telegramApprovalText, telegramChunks } from "../src/io/telegram.js";
 
 test("parseTelegramCallback parses control actions", () => {
 	assert.deepEqual(parseTelegramCallback("approve:abc"), { kind: "approve", id: "abc" });
@@ -20,4 +20,24 @@ test("telegramChunks keeps markup chunks under Telegram edit limits", () => {
 		chunks.every((chunk) => chunk.length <= 3800),
 		true,
 	);
+});
+
+test("Telegram approval resolution preserves approval text and appends status", () => {
+	const approval = {
+		id: "approval-1",
+		callId: "call-1",
+		command: "curl --version",
+		runtime: "just-bash",
+		reason: "Run bash command.",
+		allowed: [],
+		requestedBy: "42",
+		details: [{ label: "Command", value: "curl --version", format: "code" as const }],
+	};
+	const pending = telegramApprovalText("ignored", approval);
+	const approved = telegramApprovalText("ignored", approval, "approved", "user 42");
+
+	assert.match(pending, /^\*Approval required\*/);
+	assert.match(approved, /^\*Approved\*/);
+	assert.match(approved, /Reason:\nRun bash command/);
+	assert.match(approved, /Approved by user 42/);
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { thread } from "../db/schema.js";
 import type { Db } from "./db.js";
 
@@ -54,6 +54,7 @@ export class ThreadRepo {
 			channels?: string[];
 			users?: string[];
 			limit?: number;
+			offset?: number;
 		} = {},
 	): Promise<ThreadRow[]> {
 		const filters = [];
@@ -64,7 +65,10 @@ export class ThreadRepo {
 		if (input.users?.length) filters.push(inArray(thread.actor, input.users));
 		const query = this.db.select().from(thread);
 		const withFilter = filters.length ? query.where(and(...filters)) : query;
-		return await withFilter.limit(Math.min(Math.max(input.limit ?? 100, 1), 1000));
+		return await withFilter
+			.orderBy(desc(thread.updatedAt))
+			.limit(Math.min(Math.max(input.limit ?? 100, 1), 1000))
+			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
 	async getByKey(

@@ -11,6 +11,7 @@ import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
+import { assertRouteName } from "./name.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "heypi_approve";
@@ -44,6 +45,7 @@ export type SlackHttpConfig = {
 	signingSecret: string;
 	port?: number | string;
 	path?: string | string[];
+	unsafePathOverride?: boolean;
 };
 
 export type SlackReply = "thread" | "same" | "channel";
@@ -64,8 +66,9 @@ export type SlackProgress = {
 
 /** Creates the Slack adapter using Socket Mode or Slack's HTTP receiver. */
 export function slack(input: SlackConfig): Adapter {
-	const setup = slackSetup(input);
 	const name = input.name ?? "slack";
+	assertRouteName(name);
+	const setup = slackSetup(input, name);
 	const kind = "slack";
 	let app: App | undefined;
 	let activeLogger: Logger | undefined;
@@ -405,12 +408,16 @@ async function slackTargetChannel(
 
 function slackSetup(
 	input: SlackConfig & (SlackSocketConfig | SlackHttpConfig),
+	name: string,
 ):
 	| { mode: "socket"; appToken: string; endpoints?: undefined; port?: undefined }
-	| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port: number | string } {
+	| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port?: number | string } {
 	if (input.mode === "http") {
 		if (!input.signingSecret) throw new Error("Slack HTTP mode requires signingSecret");
-		return { mode: "http", endpoints: input.path ?? "/slack/events", port: input.port ?? 3000 };
+		if (input.path && !input.unsafePathOverride) {
+			throw new Error("Slack HTTP path override requires unsafePathOverride: true");
+		}
+		return { mode: "http", endpoints: input.path ?? `/slack/${name}/events`, port: input.port };
 	}
 	return { mode: "socket", appToken: input.appToken };
 }
@@ -419,7 +426,7 @@ function createSlackApp(
 	input: SlackConfig,
 	setup:
 		| { mode: "socket"; appToken: string; endpoints?: undefined; port?: undefined }
-		| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port: number | string },
+		| { mode: "http"; appToken?: undefined; endpoints: string | string[]; port?: number | string },
 	receiver?: HTTPReceiver,
 ): App {
 	return new App({
@@ -434,7 +441,7 @@ function createSlackApp(
 
 function createSlackReceiver(
 	input: SlackConfig,
-	setup: { mode: "http"; endpoints: string | string[]; port: number | string },
+	setup: { mode: "http"; endpoints: string | string[]; port?: number | string },
 	start: AdapterStart,
 ): HTTPReceiver {
 	if (!start.http) throw new Error("Slack HTTP mode requires the heypi HTTP registrar");
@@ -829,6 +836,7 @@ export function slackTriggered(
 type SlackClient = AllMiddlewareArgs["client"];
 type SlackMessage = Parameters<SlackClient["chat"]["postMessage"]>[0];
 type SlackBlock = types.Block | types.KnownBlock;
+type SlackUpdate = { text: string; blocks?: SlackBlock[] };
 
 type SlackFile = {
 	id?: string;
@@ -932,17 +940,17 @@ async function handleAction(input: {
 		logCtx({ trace, adapter: input.provider, kind: input.adapterKind, channel: actionChannel }, extra);
 	let acknowledged = false;
 	let progress: ReturnType<typeof startProgress> | undefined;
-	const acknowledge = async (text: string) => {
+	const acknowledge = async (out: Outbound) => {
 		const actionMessage = context.message;
 		if (!actionMessage) return;
-		const first = actionResultText(input.kind, actionActor, text, value);
+		const update = slackApprovalUpdate(out, "approved", actionActor, input.body);
+		if (!update.blocks) throw new Error("Slack approval acknowledgement missing approval blocks");
 		await input.delivery.run(
 			() =>
 				input.client.chat.update({
 					channel: actionChannel,
 					ts: actionMessage,
-					text: first,
-					blocks: [{ type: "section", text: { type: "mrkdwn", text: first } }],
+					...update,
 				}),
 			logContext(),
 		);
@@ -963,14 +971,17 @@ async function handleAction(input: {
 	};
 	const replace = async (out: Outbound) => {
 		const actionMessage = context.message;
-		if (!actionMessage) return;
+		if (!actionMessage) throw new Error("Slack approval action missing message");
+		const state = out.approvalResolution;
+		if (!state) throw new Error("Slack approval replacement missing resolution");
+		const update = slackApprovalUpdate(out, state, actionActor, input.body);
+		if (!update.blocks) throw new Error("Slack approval action missing approval blocks");
 		await input.delivery.run(
 			() =>
 				input.client.chat.update({
 					channel: actionChannel,
 					ts: actionMessage,
-					text: out.text,
-					blocks: [{ type: "section", text: { type: "mrkdwn", text: out.text } }],
+					...update,
 				}),
 			logContext(),
 		);
@@ -1001,7 +1012,7 @@ async function handleAction(input: {
 			text: input.kind === "status" ? "status" : `${input.kind} ${value}`,
 			data: input.body,
 			stream,
-			ack: input.kind === "approve" ? (out) => acknowledge(out.text) : undefined,
+			ack: input.kind === "approve" ? (out) => acknowledge(out) : undefined,
 			replace: input.kind === "approve" || input.kind === "deny" ? replace : undefined,
 		});
 		if (!out) return;
@@ -1010,18 +1021,27 @@ async function handleAction(input: {
 			const channel = context.channel;
 			const actor = context.actor;
 			if (out.replaceOriginal && context.message) {
-				await input.delivery.run(
-					() =>
-						input.client.chat.update({
-							channel,
-							ts: context.message as string,
-							text: out.text,
-							blocks: [{ type: "section", text: { type: "mrkdwn", text: out.text } }],
-						}),
-					logContext({ channel }),
-				);
-				input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
-				return;
+				const update = slackApprovalUpdate(out, out.approvalResolution, actor, input.body);
+				if (update.blocks) {
+					try {
+						await input.delivery.run(
+							() =>
+								input.client.chat.update({
+									channel,
+									ts: context.message as string,
+									...update,
+								}),
+							logContext({ channel }),
+						);
+						input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
+						return;
+					} catch (error) {
+						input.logger.warn(
+							"slack.approval_update_failed",
+							logContext({ channel, error: errorMessage(error) }),
+						);
+					}
+				}
 			}
 			await postEphemeralChunks({
 				client: input.client,
@@ -1036,6 +1056,21 @@ async function handleAction(input: {
 		}
 		const channel = context.channel;
 		const message = context.message;
+		const resolution = out.approvalResolution;
+		if ((input.kind === "approve" || input.kind === "deny") && out.approval && resolution) {
+			const update = slackApprovalUpdate(out, resolution, context.actor, input.body);
+			await input.delivery.run(
+				() =>
+					input.client.chat.update({
+						channel,
+						ts: message,
+						...update,
+					}),
+				logContext({ channel }),
+			);
+			input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
+			if (input.kind === "deny") return;
+		}
 		const chunks = slackChunks(out.text, true);
 		const streamed = Boolean(stream?.complete?.() && input.kind === "approve");
 		if (acknowledged) {
@@ -1058,7 +1093,25 @@ async function handleAction(input: {
 			input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
 			return;
 		}
-		const first = actionResultText(input.kind, context.actor, streamed ? "" : (chunks[0] ?? ""), value);
+		if (input.kind === "approve") {
+			if (streamed) {
+				await progress?.stop();
+			} else {
+				await postPublicChunks({
+					client: input.client,
+					channel,
+					text: out.text,
+					approval: out.approval,
+					thread: context.threadTs ?? message,
+					logger: input.logger,
+					context: logContext({ channel, thread: context.threadTs ?? message }),
+					delivery: input.delivery,
+				});
+			}
+			input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
+			return;
+		}
+		const first = streamed ? "" : (chunks[0] ?? "");
 		if (streamed) {
 			await progress?.stop();
 		}
@@ -1094,6 +1147,17 @@ async function handleAction(input: {
 				error: errorMessage(error),
 			}),
 		);
+		if ((input.kind === "approve" || input.kind === "deny") && context.message) {
+			await postEphemeralChunks({
+				client: input.client,
+				channel: context.channel,
+				user: context.actor,
+				text: userError("handler", input.messages?.error),
+				thread: context.threadTs ?? context.message,
+				delivery: input.delivery,
+			}).catch(() => undefined);
+			return;
+		}
 		if (context.message) {
 			const text = userError("handler", input.messages?.error);
 			await input.client.chat
@@ -1110,21 +1174,41 @@ async function handleAction(input: {
 	}
 }
 
-function actionResultText(
-	kind: "approve" | "deny" | "cancel" | "status",
+function slackApprovalUpdate(
+	out: Outbound,
+	state: Outbound["approvalResolution"],
 	actor: string,
-	text: string,
-	id?: string,
-): string {
-	if (kind === "approve") {
-		const prefix = id ? `✅ Approval \`${id}\` approved by <@${actor}>.` : `✅ Approved by <@${actor}>.`;
-		return [prefix, text].filter(Boolean).join("\n\n");
-	}
-	if (kind === "deny") {
-		const prefix = id ? `⛔ Approval \`${id}\` rejected by <@${actor}>.` : `⛔ Rejected by <@${actor}>.`;
-		return [prefix, text].filter(Boolean).join("\n\n");
-	}
-	return text;
+	body: unknown,
+): SlackUpdate {
+	const text = slackApprovalFallbackText(out, state, actor);
+	const blocks = slackResolvedApprovalBlocks(out, state, actor, body);
+	return blocks ? { text, blocks } : { text };
+}
+
+function slackResolvedApprovalBlocks(
+	out: Outbound,
+	state: Outbound["approvalResolution"],
+	actor: string,
+	body: unknown,
+): SlackBlock[] | undefined {
+	if (out.approval && state) return approvalBlocks(out.approval, state, actor);
+	const blocks = approvalBlocksFromPayload(body);
+	if (!blocks) return undefined;
+	return resolveApprovalBlocks(blocks, {
+		title: state ? approvalTitleText(state) : undefined,
+		status: state ? approvalResolutionText(state, actor) : out.text,
+	});
+}
+
+function slackApprovalFallbackText(out: Outbound, state: Outbound["approvalResolution"], actor: string): string {
+	if (!out.approval || !state) return out.text;
+	return [out.approval.reason, approvalResolutionText(state, actor)].filter(Boolean).join("\n");
+}
+
+function approvalResolutionText(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
+	if (state === "approved") return actor ? `Approved by <@${actor}>.` : "Approved.";
+	if (state === "rejected") return actor ? `Rejected by <@${actor}>.` : "Rejected.";
+	return "Approval expired.";
 }
 
 function cancelBlocks(text: string, id: string): SlackBlock[] {
@@ -1171,36 +1255,104 @@ function slackMessage(input: {
 	return base as unknown as SlackMessage;
 }
 
-function approvalBlocks(approval?: Outbound["approval"]): SlackBlock[] | undefined {
+export function approvalBlocks(
+	approval?: Outbound["approval"],
+	state?: Outbound["approvalResolution"],
+	actor?: string,
+): SlackBlock[] | undefined {
 	if (!approval) return undefined;
 	const blocks: SlackBlock[] = [
-		{ type: "section", text: { type: "mrkdwn", text: "*Approval required*" } },
+		{ type: "section", text: { type: "mrkdwn", text: approvalTitleText(state) } },
 		...(approval.reason ? labeledBlock("Reason", approval.reason) : []),
 		...(approval.details ?? []).flatMap((detail) =>
 			labeledBlock(detail.label, detail.format === "code" ? codeFence(detail.value) : detail.value),
 		),
 		...(approval.requestedBy ? contextBlock(`Requested by <@${approval.requestedBy}>`) : []),
-		{
-			type: "actions",
-			elements: [
-				{
-					type: "button",
-					text: { type: "plain_text", text: "Approve" },
-					style: "primary",
-					action_id: APPROVE,
-					value: approval.id,
-				},
-				{
-					type: "button",
-					text: { type: "plain_text", text: "Reject" },
-					style: "danger",
-					action_id: DENY,
-					value: approval.id,
-				},
-			],
-		},
+		...(state
+			? contextBlock(approvalResolutionText(state, actor))
+			: [
+					{
+						type: "actions",
+						elements: [
+							{
+								type: "button",
+								text: { type: "plain_text", text: "Approve" },
+								style: "primary",
+								action_id: APPROVE,
+								value: approval.id,
+							},
+							{
+								type: "button",
+								text: { type: "plain_text", text: "Reject" },
+								style: "danger",
+								action_id: DENY,
+								value: approval.id,
+							},
+						],
+					} satisfies SlackBlock,
+				]),
 	];
 	return blocks;
+}
+
+function approvalBlocksFromPayload(body: unknown): SlackBlock[] | undefined {
+	const message = record(record(body)?.message);
+	const blocks = message?.blocks;
+	if (!Array.isArray(blocks)) return undefined;
+	return blocks.map((block) => stripSlackBlockId(block as SlackBlock));
+}
+
+function resolveApprovalBlocks(
+	blocks: SlackBlock[],
+	resolution: { title?: string; status: string },
+): SlackBlock[] | undefined {
+	const actions = approvalActionsIndex(blocks);
+	if (actions < 0) return undefined;
+	const next = [...blocks];
+	if (resolution.title) {
+		const title = approvalTitleIndex(next);
+		if (title >= 0) next[title] = { type: "section", text: { type: "mrkdwn", text: resolution.title } };
+	}
+	next[actions] = contextBlock(resolution.status)[0];
+	return next;
+}
+
+function approvalActionsIndex(blocks: SlackBlock[]): number {
+	for (let i = blocks.length - 1; i >= 0; i--) {
+		if (isApprovalActionsBlock(blocks[i])) return i;
+	}
+	return -1;
+}
+
+function approvalTitleIndex(blocks: SlackBlock[]): number {
+	for (const [index, block] of blocks.entries()) {
+		const value = record(block);
+		const text = stringProp(record(value?.text), "text");
+		if (text?.startsWith("*Approval ")) return index;
+	}
+	return -1;
+}
+
+function isApprovalActionsBlock(block: SlackBlock): boolean {
+	const value = record(block);
+	if (value?.type !== "actions" || !Array.isArray(value.elements)) return false;
+	return value.elements.some((element) => {
+		const actionId = stringProp(record(element), "action_id");
+		return actionId === APPROVE || actionId === DENY;
+	});
+}
+
+function stripSlackBlockId(block: SlackBlock): SlackBlock {
+	const value = { ...(block as unknown as Record<string, unknown>) };
+	delete value.block_id;
+	return value as unknown as SlackBlock;
+}
+
+function approvalTitleText(state?: Outbound["approvalResolution"]): string {
+	if (state === "approved") return "*Approved*";
+	if (state === "rejected") return "*Rejected*";
+	if (state === "expired") return "*Expired*";
+	return "*Approval required*";
 }
 
 function labeledBlock(label: string, value: string): SlackBlock[] {

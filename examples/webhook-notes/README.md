@@ -19,7 +19,7 @@ HEYPI_WEBHOOK_SECRET=...
 Send a message:
 
 ```bash
-curl -X POST http://127.0.0.1:3000/webhook/messages \
+curl -X POST http://127.0.0.1:3000/webhook/notes/messages \
   -H "authorization: Bearer dev-secret-change-me" \
   -H "content-type: application/json" \
   -d '{"user":"demo","text":"Remember that the launch checklist needs a billing smoke test"}'
@@ -28,7 +28,7 @@ curl -X POST http://127.0.0.1:3000/webhook/messages \
 The response includes a `threadId` and `runId`. Check status:
 
 ```bash
-curl http://127.0.0.1:3000/webhook/threads/<threadId>/runs/<runId> \
+curl http://127.0.0.1:3000/webhook/notes/threads/<threadId>/runs/<runId> \
   -H "authorization: Bearer dev-secret-change-me"
 ```
 

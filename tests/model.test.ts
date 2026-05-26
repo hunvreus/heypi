@@ -390,6 +390,74 @@ test("handler scopes approvals by provider team and channel", async () => {
 	}
 });
 
+test("handler lets expired denials replace the original approval surface", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(
+				store.calls,
+				store.approvals,
+				new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+				{
+					name: "just-bash",
+					root: ".",
+					capabilities: { bash: true },
+					bash: async () => ({ code: 0, out: "ok", err: "", ms: 1 }),
+				},
+				{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
+				undefined,
+				store.transaction,
+				commandConfirm(),
+			),
+			agent: {
+				ask: async () => ({ text: "ok" }),
+				continue: async () => ({ text: "ok" }),
+			},
+		});
+
+		const requested = await handler({
+			trace: "trace-expired-deny-request",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-expired-deny-request",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:1",
+			text: "bash curl https://example.com",
+		});
+		const approvalId = requested?.approval?.id;
+		assert.ok(approvalId);
+
+		let replacement = "";
+		let resolution: string | undefined;
+		const denied = await handler({
+			trace: "trace-expired-deny",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-expired-deny",
+			channel: "C1",
+			actor: "U_ALLOWED",
+			thread: "C1:1",
+			text: `deny ${approvalId}`,
+			replace: async (out) => {
+				replacement = out.text;
+				resolution = out.approvalResolution;
+			},
+		});
+
+		assert.equal(denied, undefined);
+		assert.equal(resolution, "expired");
+		assert.match(replacement, /Approval expired/);
+		assert.match(replacement, /curl https:\/\/example.com/);
+	} finally {
+		await db.cleanup();
+	}
+});
+
 test("approvals command lists pending approvals for approvers only", async () => {
 	const db = await tempDb();
 	try {

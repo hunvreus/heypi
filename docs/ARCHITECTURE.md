@@ -68,7 +68,7 @@ Adapters live under `src/io/` and translate provider events into provider-neutra
 
 Slack, Telegram, and Discord share `runChatMessage()` for the normalized message path after a provider event has passed adapter-specific allow/trigger checks. The helper owns attachment loading, handler invocation, output placement dispatch, error logging, and progress cleanup. Platform lifecycle, buttons/callbacks, attachment transport, and error UX stay in each adapter.
 
-Adapters that need inbound HTTP routes register them on the app's shared HTTP listener. All registered routes must use the same host and port; duplicate method/path pairs fail at startup.
+Adapters that need inbound HTTP routes register them on the app's shared HTTP listener, configured by top-level `http` and defaulting to `127.0.0.1:3000`. All registered routes must use the same host and port. Exact duplicate routes and structurally ambiguous routes such as `/x/:id` and `/x/:name` fail at startup. `/admin` is reserved for the admin panel.
 
 The core adapter contract is:
 
@@ -82,7 +82,7 @@ type Adapter = {
 };
 ```
 
-`name` is the unique adapter instance identity and is stored as `provider` in durable thread/message/turn rows. `kind` is the adapter implementation type (`slack`, `webhook`, etc.) and is stored separately for filtering and diagnostics. Duplicate adapter names fail startup. HTTP adapters must share one host/port within an app, and duplicate `method + path` routes fail startup.
+`name` is the unique adapter instance identity and is stored as `provider` in durable thread/message/turn rows. `kind` is the adapter implementation type (`slack`, `webhook`, etc.) and is stored separately for filtering and diagnostics. Duplicate adapter names fail startup. `admin` is reserved for the built-in admin panel. HTTP route defaults are name-derived where relevant, for example `/webhook/{name}` and `/slack/{name}/events`.
 
 Inbound allowlists and channel membership are adapter concerns. Once an event is accepted, the shared handler owns turn creation, intent handling, locking, audit writes, and agent execution.
 

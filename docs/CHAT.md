@@ -17,7 +17,7 @@ Defaults:
 - thread/topic replies default to message-triggered follow-ups
 - set `threadTrigger: "mention"` to require mentions in thread/topic replies
 
-`allow.users` controls who may talk to the bot. `approval.approvers` controls who may approve tool calls. `jobs.scope` and `jobs.target` only affect scheduled outbound jobs.
+`allow.users` controls who may talk to the bot. `approval.approvers` controls who may approve tool calls. `jobs.scope` and `jobs.targets` only affect scheduled outbound jobs.
 
 ## Streaming And Progress
 

@@ -2,12 +2,14 @@
 import { existsSync, statSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { cac } from "cac";
+import { DEFAULT_ADMIN_CONTROL_PATH, readAdminControl } from "./admin/control.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
 	discordInviteUrl,
 	discordObserve as observeDiscord,
 } from "./io/discord-discovery.js";
+import { slackChannels } from "./io/slack-discovery.js";
 import { openDb } from "./store/db.js";
 import { migrate } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
@@ -47,16 +49,18 @@ function buildCli() {
 				throw new Error(`Unknown command: db ${action}`);
 			})(flags),
 		);
-	cli.command("slack <action>", "Slack commands: check, manifest, env")
+	cli.command("slack <action>", "Slack commands: check, manifest, channels, env")
 		.option("--env <path>", "Load env file")
 		.option("--bot-token <token>", "Slack bot token")
 		.option("--app-token <token>", "Slack app token")
 		.option("--signing-secret <secret>", "Slack signing secret")
 		.option("--url <url>", "Slack events URL")
+		.option("--private", "Include private channels visible to the bot")
 		.action((action: string, flags: Flags) =>
 			withEnv((input) => {
 				if (action === "check") return slackCheck(input);
 				if (action === "manifest") return slackManifest(input);
+				if (action === "channels") return slackChannelsList(input);
 				if (action === "env") return slackEnv();
 				throw new Error(`Unknown command: slack ${action}`);
 			})(flags),
@@ -87,8 +91,20 @@ function buildCli() {
 				throw new Error(`Unknown command: discord ${action}`);
 			})(flags),
 		);
+	cli.command("admin <action>", "Admin commands: link")
+		.option("--env <path>", "Load env file")
+		.option("--control <path>", "Admin control file path")
+		.option("--url <url>", "Admin base URL")
+		.option("--json", "Print JSON")
+		.action((action: string, flags: Flags) =>
+			withEnv((input) => {
+				if (action === "link") return adminLink(input);
+				throw new Error(`Unknown command: admin ${action}`);
+			})(flags),
+		);
 	cli.command("jobs <action> [id]", "Job commands: list, show, run, pause, resume")
 		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter or mutate jobs for one agent")
 		.option("--limit <count>", "Maximum jobs to list")
 		.option("--json", "Print JSON")
 		.action((action: string, id: string | undefined, flags: Flags) =>
@@ -125,8 +141,8 @@ function withEnv(fn: (flags: Flags) => void | Promise<void>): (flags: Flags) => 
 }
 
 function loadEnv(flags: Flags): void {
-	const path = stringFlag(flags, "env");
-	if (path && existsSync(path)) loadEnvFile(path);
+	const path = stringFlag(flags, "env") ?? ".env";
+	if (existsSync(path)) loadEnvFile(path);
 }
 
 async function check(flags: Flags): Promise<void> {
@@ -152,8 +168,8 @@ async function dbMigrate(flags: Flags): Promise<void> {
 
 async function slackCheck(flags: Flags): Promise<void> {
 	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
-	const appToken = secret(flags, "app-token", "SLACK_APP_TOKEN");
-	const signingSecret = secret(flags, "signing-secret", "SLACK_SIGNING_SECRET");
+	const appToken = optionalSecret(flags, "app-token", "SLACK_APP_TOKEN");
+	const signingSecret = optionalSecret(flags, "signing-secret", "SLACK_SIGNING_SECRET");
 	const auth = await slackCall<{ ok: boolean; team?: string; user?: string; bot_id?: string }>(token, "auth.test", {});
 	line(ok(`Slack auth ok: team=${auth.team ?? "?"} user=${auth.user ?? "?"} bot=${auth.bot_id ?? "?"}`));
 	line(
@@ -169,7 +185,7 @@ async function slackCheck(flags: Flags): Promise<void> {
 }
 
 function slackManifest(flags: Flags): void {
-	const url = stringFlag(flags, "url") ?? "https://example.com/slack/events";
+	const url = stringFlag(flags, "url") ?? "https://example.com/slack/slack/events";
 	line(`display_information:
   name: heypi
 features:
@@ -181,6 +197,7 @@ oauth_config:
     bot:
       - app_mentions:read
       - channels:history
+      - channels:read
       - chat:write
       - chat:write.public
       - files:read
@@ -203,6 +220,17 @@ settings:
 function slackEnv(): void {
 	line(`SLACK_BOT_TOKEN=<slack-bot-token>
 SLACK_APP_TOKEN=<slack-app-token> # Socket Mode only`);
+}
+
+async function slackChannelsList(flags: Flags): Promise<void> {
+	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
+	const channels = await slackChannels(token, { includePrivate: booleanFlag(flags, "private") });
+	if (!channels.length) return line("No Slack channels visible to the bot.");
+	for (const channel of channels) {
+		const row = [channel.id, `#${channel.name}`, `targets: { slack: { channels: ["${channel.id}"] } }`];
+		if (channel.private) row.splice(2, 0, "private");
+		line(row.join("\t"));
+	}
 }
 
 async function telegramCheck(flags: Flags): Promise<void> {
@@ -230,7 +258,7 @@ async function telegramObserve(flags: Flags): Promise<void> {
 			const msg = update.message ?? update.edited_message;
 			if (!msg?.chat) continue;
 			line(ok(`Observed ${msg.chat.type ?? "chat"}: ${chatName(msg.chat)} (${msg.chat.id})`));
-			line(`target: { adapter: "telegram", channel: "${msg.chat.id}" }`);
+			line(`targets: { telegram: { channels: ["${msg.chat.id}"] } }`);
 			return;
 		}
 	}
@@ -253,7 +281,7 @@ async function discordObserve(flags: Flags): Promise<void> {
 	if (found.guild) line(`guild: ${found.guild}${found.guildName ? ` (${found.guildName})` : ""}`);
 	line(`channel: ${found.channel}${found.channelName ? ` (${found.channelName})` : ""}`);
 	line(`user: ${found.user}${found.userName ? ` (${found.userName})` : ""}`);
-	line(`target: { adapter: "discord", channel: "${found.channel}" }`);
+	line(`targets: { discord: { channels: ["${found.channel}"] } }`);
 }
 
 async function discordChannelsList(flags: Flags): Promise<void> {
@@ -276,22 +304,48 @@ function discordEnv(): void {
 DISCORD_CLIENT_ID=... # invite URL helper only`);
 }
 
+async function adminLink(flags: Flags): Promise<void> {
+	const controlPath = stringFlag(flags, "control") ?? process.env.HEYPI_ADMIN_CONTROL ?? DEFAULT_ADMIN_CONTROL_PATH;
+	const control = readAdminControl(controlPath);
+	const baseUrl = stringFlag(flags, "url") ?? process.env.HEYPI_ADMIN_URL ?? control.url;
+	const endpoint = adminControlEndpoint(baseUrl);
+	let response: Response;
+	try {
+		response = await fetch(endpoint, {
+			method: "POST",
+			headers: { authorization: `Bearer ${control.token}`, accept: "application/json" },
+		});
+	} catch (error) {
+		throw new Error(
+			`admin server is not reachable at ${baseUrl}; make sure the heypi process is running, or pass --url/--control. ${message(error)}`,
+		);
+	}
+	const parsed = (await response.json().catch(() => ({}))) as Partial<AdminLinkResponse> & { error?: string };
+	if (!response.ok) throw new Error(parsed.error ?? `admin link request failed: ${response.status}`);
+	if (typeof parsed.url !== "string" || typeof parsed.expiresAt !== "number") {
+		throw new Error("admin link response was invalid");
+	}
+	const body = { url: parsed.url, expiresAt: parsed.expiresAt };
+	line(booleanFlag(flags, "json") ? JSON.stringify(body, null, 2) : body.url);
+}
+
 async function jobsList(flags: Flags): Promise<void> {
 	const repos = jobRepos(flags);
-	const jobs = await repos.jobs.list({ limit: numberFlag(flags, "limit", 100) });
+	const jobs = await repos.jobs.list({ agent: stringFlag(flags, "agent"), limit: numberFlag(flags, "limit", 100) });
 	if (booleanFlag(flags, "json")) {
 		const rows = [];
 		for (const job of jobs) {
-			const last = await repos.runs.lastForJob(job.id);
+			const last = await repos.runs.lastForJob({ agent: job.agent, id: job.id });
 			rows.push({ ...job, lastRun: last ?? null });
 		}
 		return line(JSON.stringify(rows, null, 2));
 	}
 	if (!jobs.length) return line("No jobs found.");
 	for (const job of jobs) {
-		const last = await repos.runs.lastForJob(job.id);
+		const last = await repos.runs.lastForJob({ agent: job.agent, id: job.id });
 		line(
 			[
+				job.agent,
 				job.id,
 				job.kind,
 				job.state,
@@ -305,26 +359,29 @@ async function jobsList(flags: Flags): Promise<void> {
 
 async function jobsState(flags: Flags, id: string, state: "active" | "paused"): Promise<void> {
 	const repos = jobRepos(flags);
-	await repos.jobs.setState(id, state);
+	const job = await repos.jobs.get({ agent: stringFlag(flags, "agent"), id });
+	if (!job) throw new Error(`job not found: ${id}`);
+	await repos.jobs.setState({ agent: job.agent, id }, state);
 	line(ok(`job ${id} ${state}`));
 }
 
 async function jobsShow(flags: Flags, id: string): Promise<void> {
 	const repos = jobRepos(flags);
-	const job = await repos.jobs.get(id);
+	const job = await repos.jobs.get({ agent: stringFlag(flags, "agent"), id });
 	if (!job) throw new Error(`job not found: ${id}`);
-	const last = await repos.runs.lastForJob(id);
+	const last = await repos.runs.lastForJob({ agent: job.agent, id });
 	const row = { ...job, lastRun: last ?? null };
 	if (booleanFlag(flags, "json")) return line(JSON.stringify(row, null, 2));
 	line(
 		[
+			`agent: ${job.agent}`,
 			`id: ${job.id}`,
 			`kind: ${job.kind}`,
 			`state: ${job.state}`,
 			`next: ${fmtTime(job.nextAt)}`,
 			`last: ${fmtTime(job.lastAt)}`,
 			`idle_ms: ${job.idleMs ?? "-"}`,
-			`target: ${job.target ?? "-"}`,
+			`targets: ${job.target ?? "-"}`,
 			`scope: ${job.scope ?? "-"}`,
 			`prompt: ${job.prompt}`,
 			`last_run: ${last ? `${last.state}/${last.deliveryState}` : "-"}`,
@@ -334,7 +391,9 @@ async function jobsShow(flags: Flags, id: string): Promise<void> {
 
 async function jobsRun(flags: Flags, id: string): Promise<void> {
 	const repos = jobRepos(flags);
-	await repos.jobs.runNow(id);
+	const job = await repos.jobs.get({ agent: stringFlag(flags, "agent"), id });
+	if (!job) throw new Error(`job not found: ${id}`);
+	await repos.jobs.runNow({ agent: job.agent, id });
 	line(ok(`job ${id} marked due; a running heypi app will execute it on the next scheduler tick`));
 }
 
@@ -456,20 +515,22 @@ Usage:
   heypi db check --db heypi.db
   heypi db migrate --db heypi.db
   heypi slack check [--env .env]
-  heypi slack manifest [--url https://host/slack/events]
+  heypi slack manifest [--url https://host/slack/slack/events]
+  heypi slack channels [--env .env] [--private]
   heypi slack env
   heypi telegram check [--env .env]
   heypi telegram observe [--env .env] [--timeout 60]
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
   heypi discord channels [--env .env]
+  heypi admin link [--control .heypi/admin-control.json] [--url http://127.0.0.1:3000]
   heypi approvals list --db heypi.db [--json]
   heypi approvals show <id> --db heypi.db [--json]
-  heypi jobs list --db heypi.db [--json]
-  heypi jobs show <id> --db heypi.db [--json]
-  heypi jobs run <id> --db heypi.db
-  heypi jobs pause <id> --db heypi.db
-  heypi jobs resume <id> --db heypi.db`;
+  heypi jobs list --db heypi.db [--agent <id>] [--json]
+  heypi jobs show <id> --db heypi.db [--agent <id>] [--json]
+  heypi jobs run <id> --db heypi.db [--agent <id>]
+  heypi jobs pause <id> --db heypi.db [--agent <id>]
+  heypi jobs resume <id> --db heypi.db [--agent <id>]`;
 }
 
 function numberFlag(flags: Flags, name: string, fallback: number): number {
@@ -484,6 +545,19 @@ function secret(flags: Flags, flag: string, env: string): string {
 	const value = stringFlag(flags, flag) ?? process.env[env];
 	if (!value) throw new Error(`Missing --${flag} or ${env}`);
 	return value;
+}
+
+function optionalSecret(flags: Flags, flag: string, env: string): string | undefined {
+	const value = stringFlag(flags, flag) ?? process.env[env];
+	return value?.trim() || undefined;
+}
+
+function adminControlEndpoint(input: string): string {
+	const url = new URL(input);
+	url.pathname = "/admin/_control/links";
+	url.search = "";
+	url.hash = "";
+	return url.toString();
 }
 
 function camel(name: string): string {
@@ -555,6 +629,11 @@ type TelegramUpdate = {
 	update_id: number;
 	message?: TelegramMessage;
 	edited_message?: TelegramMessage;
+};
+
+type AdminLinkResponse = {
+	url: string;
+	expiresAt: number;
 };
 
 main().catch((error) => {

@@ -27,6 +27,10 @@ function required(name: string): string {
 	return value;
 }
 
+function optional(name: string): string | undefined {
+	return process.env[name]?.trim() || undefined;
+}
+
 function list(name: string): string[] {
 	return (process.env[name] ?? "")
 		.split(",")
@@ -59,10 +63,21 @@ const hostTools = createHostTools({
 });
 const runbookTools = createRunbookTools({ root: resolve("./examples/slack-devops/agent/runbooks") });
 const hostContext = createHostContext({ root: resolve("./examples/slack-devops/state") });
+const runtimeRoot = workspace("./examples/slack-devops/workspace");
+const log = consoleLogger({ level: "debug", format: "pretty" });
+const jobChannel = optional("HEYPI_SLACK_JOB_CHANNEL");
+
+if (!jobChannel) {
+	log.warn("example.jobs_disabled", {
+		missing: "HEYPI_SLACK_JOB_CHANNEL",
+		reason: "Slack example jobs require an explicit target channel",
+	});
+}
 
 const app = createHeypi({
 	store: sqliteStore({ path: resolve("./examples/slack-devops/heypi.db") }),
-	logger: consoleLogger({ level: "debug", format: "pretty" }),
+	logger: log,
+	admin: true,
 	adapters: [
 		slack({
 			botToken: required("SLACK_BOT_TOKEN"),
@@ -82,8 +97,6 @@ const app = createHeypi({
 		// 	botToken: required("SLACK_BOT_TOKEN"),
 		// 	signingSecret: required("SLACK_SIGNING_SECRET"),
 		// 	mode: "http",
-		// 	port: Number(process.env.PORT ?? 3000),
-		// 	path: "/slack/events",
 		// 	allow: {
 		// 		teams: list("HEYPI_SLACK_TEAMS"),
 		// 		channels: list("HEYPI_SLACK_CHANNELS"),
@@ -95,6 +108,7 @@ const app = createHeypi({
 		// }),
 	],
 	agent: agentFrom("./examples/slack-devops/agent", {
+		id: "slack-devops",
 		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
 		context: [hostContext],
 		tools: [...coreTools({ bash: true }), ...runbookTools, ...hostTools],
@@ -103,9 +117,29 @@ const app = createHeypi({
 		approvers: list("HEYPI_APPROVERS"),
 		expiresInMs: 10 * 60 * 1000,
 	},
+	jobs: jobChannel
+		? [
+				{
+					id: "daily-health-check",
+					schedule: { cron: "0 9 * * *", timezone: "UTC" },
+					targets: { slack: { channels: [jobChannel] } },
+					prompt: "Run a daily infrastructure health check and summarize anything that needs attention.",
+					state: "active",
+				},
+				{
+					id: "idle-incident-follow-up",
+					kind: "heartbeat",
+					everyMs: 6 * 60 * 60 * 1000,
+					idleMs: 30 * 60 * 1000,
+					scope: { slack: { channels: [jobChannel] } },
+					prompt: "If an incident thread has gone quiet, ask whether follow-up is still needed.",
+					state: "paused",
+				},
+			]
+		: [],
 	runtime: {
 		name: "just-bash",
-		root: workspace("./examples/slack-devops/workspace"),
+		root: runtimeRoot,
 		maxConcurrent: 12,
 		maxConcurrentPerChat: 1,
 		timeoutMs: 120_000,

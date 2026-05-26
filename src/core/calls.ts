@@ -505,7 +505,7 @@ export class CallRunner {
 		const summary = current ? this.approvalSummary(approval, current, "expired") : undefined;
 		const reply = {
 			...(summary ?? {}),
-			text: [summary?.text, `⏱️ ${this.messages.approvalExpired}`].filter(Boolean).join("\n\n"),
+			text: [summary?.text, this.messages.approvalExpired].filter(Boolean).join("\n\n"),
 			approvalResolution: "expired" as const,
 		};
 		if (onExpired) {

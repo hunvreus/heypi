@@ -48,12 +48,14 @@ const saveNote = tool<{ note: string; topic?: string }>({
 const app = createHeypi({
 	store: sqliteStore({ path: resolve("./examples/webhook-notes/heypi.db") }),
 	logger: consoleLogger({ level: "debug", format: "pretty" }),
+	http: {
+		host: "127.0.0.1",
+		port: Number(process.env.HEYPI_WEBHOOK_PORT ?? 3000),
+	},
 	adapters: [
 		webhook({
+			name: "notes",
 			secret: required("HEYPI_WEBHOOK_SECRET"),
-			port: Number(process.env.HEYPI_WEBHOOK_PORT ?? 3000),
-			host: "127.0.0.1",
-			path: "/webhook",
 		}),
 	],
 	agent: agentFrom("./examples/webhook-notes/agent", {

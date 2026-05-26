@@ -6,20 +6,20 @@ export type JobSchedule =
 	| { everyMs: number; anchorMs?: number }
 	| { cron: string; timezone?: string };
 
-export type JobScope = {
-	adapters?: string[];
+export type JobRoute = {
 	teams?: string[];
 	channels?: string[];
 	users?: string[];
 };
 
+export type JobScope = Record<string, JobRoute>;
+
 export type JobTarget = {
-	adapter?: string;
-	channel?: string;
-	user?: string;
-	thread?: string;
-	mode?: "channel" | "thread" | "dm";
+	channels?: string[];
+	users?: string[];
 };
+
+export type JobTargets = Record<string, JobTarget>;
 
 export type JobConfig = {
 	id: string;
@@ -28,7 +28,7 @@ export type JobConfig = {
 	everyMs?: number;
 	idleMs?: number;
 	scope?: JobScope;
-	target?: JobTarget;
+	targets?: JobTargets;
 	prompt: string;
 	state?: JobState;
 };

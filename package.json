@@ -50,7 +50,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/drizzle && cp drizzle/*.sql dist/drizzle/",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/drizzle && cp drizzle/*.sql dist/drizzle/ && pnpm run build:admin-assets",
+		"build:admin-assets": "mkdir -p dist/admin && cp -R src/admin/assets dist/admin/",
+		"build:admin-css": "mkdir -p src/admin/assets && tailwindcss -i src/admin/style.css -o src/admin/assets/admin.css --minify && cp node_modules/basecoat-css/dist/js/all.min.js src/admin/assets/basecoat.all.min.js",
+		"dev:admin-css": "mkdir -p src/admin/assets && tailwindcss -i src/admin/style.css -o src/admin/assets/admin.css --watch",
 		"prepack": "pnpm run build",
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
@@ -84,8 +87,11 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",
+		"@tailwindcss/cli": "^4.3.0",
 		"@types/node": "^25.9.1",
+		"basecoat-css": "0.3.11",
 		"drizzle-kit": "^0.31.10",
+		"tailwindcss": "^4.3.0",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
 	},

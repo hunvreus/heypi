@@ -147,7 +147,7 @@ const app = createHeypi({
 			kind: "heartbeat",
 			everyMs: 24 * 60 * 60 * 1000,
 			idleMs: 8 * 60 * 60 * 1000,
-			scope: { adapters: ["telegram"] },
+			scope: { telegram: {} },
 			prompt:
 				"Use the daily-checkin skill. Review the saved profile and decide whether to check in today based on the plan, rest days, and recent context.",
 		},

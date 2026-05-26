@@ -45,6 +45,47 @@ test("pretty logger writes single-line redacted fields", () => {
 	]);
 });
 
+test("pretty logger marks warnings and errors", () => {
+	const lines: string[] = [];
+	const warn = console.warn;
+	const error = console.error;
+	console.warn = (message?: unknown) => {
+		lines.push(String(message));
+	};
+	console.error = (message?: unknown) => {
+		lines.push(String(message));
+	};
+	try {
+		consoleLogger({ level: "debug", format: "pretty" }).warn("jobs.disabled", { missing: "target" });
+		consoleLogger({ level: "debug", format: "pretty" }).error("admin.failed", { reason: "bad" });
+	} finally {
+		console.warn = warn;
+		console.error = error;
+	}
+	assert.deepEqual(lines, ["[heypi] WARN jobs.disabled missing=target", "[heypi] ERROR admin.failed reason=bad"]);
+});
+
+test("pretty logger colors warnings and errors when color is forced", () => {
+	const lines: string[] = [];
+	const warn = console.warn;
+	const forceColor = process.env.FORCE_COLOR;
+	console.warn = (message?: unknown) => {
+		lines.push(String(message));
+	};
+	process.env.FORCE_COLOR = "1";
+	try {
+		consoleLogger({ level: "debug", format: "pretty" }).warn("jobs.disabled", { missing: "target" });
+	} finally {
+		console.warn = warn;
+		if (forceColor === undefined) {
+			delete process.env.FORCE_COLOR;
+		} else {
+			process.env.FORCE_COLOR = forceColor;
+		}
+	}
+	assert.equal(lines[0], "\x1b[33m[heypi] WARN jobs.disabled missing=target\x1b[0m");
+});
+
 test("json logger writes structured redacted fields", () => {
 	const lines: string[] = [];
 	const error = console.error;

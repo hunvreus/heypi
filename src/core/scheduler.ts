@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Adapter, AdapterStart, Handler, Outbound } from "../io/handler.js";
-import type { JobConfig, JobSchedule, JobScope, JobTarget } from "../job.js";
+import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "../io/handler.js";
+import type { JobConfig, JobSchedule, JobScope, JobTarget, JobTargets } from "../job.js";
 import { transaction } from "../store/transaction.js";
 import type { DeliveryState, Job, JobRunState, SchedulerStore, Store, Thread } from "../store/types.js";
 import type { Logger } from "./log.js";
@@ -43,7 +43,7 @@ export function createScheduler(input: {
 
 	async function tick(): Promise<void> {
 		const now = Date.now();
-		const due = await store.jobs.due(now);
+		const due = await store.jobs.due({ agent: input.agent, now });
 		for (const job of due) await runJob(job, now);
 	}
 
@@ -51,11 +51,12 @@ export function createScheduler(input: {
 		if (!row) return;
 		const schedule = parseJson<JobSchedule>(row.schedule);
 		if (!schedule) throw new Error(`job has invalid schedule: ${row.id}`);
-		const scope = parseJson<JobScope | undefined>(row.scope ?? undefined) ?? {};
-		const target = parseJson<JobTarget | undefined>(row.target ?? undefined);
+		const scope = parseJson<JobScope | undefined>(row.scope ?? undefined);
+		const routeTargets = parseJson<JobTargets | undefined>(row.target ?? undefined);
 		const lockOwner = randomUUID();
+		const lockKey = `job:${row.agent}:${row.id}`;
 		const lock = await store.locks.acquire({
-			key: `job:${row.id}`,
+			key: lockKey,
 			owner: lockOwner,
 			ttlMs: input.config?.lockMs ?? DEFAULT_LOCK_MS,
 		});
@@ -67,25 +68,32 @@ export function createScheduler(input: {
 			const targets = await resolveTargets({
 				store,
 				agent: input.agent,
-				kind: row.kind,
 				scope,
-				target,
+				targets: routeTargets,
 			});
 			if (!targets.length) {
 				input.logger.warn("job.no_target", { job: row.id, kind: row.kind });
-				await store.jobs.finish(row.id, { lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) });
+				await store.jobs.finish(
+					{ agent: row.agent, id: row.id },
+					{ lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) },
+				);
 				return;
 			}
 			for (const resolved of targets) await runTarget(row, resolved, schedule, now);
-			await finishJob(row.id, { lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) });
+			await finishJob(row, { lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) });
 		} finally {
-			await store.locks.release({ key: `job:${row.id}`, owner: lockOwner });
+			await store.locks.release({ key: lockKey, owner: lockOwner });
 		}
 	}
 
 	async function runTarget(row: Job, resolved: ResolvedTarget, schedule: JobSchedule, dueAt: number): Promise<void> {
-		const trace = `job:${row.id}:${dueAt}:${resolved.threadKey}`;
-		const run = await store.jobRuns.create({ jobId: row.id, threadId: resolved.thread?.id, trace });
+		const trace = `job:${row.agent}:${row.id}:${dueAt}:${resolved.threadKey}`;
+		const run = await store.jobRuns.create({
+			jobAgent: row.agent,
+			jobId: row.id,
+			threadId: resolved.thread?.id,
+			trace,
+		});
 		if (!run.inserted) {
 			input.logger.debug("job.duplicate", { job: row.id, trace });
 			return;
@@ -94,7 +102,7 @@ export function createScheduler(input: {
 			job: row.id,
 			trace,
 			kind: row.kind,
-			provider: resolved.provider,
+			provider: resolved.adapter,
 			channel: resolved.channel,
 		});
 		try {
@@ -108,7 +116,7 @@ export function createScheduler(input: {
 			}
 			const out = await input.handler({
 				trace,
-				provider: resolved.provider,
+				provider: resolved.adapter,
 				eventId: trace,
 				team: resolved.thread?.team || undefined,
 				channel: resolved.channel,
@@ -150,23 +158,23 @@ export function createScheduler(input: {
 		});
 	}
 
-	async function finishJob(id: string, result: { lastAt: number; nextAt?: number }): Promise<void> {
+	async function finishJob(row: Job, result: { lastAt: number; nextAt?: number }): Promise<void> {
 		await transaction(input.store, async (inner) => {
 			const store = inner as SchedulerStore;
-			await store.jobs.finish(id, result);
+			await store.jobs.finish({ agent: row.agent, id: row.id }, result);
 		});
 	}
 
 	async function send(target: ResolvedTarget, out: Outbound): Promise<void> {
-		const adapter = adapters.get(target.provider);
-		if (!adapter?.send) throw new Error(`adapter cannot send scheduled output: ${target.provider}`);
+		const adapter = adapters.get(target.adapter);
+		if (!adapter?.send) throw new Error(`adapter cannot send scheduled output: ${target.adapter}`);
 		await adapter.send(target.target, out, input.starts.get(adapter));
 	}
 
 	return {
 		async start(): Promise<void> {
 			stopped = false;
-			await installJobs({ agent: input.agent, jobs, store, logger: input.logger });
+			await installJobs({ agent: input.agent, jobs, adapters, store, logger: input.logger });
 			const loop = async () => {
 				if (stopped) return;
 				try {
@@ -189,29 +197,35 @@ export function createScheduler(input: {
 async function installJobs(input: {
 	agent: string;
 	jobs: JobConfig[];
+	adapters: Map<string, Adapter>;
 	store: SchedulerStore;
 	logger: Logger;
 }): Promise<void> {
 	for (const config of input.jobs) {
+		const kind = config.kind ?? "cron";
 		const schedule = scheduleOf(config);
-		const existing = await input.store.jobs.get(config.id);
+		validateJobRouting(config, kind, input.adapters);
+		const existing = await input.store.jobs.get({ agent: input.agent, id: config.id });
 		const serialized = JSON.stringify(schedule);
 		const next =
 			existing?.schedule === serialized && existing.nextAt ? existing.nextAt : nextAt(schedule, Date.now());
 		await input.store.jobs.upsert({
 			id: config.id,
 			agent: input.agent,
-			kind: config.kind ?? "cron",
+			kind,
 			schedule: serialized,
-			scope: config.scope ? JSON.stringify(config.scope) : undefined,
-			idleMs: config.idleMs,
-			target: config.target ? JSON.stringify(config.target) : undefined,
+			scope: config.scope ? JSON.stringify(config.scope) : null,
+			idleMs: config.idleMs ?? null,
+			target: config.targets ? JSON.stringify(config.targets) : null,
 			prompt: config.prompt,
-			state: config.state ?? "active",
+			state: config.state ?? existingState(existing?.state) ?? "active",
 			nextAt: next,
 		});
 		input.logger.debug("job.installed", { job: config.id, nextAt: next });
 	}
+	const ids = input.jobs.map((job) => job.id);
+	const paused = await input.store.jobs.pauseMissing(input.agent, ids);
+	if (paused) input.logger.warn("job.config_removed_paused", { agent: input.agent, jobs: paused });
 }
 
 function scheduleOf(job: JobConfig): JobSchedule {
@@ -222,48 +236,93 @@ function scheduleOf(job: JobConfig): JobSchedule {
 }
 
 type ResolvedTarget = {
-	provider: string;
+	adapter: string;
 	channel: string;
 	threadKey: string;
-	target: JobTarget;
+	target: AdapterTarget;
 	thread?: Thread;
 };
 
 async function resolveTargets(input: {
 	store: Store;
 	agent: string;
-	kind: string;
-	scope: JobScope;
-	target?: JobTarget;
+	scope?: JobScope;
+	targets?: JobTargets;
 }): Promise<ResolvedTarget[]> {
-	if (input.target) {
-		const provider = input.target.adapter ?? input.scope.adapters?.[0];
-		const channel = input.target.channel ?? input.target.user;
-		if (!provider || !channel) return [];
-		return [
-			{
-				provider,
-				channel,
-				threadKey: `${channel}:${input.target.thread ?? channel}`,
-				target: input.target,
-			},
-		];
+	if (input.targets) return expandTargets(input.targets);
+	if (!input.scope) return [];
+	const out: ResolvedTarget[] = [];
+	for (const [adapter, scope] of Object.entries(input.scope)) {
+		const threads = await input.store.threads.list({
+			agent: input.agent,
+			providers: [adapter],
+			teams: scope.teams,
+			channels: scope.channels,
+			users: scope.users,
+		});
+		out.push(
+			...threads.map((thread) => ({
+				adapter,
+				channel: thread.channel,
+				threadKey: thread.key,
+				target: { channel: thread.channel, thread: targetThread(thread) },
+				thread,
+			})),
+		);
 	}
-	const threads = await input.store.threads.list({
-		agent: input.agent,
-		providers: input.scope.adapters,
-		teams: input.scope.teams,
-		channels: input.scope.channels,
-		users: input.scope.users,
-	});
-	if (input.kind !== "heartbeat" && threads.length !== 1) return [];
-	return threads.map((thread) => ({
-		provider: thread.provider,
-		channel: thread.channel,
-		threadKey: thread.key,
-		target: { adapter: thread.provider, channel: thread.channel, thread: targetThread(thread) },
-		thread,
-	}));
+	return out;
+}
+
+function expandTargets(targets: JobTargets): ResolvedTarget[] {
+	const out: ResolvedTarget[] = [];
+	for (const [adapter, target] of Object.entries(targets)) {
+		for (const channel of target.channels ?? []) {
+			out.push({
+				adapter,
+				channel,
+				threadKey: `${channel}:${channel}`,
+				target: { channel },
+			});
+		}
+		for (const user of target.users ?? []) {
+			out.push({
+				adapter,
+				channel: user,
+				threadKey: `user:${user}`,
+				target: { user },
+			});
+		}
+	}
+	return out;
+}
+
+function validateJobRouting(job: JobConfig, kind: string, adapters: Map<string, Adapter>): void {
+	if (job.scope && job.targets) throw new Error(`job cannot define both scope and targets: ${job.id}`);
+	if (kind === "cron" && job.scope) throw new Error(`cron job cannot define scope; use targets: ${job.id}`);
+	if (kind === "cron" && !hasTargets(job.targets)) throw new Error(`cron job requires targets: ${job.id}`);
+	if (kind === "heartbeat" && !hasTargets(job.targets) && !hasScope(job.scope)) {
+		throw new Error(`heartbeat job requires scope or targets: ${job.id}`);
+	}
+	if (kind === "heartbeat" && job.idleMs && hasTargets(job.targets)) {
+		throw new Error(`heartbeat idleMs requires scope, not targets: ${job.id}`);
+	}
+	for (const name of new Set([...Object.keys(job.scope ?? {}), ...Object.keys(job.targets ?? {})])) {
+		const adapter = adapters.get(name);
+		if (!adapter) throw new Error(`job references unknown adapter: ${job.id} -> ${name}`);
+		if (!adapter.send) throw new Error(`job references adapter without scheduled send support: ${job.id} -> ${name}`);
+	}
+}
+
+function hasScope(scope: JobScope | undefined): boolean {
+	return Boolean(scope && Object.keys(scope).length);
+}
+
+function hasTargets(targets: JobTargets | undefined): boolean {
+	return Boolean(targets && Object.values(targets).some(hasTarget));
+}
+
+function hasTarget(target: JobTarget): boolean {
+	return Boolean(target.channels?.length || target.users?.length);
 }
 
 async function idleEnough(store: Store, thread: Thread, row: { idleMs: number | null }): Promise<boolean> {
@@ -281,4 +340,8 @@ function targetThread(thread: Thread): string | undefined {
 function parseJson<T>(input?: string): T | undefined {
 	if (!input) return undefined;
 	return JSON.parse(input) as T;
+}
+
+function existingState(state: string | undefined): "active" | "paused" | undefined {
+	return state === "active" || state === "paused" ? state : undefined;
 }

@@ -1,5 +1,6 @@
 export { createHeypi, type HeypiApp, runHeypi } from "./app.js";
 export {
+	type AdminConfig,
 	type AgentConfig,
 	type AgentContextBlock,
 	type AgentContextInput,
@@ -12,6 +13,7 @@ export {
 	type ChatConfig,
 	type DockerConfig,
 	type HeypiConfig,
+	type HttpConfig,
 	type JustBashConfig,
 	type MemoryConfig,
 	type MemoryWritePolicy,
@@ -82,7 +84,7 @@ export {
 	telegram,
 } from "./io/telegram.js";
 export { type WebhookConfig, type WebhookMessage, webhook } from "./io/webhook.js";
-export type { JobConfig, JobKind, JobSchedule, JobScope, JobState, JobTarget } from "./job.js";
+export type { JobConfig, JobKind, JobRoute, JobSchedule, JobScope, JobState, JobTarget, JobTargets } from "./job.js";
 export { createRuntime, runtimeName, workspace } from "./runtime/index.js";
 export type { Capabilities, Runtime, RuntimeName } from "./runtime/types.js";
 export { sqliteStore } from "./store/sqlite.js";

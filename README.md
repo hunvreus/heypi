@@ -166,26 +166,29 @@ Setup docs:
 - [`docs/TELEGRAM.md`](docs/TELEGRAM.md)
 - [`docs/DISCORD.md`](docs/DISCORD.md)
 - [`docs/WEBHOOK.md`](docs/WEBHOOK.md)
+- [`docs/ADMIN.md`](docs/ADMIN.md)
 
 Example adapter configs:
 
 ```ts
-slack({
-	botToken: process.env.SLACK_BOT_TOKEN!,
-	mode: "socket",
-	appToken: process.env.SLACK_APP_TOKEN!,
-	allow: { channels: ["C123"] },
-	trigger: "mention",
-	reply: "thread",
-	streaming: true,
-});
-
-webhook({
-	secret: process.env.HEYPI_WEBHOOK_SECRET!,
-	port: 3000,
-	host: "127.0.0.1",
-	path: "/webhook",
-	replyHosts: ["internal.example.com"],
+createHeypi({
+	http: { host: "127.0.0.1", port: 3000 },
+	adapters: [
+		slack({
+			botToken: process.env.SLACK_BOT_TOKEN!,
+			mode: "socket",
+			appToken: process.env.SLACK_APP_TOKEN!,
+			allow: { channels: ["C123"] },
+			trigger: "mention",
+			reply: "thread",
+			streaming: true,
+		}),
+		webhook({
+			name: "internal",
+			secret: process.env.HEYPI_WEBHOOK_SECRET!,
+			replyHosts: ["internal.example.com"],
+		}),
+	],
 });
 ```
 
@@ -260,7 +263,7 @@ jobs: [
 		id: "daily-checkin",
 		kind: "heartbeat",
 		everyMs: 24 * 60 * 60 * 1000,
-		scope: { adapters: ["telegram"] },
+		scope: { telegram: {} },
 		prompt: "Check whether this chat needs follow-up.",
 	},
 ];
@@ -320,13 +323,17 @@ Custom stores are advanced. See [`docs/EXTENDING.md`](docs/EXTENDING.md).
 The `heypi` CLI is for setup checks, diagnostics, migrations, and job inspection. It is not used by `createHeypi()` at runtime.
 
 ```bash
-heypi check --env .env --db ./heypi.db
-heypi slack check --env .env
-heypi telegram observe --env .env
-heypi discord observe --env .env
+heypi check --db ./heypi.db
+heypi slack check
+heypi slack channels
+heypi telegram observe
+heypi discord observe
+heypi admin link
 heypi approvals list --db ./heypi.db
-heypi jobs list --db ./heypi.db
+heypi jobs list --db ./heypi.db --agent slack-devops
 ```
+
+The CLI loads `./.env` by default when it exists. Pass `--env <path>` to use a different env file.
 
 See [`docs/CLI.md`](docs/CLI.md).
 

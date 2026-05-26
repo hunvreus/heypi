@@ -32,9 +32,6 @@ const DENY = "heypi_deny";
 const DISCORD_TEXT_LIMIT = 2000;
 const DISCORD_EMBED_FIELD_LIMIT = 1024;
 const APPROVAL_PENDING_COLOR = 0xf59e0b;
-const APPROVAL_APPROVED_COLOR = 0x16a34a;
-const APPROVAL_REJECTED_COLOR = 0xdc2626;
-const APPROVAL_EXPIRED_COLOR = 0x6b7280;
 
 export type DiscordConfig = {
 	name?: string;
@@ -292,17 +289,26 @@ async function handleInteraction(input: {
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
 	let acknowledged = false;
 	const acknowledge = async (out: Outbound) => {
+		const embed = approvalEmbedForAction(out, out.approvalResolution ?? "approved", actor, interaction.message);
+		if (!embed) throw new Error("Discord approval acknowledgement missing approval embed");
 		await interaction.editReply({
 			content: "",
-			embeds: [approvalEmbed(out.approval, out.approvalResolution ?? "approved", actor)],
+			embeds: [embed],
 			components: [],
 		});
 		acknowledged = true;
 	};
 	const replace = async (out: Outbound) => {
+		const embed = approvalEmbedForAction(
+			out,
+			out.approvalResolution ?? actionResolution(action.kind),
+			actor,
+			interaction.message,
+		);
+		if (!embed) throw new Error("Discord approval replacement missing approval embed");
 		await interaction.editReply({
 			content: "",
-			embeds: [approvalEmbed(out.approval, out.approvalResolution ?? actionResolution(action.kind), actor)],
+			embeds: [embed],
 			components: [],
 		});
 	};
@@ -325,12 +331,15 @@ async function handleInteraction(input: {
 		if (!out) return;
 		if (out.private) {
 			if (out.replaceOriginal) {
-				await interaction.editReply({
-					content: out.text,
-					embeds: [],
-					components: [],
-				});
-				return;
+				const embed = approvalEmbedForAction(out, out.approvalResolution, actor, interaction.message);
+				if (embed) {
+					await interaction.editReply({
+						content: "",
+						embeds: [embed],
+						components: [],
+					});
+					return;
+				}
 			}
 			await interaction.followUp({ content: out.text, ephemeral: true }).catch(() => undefined);
 			return;
@@ -348,15 +357,17 @@ async function handleInteraction(input: {
 			});
 			return;
 		}
-		const rendered = out.private ? out : { ...out, text: actionResultText(action.kind, actor, out.text, action.id) };
 		if (action.kind === "deny" && !out.private) {
+			const embed = approvalEmbedForAction(out, out.approvalResolution ?? "rejected", actor, interaction.message);
+			if (!embed) throw new Error("Discord approval rejection missing approval embed");
 			await interaction.editReply({
 				content: "",
-				embeds: [approvalEmbed(out.approval, out.approvalResolution ?? "rejected", actor)],
+				embeds: [embed],
 				components: [],
 			});
 			return;
 		}
+		const rendered = out.private ? out : { ...out, text: approvedFallbackText(actor, out.text, action.id) };
 		if (!out.private) {
 			await interaction.editReply({
 				content: "",
@@ -650,22 +661,6 @@ export function approvalView(input: { approval?: Outbound["approval"]; state: Ap
 	color: number;
 	fields: Array<{ name: string; value: string; inline?: boolean }>;
 } {
-	const title =
-		input.state === "approved"
-			? "Approval approved"
-			: input.state === "rejected"
-				? "Approval rejected"
-				: input.state === "expired"
-					? "Approval expired"
-					: "Approval required";
-	const color =
-		input.state === "approved"
-			? APPROVAL_APPROVED_COLOR
-			: input.state === "rejected"
-				? APPROVAL_REJECTED_COLOR
-				: input.state === "expired"
-					? APPROVAL_EXPIRED_COLOR
-					: APPROVAL_PENDING_COLOR;
 	const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 	if (input.approval?.reason) fields.push({ name: "Reason", value: truncateEmbedValue(input.approval.reason) });
 	for (const detail of input.approval?.details ?? []) {
@@ -675,18 +670,39 @@ export function approvalView(input: { approval?: Outbound["approval"]; state: Ap
 		});
 	}
 	if (input.approval?.requestedBy) fields.push({ name: "Requested by", value: `<@${input.approval.requestedBy}>` });
-	if (input.actor && input.state !== "pending") {
-		fields.push({
-			name: input.state === "approved" ? "Approved by" : input.state === "rejected" ? "Rejected by" : "Resolved by",
-			value: `<@${input.actor}>`,
-		});
-	}
-	return { title, color, fields };
+	const resolution = approvalResolutionField(input.state, input.actor);
+	if (resolution) fields.push(resolution);
+	return { title: approvalTitle(input.state), color: APPROVAL_PENDING_COLOR, fields };
 }
 
 function approvalEmbed(approval: Outbound["approval"] | undefined, state: ApprovalViewState, actor?: string) {
 	const view = approvalView({ approval, state, actor });
 	return new EmbedBuilder().setTitle(view.title).setColor(view.color).addFields(view.fields);
+}
+
+function approvalEmbedForAction(
+	out: Outbound,
+	state: Outbound["approvalResolution"],
+	actor: string,
+	source: Message,
+): EmbedBuilder | undefined {
+	if (out.approval && state) return approvalEmbed(out.approval, state, actor);
+	const embed = source.embeds[0];
+	if (!embed || embed.fields.length >= 25) return undefined;
+	return EmbedBuilder.from(embed).addFields({
+		name: "Status",
+		value: truncateEmbedValue(out.text),
+	});
+}
+
+function approvalResolutionField(
+	state: ApprovalViewState,
+	actor?: string,
+): { name: string; value: string; inline?: boolean } | undefined {
+	if (state === "approved") return { name: "Approved by", value: actor ? `<@${actor}>` : "Approved" };
+	if (state === "rejected") return { name: "Rejected by", value: actor ? `<@${actor}>` : "Rejected" };
+	if (state === "expired") return { name: "Status", value: "Expired" };
+	return undefined;
 }
 
 function actionResolution(kind: "approve" | "deny"): ApprovalResolution {
@@ -700,13 +716,16 @@ function parseAction(input: string): { kind: "approve" | "deny"; id: string } | 
 	return undefined;
 }
 
-function actionResultText(kind: "approve" | "deny", actor: string, text: string, id?: string): string {
-	if (kind === "approve") {
-		const prefix = id ? `✅ Approval \`${id}\` approved by <@${actor}>.` : `✅ Approved by <@${actor}>.`;
-		return [prefix, text].filter(Boolean).join("\n\n");
-	}
-	const prefix = id ? `⛔ Approval \`${id}\` rejected by <@${actor}>.` : `⛔ Rejected by <@${actor}>.`;
+function approvedFallbackText(actor: string, text: string, id?: string): string {
+	const prefix = id ? `Approval \`${id}\` approved by <@${actor}>.` : `Approved by <@${actor}>.`;
 	return [prefix, text].filter(Boolean).join("\n\n");
+}
+
+function approvalTitle(state: ApprovalViewState): string {
+	if (state === "approved") return "Approved";
+	if (state === "rejected") return "Rejected";
+	if (state === "expired") return "Expired";
+	return "Approval required";
 }
 
 function codeValue(value: string): string {

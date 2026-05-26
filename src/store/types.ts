@@ -123,6 +123,7 @@ export type Job = {
 
 export type JobRun = {
 	id: string;
+	jobAgent: string;
 	jobId: string;
 	threadId: string | null;
 	trace: string;
@@ -154,6 +155,7 @@ export interface Threads {
 		channels?: string[];
 		users?: string[];
 		limit?: number;
+		offset?: number;
 	}): Promise<Thread[]>;
 }
 
@@ -211,6 +213,7 @@ export interface Turns {
 	getByTrace(threadId: string, trace: string): Promise<Turn | undefined>;
 	listForThread(threadId: string, input?: { limit?: number }): Promise<Turn[]>;
 	listRunning?(input?: { agent?: string; limit?: number }): Promise<Turn[]>;
+	listRecent?(input?: { agent?: string; states?: TurnState[]; limit?: number; offset?: number }): Promise<Turn[]>;
 	finish(id: string, input: { state: TurnState; resultMessageId?: string }): Promise<void>;
 }
 
@@ -233,6 +236,7 @@ export interface Calls {
 	get(id: string): Promise<Call | undefined>;
 	getByChannel(channel: string, id: string): Promise<Call | undefined>;
 	listForThread(threadId: string, input?: { states?: CallState[]; limit?: number }): Promise<Call[]>;
+	listRecent?(input?: { states?: CallState[]; limit?: number; offset?: number }): Promise<Call[]>;
 	setState(id: string, state: CallState): Promise<void>;
 	finish(
 		id: string,
@@ -258,7 +262,7 @@ export interface Approvals {
 	get(id: string): Promise<Approval | undefined>;
 	getByChannel(channel: string, id: string): Promise<Approval | undefined>;
 	getPending(channel: string, id: string): Promise<Approval | undefined>;
-	listPending(input?: { threadId?: string; turnId?: string; limit?: number }): Promise<Approval[]>;
+	listPending(input?: { threadId?: string; turnId?: string; limit?: number; offset?: number }): Promise<Approval[]>;
 	resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean>;
 }
 
@@ -284,29 +288,35 @@ export interface Jobs {
 		agent: string;
 		kind: string;
 		schedule: string;
-		scope?: string;
-		target?: string;
+		scope?: string | null;
+		target?: string | null;
 		prompt: string;
 		state?: JobState;
-		nextAt?: number;
-		idleMs?: number;
+		nextAt?: number | null;
+		idleMs?: number | null;
 	}): Promise<Job>;
-	due(now: number, limit?: number): Promise<Job[]>;
-	get(id: string): Promise<Job | undefined>;
-	list(input?: { limit?: number }): Promise<Job[]>;
-	setState(id: string, state: JobState): Promise<void>;
-	runNow(id: string): Promise<void>;
-	finish(id: string, input: { nextAt?: number; lastAt: number }): Promise<void>;
+	due(input: { agent: string; now: number; limit?: number }): Promise<Job[]>;
+	get(input: { agent?: string; id: string }): Promise<Job | undefined>;
+	list(input?: { agent?: string; limit?: number; offset?: number }): Promise<Job[]>;
+	setState(input: { agent?: string; id: string }, state: JobState): Promise<void>;
+	runNow(input: { agent?: string; id: string }): Promise<void>;
+	finish(input: { agent: string; id: string }, result: { nextAt?: number; lastAt: number }): Promise<void>;
+	pauseMissing(agent: string, ids: string[]): Promise<number>;
 }
 
 /** Durable history for one scheduled job attempt. */
 export interface JobRuns {
-	create(input: { jobId: string; threadId?: string; trace: string }): Promise<{ row: JobRun; inserted: boolean }>;
+	create(input: {
+		jobAgent: string;
+		jobId: string;
+		threadId?: string;
+		trace: string;
+	}): Promise<{ row: JobRun; inserted: boolean }>;
 	finish(
 		id: string,
 		input: { state: JobRunState; output?: string; error?: string; deliveryState?: DeliveryState },
 	): Promise<void>;
-	lastForJob(jobId: string): Promise<JobRun | undefined>;
+	lastForJob(input: { agent: string; id: string }): Promise<JobRun | undefined>;
 }
 
 /** Complete persistence boundary used by heypi core. Implementations may use SQLite, libSQL, or other stores. */

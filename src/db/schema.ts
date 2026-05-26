@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const thread = sqliteTable(
 	"thread",
@@ -121,7 +121,7 @@ export const lock = sqliteTable("lock", {
 export const job = sqliteTable(
 	"job",
 	{
-		id: text("id").primaryKey(),
+		id: text("id").notNull(),
 		agent: text("agent").notNull(),
 		kind: text("kind").notNull(),
 		schedule: text("schedule").notNull(),
@@ -135,13 +135,17 @@ export const job = sqliteTable(
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
-	(table) => [index("job_state_next_idx").on(table.state, table.nextAt)],
+	(table) => [
+		primaryKey({ columns: [table.agent, table.id] }),
+		index("job_agent_state_next_idx").on(table.agent, table.state, table.nextAt),
+	],
 );
 
 export const jobRun = sqliteTable(
 	"job_run",
 	{
 		id: text("id").primaryKey(),
+		jobAgent: text("job_agent").notNull(),
 		jobId: text("job_id").notNull(),
 		threadId: text("thread_id"),
 		trace: text("trace").notNull(),
@@ -152,5 +156,8 @@ export const jobRun = sqliteTable(
 		startedAt: integer("started_at").notNull(),
 		endedAt: integer("ended_at"),
 	},
-	(table) => [index("job_run_job_idx").on(table.jobId), uniqueIndex("job_run_trace_idx").on(table.trace)],
+	(table) => [
+		index("job_run_job_idx").on(table.jobAgent, table.jobId),
+		uniqueIndex("job_run_trace_idx").on(table.trace),
+	],
 );

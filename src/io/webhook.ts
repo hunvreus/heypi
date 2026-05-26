@@ -2,13 +2,15 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { message } from "../core/log.js";
 import type { Adapter, AdapterStart, Outbound, StatusResult } from "./handler.js";
+import { assertRouteName } from "./name.js";
 
 export type WebhookConfig = {
 	name?: string;
 	secret: string;
-	port: number;
+	port?: number;
 	host?: string;
 	path?: string;
+	unsafePathOverride?: boolean;
 	syncTimeoutMs?: number;
 	maxBodyBytes?: number;
 	maxInFlight?: number;
@@ -29,9 +31,12 @@ export type WebhookMessage = {
 /** Creates an HTTP webhook adapter for generic, async-first integrations. */
 export function webhook(config: WebhookConfig): Adapter {
 	const name = config.name ?? "webhook";
+	assertRouteName(name);
 	const kind = "webhook";
-	const base = normalizePath(config.path ?? "/webhook");
-	const host = config.host ?? "127.0.0.1";
+	if (config.path && !config.unsafePathOverride) {
+		throw new Error("Webhook path override requires unsafePathOverride: true");
+	}
+	const base = normalizePath(config.path ?? `/webhook/${name}`);
 	const maxBodyBytes = config.maxBodyBytes ?? 1_000_000;
 	const maxInFlight = config.maxInFlight ?? 32;
 	let server: Server | undefined;
@@ -57,17 +62,19 @@ export function webhook(config: WebhookConfig): Adapter {
 					inFlight: () => inFlight++,
 				});
 			if (input.http) {
-				registerWebhookRoutes(input, { base, host, port: config.port, handler });
+				registerWebhookRoutes(input, { base, host: config.host, port: config.port, handler });
 				input.logger.info("webhook.start", {
 					adapter: name,
 					kind,
-					host,
+					host: config.host,
 					port: config.port,
 					path: base,
 					shared: true,
 				});
 				return;
 			}
+			const host = config.host ?? "127.0.0.1";
+			if (config.port === undefined) throw new Error("Webhook standalone mode requires port");
 			server = createServer((req, res) => void handler(req, res));
 			await new Promise<void>((resolve, reject) => {
 				server?.once("error", reject);
@@ -102,8 +109,8 @@ function registerWebhookRoutes(
 	start: AdapterStart,
 	input: {
 		base: string;
-		host: string;
-		port: number;
+		host?: string;
+		port?: number;
 		handler(req: IncomingMessage, res: ServerResponse): Promise<void>;
 	},
 ): void {

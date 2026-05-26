@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { TurnState } from "../core/types.js";
 import { turn } from "../db/schema.js";
 import type { Db } from "./db.js";
@@ -66,6 +66,20 @@ export class TurnRepo {
 			.where(and(...filters))
 			.orderBy(desc(turn.updatedAt))
 			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500));
+	}
+
+	async listRecent(
+		input: { agent?: string; states?: TurnState[]; limit?: number; offset?: number } = {},
+	): Promise<TurnRow[]> {
+		const filters = [];
+		if (input.agent) filters.push(eq(turn.agent, input.agent));
+		if (input.states?.length) filters.push(inArray(turn.state, input.states));
+		const query = this.db.select().from(turn);
+		const withFilter = filters.length ? query.where(and(...filters)) : query;
+		return await withFilter
+			.orderBy(desc(turn.updatedAt))
+			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500))
+			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
 	async getByTrace(threadId: string, trace: string): Promise<TurnRow | undefined> {

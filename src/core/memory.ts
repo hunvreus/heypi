@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import type { MemoryConfig, MemoryWritePolicy, Scope } from "../config.js";
 import type { ScopedKey } from "./scope.js";
 
@@ -10,6 +11,16 @@ export type NormalizedMemoryConfig = {
 	scope: Scope;
 	writePolicy: MemoryWritePolicy;
 	maxChars: number;
+};
+
+export type MemoryEntry = {
+	scopePath: string;
+	path: string;
+	size: number;
+	mtimeMs: number;
+	sha256: string;
+	text: string;
+	truncated: boolean;
 };
 
 export class MemoryStore {
@@ -26,6 +37,10 @@ export class MemoryStore {
 		return this.config.writePolicy;
 	}
 
+	settings(): NormalizedMemoryConfig {
+		return this.config;
+	}
+
 	async read(scope: ScopedKey): Promise<string> {
 		if (!this.config.enabled) return "";
 		const text = await readFile(this.path(scope), "utf8").catch((error: unknown) => {
@@ -33,6 +48,45 @@ export class MemoryStore {
 			throw error;
 		});
 		return sanitizeRead(String(text)).slice(0, this.config.maxChars);
+	}
+
+	async list(input: { limit?: number; offset?: number; maxBytes?: number } = {}): Promise<MemoryEntry[]> {
+		if (!this.config.enabled) return [];
+		const base = join(this.root, "memory", "scopes");
+		const files = await memoryFiles(base).catch((error: unknown) => {
+			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
+			throw error;
+		});
+		const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+		const offset = Math.max(input.offset ?? 0, 0);
+		const maxBytes = Math.min(Math.max(input.maxBytes ?? this.config.maxChars, 1), 64_000);
+		const out: MemoryEntry[] = [];
+		for (const file of files.slice(offset, offset + limit)) {
+			const meta = await stat(file);
+			const raw = await readFile(file, "utf8");
+			const rel = relative(base, file).split(sep).join("/");
+			const scopePath = rel.endsWith("/MEMORY.md") ? rel.slice(0, -"/MEMORY.md".length) : rel;
+			out.push({
+				scopePath,
+				path: file,
+				size: meta.size,
+				mtimeMs: meta.mtimeMs,
+				sha256: createHash("sha256").update(raw).digest("hex"),
+				text: raw.slice(0, maxBytes),
+				truncated: raw.length > maxBytes,
+			});
+		}
+		return out;
+	}
+
+	async count(): Promise<number> {
+		if (!this.config.enabled) return 0;
+		const base = join(this.root, "memory", "scopes");
+		const files = await memoryFiles(base).catch((error: unknown) => {
+			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
+			throw error;
+		});
+		return files.length;
 	}
 
 	async append(scope: ScopedKey, content: string): Promise<string> {
@@ -85,6 +139,20 @@ export class MemoryStore {
 			throw new Error(`memory exceeds limit: ${content.length} > ${this.config.maxChars}`);
 		}
 	}
+}
+
+async function memoryFiles(dir: string): Promise<string[]> {
+	const entries = await readdir(dir, { withFileTypes: true });
+	const out: string[] = [];
+	for (const entry of entries) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			out.push(...(await memoryFiles(path)));
+		} else if (entry.isFile() && entry.name === "MEMORY.md") {
+			out.push(path);
+		}
+	}
+	return out.sort();
 }
 
 export function normalizeMemoryConfig(

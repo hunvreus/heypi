@@ -24,6 +24,21 @@ cp examples/slack-devops/.env.example examples/slack-devops/.env
 pnpm run dev:slack
 ```
 
+This example enables the local admin panel by default:
+
+```text
+http://127.0.0.1:3000/admin
+```
+
+On startup, heypi logs a one-time admin login link. If that link expires while the example is still running, mint a fresh one with `pnpm heypi admin link`.
+
+When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
+
+- `daily-health-check`: active cron job, scheduled for 09:00 UTC and delivered to `HEYPI_SLACK_JOB_CHANNEL`.
+- `idle-incident-follow-up`: paused heartbeat job for quiet incident threads in `HEYPI_SLACK_JOB_CHANNEL`.
+
+If `HEYPI_SLACK_JOB_CHANNEL` is unset, the example logs a warning, starts normally, and skips those jobs. Jobs run inside the heypi Node process; no external cron service is required.
+
 Required env vars:
 
 ```bash
@@ -39,6 +54,7 @@ HEYPI_APPROVERS=U123456,U234567
 HEYPI_SLACK_TEAMS=
 HEYPI_SLACK_CHANNELS=
 HEYPI_SLACK_USERS=
+HEYPI_SLACK_JOB_CHANNEL=C1234567890
 ```
 
 Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which teams, channels, or users may trigger the agent.
@@ -51,8 +67,11 @@ Check setup:
 
 ```bash
 pnpm heypi slack check --env examples/slack-devops/.env
-pnpm heypi slack manifest --url https://<host>/slack/events
+pnpm heypi slack channels --env examples/slack-devops/.env
+pnpm heypi slack manifest --url https://<host>/slack/slack/events
 ```
+
+Use `slack channels` to find the channel ID for `HEYPI_SLACK_JOB_CHANNEL`. If you keep the env file at `./.env`, the CLI loads it automatically and `--env` is optional.
 
 Invite the Slack app to any channel where it should answer. heypi's allowlists filter events after Slack delivers them; they do not make Slack send events for channels the bot has not joined.
 
@@ -106,8 +125,6 @@ slack({
 	botToken: required("SLACK_BOT_TOKEN"),
 	signingSecret: required("SLACK_SIGNING_SECRET"),
 	mode: "http",
-	port: Number(process.env.PORT ?? 3000),
-	path: "/slack/events",
 	allow: {
 		teams: list("HEYPI_SLACK_TEAMS"),
 		channels: list("HEYPI_SLACK_CHANNELS"),
@@ -121,4 +138,6 @@ slack({
 
 With these defaults, top-level channel messages require a mention and thread replies do not.
 
-In Slack app settings, set Event Subscriptions and Interactivity URLs to `https://<host>/slack/events`, or to the custom `path` you configured.
+In Slack app settings, set Event Subscriptions and Interactivity URLs to `https://<host>/slack/slack/events`. If you set a custom adapter `name`, use `/slack/<name>/events`. Configure non-default host/port with top-level `http`.
+
+The admin panel uses the same HTTP listener as Slack HTTP mode and remains available at `/admin` when enabled.

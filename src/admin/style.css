@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "basecoat-css";
+
+@source "./**/*.ts";

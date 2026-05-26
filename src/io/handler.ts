@@ -5,6 +5,7 @@ import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
 import { type Logger, logError, logger, message, redact, userError } from "../core/log.js";
+import type { MemoryStore, NormalizedMemoryConfig } from "../core/memory.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES } from "../core/messages.js";
 import type { ScopedKey, TurnScope } from "../core/scope.js";
 import { resolveScope, selectScope } from "../core/scope.js";
@@ -80,6 +81,17 @@ export type AdapterStart = {
 	messages?: AppMessages;
 	attachments?: AttachmentStore;
 	http?: HttpRegistrar;
+	store?: Store;
+	memory?: MemoryStore;
+	app?: {
+		agent: string;
+		agentDirectory?: string;
+		agentModel?: ModelConfig;
+		runtime: { name: string; root: string };
+		memory: NormalizedMemoryConfig;
+		adapters: Array<{ name: string; kind: string }>;
+		startedAt: number;
+	};
 };
 
 /** Messaging platform boundary. Adapters translate provider events into `Inbound` messages. */
@@ -96,11 +108,13 @@ export type HttpRoute = {
 	path: string;
 	host?: string;
 	port?: number | string;
+	reserved?: boolean;
 	handler(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void | Promise<void>;
 };
 
 export type HttpRegistrar = {
 	register(route: HttpRoute): void;
+	routes?(): Array<{ method: string; path: string; host: string; port: number | string; reserved: boolean }>;
 };
 
 export type AdapterTarget = {
@@ -366,7 +380,7 @@ export function createHandler(input: {
 								base,
 								currentRun.signal,
 								intent.kind === "approve" ? msg.ack : undefined,
-								intent.kind === "approve" ? msg.replace : undefined,
+								intent.kind === "approve" || intent.kind === "deny" ? msg.replace : undefined,
 							);
 			if (currentRun.signal.aborted) reply = { text: "cancelled" };
 			const targetThreadId = reply.continuation?.threadId;

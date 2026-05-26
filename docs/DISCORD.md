@@ -55,10 +55,18 @@ Required gateway intents:
 
 ## Discover IDs
 
+The discovery commands use the bot token from `DISCORD_BOT_TOKEN` in the env file. They do not start heypi; they connect directly to Discord so you can copy stable IDs into `allow`, `approval.approvers`, or scheduled job `targets` config.
+
 List visible text channels:
 
 ```bash
 pnpm exec heypi discord channels --env .env
+```
+
+This prints one row per visible text/announcement channel:
+
+```text
+<guild-id>  <channel-id>  <guild-name> #<channel-name>
 ```
 
 Observe a delivered message:
@@ -73,8 +81,10 @@ Then send a DM or post in a channel the bot can read. The CLI prints guild, chan
 guild: 123456789012345678 (Example Server)
 channel: 234567890123456789 (ops)
 user: 345678901234567890 (alice)
-target: { adapter: "discord", channel: "234567890123456789" }
+targets: { discord: { channels: ["234567890123456789"] } }
 ```
+
+Use the guild and channel IDs in adapter allowlists. Use the `targets` snippet for explicit scheduled jobs.
 
 Use the user ID in `approval.approvers`:
 

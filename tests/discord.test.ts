@@ -66,7 +66,10 @@ test("Discord approval view presents pending and rejected states as card data", 
 		],
 	});
 
-	assert.deepEqual(approvalView({ approval, state: "rejected", actor: "U1" }).fields.at(-1), {
+	const rejected = approvalView({ approval, state: "rejected", actor: "U1" });
+	assert.equal(rejected.title, "Rejected");
+	assert.equal(rejected.color, 0xf59e0b);
+	assert.deepEqual(rejected.fields.at(-1), {
 		name: "Rejected by",
 		value: "<@U1>",
 	});

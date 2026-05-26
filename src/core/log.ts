@@ -63,7 +63,29 @@ function write(level: Level, min: number, format: Format, event: string, input: 
 		return;
 	}
 	const fields = Object.entries(data).map(([key, value]) => `${key}=${valueText(value)}`);
-	method(fields.length > 0 ? `[heypi] ${event} ${fields.join(" ")}` : `[heypi] ${event}`);
+	const prefix = prettyPrefix(level);
+	const line = fields.length > 0 ? `${prefix} ${event} ${fields.join(" ")}` : `${prefix} ${event}`;
+	method(colorLine(level, line));
+}
+
+function prettyPrefix(level: Level): string {
+	if (level === "warn" || level === "error") return `[heypi] ${level.toUpperCase()}`;
+	return "[heypi]";
+}
+
+function colorLine(level: Level, line: string): string {
+	if (!shouldColor(level)) return line;
+	if (level === "warn") return `\x1b[33m${line}\x1b[0m`;
+	if (level === "error") return `\x1b[31m${line}\x1b[0m`;
+	if (level === "debug") return `\x1b[2m${line}\x1b[0m`;
+	return line;
+}
+
+function shouldColor(level: Level): boolean {
+	if (process.env.FORCE_COLOR && process.env.FORCE_COLOR !== "0") return true;
+	if (process.env.NO_COLOR) return false;
+	const stream = level === "warn" || level === "error" ? process.stderr : process.stdout;
+	return stream.isTTY === true;
 }
 
 function methodFor(level: Level): (message?: unknown, ...optional: unknown[]) => void {

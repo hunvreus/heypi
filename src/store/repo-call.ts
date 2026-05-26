@@ -70,6 +70,17 @@ export class CallRepo {
 			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
 	}
 
+	async listRecent(input: { states?: CallState[]; limit?: number; offset?: number } = {}): Promise<CallRow[]> {
+		const filters = [];
+		if (input.states?.length) filters.push(inArray(call.state, input.states));
+		const query = this.db.select().from(call);
+		const withFilter = filters.length ? query.where(and(...filters)) : query;
+		return await withFilter
+			.orderBy(desc(call.updatedAt))
+			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500))
+			.offset(Math.max(input.offset ?? 0, 0));
+	}
+
 	async setState(id: string, state: CallState): Promise<void> {
 		await this.db.update(call).set({ state, updatedAt: Date.now() }).where(eq(call.id, id));
 	}

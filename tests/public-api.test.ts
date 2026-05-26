@@ -13,6 +13,7 @@ import {
 	coreTools,
 	createHeypi,
 	runHeypi,
+	slack,
 	sqliteStore,
 	tool,
 	workspace,
@@ -184,6 +185,61 @@ test("createHeypi rejects duplicate adapter names", async () => {
 	}
 });
 
+test("slack HTTP path overrides must be explicit", () => {
+	assert.throws(
+		() =>
+			slack({
+				botToken: "xoxb-test",
+				signingSecret: "test-secret",
+				mode: "http",
+				path: "/slack/events",
+			}),
+		/unsafePathOverride: true/,
+	);
+});
+
+test("createHeypi rejects admin as a user adapter name", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-admin-name-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		for (const kind of ["test", "admin"]) {
+			assert.throws(
+				() =>
+					createHeypi({
+						store,
+						logger: consoleLogger({ level: "error", format: "pretty" }),
+						adapters: [{ name: "admin", kind, start: async () => undefined }],
+						agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+						runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+					}),
+				/adapter name is reserved: admin/,
+			);
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi de-dupes internal admin adapter names", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-internal-admin-name-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		const app = createHeypi({
+			store,
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			http: { port: 0 },
+			admin: { auth: false },
+			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+		await app.start();
+		await app.stop();
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("createHeypi serves HTTP routes from multiple adapters on one listener", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-shared-http-"));
 	const port = await freePort();
@@ -191,6 +247,7 @@ test("createHeypi serves HTTP routes from multiple adapters on one listener", as
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
 			logger: consoleLogger({ level: "error", format: "pretty" }),
+			http: { port },
 			adapters: [
 				{
 					name: "a",
@@ -199,7 +256,6 @@ test("createHeypi serves HTTP routes from multiple adapters on one listener", as
 						http?.register({
 							method: "GET",
 							path: "/a",
-							port,
 							handler: (_req, res) => {
 								res.end("a");
 							},
@@ -213,7 +269,6 @@ test("createHeypi serves HTTP routes from multiple adapters on one listener", as
 						http?.register({
 							method: "GET",
 							path: "/b",
-							port,
 							handler: (_req, res) => {
 								res.end("b");
 							},
@@ -277,6 +332,152 @@ test("createHeypi rejects duplicate HTTP routes", async () => {
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await assert.rejects(() => app.start(), /duplicate HTTP route: GET \/same/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi rejects non-admin HTTP routes under /admin", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-admin-route-"));
+	const port = await freePort();
+	try {
+		const app = createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			adapters: [
+				{
+					name: "custom",
+					kind: "test",
+					start: async ({ http }) => {
+						http?.register({
+							method: "GET",
+							path: "/admin/status",
+							port,
+							handler: (_req, res) => {
+								res.end("bad");
+							},
+						});
+					},
+				},
+			],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+		await assert.rejects(() => app.start(), /HTTP route uses reserved path: \/admin\/status/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi rejects structurally conflicting HTTP routes", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-http-shape-"));
+	const port = await freePort();
+	try {
+		const app = createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			adapters: [
+				{
+					name: "a",
+					kind: "test",
+					start: async ({ http }) => {
+						http?.register({
+							method: "GET",
+							path: "/threads/:id",
+							port,
+							handler: (_req, res) => {
+								res.end("a");
+							},
+						});
+					},
+				},
+				{
+					name: "b",
+					kind: "test",
+					start: async ({ http }) => {
+						http?.register({
+							method: "GET",
+							path: "/threads/:threadId",
+							port,
+							handler: (_req, res) => {
+								res.end("b");
+							},
+						});
+					},
+				},
+			],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+		await assert.rejects(
+			() => app.start(),
+			/conflicting HTTP route: GET \/threads\/:threadId conflicts with GET \/threads\/:id/,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin registers reserved routes", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-admin-routes-"));
+	const port = await freePort();
+	try {
+		const app = createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			http: { port },
+			admin: { controlPath: join(root, "admin-control.json") },
+			adapters: [],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+		await app.start();
+		try {
+			const response = await fetch(`http://127.0.0.1:${port}/admin`, { redirect: "manual" });
+			assert.equal(response.status, 303);
+			assert.equal(response.headers.get("location"), "/admin/login");
+		} finally {
+			await app.stop();
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi does not register admin routes by default", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-admin-default-"));
+	const port = await freePort();
+	try {
+		const app = createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			http: { port },
+			adapters: [
+				{
+					name: "health",
+					kind: "test",
+					start: async ({ http }) => {
+						http?.register({
+							method: "GET",
+							path: "/health",
+							handler: (_req, res) => {
+								res.end("ok");
+							},
+						});
+					},
+				},
+			],
+			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+		await app.start();
+		try {
+			assert.equal(await (await fetch(`http://127.0.0.1:${port}/health`)).text(), "ok");
+			const response = await fetch(`http://127.0.0.1:${port}/admin`, { redirect: "manual" });
+			assert.equal(response.status, 404);
+		} finally {
+			await app.stop();
+		}
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

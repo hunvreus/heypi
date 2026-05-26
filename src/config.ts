@@ -9,6 +9,7 @@ import type {
 	JavaScriptConfig,
 	NetworkConfig,
 } from "just-bash";
+import type { AdminConfig } from "./admin/index.js";
 import type { Logger } from "./core/log.js";
 import type { AppMessagesConfig } from "./core/messages.js";
 import type { SchedulerConfig } from "./core/scheduler.js";
@@ -17,6 +18,8 @@ import type { AttachmentProcessingConfig, AttachmentStore } from "./io/attachmen
 import type { Adapter } from "./io/handler.js";
 import type { RuntimeName } from "./runtime/types.js";
 import type { Store } from "./store/types.js";
+
+export type { AdminConfig } from "./admin/index.js";
 
 export type ModelConfig = {
 	provider: string;
@@ -135,11 +138,18 @@ export type AppLockConfig = {
 	drainMs?: number;
 };
 
+export type HttpConfig = {
+	host?: string;
+	port?: number | string;
+};
+
 export type HeypiConfig = {
 	store?: Store;
 	adapters: Adapter[];
 	agent: AgentConfig;
 	runtime: RuntimeConfig;
+	http?: HttpConfig;
+	admin?: boolean | AdminConfig;
 	attachments?: AttachmentConfig;
 	approval?: ApprovalConfig;
 	chat?: ChatConfig;

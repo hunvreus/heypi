@@ -363,7 +363,7 @@ async function handleCallback(input: {
 		);
 		answered = true;
 	};
-	const acknowledge = async (text: string) => {
+	const acknowledge = async (out: Outbound) => {
 		await answer();
 		await input.delivery.run(
 			() =>
@@ -371,14 +371,10 @@ async function handleCallback(input: {
 					chat_id: msg.chat.id,
 					message_id: msg.message_id,
 					text: firstChunk(
-						actionResultText(
-							action.kind,
-							telegramActor(input.callback.from),
-							text,
-							"id" in action ? action.id : undefined,
-						),
+						telegramResolvedApprovalText(out, "approved", telegramActor(input.callback.from)),
 						false,
 					),
+					reply_markup: emptyMarkup(),
 				}),
 			context(),
 		);
@@ -391,7 +387,16 @@ async function handleCallback(input: {
 				input.client.editMessageText({
 					chat_id: msg.chat.id,
 					message_id: msg.message_id,
-					text: firstChunk(telegramApprovalText(out.text, out.approval), Boolean(out.approval)),
+					text: firstChunk(
+						telegramResolvedApprovalText(
+							out,
+							out.approvalResolution ?? (action.kind === "deny" ? "rejected" : "approved"),
+							telegramActor(input.callback.from),
+							msg.text,
+						),
+						false,
+					),
+					reply_markup: emptyMarkup(),
 				}),
 			context(),
 		);
@@ -407,7 +412,7 @@ async function handleCallback(input: {
 			thread,
 			text: actionText(action),
 			data: input.callback,
-			ack: action.kind === "approve" ? (out) => acknowledge(out.text) : undefined,
+			ack: action.kind === "approve" ? (out) => acknowledge(out) : undefined,
 			replace: action.kind === "approve" || action.kind === "deny" ? replace : undefined,
 		});
 		if (!out) {
@@ -422,7 +427,11 @@ async function handleCallback(input: {
 						input.client.editMessageText({
 							chat_id: msg.chat.id,
 							message_id: msg.message_id,
-							text: firstChunk(out.text, false),
+							text: firstChunk(
+								telegramResolvedApprovalText(out, out.approvalResolution, undefined, msg.text),
+								false,
+							),
+							reply_markup: emptyMarkup(),
 						}),
 					context(),
 				);
@@ -455,14 +464,42 @@ async function handleCallback(input: {
 		}
 		const rendered = {
 			...out,
-			text: actionResultText(
-				action.kind,
-				telegramActor(input.callback.from),
-				out.text,
-				"id" in action ? action.id : undefined,
-			),
+			text: out.text,
 		};
-		const approval = action.kind === "deny" ? undefined : rendered.approval;
+		if (action.kind === "deny" && out.approvalResolution) {
+			await input.delivery.run(
+				() =>
+					input.client.editMessageText({
+						chat_id: msg.chat.id,
+						message_id: msg.message_id,
+						text: firstChunk(
+							telegramResolvedApprovalText(
+								out,
+								out.approvalResolution,
+								telegramActor(input.callback.from),
+								msg.text,
+							),
+							false,
+						),
+						reply_markup: emptyMarkup(),
+					}),
+				context(),
+			);
+			return;
+		}
+		if (action.kind === "approve") {
+			await sendTelegramOutput({
+				client: input.client,
+				store: input.store,
+				message: msg,
+				out,
+				logger: input.logger,
+				context: context({ thread }),
+				delivery: input.delivery,
+			});
+			return;
+		}
+		const approval = rendered.approval;
 		await input.delivery.run(
 			() =>
 				input.client.editMessageText({
@@ -858,16 +895,15 @@ function actionText(action: TelegramAction): string {
 	return `${action.kind} ${action.id}`;
 }
 
-function actionResultText(kind: TelegramAction["kind"], actor: string, text: string, id?: string): string {
-	if (kind === "approve") {
-		const prefix = id ? `✅ Approval \`${id}\` approved by ${actor}.` : `✅ Approved by ${actor}.`;
-		return [prefix, text].filter(Boolean).join("\n\n");
-	}
-	if (kind === "deny") {
-		const prefix = id ? `⛔ Approval \`${id}\` rejected by ${actor}.` : `⛔ Rejected by ${actor}.`;
-		return [prefix, text].filter(Boolean).join("\n\n");
-	}
-	return text;
+function telegramResolvedApprovalText(
+	out: Outbound,
+	state: Outbound["approvalResolution"],
+	actor?: string,
+	original?: string,
+): string {
+	if (out.approval && state) return telegramApprovalText(out.text, out.approval, state, actor);
+	if (original) return [original, out.text].filter(Boolean).join("\n\n");
+	return out.text;
 }
 
 function telegramActor(user: TelegramUser): string {
@@ -882,18 +918,37 @@ function firstChunk(text: string, hasMarkup: boolean): string {
 	return telegramChunks(text, hasMarkup)[0] ?? "";
 }
 
-function telegramApprovalText(text: string, approval?: Outbound["approval"]): string {
+export function telegramApprovalText(
+	text: string,
+	approval?: Outbound["approval"],
+	state?: Outbound["approvalResolution"],
+	actor?: string,
+): string {
 	if (!approval) return text;
 	return [
-		"*Approval required*",
+		approvalTitleText(state),
 		approval.reason ? ["Reason:", approval.reason].join("\n") : undefined,
 		...(approval.details ?? []).map((detail) =>
 			[`${detail.label}:`, detail.format === "code" ? codeFence(detail.value) : detail.value].join("\n"),
 		),
 		approval.requestedBy ? `Requested by: ${approval.requestedBy}` : undefined,
+		state ? approvalResolutionText(state, actor) : undefined,
 	]
 		.filter((line): line is string => typeof line === "string")
 		.join("\n\n");
+}
+
+function approvalResolutionText(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
+	if (state === "approved") return actor ? `Approved by ${actor}.` : "Approved.";
+	if (state === "rejected") return actor ? `Rejected by ${actor}.` : "Rejected.";
+	return "Approval expired.";
+}
+
+function approvalTitleText(state?: Outbound["approvalResolution"]): string {
+	if (state === "approved") return "*Approved*";
+	if (state === "rejected") return "*Rejected*";
+	if (state === "expired") return "*Expired*";
+	return "*Approval required*";
 }
 
 function progressMarkup(id: string): TelegramReplyMarkup {
@@ -916,6 +971,10 @@ function approvalMarkup(approval: NonNullable<Outbound["approval"]>): TelegramRe
 			],
 		],
 	};
+}
+
+function emptyMarkup(): TelegramReplyMarkup {
+	return { inline_keyboard: [] };
 }
 
 type TelegramAction =

@@ -1,0 +1,781 @@
+import type { Approval } from "../store/types.js";
+import type { AdminActivityRow, AdminJob, AdminMemory, AdminOverview, AdminPage } from "./service.js";
+
+export type PageInput = {
+	title: string;
+	active: string;
+	csrf: string;
+	auth?: boolean;
+	live: AdminOverview["live"];
+	memoryFiles: number;
+	body: string;
+	nonce: string;
+	livePage?: boolean;
+};
+
+export type ErrorPageInput = {
+	title: string;
+	message: string;
+	nonce: string;
+	status?: number;
+	actionHref?: string;
+	actionLabel?: string;
+};
+
+type AdminInfo = {
+	host: string;
+	port: number | string;
+};
+
+type Cell = string | { html: string };
+type CardDescription = string | Cell;
+const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=1";
+const ADMIN_JS_HREF = "/admin/assets/basecoat.all.min.js?v=1";
+const ADMIN_DOCS_HREF = "https://heypi.dev/docs";
+
+export function page(input: PageInput): string {
+	return `<!doctype html>
+<html lang="en" class="overflow-x-hidden">
+<head>
+${themeScript(input.nonce, true)}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(input.title)} · heypi admin</title>
+<link rel="stylesheet" href="${ADMIN_CSS_HREF}">
+</head>
+<body class="min-h-screen overflow-x-hidden bg-background text-foreground" data-live-page="${input.livePage ? "true" : "false"}">
+<header class="bg-background">
+<div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3 max-[760px]:px-4">
+<a class="flex items-center text-foreground" href="/admin" aria-label="heypi">${logo("h-4 w-auto")}</a>
+<div class="flex items-center gap-2">
+${docsLink()}
+${themeToggle()}
+${input.auth === false ? "" : logoutForm(input.csrf)}
+</div>
+</div>
+</header>
+<main class="mx-auto grid min-w-0 w-full max-w-7xl gap-6 p-6 max-[760px]:p-4">
+<h1 class="sr-only">${escapeHtml(input.title)}</h1>
+${nav(input.active, input.live, input.memoryFiles)}
+${input.body}
+</main>
+<script src="${ADMIN_JS_HREF}" defer></script>
+<script nonce="${escapeHtml(input.nonce)}">
+let currentRevision;
+const livePage = document.body.dataset.livePage === "true";
+const fields = {
+	pendingApprovals: document.querySelectorAll('[data-live-field="pendingApprovals"]'),
+	runningRuns: document.querySelectorAll('[data-live-field="runningRuns"]'),
+	jobs: document.querySelectorAll('[data-live-field="jobs"]'),
+	activeJobs: document.querySelectorAll('[data-live-field="activeJobs"]'),
+	pausedJobs: document.querySelectorAll('[data-live-field="pausedJobs"]'),
+	recentCalls: document.querySelectorAll('[data-live-field="recentCalls"]'),
+	checkedAt: document.querySelectorAll('[data-live-field="checkedAt"]')
+};
+function updateField(name, value) {
+	for (const el of fields[name] || []) el.textContent = String(value);
+}
+function markCopied(button, previous) {
+	button.setAttribute("aria-label", "Copied");
+	const original = button.dataset.adminCopyIcon ?? button.innerHTML;
+	button.dataset.adminCopyIcon = original;
+	button.innerHTML = '${icon("check")}';
+	setTimeout(() => {
+		button.setAttribute("aria-label", previous);
+		button.innerHTML = original;
+	}, 1500);
+}
+function fallbackCopy(text) {
+	const textarea = document.createElement("textarea");
+	textarea.value = text;
+	textarea.setAttribute("readonly", "");
+	textarea.style.position = "fixed";
+	textarea.style.left = "-9999px";
+	document.body.append(textarea);
+	textarea.select();
+	const copied = document.execCommand("copy");
+	textarea.remove();
+	return copied;
+}
+const events = new EventSource("/admin/events");
+events.addEventListener("summary", (event) => {
+	const data = JSON.parse(event.data);
+	updateField("pendingApprovals", data.pendingApprovals);
+	updateField("runningRuns", data.runningRuns);
+	updateField("jobs", data.jobs);
+	updateField("activeJobs", data.activeJobs);
+	updateField("pausedJobs", data.pausedJobs);
+	updateField("recentCalls", data.recentCalls);
+	updateField("checkedAt", "Last updated " + new Date(data.checkedAt).toLocaleTimeString());
+	if (currentRevision && data.revision !== currentRevision && livePage) {
+		setTimeout(() => location.reload(), 750);
+	}
+	currentRevision = data.revision;
+});
+events.onerror = () => updateField("checkedAt", "Last update unavailable");
+document.addEventListener("click", (event) => {
+	const target = event.target;
+	if (!(target instanceof Element)) return;
+	const copy = target.closest("[data-admin-copy]");
+	if (copy instanceof HTMLElement) {
+		const text = copy.dataset.adminCopy ?? "";
+		const previous = copy.getAttribute("aria-label") ?? "Copy";
+		const write = navigator.clipboard?.writeText(text);
+		if (!write) {
+			if (fallbackCopy(text)) markCopied(copy, previous);
+			return;
+		}
+		void write.then(() => markCopied(copy, previous)).catch(() => {
+			if (fallbackCopy(text)) markCopied(copy, previous);
+		});
+		return;
+	}
+	const opener = target.closest("[data-admin-dialog-open]");
+	if (opener instanceof HTMLElement) {
+		const id = opener.dataset.adminDialogOpen;
+		if (id) document.getElementById(id)?.showModal();
+		return;
+	}
+	if (target instanceof HTMLDialogElement && target.matches("[data-admin-dialog]")) {
+		target.close();
+		return;
+	}
+	const closer = target.closest("[data-admin-dialog-close]");
+	if (closer) closer.closest("dialog")?.close();
+});
+</script>
+</body>
+</html>`;
+}
+
+function logoutForm(csrf: string): string {
+	return `<form method="post" action="/admin/logout">
+<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+<button class="btn-outline" type="submit">${icon("log-out")} Log out</button>
+</form>`;
+}
+
+export function loginPage(input: { error?: string; secret: boolean; nonce: string }): string {
+	const title = input.error ? "Admin access failed" : "Admin access only";
+	const message =
+		input.error ?? (input.secret ? "Enter the configured admin secret." : "Use a valid one-time login link.");
+	const actionHtml = input.secret
+		? `<form class="form grid w-full gap-4" method="post" action="/admin/login"><div class="grid gap-2 text-left"><label for="secret">Admin secret</label><input id="secret" type="password" name="secret" autocomplete="current-password" autofocus></div><button class="btn-sm" type="submit">Log in</button></form>`
+		: docsAction();
+	return `<!doctype html>
+<html lang="en" class="overflow-x-hidden">
+<head>
+${themeScript(input.nonce)}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>heypi admin login</title>
+<link rel="stylesheet" href="${ADMIN_CSS_HREF}">
+</head>
+<body class="grid min-h-screen place-items-center bg-background p-4 text-foreground">
+<main class="w-full max-w-[40rem]">
+${emptyState({ title, message, actionHtml, frame: "page", variant: "plain" })}
+</main>
+</body>
+</html>`;
+}
+
+export function errorPage(input: ErrorPageInput): string {
+	const status = input.status ? `${input.status} · ` : "";
+	return `<!doctype html>
+<html lang="en" class="overflow-x-hidden">
+<head>
+${themeScript(input.nonce)}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(input.title)} · heypi admin</title>
+<link rel="stylesheet" href="${ADMIN_CSS_HREF}">
+</head>
+<body class="grid min-h-screen place-items-center bg-background p-4 text-foreground">
+<main class="w-full max-w-[40rem]">
+${emptyState({
+	title: `${status}${input.title}`,
+	message: input.message,
+	actionHref: input.actionHref ?? ADMIN_DOCS_HREF,
+	actionLabel: input.actionLabel ?? "More about heypi",
+	frame: "page",
+	variant: "plain",
+})}
+</main>
+</body>
+</html>`;
+}
+
+export function overviewView(input: AdminOverview, admin: AdminInfo): string {
+	const uptime = Math.max(Date.now() - input.startedAt, 0);
+	const memory = memorySummary(input.memory);
+	return `<div class="grid min-w-0 gap-4">
+${card(
+	"Configuration",
+	checkedAtDescription("Configuration and process details for this heypi instance.", input.live.checkedAt),
+	summaryList(
+		[
+			["Agent", mono(input.agent.id)],
+			["Model", mono(input.agent.model ?? "-")],
+			["Runtime", mono(input.runtime.name)],
+			["HTTP", mono(`${admin.host}:${admin.port}`)],
+			["Adapters", adapterList(input.adapters)],
+			["Memory", memory],
+			["Started", `${duration(uptime)} ago (${time(input.startedAt)})`],
+		],
+		"text-sm md:grid-cols-2",
+		true,
+	),
+)}
+</div>`;
+}
+
+export function activityView(page: AdminPage<AdminActivityRow>, checkedAt?: number): string {
+	const body = `${table(
+		["State", "Value", "Record", "Channel", "Actor", "Updated", ""],
+		page.rows.map((row, index) => [
+			statusBadge(row.state),
+			mono(row.title),
+			kindBadge(row.kind),
+			muted(row.channel ?? "-"),
+			muted(row.actor ?? "-"),
+			mutedHtml(relativeTimeHtml(row.time)),
+			activityDetails(row, index),
+		]),
+		{
+			title: "No activity yet",
+			message:
+				"Once the agent starts handling messages, approvals, jobs, runs, and tool calls, they will show up here.",
+		},
+	)}${pagination("/admin/activity", page)}`;
+	return `<div class="grid min-w-0 gap-4">${card("Activity", checkedAtDescription("Recent runs, approvals, jobs, and tool calls.", checkedAt), body)}</div>`;
+}
+
+export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): string {
+	const body = `${table(
+		["State", "Command", "Channel", "Runtime", "Reason", "Requested", "Expires"],
+		page.rows.map((row) => [
+			statusBadge(row.state),
+			{
+				html: `<span class="block max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono max-[760px]:max-w-[18rem]">${escapeHtml(row.command)}</span>`,
+			},
+			muted(row.channel),
+			muted(row.runtime),
+			muted(row.reason),
+			mutedHtml(relativeTimeHtml(row.requestedAt)),
+			mutedHtml(futureTimeHtml(row.expiresAt)),
+		]),
+		{
+			title: "No pending approvals",
+			message: "Once a tool call needs a human decision, the pending request will show up here.",
+		},
+	)}${pagination("/admin/approvals", page)}`;
+	return `<div class="grid min-w-0 gap-4">${card("Approvals", checkedAtDescription("Pending human decisions for approval-gated tool calls.", checkedAt), body)}</div>`;
+}
+
+export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string {
+	const body = `${table(
+		["State", "Job", "Kind", "Route", "Schedule", "Next", "Last", "Prompt"],
+		page.rows.map((row) => [
+			statusBadge(row.state),
+			mono(row.id),
+			muted(row.kind),
+			row.route ? truncatedText(row.route) : muted("-"),
+			muted(scheduleText(row)),
+			mutedHtml(timeHintHtml(row.nextAt, "Not scheduled")),
+			mutedHtml(timeHintHtml(row.lastAt, "Never")),
+			{
+				html: `<div class="max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground max-[760px]:max-w-[18rem]">${escapeHtml(row.prompt)}</div>`,
+			},
+		]),
+		{
+			title: "No jobs configured",
+			message: "Once scheduled or heartbeat jobs are configured on the heypi app, they will show up here.",
+		},
+	)}${pagination("/admin/jobs", page)}`;
+	return `<div class="grid min-w-0 gap-4">${card("Jobs", checkedAtDescription("Configured scheduled and heartbeat jobs.", checkedAt), body)}</div>`;
+}
+
+export function memoryView(memory: AdminMemory, checkedAt?: number): string {
+	const body = `${table(
+		["Scope", "Content", "Size", "Updated", "Hash", ""],
+		memory.entries.map((entry, index) => [
+			mono(entry.scopePath),
+			truncatedText(memoryPreview(entry)),
+			muted(`${entry.size} bytes`),
+			mutedHtml(relativeTimeHtml(entry.mtimeMs)),
+			mono(entry.sha256.slice(0, 12)),
+			memoryDetails(entry, index),
+		]),
+		{
+			title: "No memory files",
+			message: "Once the agent starts saving memory, durable context files will show up here.",
+		},
+	)}${pagination("/admin/memory", {
+		rows: memory.entries,
+		limit: memory.limit,
+		offset: memory.offset,
+		hasNext: memory.hasNext,
+	})}`;
+	return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
+}
+
+function nav(active: string, live: AdminOverview["live"], memoryFiles: number): string {
+	const items = [
+		{ label: "Activity", href: "/admin", key: "activity", count: undefined, end: false },
+		{
+			label: "Approvals",
+			href: "/admin/approvals",
+			key: "approvals",
+			count: live.pendingApprovals,
+			field: "pendingApprovals",
+			end: false,
+		},
+		{ label: "Jobs", href: "/admin/jobs", key: "jobs", count: live.jobs, field: "jobs", end: false },
+		{ label: "Memory", href: "/admin/memory", key: "memory", count: memoryFiles, end: false },
+		{ label: "Configuration", href: "/admin/configuration", key: "configuration", count: undefined, end: true },
+	];
+	return `<nav class="tabs"><div role="tablist" class="!w-full">${items
+		.map((item) => tabLink(item, active))
+		.join("")}</div></nav>`;
+}
+
+function tabLink(
+	item: { label: string; href: string; key: string; count?: number; field?: string; end: boolean },
+	active: string,
+): string {
+	const selected = active === item.key;
+	const count =
+		item.count === undefined
+			? ""
+			: `<span class="badge-secondary bg-black/10 dark:bg-black/20 h-4 px-1.5 text-[11px]"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
+	return `<a role="tab" aria-selected="${selected ? "true" : "false"}" class="${item.end ? "ml-auto " : ""}min-w-0 inline-flex items-center gap-2" href="${item.href}">${escapeHtml(item.label)}${count}</a>`;
+}
+
+function summaryList(rows: Array<[string, Cell]>, className = "", truncateValues = false): string {
+	return `<div class="grid gap-2.5 ${escapeHtml(className)}">${rows
+		.map(
+			([label, value]) =>
+				`<div class="grid grid-cols-[minmax(5.5rem,7.5rem)_minmax(0,1fr)] items-start gap-3 max-[760px]:grid-cols-1 max-[760px]:gap-0.5"><div class="leading-6 text-muted-foreground">${escapeHtml(label)}</div><div class="min-w-0 ${truncateValues ? "truncate" : "break-words [overflow-wrap:anywhere]"} leading-6">${cellHtml(value)}</div></div>`,
+		)
+		.join("")}</div>`;
+}
+
+function dialogList(rows: Array<[string, Cell]>): string {
+	return `<div class="grid w-full min-w-0 gap-2.5">${rows
+		.map(
+			([label, value]) =>
+				`<div class="grid min-w-0 grid-cols-[8rem_minmax(0,1fr)] items-start gap-3 max-[760px]:grid-cols-1 max-[760px]:gap-0.5"><div class="leading-6 text-muted-foreground">${escapeHtml(label)}</div><div class="min-w-0 max-w-full whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] leading-6">${cellHtml(value)}</div></div>`,
+		)
+		.join("")}</div>`;
+}
+
+function checkedAtDescription(text: string, checkedAt?: number): Cell {
+	return html(
+		`${escapeHtml(text)} <span class="whitespace-nowrap" data-live-field="checkedAt">${escapeHtml(lastUpdatedText(checkedAt))}</span>`,
+	);
+}
+
+function lastUpdatedText(checkedAt?: number): string {
+	return checkedAt
+		? `Last updated ${new Date(checkedAt).toLocaleTimeString()}`
+		: "Last updated after live summary connects.";
+}
+
+function card(title: string, description: CardDescription, body: string): string {
+	return `<section class="card min-w-0 overflow-hidden"><header class="min-w-0"><h2>${escapeHtml(title)}</h2>${description ? `<p>${cellHtml(description)}</p>` : ""}</header><section class="min-w-0">${body}</section></section>`;
+}
+
+function table(headers: string[], rows: Cell[][], emptyInput?: { title: string; message: string }): string {
+	if (!rows.length)
+		return emptyState({
+			title: emptyInput?.title ?? "No rows",
+			message: emptyInput?.message ?? "There is nothing to show for this view yet.",
+			frame: "section",
+			variant: "outline",
+		});
+	return `<div class="w-full max-w-full overflow-x-auto rounded-lg border"><table class="table min-w-max border-0"><thead><tr>${headers
+		.map((header, index) => `<th${edgeClass(index, headers.length)}>${escapeHtml(header)}</th>`)
+		.join("")}</tr></thead><tbody>${rows
+		.map(
+			(row) =>
+				`<tr>${row.map((cell, index) => `<td${edgeClass(index, row.length)}>${cellHtml(cell)}</td>`).join("")}</tr>`,
+		)
+		.join("")}</tbody></table></div>`;
+}
+
+function edgeClass(index: number, length: number): string {
+	const classes = [index === 0 ? "pl-4" : "", index === length - 1 ? "pr-4" : ""].filter(Boolean);
+	return classes.length ? ` class="${classes.join(" ")}"` : "";
+}
+
+function cellHtml(cell: Cell): string {
+	return typeof cell === "string" ? escapeHtml(cell) : cell.html;
+}
+
+function pagination<T>(path: string, page: AdminPage<T>): string {
+	if (page.offset === 0 && !page.hasNext) return "";
+	const prevOffset = Math.max(page.offset - page.limit, 0);
+	const nextOffset = page.offset + page.limit;
+	const prevDisabled = page.offset === 0;
+	const nextDisabled = !page.hasNext;
+	return `<nav role="navigation" aria-label="pagination" class="mt-4 flex w-full justify-end">
+<ul class="flex flex-row items-center gap-1">
+<li>${pageLink("Previous", path, page.limit, prevOffset, prevDisabled, "left")}</li>
+<li>${pageLink("Next", path, page.limit, nextOffset, nextDisabled, "right")}</li>
+</ul>
+</nav>`;
+}
+
+function pageLink(
+	label: string,
+	path: string,
+	limit: number,
+	offset: number,
+	disabled: boolean,
+	direction: "left" | "right",
+): string {
+	const left = direction === "left" ? icon("chevron-left") : "";
+	const right = direction === "right" ? icon("chevron-right") : "";
+	const content = `${left}${escapeHtml(label)}${right}`;
+	if (disabled) return `<span class="btn-sm-ghost opacity-50" aria-disabled="true">${content}</span>`;
+	return `<a class="btn-sm-ghost" href="${path}?limit=${limit}&offset=${offset}">${content}</a>`;
+}
+
+function emptyState(input: {
+	title: string;
+	message: string;
+	actionHref?: string;
+	actionLabel?: string;
+	actionHtml?: string;
+	frame?: "inline" | "page" | "section";
+	variant?: "outline" | "plain";
+}): string {
+	const border = input.variant === "outline" ? " border-dashed border" : "";
+	const actionHtml =
+		input.actionHtml ??
+		(input.actionHref
+			? `<div class="flex gap-2"><a class="btn-sm-outline inline-flex items-center gap-1.5" href="${escapeHtml(input.actionHref)}"${externalAttrs(input.actionHref)}>${escapeHtml(input.actionLabel ?? "Learn more")}${icon("arrow-up-right", "opacity-50")}</a></div>`
+			: "");
+	const frame = input.frame === "page" ? " min-h-[calc(100vh-2rem)]" : "";
+	return `<div class="flex w-full min-w-0 flex-col items-center justify-center gap-6 rounded-lg${border}${frame} p-6 text-center text-balance text-neutral-800 md:p-12 dark:text-neutral-300">
+<header class="flex max-w-sm flex-col items-center gap-2 text-center">
+<h3 class="font-medium tracking-tight">${escapeHtml(input.title)}</h3>
+<p class="text-muted-foreground [&>a:hover]:text-primary text-sm/relaxed [&>a]:underline [&>a]:underline-offset-4">${escapeHtml(input.message)}</p>
+</header>
+${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-center gap-4 text-sm text-balance">${actionHtml}</section>` : ""}
+</div>`;
+}
+
+function themeToggle(): string {
+	return `<button type="button" aria-label="Toggle dark mode" data-admin-theme-toggle class="btn-icon-ghost">
+<span class="hidden dark:block">${icon("sun")}</span>
+<span class="block dark:hidden">${icon("moon")}</span>
+</button>`;
+}
+
+function docsLink(): string {
+	return `<a class="btn-ghost" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer">Docs</a>`;
+}
+
+function kindBadge(kind: AdminActivityRow["kind"]): Cell {
+	return { html: `<span class="badge-secondary">${escapeHtml(kindLabel(kind))}</span>` };
+}
+
+function statusBadge(state: string): Cell {
+	return { html: `<span class="badge-secondary ${stateBg(state)}">${escapeHtml(stateLabel(state))}</span>` };
+}
+
+function html(input: string): Cell {
+	return { html: input };
+}
+
+function muted(input: string): Cell {
+	return { html: `<span class="text-muted-foreground">${escapeHtml(input)}</span>` };
+}
+
+function mutedHtml(input: string): Cell {
+	return { html: `<span class="text-muted-foreground">${input}</span>` };
+}
+
+function mono(input: string): Cell {
+	return { html: `<span class="font-mono [overflow-wrap:anywhere]">${escapeHtml(input)}</span>` };
+}
+
+function wrapText(input: string): Cell {
+	return { html: `<span class="break-words [overflow-wrap:anywhere]">${escapeHtml(input)}</span>` };
+}
+
+function copyable(label: string, value: string, display: Cell): Cell {
+	return html(
+		`<span class="flex min-w-0 items-start gap-2"><span class="min-w-0 flex-1">${cellHtml(display)}</span>${copyButton(label, value)}</span>`,
+	);
+}
+
+function copyButton(label: string, value: string): string {
+	return `<button type="button" class="btn-sm-icon-ghost size-6 shrink-0 text-muted-foreground hover:text-foreground" aria-label="Copy ${escapeHtml(label)}" data-admin-copy="${escapeHtml(value)}">${icon("copy")}</button>`;
+}
+
+function truncatedText(input: string): Cell {
+	return {
+		html: `<div class="max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground max-[760px]:max-w-[18rem]">${escapeHtml(input)}</div>`,
+	};
+}
+
+function stateBg(state: string): string {
+	if (["active", "approved", "completed", "done", "succeeded", "success"].includes(state)) {
+		return "bg-emerald-100 dark:bg-emerald-900";
+	}
+	if (["blocked", "pending", "pending_approval", "running"].includes(state)) {
+		return "bg-amber-100 dark:bg-amber-900";
+	}
+	if (["cancelled", "denied", "expired", "failed", "rejected", "unauthorized"].includes(state)) {
+		return "bg-red-100 dark:bg-red-900";
+	}
+	if (["paused", "skipped"].includes(state)) return "bg-zinc-100 dark:bg-zinc-900";
+	return "bg-muted";
+}
+
+function adapterList(adapters: AdminOverview["adapters"]): Cell {
+	if (!adapters.length) return mono("none");
+	return html(
+		`<span class="flex min-w-0 flex-wrap items-center gap-2">${adapters
+			.map(
+				(adapter) =>
+					`<span class="inline-flex min-w-0 items-center gap-1.5" title="${escapeHtml(adapter.kind)}">${adapterIcon(adapter.kind)}<span class="min-w-0 truncate font-mono">${escapeHtml(adapter.name)}</span></span>`,
+			)
+			.join("")}</span>`,
+	);
+}
+
+function memorySummary(memory: AdminMemory): string {
+	if (!memory.enabled) return "Disabled";
+	const scope = memory.scope === "agent" ? "shared by agent" : `shared by ${memory.scope}`;
+	const writes =
+		memory.writePolicy === "approvers"
+			? "approver writes"
+			: memory.writePolicy === "auto"
+				? "auto writes"
+				: "writes off";
+	return `Enabled, ${scope}, ${writes}`;
+}
+
+function scheduleText(row: AdminJob): string {
+	if (row.kind === "heartbeat") {
+		return row.idleMs ? `idle ${duration(row.idleMs)}` : "heartbeat";
+	}
+	return row.schedule;
+}
+
+function activityDetails(row: AdminActivityRow, index: number): Cell {
+	const id = `activity-detail-${index}`;
+	const detailRows: Array<[string, Cell]> = [
+		["Record", kindLabel(row.kind)],
+		["State", stateLabel(row.state)],
+		["Value", copyable("value", row.title, mono(row.title))],
+		["Detail", row.summary ? copyable("detail", row.summary, row.summary) : "-"],
+		["Channel", row.channel ? copyable("channel", row.channel, row.channel) : "-"],
+		["Actor", row.actor ? copyable("actor", row.actor, row.actor) : "-"],
+		["Updated", `${duration(Math.max(Date.now() - row.time, 0))} ago (${time(row.time)})`],
+		["Duration", row.durationMs === undefined ? "-" : duration(row.durationMs)],
+		["ID", copyable("ID", row.id, mono(row.id))],
+	];
+	return html(`<button type="button" class="btn-sm-ghost" data-admin-dialog-open="${id}">Details</button>
+<dialog id="${id}" class="dialog w-[calc(100vw-2rem)] max-w-[840px] max-h-[calc(100vh-2rem)] overflow-hidden" aria-labelledby="${id}-title" data-admin-dialog>
+<div class="w-full min-w-0 overflow-hidden">
+<header><h2 id="${id}-title">Activity details</h2></header>
+<section class="min-w-0 overflow-y-auto overflow-x-hidden">${dialogList(detailRows)}</section>
+<button type="button" aria-label="Close dialog" data-admin-dialog-close>${icon("x")}</button>
+</div>
+</dialog>`);
+}
+
+function memoryDetails(entry: AdminMemory["entries"][number], index: number): Cell {
+	const id = `memory-detail-${index}`;
+	const content = `${escapeHtml(entry.text)}${entry.truncated ? "\n..." : ""}`;
+	const detailRows: Array<[string, Cell]> = [
+		["Scope", copyable("scope", entry.scopePath, mono(entry.scopePath))],
+		["Path", copyable("path", entry.path, wrapText(entry.path))],
+		["Size", `${entry.size} bytes`],
+		["Updated", time(entry.mtimeMs)],
+		["SHA-256", copyable("SHA-256", entry.sha256, mono(entry.sha256))],
+		[
+			"Content",
+			copyable(
+				"content",
+				entry.text,
+				html(`<div class="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${content}</div>`),
+			),
+		],
+	];
+	return html(`<button type="button" class="btn-sm-ghost" data-admin-dialog-open="${id}">Details</button>
+<dialog id="${id}" class="dialog w-[calc(100vw-2rem)] max-w-[1040px] max-h-[calc(100vh-2rem)] overflow-hidden" aria-labelledby="${id}-title" data-admin-dialog>
+<div class="w-full min-w-0 overflow-hidden">
+<header><h2 id="${id}-title">Memory details</h2></header>
+<section class="min-w-0 overflow-y-auto overflow-x-hidden">${dialogList(detailRows)}</section>
+<button type="button" aria-label="Close dialog" data-admin-dialog-close>${icon("x")}</button>
+</div>
+</dialog>`);
+}
+
+function memoryPreview(entry: AdminMemory["entries"][number]): string {
+	const text = entry.text.trim().replace(/\s+/gu, " ");
+	if (!text) return "-";
+	return entry.truncated ? `${text} ...` : text;
+}
+
+function relativeTimeHtml(input: number): string {
+	const ago = duration(Math.max(Date.now() - input, 0));
+	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(`${ago} ago`)}</span>`;
+}
+
+function futureTimeHtml(input: number | null): string {
+	if (!input) return "No expiry";
+	const delta = input - Date.now();
+	const label = delta >= 0 ? duration(delta) : "Expired";
+	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(label)}</span>`;
+}
+
+function timeHintHtml(input: number | null, empty: string): string {
+	if (!input) return escapeHtml(empty);
+	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(`${duration(Math.max(Date.now() - input, 0))} ago`)}</span>`;
+}
+
+function kindLabel(kind: AdminActivityRow["kind"]): string {
+	const labels: Record<AdminActivityRow["kind"], string> = {
+		approval: "Approval",
+		call: "Tool call",
+		job: "Job",
+		run: "Run",
+	};
+	return labels[kind];
+}
+
+function stateLabel(state: string): string {
+	const labels: Record<string, string> = {
+		active: "Active",
+		approved: "Approved",
+		blocked: "Waiting approval",
+		cancelled: "Cancelled",
+		denied: "Denied",
+		done: "Done",
+		failed: "Failed",
+		paused: "Paused",
+		pending: "Pending",
+		pending_approval: "Needs approval",
+		running: "Running",
+		skipped: "Skipped",
+		unauthorized: "Unauthorized",
+	};
+	return labels[state] ?? state;
+}
+
+function docsAction(): string {
+	return `<div class="flex gap-2"><a class="btn-sm-outline inline-flex items-center gap-1.5" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer">More about heypi${icon("arrow-up-right", "opacity-50")}</a></div>`;
+}
+
+function logo(className = "h-auto w-24"): string {
+	const path =
+		"M582.474 171.429V205.714H616.737V171.429H582.474ZM239.842 102.857H205.579V68.5713H239.842V102.857ZM376.895 102.857H342.632V34.2861H308.368V137.143H376.895V205.714H411.158V34.2861H376.895V102.857ZM513.947 102.857H479.685V68.5713H513.947V102.857ZM34.2627 34.2861V205.714H68.5264V137.143H102.789V205.714H137.053V102.857H68.5264V34.2861H34.2627ZM171.315 34.2861V205.714H274.105V171.429H205.579V137.143H274.105V34.2861H171.315ZM445.421 205.714H479.685V137.143H548.211V34.2861H445.421V205.714ZM582.474 137.143H616.737V34.2861H582.474V137.143Z";
+	return `<svg class="${escapeHtml(className)}" viewBox="34.2627 34.2861 582.4743 171.4279" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="${path}" fill="currentColor"/></svg>`;
+}
+
+function adapterIcon(kind: string): string {
+	if (kind === "slack")
+		return `<svg class="size-4 shrink-0" viewBox="0 0 2447.6 2452.5" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g clip-rule="evenodd" fill-rule="evenodd"><path d="m897.4 0c-135.3.1-244.8 109.9-244.7 245.2-.1 135.3 109.5 245.1 244.8 245.2h244.8v-245.1c.1-135.3-109.5-245.1-244.9-245.3.1 0 .1 0 0 0m0 654h-652.6c-135.3.1-244.9 109.9-244.8 245.2-.2 135.3 109.4 245.1 244.7 245.3h652.7c135.3-.1 244.9-109.9 244.8-245.2.1-135.4-109.5-245.2-244.8-245.3z" fill="#36c5f0"/><path d="m2447.6 899.2c.1-135.3-109.5-245.1-244.8-245.2-135.3.1-244.9 109.9-244.8 245.2v245.3h244.8c135.3-.1 244.9-109.9 244.8-245.3zm-652.7 0v-654c.1-135.2-109.4-245-244.7-245.2-135.3.1-244.9 109.9-244.8 245.2v654c-.2 135.3 109.4 245.1 244.7 245.3 135.3-.1 244.9-109.9 244.8-245.3z" fill="#2eb67d"/><path d="m1550.1 2452.5c135.3-.1 244.9-109.9 244.8-245.2.1-135.3-109.5-245.1-244.8-245.2h-244.8v245.2c-.1 135.2 109.5 245 244.8 245.2zm0-654.1h652.7c135.3-.1 244.9-109.9 244.8-245.2.2-135.3-109.4-245.1-244.7-245.3h-652.7c-135.3.1-244.9 109.9-244.8 245.2-.1 135.4 109.4 245.2 244.7 245.3z" fill="#ecb22e"/><path d="m0 1553.2c-.1 135.3 109.5 245.1 244.8 245.2 135.3-.1 244.9-109.9 244.8-245.2v-245.2h-244.8c-135.3.1-244.9 109.9-244.8 245.2zm652.7 0v654c-.2 135.3 109.4 245.1 244.7 245.3 135.3-.1 244.9-109.9 244.8-245.2v-653.9c.2-135.3-109.4-245.1-244.7-245.3-135.4 0-244.9 109.8-244.8 245.1 0 0 0 .1 0 0" fill="#e01e5a"/></g></svg>`;
+	if (kind === "discord")
+		return `<svg class="size-4 shrink-0" viewBox="0 0 256 199" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M216.856 16.597A208.502 208.502 0 0 0 164.042 0c-2.275 4.113-4.933 9.645-6.766 14.046-19.692-2.961-39.203-2.961-58.533 0-1.832-4.4-4.55-9.933-6.846-14.046a207.809 207.809 0 0 0-52.855 16.638C5.618 67.147-3.443 116.4 1.087 164.956c22.169 16.555 43.653 26.612 64.775 33.193A161.094 161.094 0 0 0 79.735 175.3a136.413 136.413 0 0 1-21.846-10.632 108.636 108.636 0 0 0 5.356-4.237c42.122 19.702 87.89 19.702 129.51 0a131.66 131.66 0 0 0 5.355 4.237 136.07 136.07 0 0 1-21.886 10.653c4.006 8.02 8.638 15.67 13.873 22.848 21.142-6.58 42.646-16.637 64.815-33.213 5.316-56.288-9.08-105.09-38.056-148.36ZM85.474 135.095c-12.645 0-23.015-11.805-23.015-26.18s10.149-26.2 23.015-26.2c12.867 0 23.236 11.804 23.015 26.2.02 14.375-10.148 26.18-23.015 26.18Zm85.051 0c-12.645 0-23.014-11.805-23.014-26.18s10.148-26.2 23.014-26.2c12.867 0 23.236 11.804 23.015 26.2 0 14.375-10.148 26.18-23.015 26.18Z" fill="#5865F2"/></svg>`;
+	if (kind === "telegram")
+		return `<svg class="size-4 shrink-0" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#229ED9" d="M128 0C94.06 0 61.48 13.494 37.5 37.49A128.038 128.038 0 0 0 0 128c0 33.934 13.5 66.514 37.5 90.51C61.48 242.506 94.06 256 128 256s66.52-13.494 90.5-37.49c24-23.996 37.5-56.576 37.5-90.51 0-33.934-13.5-66.514-37.5-90.51C194.52 13.494 161.94 0 128 0Z"/><path fill="#FFF" d="M57.94 126.648c37.32-16.256 62.2-26.974 74.64-32.152 35.56-14.786 42.94-17.354 47.76-17.441 1.06-.017 3.42.245 4.96 1.49 1.28 1.05 1.64 2.47 1.82 3.467.16.996.38 3.266.2 5.038-1.92 20.24-10.26 69.356-14.5 92.026-1.78 9.592-5.32 12.808-8.74 13.122-7.44.684-13.08-4.912-20.28-9.63-11.26-7.386-17.62-11.982-28.56-19.188-12.64-8.328-4.44-12.906 2.76-20.386 1.88-1.958 34.64-31.748 35.26-34.45.08-.338.16-1.598-.6-2.262-.74-.666-1.84-.438-2.64-.258-1.14.256-19.12 12.152-54 35.686-5.1 3.508-9.72 5.218-13.88 5.128-4.56-.098-13.36-2.584-19.9-4.708-8-2.606-14.38-3.984-13.82-8.41.28-2.304 3.46-4.662 9.52-7.072Z"/></svg>`;
+	return icon("webhook", "size-4 shrink-0 text-muted-foreground");
+}
+
+function externalAttrs(href: string): string {
+	return /^https?:\/\//u.test(href) ? ' target="_blank" rel="noopener noreferrer"' : "";
+}
+
+function time(input: number | null): string {
+	return input ? new Date(input).toLocaleString() : "-";
+}
+
+function duration(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	const seconds = Math.floor(ms / 1000);
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 48) return `${hours}h ${minutes % 60}m`;
+	const days = Math.floor(hours / 24);
+	return `${days}d ${hours % 24}h`;
+}
+
+function icon(name: string, className?: string): string {
+	const common = `xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"`;
+	const paths: Record<string, string> = {
+		activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+		"arrow-up-right": '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+		check: '<path d="M20 6 9 17l-5-5"/>',
+		"chevron-left": '<path d="m15 18-6-6 6-6"/>',
+		"chevron-right": '<path d="m9 18 6-6-6-6"/>',
+		circle: '<circle cx="12" cy="12" r="4"/>',
+		clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+		copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+		database:
+			'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/>',
+		key: '<path d="m15.5 7.5 1 1"/><path d="m10 13 6.5-6.5a2.1 2.1 0 0 1 3 3L13 16"/><path d="M5 21h4l8.5-8.5"/><path d="M5 21v-4l8.5-8.5"/>',
+		layout: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',
+		"log-out":
+			'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+		moon: '<path d="M20.9 13.5A8.5 8.5 0 0 1 10.5 3.1 7 7 0 1 0 20.9 13.5Z"/>',
+		minus: '<path d="M5 12h14"/>',
+		pause: '<path d="M10 4v16"/><path d="M14 4v16"/>',
+		refresh:
+			'<path d="M21 12a9 9 0 0 0-9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.8 9.8 0 0 0 6.7-2.7L21 16"/><path d="M16 16h5v5"/>',
+		route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+		sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+		warning:
+			'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+		webhook:
+			'<path d="M18 16.98h-5.99c-1.1 0-2.01-.9-2.01-2.01v-.04"/><path d="m6 17 3-3-3-3"/><path d="M11.99 7.03H18"/><path d="M18 7.03A3 3 0 1 0 15 4"/><path d="M6 17a3 3 0 1 0 3 3"/><path d="M18 16.98A3 3 0 1 0 21 20"/>',
+		x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+	};
+	return `<svg ${common}${className ? ` class="${escapeHtml(className)}"` : ""}>${paths[name] ?? paths.layout}</svg>`;
+}
+
+function themeScript(nonce: string, interactive = false): string {
+	const clickHandler = interactive
+		? `
+	document.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof Element) || !target.closest("[data-admin-theme-toggle]")) return;
+		document.dispatchEvent(new CustomEvent("basecoat:theme"));
+	});`
+		: "";
+	return `<script nonce="${escapeHtml(nonce)}">
+(() => {
+	try {
+		const stored = localStorage.getItem("themeMode");
+		if (stored ? stored === "dark" : matchMedia("(prefers-color-scheme: dark)").matches) {
+			document.documentElement.classList.add("dark");
+		}
+	} catch {}
+	const apply = (dark) => {
+		document.documentElement.classList.toggle("dark", dark);
+		try { localStorage.setItem("themeMode", dark ? "dark" : "light"); } catch {}
+	};
+	document.addEventListener("basecoat:theme", (event) => {
+		const mode = event.detail?.mode;
+		apply(mode === "dark" ? true : mode === "light" ? false : !document.documentElement.classList.contains("dark"));
+	});${clickHandler}
+})();
+</script>`;
+}
+
+export function escapeHtml(input: string): string {
+	return input
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;");
+}

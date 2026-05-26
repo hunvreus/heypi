@@ -1,7 +1,7 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
 	"files": {
-		"includes": ["**", "!dist", "!drizzle/meta", "!examples/*/state"]
+		"includes": ["**", "!dist", "!drizzle/meta", "!.heypi", "!examples/*/state", "!src/admin/assets"]
 	},
 	"linter": {
 		"enabled": true,
@@ -17,6 +17,11 @@
 				"noControlCharactersInRegex": "off",
 				"noEmptyInterface": "off"
 			}
+		}
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
 		}
 	},
 	"formatter": {

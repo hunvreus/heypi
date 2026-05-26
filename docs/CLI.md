@@ -4,6 +4,8 @@ The `heypi` CLI is a separate executable shipped with the npm package. It does n
 
 Use it for setup checks, provider diagnostics, database migrations, and scheduled job inspection.
 
+Most provider commands load `./.env` when it exists. Pass `--env <path>` to load a different file. You can pass tokens directly with command-specific flags, but env files keep setup checks aligned with the app you are about to run.
+
 ## Commands
 
 ```bash
@@ -16,7 +18,8 @@ Slack:
 
 ```bash
 heypi slack check [--env .env]
-heypi slack manifest [--url https://host/slack/events]
+heypi slack manifest [--url https://host/slack/slack/events]
+heypi slack channels [--env .env] [--private]
 heypi slack env
 ```
 
@@ -37,6 +40,22 @@ heypi discord invite --client-id <application-id>
 heypi discord env
 ```
 
+Provider discovery commands print IDs needed in config:
+
+- `telegram observe`: waits for a delivered Telegram message and prints the chat id plus a `targets` snippet for jobs.
+- `slack channels`: lists Slack channel IDs visible to the bot and prints a `targets` snippet. Use `--private` for private channels after adding the required Slack scope.
+- `discord channels`: lists guild/channel IDs for text channels visible to the bot.
+- `discord observe`: waits for a delivered Discord message and prints guild, channel, and user IDs plus a `targets` snippet.
+- `slack check`: validates Slack credentials and prints the workspace/team and bot identity.
+
+Admin:
+
+```bash
+heypi admin link [--control .heypi/admin-control.json] [--url http://127.0.0.1:3000] [--json]
+```
+
+`admin link` mints a fresh one-time login URL from a running heypi process. The app writes `.heypi/admin-control.json` at startup; the CLI reads that generated local token and calls the running admin server. The token file is local control material and should not be committed.
+
 Approvals:
 
 ```bash
@@ -49,14 +68,14 @@ Approval CLI commands are read-only. Approve or reject from the original chat pr
 Jobs:
 
 ```bash
-heypi jobs list --db heypi.db [--json]
-heypi jobs show <id> --db heypi.db [--json]
-heypi jobs run <id> --db heypi.db
-heypi jobs pause <id> --db heypi.db
-heypi jobs resume <id> --db heypi.db
+heypi jobs list --db heypi.db [--agent <id>] [--json]
+heypi jobs show <id> --db heypi.db [--agent <id>] [--json]
+heypi jobs run <id> --db heypi.db [--agent <id>]
+heypi jobs pause <id> --db heypi.db [--agent <id>]
+heypi jobs resume <id> --db heypi.db [--agent <id>]
 ```
 
-Job commands are scheduler admin commands. `jobs run` marks the job due now. A running heypi app executes it on its next scheduler tick because execution needs the app's agent, adapters, runtime, and tools.
+Job commands are scheduler admin commands. Jobs are scoped by agent. Use `--agent` when a DB contains more than one agent or when mutating a job. `jobs run` marks the job due now. A running heypi app executes it on its next scheduler tick because execution needs the app's agent, adapters, runtime, and tools.
 
 ## Install
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { discordAllowed, discordTriggered } from "../src/io/discord.js";
-import { slack, slackAllowed, slackMessageSubtypeAllowed, slackTriggered } from "../src/io/slack.js";
+import { approvalBlocks, slack, slackAllowed, slackMessageSubtypeAllowed, slackTriggered } from "../src/io/slack.js";
 import { telegramAllowed, telegramTriggered } from "../src/io/telegram.js";
 
 test("Slack allowlists default to accepting delivered message events", () => {
@@ -82,6 +82,30 @@ test("Slack HTTP mode requires a signing secret at runtime", () => {
 		/Slack HTTP mode requires signingSecret/,
 	);
 	assert.equal(slack({ botToken: "bot-token", mode: "socket", appToken: "app-token" }).name, "slack");
+});
+
+test("Slack approval resolution preserves approval blocks and replaces actions", () => {
+	const approval = {
+		id: "approval-1",
+		callId: "call-1",
+		command: "curl --version",
+		runtime: "just-bash",
+		reason: "Run bash command.",
+		allowed: [],
+		requestedBy: "U_REQUESTER",
+		details: [{ label: "Command", value: "curl --version", format: "code" as const }],
+	};
+	const pending = approvalBlocks(approval);
+	const rejected = approvalBlocks(approval, "rejected", "U_REVIEWER");
+
+	assert.ok(pending);
+	assert.ok(rejected);
+	assert.match(JSON.stringify(pending[0]), /Approval required/);
+	assert.match(JSON.stringify(rejected[0]), /Rejected/);
+	assert.equal(pending.at(-1)?.type, "actions");
+	assert.equal(rejected.at(-1)?.type, "context");
+	assert.deepEqual(rejected.slice(1, -1), pending.slice(1, -1));
+	assert.match(JSON.stringify(rejected.at(-1)), /Rejected by <@U_REVIEWER>/);
 });
 
 test("Telegram allowlists default to accepting delivered message events", () => {

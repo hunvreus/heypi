@@ -66,7 +66,9 @@ export class ApprovalRepo {
 		return rows[0];
 	}
 
-	async listPending(input: { threadId?: string; turnId?: string; limit?: number } = {}): Promise<ApprovalRow[]> {
+	async listPending(
+		input: { threadId?: string; turnId?: string; limit?: number; offset?: number } = {},
+	): Promise<ApprovalRow[]> {
 		const filters = [eq(approval.state, "pending")];
 		if (input.threadId) filters.push(eq(approval.threadId, input.threadId));
 		if (input.turnId) filters.push(eq(approval.turnId, input.turnId));
@@ -75,7 +77,8 @@ export class ApprovalRepo {
 			.from(approval)
 			.where(and(...filters))
 			.orderBy(desc(approval.requestedAt))
-			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
+			.limit(Math.min(Math.max(input.limit ?? 5, 1), 500))
+			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
 	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean> {
