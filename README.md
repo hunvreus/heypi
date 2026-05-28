@@ -14,6 +14,11 @@ heypi gives [Pi](https://github.com/earendil-works/pi) a production chat shell: 
 
 ## Install
 
+Requirements:
+
+- Node.js 22 or newer.
+- Optional PDF/Office attachment conversion: Python 3 plus `uv`, or Python 3 with MarkItDown already installed.
+
 ```bash
 npm install @hunvreus/heypi
 ```
@@ -24,6 +29,7 @@ npm install @hunvreus/heypi
 import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
+	state: { root: "./state" },
 	adapters: [
 		slack({
 			botToken: process.env.SLACK_BOT_TOKEN!,
@@ -172,6 +178,7 @@ Example adapter configs:
 
 ```ts
 createHeypi({
+	state: { root: "./state" },
 	http: { host: "127.0.0.1", port: 3000 },
 	adapters: [
 		slack({
@@ -200,7 +207,7 @@ Configure streaming on each adapter and busy-thread behavior at the app level. S
 
 ```ts
 createHeypi({
-	// ...
+	// ...state, adapters, agent, runtime
 	chat: {
 		busy: "steer", // "steer" | "followUp" | "reject"
 	},
@@ -229,7 +236,7 @@ Memory is off by default. When enabled, `memory.scope` controls who shares the m
 
 ```ts
 createHeypi({
-	// ...
+	// ...state, adapters, agent, runtime
 	scope: "channel",
 	memory: {
 		enabled: true,
@@ -290,7 +297,7 @@ Tool workspaces are derived from the configured `scope`. Inbound attachments use
 attachments: { process: { documents: true } }
 ```
 
-The bundled `heypi-convert-document` wrapper uses Microsoft MarkItDown. If document conversion is enabled, prewarm it during deploy:
+The bundled `heypi-convert-document` wrapper uses Microsoft MarkItDown through Python. If you rely on `uv` to provision MarkItDown, prewarm it during deploy:
 
 ```bash
 heypi-convert-document --setup
@@ -300,20 +307,21 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for runtime boundaries, shutd
 
 ## Store
 
-By default, `createHeypi()` uses SQLite at `./heypi.db`.
+`createHeypi()` requires an explicit `state.root`. Generated local state, admin signing material, and the default SQLite database live under that directory.
 
-Pass `store` when you need a different path or custom store:
+When `store` is omitted, heypi uses SQLite at `<state.root>/heypi.db`:
 
 ```ts
-import { sqliteStore } from "@hunvreus/heypi";
-
-store: sqliteStore({ path: "./heypi.db" })
+createHeypi({
+	state: { root: "./state" },
+	// ...
+});
 ```
 
-Treat the database and Pi session files as sensitive data. Run migrations with:
+Pass `store` only when you need a custom database path or custom store. Treat the database, admin secret, and Pi session files as sensitive data. Run migrations with:
 
 ```bash
-heypi db migrate --db ./heypi.db
+heypi db migrate --db ./state/heypi.db
 ```
 
 Custom stores are advanced. See [`docs/EXTENDING.md`](docs/EXTENDING.md).
@@ -323,14 +331,14 @@ Custom stores are advanced. See [`docs/EXTENDING.md`](docs/EXTENDING.md).
 The `heypi` CLI is for setup checks, diagnostics, migrations, and job inspection. It is not used by `createHeypi()` at runtime.
 
 ```bash
-heypi check --db ./heypi.db
+heypi check --db ./state/heypi.db
 heypi slack check
 heypi slack channels
 heypi telegram observe
 heypi discord observe
 heypi admin link
-heypi approvals list --db ./heypi.db
-heypi jobs list --db ./heypi.db --agent slack-devops
+heypi approvals list --db ./state/heypi.db
+heypi jobs list --db ./state/heypi.db --agent slack-devops
 ```
 
 The CLI loads `./.env` by default when it exists. Pass `--env <path>` to use a different env file.

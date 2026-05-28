@@ -97,7 +97,10 @@ export class JobRepo {
 		await this.db.update(job).set({ nextAt: Date.now(), updatedAt: Date.now() }).where(jobWhere(key));
 	}
 
-	async finish(input: { agent: string; id: string }, result: { nextAt?: number; lastAt: number }): Promise<void> {
+	async finish(
+		input: { agent: string; id: string },
+		result: { nextAt: number | null; lastAt: number },
+	): Promise<void> {
 		await this.db
 			.update(job)
 			.set({ nextAt: result.nextAt, lastAt: result.lastAt, updatedAt: Date.now() })

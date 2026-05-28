@@ -1,8 +1,16 @@
 #!/usr/bin/env node
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { cac } from "cac";
-import { DEFAULT_ADMIN_CONTROL_PATH, readAdminControl } from "./admin/control.js";
+import {
+	type AdminServerDescriptor,
+	adminLoginUrl,
+	createAdminLoginToken,
+	processAlive,
+	readAdminSecret,
+	readAdminServerDescriptors,
+} from "./admin/auth.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -15,9 +23,9 @@ import { migrate } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 
-const VERSION = "0.1.0-alpha.0";
+const VERSION = packageVersion();
 
-type Flags = Record<string, string | boolean>;
+type Flags = Record<string, string | number | boolean>;
 
 async function main(): Promise<void> {
 	const cli = buildCli();
@@ -93,7 +101,8 @@ function buildCli() {
 		);
 	cli.command("admin <action>", "Admin commands: link")
 		.option("--env <path>", "Load env file")
-		.option("--control <path>", "Admin control file path")
+		.option("--state <path>", "heypi state directory")
+		.option("--pid <pid>", "Select one running admin server")
 		.option("--url <url>", "Admin base URL")
 		.option("--json", "Print JSON")
 		.action((action: string, flags: Flags) =>
@@ -305,27 +314,19 @@ DISCORD_CLIENT_ID=... # invite URL helper only`);
 }
 
 async function adminLink(flags: Flags): Promise<void> {
-	const controlPath = stringFlag(flags, "control") ?? process.env.HEYPI_ADMIN_CONTROL ?? DEFAULT_ADMIN_CONTROL_PATH;
-	const control = readAdminControl(controlPath);
-	const baseUrl = stringFlag(flags, "url") ?? process.env.HEYPI_ADMIN_URL ?? control.url;
-	const endpoint = adminControlEndpoint(baseUrl);
-	let response: Response;
-	try {
-		response = await fetch(endpoint, {
-			method: "POST",
-			headers: { authorization: `Bearer ${control.token}`, accept: "application/json" },
-		});
-	} catch (error) {
-		throw new Error(
-			`admin server is not reachable at ${baseUrl}; make sure the heypi process is running, or pass --url/--control. ${message(error)}`,
-		);
+	const stateRoot = adminStateRoot(flags);
+	const explicitUrl = stringFlag(flags, "url") ?? process.env.HEYPI_ADMIN_URL;
+	const server = await selectAdminServer(stateRoot, flags, explicitUrl);
+	const baseUrl = explicitUrl ?? server?.url;
+	if (!baseUrl) {
+		throw new Error(`no running admin server found for state root ${stateRoot}; start heypi`);
 	}
-	const parsed = (await response.json().catch(() => ({}))) as Partial<AdminLinkResponse> & { error?: string };
-	if (!response.ok) throw new Error(parsed.error ?? `admin link request failed: ${response.status}`);
-	if (typeof parsed.url !== "string" || typeof parsed.expiresAt !== "number") {
-		throw new Error("admin link response was invalid");
-	}
-	const body = { url: parsed.url, expiresAt: parsed.expiresAt };
+	const secretValue = process.env.HEYPI_ADMIN_SECRET?.trim() || readAdminSecret(stateRoot);
+	const signed = createAdminLoginToken(secretValue, 5 * 60_000, { stateRoot });
+	const body = {
+		url: adminLoginUrl(baseUrl, signed.token, server?.adminPath ?? "/admin"),
+		expiresAt: signed.expiresAt,
+	};
 	line(booleanFlag(flags, "json") ? JSON.stringify(body, null, 2) : body.url);
 }
 
@@ -500,6 +501,7 @@ function requiredFlag(flags: Flags, name: string): string {
 
 function stringFlag(flags: Flags, name: string): string | undefined {
 	const value = flags[name] ?? flags[camel(name)];
+	if (typeof value === "number" && Number.isFinite(value)) return String(value);
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
@@ -511,9 +513,9 @@ function helpText(): string {
 	return `heypi ${VERSION}
 
 Usage:
-  heypi check [--env .env] [--db heypi.db] [--runtime-root ./workspace]
-  heypi db check --db heypi.db
-  heypi db migrate --db heypi.db
+  heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
+  heypi db check --db ./state/heypi.db
+  heypi db migrate --db ./state/heypi.db
   heypi slack check [--env .env]
   heypi slack manifest [--url https://host/slack/slack/events]
   heypi slack channels [--env .env] [--private]
@@ -523,19 +525,27 @@ Usage:
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
   heypi discord channels [--env .env]
-  heypi admin link [--control .heypi/admin-control.json] [--url http://127.0.0.1:3000]
-  heypi approvals list --db heypi.db [--json]
-  heypi approvals show <id> --db heypi.db [--json]
-  heypi jobs list --db heypi.db [--agent <id>] [--json]
-  heypi jobs show <id> --db heypi.db [--agent <id>] [--json]
-  heypi jobs run <id> --db heypi.db [--agent <id>]
-  heypi jobs pause <id> --db heypi.db [--agent <id>]
-  heypi jobs resume <id> --db heypi.db [--agent <id>]`;
+  heypi admin link [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
+  heypi approvals list --db ./state/heypi.db [--json]
+  heypi approvals show <id> --db ./state/heypi.db [--json]
+  heypi jobs list --db ./state/heypi.db [--agent <id>] [--json]
+  heypi jobs show <id> --db ./state/heypi.db [--agent <id>] [--json]
+  heypi jobs run <id> --db ./state/heypi.db [--agent <id>]
+  heypi jobs pause <id> --db ./state/heypi.db [--agent <id>]
+  heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]`;
 }
 
 function numberFlag(flags: Flags, name: string, fallback: number): number {
 	const raw = stringFlag(flags, name);
 	if (!raw) return fallback;
+	const value = Number(raw);
+	if (!Number.isFinite(value)) throw new Error(`Invalid --${name}: ${raw}`);
+	return value;
+}
+
+function optionalNumberFlag(flags: Flags, name: string): number | undefined {
+	const raw = stringFlag(flags, name);
+	if (!raw) return undefined;
 	const value = Number(raw);
 	if (!Number.isFinite(value)) throw new Error(`Invalid --${name}: ${raw}`);
 	return value;
@@ -552,16 +562,151 @@ function optionalSecret(flags: Flags, flag: string, env: string): string | undef
 	return value?.trim() || undefined;
 }
 
-function adminControlEndpoint(input: string): string {
-	const url = new URL(input);
-	url.pathname = "/admin/_control/links";
+function adminStateRoot(flags: Flags): string {
+	const explicit = stringFlag(flags, "state") ?? process.env.HEYPI_STATE_ROOT;
+	if (explicit) return resolve(explicit);
+	const local = resolve("state");
+	if (existsSync(join(local, "admin"))) return local;
+	const discovered = discoverStateRoots(resolve("."));
+	if (discovered.length === 1) return discovered[0];
+	if (discovered.length > 1) {
+		throw new Error(
+			`multiple heypi state roots found; pass --state:\n${discovered.map((root) => `  ${root}`).join("\n")}`,
+		);
+	}
+	throw new Error("no heypi admin state found; pass --state or run from the app folder");
+}
+
+async function selectAdminServer(
+	stateRoot: string,
+	flags: Flags,
+	urlOverride?: string,
+): Promise<{ pid: number; url: string; adminPath: string } | undefined> {
+	const requestedPid = optionalNumberFlag(flags, "pid");
+	const matched: Array<{ path: string; descriptor: AdminServerDescriptor }> = [];
+	const unavailable: AdminServerDescriptor[] = [];
+	for (const row of readAdminServerDescriptors(stateRoot)) {
+		if (requestedPid !== undefined && row.descriptor.pid !== requestedPid) continue;
+		if (!processAlive(row.descriptor.pid)) {
+			rmSync(row.path, { force: true });
+			continue;
+		}
+		const probe = await adminServerProbe(urlOverride ? { ...row.descriptor, url: urlOverride } : row.descriptor);
+		if (probe === "matched") {
+			matched.push(row);
+			continue;
+		}
+		if (probe === "mismatched") {
+			if (!urlOverride) rmSync(row.path, { force: true });
+			continue;
+		}
+		unavailable.push(row.descriptor);
+	}
+	if (requestedPid !== undefined) {
+		const row = matched.find((item) => item.descriptor.pid === requestedPid);
+		if (row) return row.descriptor;
+		const stalled = unavailable.find((item) => item.pid === requestedPid);
+		if (stalled) {
+			const url = urlOverride ?? stalled.url;
+			throw new Error(
+				`admin server pid ${requestedPid} was found for state root ${stateRoot}, but did not respond at ${url}`,
+			);
+		}
+		throw new Error(
+			urlOverride
+				? `admin server pid ${requestedPid} did not match the admin instance at ${urlOverride}`
+				: `admin server pid ${requestedPid} is not running for state root ${stateRoot}`,
+		);
+	}
+	if (matched.length === 0) {
+		if (unavailable.length) {
+			if (urlOverride) {
+				throw new Error(
+					`admin server descriptor found for state root ${stateRoot}, but none responded at ${urlOverride}`,
+				);
+			}
+			throw new Error(
+				`found ${unavailable.length} admin server descriptor(s) for state root ${stateRoot}, but none responded; check that heypi is reachable from this shell or pass --url`,
+			);
+		}
+		if (urlOverride) throw new Error(`no admin server descriptor matched ${urlOverride} for state root ${stateRoot}`);
+		return undefined;
+	}
+	if (matched.length > 1) {
+		throw new Error(
+			`multiple admin servers are running for state root ${stateRoot}; pass --pid:\n${matched
+				.map((row) => `  ${row.descriptor.pid}\t${row.descriptor.url}`)
+				.join("\n")}`,
+		);
+	}
+	return matched[0].descriptor;
+}
+
+type AdminServerProbe = "matched" | "mismatched" | "unavailable";
+
+async function adminServerProbe(descriptor: AdminServerDescriptor): Promise<AdminServerProbe> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 2_000);
+	try {
+		const response = await fetch(adminProbeUrl(descriptor.url, descriptor.adminPath), {
+			method: "GET",
+			redirect: "manual",
+			signal: controller.signal,
+		});
+		const instanceId = response.headers.get("x-heypi-admin-instance");
+		if (instanceId === descriptor.instanceId) return "matched";
+		return instanceId ? "mismatched" : "unavailable";
+	} catch {
+		return "unavailable";
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+function adminProbeUrl(baseUrl: string, adminPath: string): string {
+	const url = new URL(baseUrl);
+	url.pathname = `${adminPath.replace(/\/+$/u, "")}/login`;
 	url.search = "";
 	url.hash = "";
 	return url.toString();
 }
 
+function discoverStateRoots(root: string, depth = 5): string[] {
+	const out = new Set<string>();
+	const walk = (dir: string, remaining: number) => {
+		const stateRoot = join(dir, "state");
+		if (existsSync(join(stateRoot, "admin"))) out.add(stateRoot);
+		if (remaining <= 0) return;
+		let entries: string[];
+		try {
+			entries = readdirSync(dir);
+		} catch {
+			return;
+		}
+		for (const name of entries) {
+			if ([".git", "dist", "node_modules"].includes(name)) continue;
+			const path = join(dir, name);
+			try {
+				if (statSync(path).isDirectory()) walk(path, remaining - 1);
+			} catch {}
+		}
+	};
+	walk(root, depth);
+	return [...out].sort();
+}
+
 function camel(name: string): string {
 	return name.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase());
+}
+
+function packageVersion(): string {
+	try {
+		const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+			version?: unknown;
+		};
+		if (typeof pkg.version === "string" && pkg.version.trim()) return pkg.version;
+	} catch {}
+	return "0.0.0";
 }
 
 function envCheck(name: string): string {
@@ -629,11 +774,6 @@ type TelegramUpdate = {
 	update_id: number;
 	message?: TelegramMessage;
 	edited_message?: TelegramMessage;
-};
-
-type AdminLinkResponse = {
-	url: string;
-	expiresAt: number;
 };
 
 main().catch((error) => {

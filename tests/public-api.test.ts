@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +37,7 @@ test("public package entrypoint supports a minimal app config", async () => {
 		});
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
 			agent: agentFrom("./examples/slack-devops/agent", {
@@ -56,11 +57,30 @@ test("public package entrypoint supports a minimal app config", async () => {
 	}
 });
 
-test("createHeypi defaults to ./heypi.db SQLite store", async () => {
+test("createHeypi requires state.root", async () => {
+	const adapter: Adapter = {
+		name: "test",
+		kind: "test",
+		start: async () => undefined,
+	};
+	assert.throws(
+		() =>
+			createHeypi({
+				logger: consoleLogger({ level: "error", format: "pretty" }),
+				adapters: [adapter],
+				agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+				runtime: { name: "host-bash", root: workspace("./workspace") },
+			} as unknown as Parameters<typeof createHeypi>[0]),
+		/state\.root is required/,
+	);
+});
+
+test("createHeypi uses state.root for the default SQLite store", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-default-store-"));
 	const cwd = process.cwd();
 	try {
 		process.chdir(root);
+		await mkdir(join(root, "agent"));
 		const adapter: Adapter = {
 			name: "test",
 			kind: "test",
@@ -68,9 +88,10 @@ test("createHeypi defaults to ./heypi.db SQLite store", async () => {
 			stop: async () => undefined,
 		};
 		const app = createHeypi({
+			state: { root: "./state" },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
-			agent: agentFrom(join(cwd, "examples/slack-devops/agent"), { id: "default", model: "openai/gpt-5-mini" }),
+			agent: agentFrom(join(root, "agent"), { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -80,7 +101,7 @@ test("createHeypi defaults to ./heypi.db SQLite store", async () => {
 		await app.start();
 		await app.stop();
 
-		assert.equal((await stat(join(root, "heypi.db"))).isFile(), true);
+		assert.equal((await stat(join(root, "state", "heypi.db"))).isFile(), true);
 	} finally {
 		process.chdir(cwd);
 		await rm(root, { recursive: true, force: true });
@@ -104,6 +125,7 @@ test("createHeypi passes injected attachment store to adapters", async () => {
 		};
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
 			attachments: { store: attachments },
@@ -145,6 +167,7 @@ test("createHeypi stops started adapters when a later adapter fails to start", a
 		};
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [first, second],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -170,6 +193,7 @@ test("createHeypi rejects duplicate adapter names", async () => {
 			() =>
 				createHeypi({
 					store,
+					state: { root: join(root, "state") },
 					logger: consoleLogger({ level: "error", format: "pretty" }),
 					adapters: [
 						{ name: "same", kind: "test", start: async () => undefined },
@@ -207,6 +231,7 @@ test("createHeypi rejects admin as a user adapter name", async () => {
 				() =>
 					createHeypi({
 						store,
+						state: { root: join(root, "state") },
 						logger: consoleLogger({ level: "error", format: "pretty" }),
 						adapters: [{ name: "admin", kind, start: async () => undefined }],
 						agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -227,6 +252,7 @@ test("createHeypi de-dupes internal admin adapter names", async () => {
 		const app = createHeypi({
 			store,
 			logger: consoleLogger({ level: "error", format: "pretty" }),
+			state: { root: join(root, "state") },
 			http: { port: 0 },
 			admin: { auth: false },
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
@@ -246,6 +272,7 @@ test("createHeypi serves HTTP routes from multiple adapters on one listener", as
 	try {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			http: { port },
 			adapters: [
@@ -297,6 +324,7 @@ test("createHeypi rejects duplicate HTTP routes", async () => {
 	try {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [
 				{
@@ -343,6 +371,7 @@ test("createHeypi rejects non-admin HTTP routes under /admin", async () => {
 	try {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [
 				{
@@ -375,6 +404,7 @@ test("createHeypi rejects structurally conflicting HTTP routes", async () => {
 	try {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [
 				{
@@ -425,8 +455,9 @@ test("admin registers reserved routes", async () => {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
 			logger: consoleLogger({ level: "error", format: "pretty" }),
+			state: { root: join(root, "state") },
 			http: { port },
-			admin: { controlPath: join(root, "admin-control.json") },
+			admin: true,
 			adapters: [],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
@@ -450,6 +481,7 @@ test("createHeypi does not register admin routes by default", async () => {
 	try {
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			http: { port },
 			adapters: [
@@ -491,6 +523,7 @@ test("createHeypi refuses to start when another app instance holds the lock", as
 		await store.locks?.acquire({ key: "app:default", owner: "other-process", ttlMs: 60_000 });
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -515,6 +548,7 @@ test("createHeypi clears stale app locks owned by a dead same-host pid", async (
 		await store.locks?.acquire({ key: "app:default", owner: `${hostname()}:2147483647:stale`, ttlMs: 60_000 });
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -539,6 +573,7 @@ test("createHeypi releases the app lock on stop", async () => {
 		const store = sqliteStore({ path: join(root, "heypi.db") });
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -565,6 +600,7 @@ test("createHeypi stops when app lock refresh loses ownership", async () => {
 		let stopped = false;
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [
 				{
@@ -625,10 +661,35 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			trace: "trace-stale",
 		});
 		await store.locks?.acquire({ key: `thread:${thread.id}`, owner: "dead-process" });
+		const otherThread = await store.threads.getOrCreate({
+			agent: "other",
+			provider: "slack",
+			channel: "C2",
+			actor: "U2",
+			key: "C2:T2",
+		});
+		const otherMessage = await store.messages.create({
+			threadId: otherThread.id,
+			provider: "slack",
+			role: "user",
+			actor: "U2",
+			text: "deploy",
+		});
+		const otherTurn = await store.turns.create({
+			threadId: otherThread.id,
+			inputMessageId: otherMessage.id,
+			agent: "other",
+			provider: "slack",
+			channel: "C2",
+			actor: "U2",
+			trace: "trace-other",
+		});
+		await store.locks?.acquire({ key: `thread:${otherThread.id}`, owner: "other-process" });
 
 		const adapter: Adapter = { name: "test", kind: "test", start: async () => undefined };
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
 			agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -644,6 +705,9 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 		const recovered = (await store.turns.listForThread(thread.id)).find((row) => row.id === turn.id);
 		assert.equal(recovered?.state, "failed");
 		assert.equal(await store.locks?.get(`thread:${thread.id}`), undefined);
+		const other = (await store.turns.listForThread(otherThread.id)).find((row) => row.id === otherTurn.id);
+		assert.equal(other?.state, "running");
+		assert.equal((await store.locks?.get(`thread:${otherThread.id}`))?.owner, "other-process");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

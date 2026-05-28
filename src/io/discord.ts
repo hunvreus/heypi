@@ -13,7 +13,7 @@ import {
 	Partials,
 	type TextBasedChannel,
 } from "discord.js";
-import { codeFence } from "../core/approval-view.js";
+import { approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { ScopedKey } from "../core/scope.js";
 import type { ApprovalResolution } from "../core/types.js";
@@ -171,7 +171,7 @@ async function handleMessage(input: {
 		context: context(),
 		delivery: input.delivery,
 	});
-	const pending = startProgress({
+	const pending = startDiscordProgress({
 		message: msg,
 		progress,
 		cancelId: trace,
@@ -256,7 +256,7 @@ async function handleMessage(input: {
 			},
 		},
 		sendError: async () => {
-			const text = userError("handler", input.start.messages?.error);
+			const text = userError(input.start.messages?.error);
 			const edited = await pending.update({ text });
 			await sendTextChunks({
 				channel: msg.channel,
@@ -401,7 +401,7 @@ async function handleInteraction(input: {
 			}),
 		);
 		await interaction
-			.followUp({ content: userError("handler", input.start.messages?.error), ephemeral: true })
+			.followUp({ content: userError(input.start.messages?.error), ephemeral: true })
 			.catch(() => undefined);
 	}
 }
@@ -513,7 +513,7 @@ function discordReplyStream(input: {
 	);
 }
 
-function startProgress(input: {
+export function startDiscordProgress(input: {
 	message: Message;
 	progress?: DiscordProgress;
 	cancelId?: string;
@@ -523,10 +523,11 @@ function startProgress(input: {
 }) {
 	let id: string | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let send: Promise<void> | undefined;
 	const text = input.progress?.message === false ? undefined : (input.progress?.message ?? "Working...");
 	if (text) {
 		timer = setTimeout(() => {
-			void input.delivery
+			send = input.delivery
 				.run(() => input.message.reply({ content: text }), { ...input.context, retry: "send" })
 				.then((msg) => {
 					id = msg.id;
@@ -538,6 +539,7 @@ function startProgress(input: {
 	}
 	return {
 		async update(out: Outbound): Promise<boolean> {
+			await send;
 			if (!id) return false;
 			const messageId = id;
 			try {
@@ -560,6 +562,7 @@ function startProgress(input: {
 		},
 		async stop(): Promise<void> {
 			if (timer) clearTimeout(timer);
+			await send;
 			if (!id) return;
 			const messageId = id;
 			id = undefined;
@@ -699,9 +702,9 @@ function approvalResolutionField(
 	state: ApprovalViewState,
 	actor?: string,
 ): { name: string; value: string; inline?: boolean } | undefined {
-	if (state === "approved") return { name: "Approved by", value: actor ? `<@${actor}>` : "Approved" };
-	if (state === "rejected") return { name: "Rejected by", value: actor ? `<@${actor}>` : "Rejected" };
-	if (state === "expired") return { name: "Status", value: "Expired" };
+	if (state === "approved") return { name: "Approved by", value: actor ? `<@${actor}>` : approvalStateTitle(state) };
+	if (state === "rejected") return { name: "Rejected by", value: actor ? `<@${actor}>` : approvalStateTitle(state) };
+	if (state === "expired") return { name: "Status", value: approvalStateTitle(state) };
 	return undefined;
 }
 
@@ -722,10 +725,7 @@ function approvedFallbackText(actor: string, text: string, id?: string): string 
 }
 
 function approvalTitle(state: ApprovalViewState): string {
-	if (state === "approved") return "Approved";
-	if (state === "rejected") return "Rejected";
-	if (state === "expired") return "Expired";
-	return "Approval required";
+	return approvalStateTitle(state === "pending" ? undefined : state);
 }
 
 function codeValue(value: string): string {

@@ -5,8 +5,6 @@ import type { Lock } from "./types.js";
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 
-export type LockRow = typeof lock.$inferSelect;
-
 export class LockRepo {
 	constructor(private readonly db: Db) {}
 
@@ -39,13 +37,15 @@ export class LockRepo {
 		return this.getOwned(input.key, input.owner);
 	}
 
-	async clear(input: { prefix?: string } = {}): Promise<number> {
-		const rows = input.prefix
-			? await this.db
-					.delete(lock)
-					.where(sql`${lock.key} LIKE ${`${escapeLike(input.prefix)}%`} ESCAPE '\\'`)
-					.returning({ key: lock.key })
-			: await this.db.delete(lock).returning({ key: lock.key });
+	async clear(input: { key?: string; prefix?: string } = {}): Promise<number> {
+		const rows = input.key
+			? await this.db.delete(lock).where(eq(lock.key, input.key)).returning({ key: lock.key })
+			: input.prefix
+				? await this.db
+						.delete(lock)
+						.where(sql`${lock.key} LIKE ${`${escapeLike(input.prefix)}%`} ESCAPE '\\'`)
+						.returning({ key: lock.key })
+				: await this.db.delete(lock).returning({ key: lock.key });
 		return rows.length;
 	}
 

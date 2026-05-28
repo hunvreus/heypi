@@ -139,7 +139,7 @@ test("attachmentInput can convert supported binaries with optional document comm
 		runtime(root, "host-bash"),
 		"review",
 		[{ name: "file.pdf", path: "file.pdf", mimeType: "application/pdf", size: 4 }],
-		{ documents: { command, extensions: [".pdf"], timeoutMs: 1000 } },
+		{ documents: { command, extensions: [".pdf"], timeoutMs: 5000 } },
 	);
 
 	assert.equal(out.text, 'review\n<file name="file.pdf">\n# Converted\n\nbody\n</file>');

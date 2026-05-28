@@ -218,6 +218,7 @@ function assertBasicMemoryHygiene(input: string): void {
 }
 
 function sanitizeRead(input: string): string {
+	// Prevent persisted memory from closing the XML-ish prompt wrapper used for context injection.
 	return input.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 

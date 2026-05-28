@@ -1,21 +1,10 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import {
-	agentFrom,
-	consoleLogger,
-	coreTools,
-	createHeypi,
-	runHeypi,
-	sqliteStore,
-	tool,
-	webhook,
-	workspace,
-} from "@hunvreus/heypi";
+import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, tool, webhook, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
-loadEnv("examples/webhook-notes/.env");
 loadEnv(".env");
 
 function loadEnv(path: string): void {
@@ -28,7 +17,8 @@ function required(name: string): string {
 	return value;
 }
 
-const notesPath = resolve("./examples/webhook-notes/state/notes.md");
+const stateRoot = "./state";
+const notesPath = join(stateRoot, "notes.md");
 
 const saveNote = tool<{ note: string; topic?: string }>({
 	name: "save_note",
@@ -46,7 +36,7 @@ const saveNote = tool<{ note: string; topic?: string }>({
 });
 
 const app = createHeypi({
-	store: sqliteStore({ path: resolve("./examples/webhook-notes/heypi.db") }),
+	state: { root: stateRoot },
 	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	http: {
 		host: "127.0.0.1",
@@ -58,13 +48,13 @@ const app = createHeypi({
 			secret: required("HEYPI_WEBHOOK_SECRET"),
 		}),
 	],
-	agent: agentFrom("./examples/webhook-notes/agent", {
+	agent: agentFrom("./agent", {
 		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
 		tools: [...coreTools({ bash: false, write: false, edit: false }), saveNote],
 	}),
 	runtime: {
 		name: "just-bash",
-		root: workspace("./examples/webhook-notes/workspace"),
+		root: workspace("./workspace"),
 		maxConcurrentPerChat: 1,
 		timeoutMs: 60_000,
 		justBash: { python: false, javascript: false },

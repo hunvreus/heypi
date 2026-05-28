@@ -1,8 +1,8 @@
-import type { ApprovalDetail } from "./types.js";
+import type { ApprovalDetail, ApprovalResolution } from "./types.js";
 
-export const APPROVAL_DETAIL_VALUE_LIMIT = 1800;
-export const APPROVAL_DETAIL_LABEL_LIMIT = 80;
-export const APPROVAL_DETAIL_COUNT_LIMIT = 20;
+const APPROVAL_DETAIL_VALUE_LIMIT = 1800;
+const APPROVAL_DETAIL_LABEL_LIMIT = 80;
+const APPROVAL_DETAIL_COUNT_LIMIT = 20;
 
 export function normalizeApprovalDetails(input: unknown): ApprovalDetail[] | undefined {
 	if (!Array.isArray(input)) return undefined;
@@ -50,6 +50,19 @@ export function serializeApprovalDetails(input: ApprovalDetail[] | undefined): s
 
 export function codeFence(value: string): string {
 	return ["```", escapeCodeFence(value), "```"].join("\n");
+}
+
+export function approvalStateTitle(state?: ApprovalResolution): string {
+	if (state === "approved") return "Approved";
+	if (state === "rejected") return "Rejected";
+	if (state === "expired") return "Expired";
+	return "Approval required";
+}
+
+export function approvalStateLine(state: ApprovalResolution, actor?: string): string {
+	if (state === "approved") return actor ? `Approved by ${actor}.` : "Approved.";
+	if (state === "rejected") return actor ? `Rejected by ${actor}.` : "Rejected.";
+	return "Approval expired.";
 }
 
 function escapeCodeFence(value: string): string {

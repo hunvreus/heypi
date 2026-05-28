@@ -1,5 +1,17 @@
 import type { Approval } from "../store/types.js";
-import type { AdminActivityRow, AdminJob, AdminMemory, AdminOverview, AdminPage } from "./service.js";
+import {
+	type AdminActivityDetail,
+	type AdminActivityRow,
+	type AdminFilterFacets,
+	type AdminJob,
+	type AdminMemory,
+	type AdminOverview,
+	type AdminPage,
+	type AdminPageFilters,
+	type AdminThreadRow,
+	type AdminThreadView,
+	activityEvent,
+} from "./service.js";
 
 export type PageInput = {
 	title: string;
@@ -29,11 +41,12 @@ type AdminInfo = {
 
 type Cell = string | { html: string };
 type CardDescription = string | Cell;
-const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=1";
+const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=8";
 const ADMIN_JS_HREF = "/admin/assets/basecoat.all.min.js?v=1";
 const ADMIN_DOCS_HREF = "https://heypi.dev/docs";
 
 export function page(input: PageInput): string {
+	const mainClass = "mx-auto grid min-w-0 w-full max-w-7xl gap-4 px-6 py-3 max-[760px]:px-4 max-[760px]:py-3";
 	return `<!doctype html>
 <html lang="en" class="overflow-x-hidden">
 <head>
@@ -42,21 +55,17 @@ ${themeScript(input.nonce, true)}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(input.title)} · heypi admin</title>
 <link rel="stylesheet" href="${ADMIN_CSS_HREF}">
+${navBreakpointStyle(input.nonce)}
 </head>
 <body class="min-h-screen overflow-x-hidden bg-background text-foreground" data-live-page="${input.livePage ? "true" : "false"}">
 <header class="bg-background">
-<div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3 max-[760px]:px-4">
-<a class="flex items-center text-foreground" href="/admin" aria-label="heypi">${logo("h-4 w-auto")}</a>
-<div class="flex items-center gap-2">
-${docsLink()}
-${themeToggle()}
-${input.auth === false ? "" : logoutForm(input.csrf)}
-</div>
-</div>
-</header>
-<main class="mx-auto grid min-w-0 w-full max-w-7xl gap-6 p-6 max-[760px]:p-4">
+	<div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3 max-[760px]:px-4">
+	<a class="flex items-center text-foreground" href="/admin" aria-label="heypi">${logo("h-4 w-auto")}</a>
+	${topNav(input.active, input.live, input.memoryFiles, input.csrf, input.auth)}
+	</div>
+	</header>
+<main class="${mainClass}">
 <h1 class="sr-only">${escapeHtml(input.title)}</h1>
-${nav(input.active, input.live, input.memoryFiles)}
 ${input.body}
 </main>
 <script src="${ADMIN_JS_HREF}" defer></script>
@@ -97,6 +106,37 @@ function fallbackCopy(text) {
 	textarea.remove();
 	return copied;
 }
+function threadScrollContainer() {
+	return document.querySelector("[data-admin-thread-scroll]");
+}
+function threadScrollKey() {
+	return "heypi:admin:thread-scroll:" + location.pathname + location.search;
+}
+function threadAtBottom(container) {
+	return container.scrollHeight - container.scrollTop - container.clientHeight <= 24;
+}
+function threadScrollBottom(container) {
+	container.scrollTop = container.scrollHeight;
+}
+const threadScroll = threadScrollContainer();
+let threadFollowBottom = true;
+if (threadScroll instanceof HTMLElement) {
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			const stored = sessionStorage.getItem(threadScrollKey());
+			sessionStorage.removeItem(threadScrollKey());
+			if (stored && stored !== "bottom") threadScroll.scrollTop = Number(stored) || 0;
+			else threadScrollBottom(threadScroll);
+			threadFollowBottom = threadAtBottom(threadScroll);
+		});
+	});
+	threadScroll.addEventListener("scroll", () => {
+		threadFollowBottom = threadAtBottom(threadScroll);
+	}, { passive: true });
+	new MutationObserver(() => {
+		if (threadFollowBottom) requestAnimationFrame(() => threadScrollBottom(threadScroll));
+	}).observe(threadScroll, { childList: true, subtree: true });
+}
 const events = new EventSource("/admin/events");
 events.addEventListener("summary", (event) => {
 	const data = JSON.parse(event.data);
@@ -108,6 +148,10 @@ events.addEventListener("summary", (event) => {
 	updateField("recentCalls", data.recentCalls);
 	updateField("checkedAt", "Last updated " + new Date(data.checkedAt).toLocaleTimeString());
 	if (currentRevision && data.revision !== currentRevision && livePage) {
+		const container = threadScrollContainer();
+		if (container instanceof HTMLElement) {
+			sessionStorage.setItem(threadScrollKey(), threadAtBottom(container) ? "bottom" : String(container.scrollTop));
+		}
 		setTimeout(() => location.reload(), 750);
 	}
 	currentRevision = data.revision;
@@ -149,10 +193,20 @@ document.addEventListener("click", (event) => {
 }
 
 function logoutForm(csrf: string): string {
-	return `<form method="post" action="/admin/logout">
-<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-<button class="btn-outline" type="submit">${icon("log-out")} Log out</button>
-</form>`;
+	return `<form method="post" action="/admin/logout" class="contents">
+	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+	<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="Log out" data-tooltip="Log out" data-side="bottom">${icon("log-out")}</button>
+	</form>`;
+}
+
+function navBreakpointStyle(nonce: string): string {
+	return `<style nonce="${escapeHtml(nonce)}">
+[data-admin-nav-mobile]{display:none}
+@media (max-width:760px){
+	[data-admin-nav-desktop]{display:none!important}
+	[data-admin-nav-mobile]{display:block!important}
+}
+</style>`;
 }
 
 export function loginPage(input: { error?: string; secret: boolean; nonce: string }): string {
@@ -229,34 +283,109 @@ ${card(
 </div>`;
 }
 
+export function threadsView(
+	page: AdminPage<AdminThreadRow>,
+	input: { checkedAt?: number; selected?: AdminThreadView } = {},
+): string {
+	const selectedId = input.selected?.thread.id;
+	return `<div class="grid h-[calc(100vh-5.5rem)] min-w-0">
+<div class="card !p-0 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+<div class="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)] lg:grid-rows-1">
+<aside class="flex max-h-[36vh] min-h-0 min-w-0 flex-col gap-3 overflow-hidden border-b p-4 lg:max-h-none lg:border-b-0">
+	<header class="grid gap-3">
+		<div class="grid gap-1">
+			<h1 class="leading-none font-semibold">Chats</h1>
+			<p class="text-sm text-muted-foreground">Recent conversations across connected channels.</p>
+		</div>
+		${threadSearch(page)}
+	</header>
+	<div class="scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">${threadList(page, selectedId)}</div>
+</aside>
+<section class="min-h-0 min-w-0 overflow-hidden lg:border-l">${threadConversationPanel(input.selected)}</section>
+</div>
+</div>
+</div>`;
+}
+
+function threadSearch(page: AdminPage<AdminThreadRow>): string {
+	const q = page.filters?.q ?? "";
+	return `<form class="min-w-0" method="get" action="/admin">
+	<input type="hidden" name="limit" value="${page.limit}">
+	<div class="relative">
+		<input type="search" name="q" class="input h-8 pr-9 text-sm" placeholder="Search..." value="${escapeHtml(q)}" aria-label="Search query">
+		<button class="absolute right-1.5 top-1/2 -translate-y-1/2 btn-icon-ghost text-muted-foreground hover:text-accent-foreground size-6" type="submit" aria-label="Search chats" data-tooltip="Search chats" data-side="top" data-align="end">${icon("search")}</button>
+	</div>
+</form>${scanNotice(page)}`;
+}
+
 export function activityView(page: AdminPage<AdminActivityRow>, checkedAt?: number): string {
-	const body = `${table(
-		["State", "Value", "Record", "Channel", "Actor", "Updated", ""],
+	const body = `${tableControls("/admin/activity", page, {
+		selects: [
+			{
+				name: "type",
+				label: "Type",
+				allLabel: "All types",
+				options: [
+					["approval", "Approval"],
+					["call", "Tool call"],
+					["job", "Job"],
+					["message", "Message"],
+					["run", "Run"],
+				],
+			},
+			{
+				name: "state",
+				label: "State",
+				allLabel: "All states",
+				options: [
+					["active", "Active"],
+					["blocked", "Waiting approval"],
+					["cancelled", "Cancelled"],
+					["done", "Done"],
+					["failed", "Failed"],
+					["pending", "Pending"],
+					["pending_approval", "Needs approval"],
+					["paused", "Paused"],
+					["running", "Running"],
+				],
+			},
+		],
+		comboboxes: [
+			{ name: "channel", label: "Channel", allLabel: "All channels", options: page.facets?.channels ?? [] },
+			{ name: "actor", label: "Actor", allLabel: "All actors", options: page.facets?.actors ?? [] },
+		],
+	})}${table(
+		["State", "Value", "Type", "Channel", "Actor", "Updated", ""],
 		page.rows.map((row, index) => [
 			statusBadge(row.state),
-			mono(row.title),
+			activityValue(row),
 			kindBadge(row.kind),
 			muted(row.channel ?? "-"),
 			muted(row.actor ?? "-"),
 			mutedHtml(relativeTimeHtml(row.time)),
-			activityDetails(row, index),
+			activityAction(row, index),
 		]),
-		{
+		emptyStateForFilters(page.filters, {
 			title: "No activity yet",
 			message:
 				"Once the agent starts handling messages, approvals, jobs, runs, and tool calls, they will show up here.",
-		},
+		}),
 	)}${pagination("/admin/activity", page)}`;
-	return `<div class="grid min-w-0 gap-4">${card("Activity", checkedAtDescription("Recent runs, approvals, jobs, and tool calls.", checkedAt), body)}</div>`;
+	return `<div class="grid min-w-0 gap-4">${card("Chats", checkedAtDescription("Threads and activity for this heypi instance.", checkedAt), body)}</div>`;
 }
 
 export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): string {
-	const body = `${table(
+	const body = `${tableControls("/admin/approvals", page, {
+		comboboxes: [
+			{ name: "channel", label: "Channel", allLabel: "All channels", options: page.facets?.channels ?? [] },
+			{ name: "actor", label: "Requester", allLabel: "All requesters", options: page.facets?.actors ?? [] },
+		],
+	})}${table(
 		["State", "Command", "Channel", "Runtime", "Reason", "Requested", "Expires"],
 		page.rows.map((row) => [
 			statusBadge(row.state),
 			{
-				html: `<span class="block max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono max-[760px]:max-w-[18rem]">${escapeHtml(row.command)}</span>`,
+				html: `<span class="block max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] max-[760px]:max-w-[18rem]">${escapeHtml(row.command)}</span>`,
 			},
 			muted(row.channel),
 			muted(row.runtime),
@@ -264,16 +393,37 @@ export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): st
 			mutedHtml(relativeTimeHtml(row.requestedAt)),
 			mutedHtml(futureTimeHtml(row.expiresAt)),
 		]),
-		{
+		emptyStateForFilters(page.filters, {
 			title: "No pending approvals",
 			message: "Once a tool call needs a human decision, the pending request will show up here.",
-		},
+		}),
 	)}${pagination("/admin/approvals", page)}`;
 	return `<div class="grid min-w-0 gap-4">${card("Approvals", checkedAtDescription("Pending human decisions for approval-gated tool calls.", checkedAt), body)}</div>`;
 }
 
 export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string {
-	const body = `${table(
+	const body = `${tableControls("/admin/jobs", page, {
+		selects: [
+			{
+				name: "type",
+				label: "Type",
+				allLabel: "All types",
+				options: [
+					["cron", "Cron"],
+					["heartbeat", "Heartbeat"],
+				],
+			},
+			{
+				name: "state",
+				label: "State",
+				allLabel: "All states",
+				options: [
+					["active", "Active"],
+					["paused", "Paused"],
+				],
+			},
+		],
+	})}${table(
 		["State", "Job", "Kind", "Route", "Schedule", "Next", "Last", "Prompt"],
 		page.rows.map((row) => [
 			statusBadge(row.state),
@@ -287,16 +437,28 @@ export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string 
 				html: `<div class="max-w-[34rem] overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground max-[760px]:max-w-[18rem]">${escapeHtml(row.prompt)}</div>`,
 			},
 		]),
-		{
+		emptyStateForFilters(page.filters, {
 			title: "No jobs configured",
 			message: "Once scheduled or heartbeat jobs are configured on the heypi app, they will show up here.",
-		},
+		}),
 	)}${pagination("/admin/jobs", page)}`;
 	return `<div class="grid min-w-0 gap-4">${card("Jobs", checkedAtDescription("Configured scheduled and heartbeat jobs.", checkedAt), body)}</div>`;
 }
 
 export function memoryView(memory: AdminMemory, checkedAt?: number): string {
-	const body = `${table(
+	if (!memory.enabled) {
+		const body = emptyState({
+			title: "Memory disabled",
+			message:
+				"This heypi app is running without durable memory. Enable memory in the app config to store context files.",
+			frame: "section",
+			variant: "outline",
+		});
+		return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
+	}
+	const body = `${tableControls("/admin/memory", memory, {
+		comboboxes: [{ name: "scope", label: "Scope", allLabel: "All scopes", options: memory.facets?.scopes ?? [] }],
+	})}${table(
 		["Scope", "Content", "Size", "Updated", "Hash", ""],
 		memory.entries.map((entry, index) => [
 			mono(entry.scopePath),
@@ -306,49 +468,340 @@ export function memoryView(memory: AdminMemory, checkedAt?: number): string {
 			mono(entry.sha256.slice(0, 12)),
 			memoryDetails(entry, index),
 		]),
-		{
+		emptyStateForFilters(memory.filters, {
 			title: "No memory files",
 			message: "Once the agent starts saving memory, durable context files will show up here.",
-		},
+		}),
 	)}${pagination("/admin/memory", {
 		rows: memory.entries,
 		limit: memory.limit,
 		offset: memory.offset,
 		hasNext: memory.hasNext,
+		filters: memory.filters,
 	})}`;
 	return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
 }
 
-function nav(active: string, live: AdminOverview["live"], memoryFiles: number): string {
+function topNav(
+	active: string,
+	live: AdminOverview["live"],
+	memoryFiles: number,
+	csrf: string,
+	auth?: boolean,
+): string {
 	const items = [
-		{ label: "Activity", href: "/admin", key: "activity", count: undefined, end: false },
+		{ label: "Chats", href: "/admin", key: "chats" },
 		{
 			label: "Approvals",
 			href: "/admin/approvals",
 			key: "approvals",
 			count: live.pendingApprovals,
 			field: "pendingApprovals",
-			end: false,
 		},
-		{ label: "Jobs", href: "/admin/jobs", key: "jobs", count: live.jobs, field: "jobs", end: false },
-		{ label: "Memory", href: "/admin/memory", key: "memory", count: memoryFiles, end: false },
-		{ label: "Configuration", href: "/admin/configuration", key: "configuration", count: undefined, end: true },
+		{ label: "Jobs", href: "/admin/jobs", key: "jobs", count: live.jobs, field: "jobs" },
+		{ label: "Memory", href: "/admin/memory", key: "memory", count: memoryFiles },
+		{ label: "Configuration", href: "/admin/configuration", key: "configuration" },
 	];
-	return `<nav class="tabs"><div role="tablist" class="!w-full">${items
-		.map((item) => tabLink(item, active))
-		.join("")}</div></nav>`;
+	const desktop = `<div data-admin-nav-desktop class="flex min-w-0 flex-wrap items-center justify-end gap-1">${items
+		.map((item) => navLink(item, active))
+		.join("")}${navSeparator()}${docsLink()}${auth === false ? "" : logoutForm(csrf)}${themeToggle()}</div>`;
+	return `<nav class="flex min-w-0 items-center justify-end gap-1 text-sm">${desktop}${mobileNavMenu(items, active, csrf, auth)}</nav>`;
 }
 
-function tabLink(
-	item: { label: string; href: string; key: string; count?: number; field?: string; end: boolean },
+function navLink(
+	item: { label: string; href: string; key: string; count?: number; field?: string },
 	active: string,
 ): string {
 	const selected = active === item.key;
 	const count =
 		item.count === undefined
 			? ""
-			: `<span class="badge-secondary bg-black/10 dark:bg-black/20 h-4 px-1.5 text-[11px]"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
-	return `<a role="tab" aria-selected="${selected ? "true" : "false"}" class="${item.end ? "ml-auto " : ""}min-w-0 inline-flex items-center gap-2" href="${item.href}">${escapeHtml(item.label)}${count}</a>`;
+			: `<span class="badge-secondary"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
+	const className = [
+		"btn-sm-ghost hover:text-foreground",
+		selected ? "bg-muted text-foreground" : "text-muted-foreground",
+		item.count === undefined ? "" : "pr-2",
+	]
+		.filter(Boolean)
+		.join(" ");
+	return `<a class="${className}" href="${item.href}" aria-current="${selected ? "page" : "false"}">${escapeHtml(item.label)}${count}</a>`;
+}
+
+function navSeparator(): string {
+	return `<span class="mx-1 h-4 w-px bg-border" aria-hidden="true"></span>`;
+}
+
+function mobileNavMenu(
+	items: Array<{ label: string; href: string; key: string; count?: number; field?: string }>,
+	active: string,
+	csrf: string,
+	auth?: boolean,
+): string {
+	return `<div id="admin-mobile-menu" data-admin-nav-mobile class="dropdown-menu">
+	<button type="button" id="admin-mobile-menu-trigger" aria-haspopup="menu" aria-controls="admin-mobile-menu-menu" aria-expanded="false" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Open menu" data-tooltip="Menu" data-side="bottom" data-align="end">${icon("menu")}</button>
+	<div id="admin-mobile-menu-popover" data-popover aria-hidden="true" data-align="end" class="min-w-56">
+		<div role="menu" id="admin-mobile-menu-menu" aria-labelledby="admin-mobile-menu-trigger">
+			${items.map((item) => mobileNavItem(item, active)).join("")}
+			<hr role="separator">
+			${mobileDocsItem()}
+			${mobileThemeItem()}
+			${auth === false ? "" : mobileLogoutForm(csrf)}
+		</div>
+	</div>
+</div>`;
+}
+
+function mobileNavItem(
+	item: { label: string; href: string; key: string; count?: number; field?: string },
+	active: string,
+): string {
+	const selected = active === item.key;
+	const count =
+		item.count === undefined
+			? ""
+			: `<span class="badge-secondary ml-auto"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
+	return `<a role="menuitem" href="${item.href}" aria-current="${selected ? "page" : "false"}"${selected ? ' class="bg-muted text-foreground"' : ""}>${escapeHtml(item.label)}${count}</a>`;
+}
+
+function mobileDocsItem(): string {
+	return `<a role="menuitem" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer">${icon("book-text")}Docs</a>`;
+}
+
+function mobileThemeItem(): string {
+	return `<button type="button" role="menuitem" data-admin-theme-toggle class="w-full">
+	<span class="block dark:hidden">${icon("moon")}</span>
+	<span class="hidden dark:block">${icon("sun")}</span>
+	Toggle theme
+	</button>`;
+}
+
+function mobileLogoutForm(csrf: string): string {
+	return `<form method="post" action="/admin/logout" class="contents">
+	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+	<button type="submit" role="menuitem" class="w-full">${icon("log-out")}Log out</button>
+	</form>`;
+}
+
+function threadHeader(row: AdminThreadRow): string {
+	return `<div class="flex min-w-0 items-center gap-2"><span class="inline-flex shrink-0 items-center" data-tooltip="${escapeHtml(row.provider)}" data-side="bottom">${adapterIcon(row.provider)}</span><h2 class="min-w-0 truncate font-mono text-[13px]">${escapeHtml(row.channel)}</h2><span class="min-w-0 truncate font-mono text-[13px] text-muted-foreground">${escapeHtml(row.id)}</span></div>`;
+}
+
+function threadList(page: AdminPage<AdminThreadRow>, selectedId?: string): string {
+	const empty = emptyStateForFilters(page.filters, {
+		title: "No threads yet",
+		message: "Once the agent receives a message, the thread will show up here.",
+	});
+	if (!page.rows.length) {
+		return emptyState({ ...empty, frame: "section", variant: "plain" });
+	}
+	return `<div class="grid min-w-0 gap-1">${page.rows
+		.map((row) => threadListItem(row, row.id === selectedId))
+		.join("")}</div>${pagination("/admin", page)}`;
+}
+
+function threadListItem(row: AdminThreadRow, selected: boolean): string {
+	return `<a class="grid min-w-0 gap-1 rounded-sm p-3 text-sm hover:bg-muted/60 ${selected ? "bg-muted" : ""}" href="${escapeHtml(threadHref(row))}" aria-current="${selected ? "true" : "false"}">
+	<div class="flex min-w-0 items-center gap-2">
+		<span class="inline-flex shrink-0 items-center" data-tooltip="${escapeHtml(row.provider)}" data-side="right">${adapterIcon(row.provider)}</span>
+		<span class="shrink-0 font-mono text-[13px]">${escapeHtml(row.channel)}</span>
+		<span class="text-muted-foreground" aria-hidden="true">·</span>
+		<span class="min-w-0 truncate text-muted-foreground">${escapeHtml(threadPreview(row))}</span>
+	</div>
+	<div class="pl-6 text-xs text-muted-foreground">
+		${relativeTimeHtml(row.lastActivityAt)}
+	</div>
+</a>`;
+}
+
+function threadConversationPanel(input?: AdminThreadView): string {
+	if (!input) {
+		return `<div class="grid h-full place-items-center">${emptyState({
+			title: "Select a thread",
+			message: "Open a thread to inspect its conversation and operational context.",
+			variant: "plain",
+		})}</div>`;
+	}
+	return `<div class="scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
+	<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm">${threadHeader(input.thread)}</header>
+	<div class="min-w-0 pb-4">${threadConversation(input)}</div>
+</div>`;
+}
+
+function threadConversation(input: AdminThreadView): string {
+	const rows = input.timeline.filter(chatRowVisible).sort(chronologicalActivitySort);
+	const selectedKey = input.event ?? (input.selected ? activityEvent(input.selected) : undefined);
+	if (!rows.length) {
+		return emptyState({
+			title: "No messages yet",
+			message: "Messages, approvals, and tool calls for this thread will show up here.",
+			frame: "section",
+			variant: "plain",
+		});
+	}
+	return `<div class="grid min-w-0 gap-3 py-3">${rows
+		.map((row) => chatRow(row, selectedKey === activityEvent(row)))
+		.join("")}</div>`;
+}
+
+function chatRow(row: AdminActivityRow, selected: boolean): string {
+	if (row.kind === "message") return chatMessageRow(row, selected);
+	return chatContextRow(row, selected);
+}
+
+function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
+	const text = activityDetail(row, "Text")?.value ?? row.title;
+	const user = row.role === "user";
+	const author = messageAuthor(row);
+	const state = row.state === "done" ? "" : `<span class="shrink-0">${cellHtml(statusBadge(row.state))}</span>`;
+	const body = markdownText(text);
+	const meta = `<footer class="text-xs text-muted-foreground">${escapeHtml(author)} <span aria-hidden="true">·</span> ${relativeTimeHtml(row.time, user ? "end" : undefined)}${state}</footer>`;
+	if (user) {
+		return `<article id="${escapeHtml(eventDomId(row))}"${selectedAttr(selected)} class="grid min-w-0 justify-items-end px-2">
+		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg bg-muted px-4 py-3">
+			<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
+			<div class="text-right">${meta}</div>
+		</div>
+	</article>`;
+	}
+	return `<article id="${escapeHtml(eventDomId(row))}"${selectedAttr(selected)} class="grid min-w-0 gap-2 px-2 py-1">
+	<div class="grid max-w-[52rem] min-w-0 gap-2 text-sm leading-6">${body}</div>
+	${meta}
+</article>`;
+}
+
+function chatContextRow(row: AdminActivityRow, selected: boolean): string {
+	const details = chatContextDetails(row);
+	return `<details id="${escapeHtml(eventDomId(row))}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
+	<summary class="flex min-w-0 items-center gap-2">
+		${cellHtml(kindBadge(row.kind))}
+		${cellHtml(statusBadge(row.state))}
+		<span class="min-w-0 truncate font-medium">${escapeHtml(row.title)}</span>
+		<span class="ml-auto shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
+		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
+	</summary>
+	${details}
+</details>`;
+}
+
+function chatContextDetails(row: AdminActivityRow): string {
+	const details = compactActivityDetails([
+		row.summary && row.summary !== row.title ? { label: "Detail", value: row.summary } : undefined,
+		row.durationMs ? { label: "Duration", value: duration(row.durationMs) } : undefined,
+		...(row.details ?? []).filter((detail) => ["Runtime", "Policy", "Expires", "Resolved by"].includes(detail.label)),
+	]);
+	if (!details.length) return "";
+	return `<div class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm">${details
+		.map(
+			(detail) =>
+				`<div class="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3"><span class="text-muted-foreground">${escapeHtml(detail.label)}</span><span class="min-w-0 break-words [overflow-wrap:anywhere] text-foreground">${escapeHtml(detail.value)}</span></div>`,
+		)
+		.join("")}</div>`;
+}
+
+function compactActivityDetails(input: Array<AdminActivityDetail | undefined>): AdminActivityDetail[] {
+	return input.filter((row): row is AdminActivityDetail => Boolean(row?.value));
+}
+
+function chatRowVisible(row: AdminActivityRow): boolean {
+	return row.kind !== "run" || row.state !== "done";
+}
+
+function chronologicalActivitySort(left: AdminActivityRow, right: AdminActivityRow): number {
+	return left.time - right.time || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
+}
+
+function threadPreview(row: AdminThreadRow): string {
+	const value = row.summary.replace(/^(?:Approval|Message|Run|Tool call):\s*/u, "");
+	return plainPreview(value) || "No activity yet";
+}
+
+function plainPreview(input: string): string {
+	return input
+		.replace(/`([^`]*)`/gu, "$1")
+		.replace(/\*\*([^*]+)\*\*/gu, "$1")
+		.replace(/\*([^*]+)\*/gu, "$1")
+		.replace(/^\s*[-*]\s+/gmu, "")
+		.replace(/\s+/gu, " ")
+		.trim();
+}
+
+function messageAuthor(row: AdminActivityRow): string {
+	if (row.actor) return row.actor;
+	if (row.role === "assistant") return "Assistant";
+	if (row.role === "user") return "User";
+	if (row.role === "tool") return "Tool";
+	return roleLabel(row.role ?? "Message");
+}
+
+function markdownText(input: string): string {
+	const lines = input.replace(/\r\n?/gu, "\n").split("\n");
+	const blocks: string[] = [];
+	let index = 0;
+	while (index < lines.length) {
+		if (!lines[index]?.trim()) {
+			index += 1;
+			continue;
+		}
+		const listItems: string[] = [];
+		while (index < lines.length) {
+			const match = /^\s*[-*]\s+(.+)$/u.exec(lines[index] ?? "");
+			if (!match) break;
+			listItems.push(`<li>${inlineMarkdown(match[1] ?? "")}</li>`);
+			index += 1;
+		}
+		if (listItems.length) {
+			blocks.push(`<ul class="list-disc pl-5">${listItems.join("")}</ul>`);
+			continue;
+		}
+		const paragraph: string[] = [];
+		while (index < lines.length && lines[index]?.trim() && !/^\s*[-*]\s+/u.test(lines[index] ?? "")) {
+			paragraph.push(lines[index] ?? "");
+			index += 1;
+		}
+		blocks.push(
+			`<p class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${inlineMarkdown(paragraph.join("\n"))}</p>`,
+		);
+	}
+	return blocks.join("");
+}
+
+function inlineMarkdown(input: string): string {
+	const parts = input.split(/(`[^`]*`)/u);
+	return parts
+		.map((part) => {
+			if (part.startsWith("`") && part.endsWith("`")) {
+				return escapeHtml(part.slice(1, -1));
+			}
+			return escapeHtml(part)
+				.replace(/\*\*([^*]+)\*\*/gu, "<strong>$1</strong>")
+				.replace(/\*([^*]+)\*/gu, "<em>$1</em>");
+		})
+		.join("");
+}
+
+function eventDomId(row: AdminActivityRow): string {
+	return `event-${row.kind}-${row.id.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
+}
+
+function selectedAttr(selected: boolean): string {
+	return selected ? ' data-selected-event="true"' : "";
+}
+
+function activityAction(row: AdminActivityRow, index: number): Cell {
+	if (!row.threadId) return activityDetails(row, index);
+	return html(`<a class="btn-sm-ghost" href="${escapeHtml(activityHref(row))}">Open</a>`);
+}
+
+function threadHref(row: AdminThreadRow): string {
+	const params = new URLSearchParams();
+	if (row.latestEvent) params.set("event", row.latestEvent);
+	const query = params.toString();
+	return `/admin/threads/${encodeURIComponent(row.id)}${query ? `?${query}` : ""}`;
+}
+
+function activityHref(row: AdminActivityRow): string {
+	const params = new URLSearchParams({ event: activityEvent(row) });
+	return `/admin/threads/${encodeURIComponent(row.threadId ?? "")}?${params.toString()}`;
 }
 
 function summaryList(rows: Array<[string, Cell]>, className = "", truncateValues = false): string {
@@ -382,7 +835,113 @@ function lastUpdatedText(checkedAt?: number): string {
 }
 
 function card(title: string, description: CardDescription, body: string): string {
-	return `<section class="card min-w-0 overflow-hidden"><header class="min-w-0"><h2>${escapeHtml(title)}</h2>${description ? `<p>${cellHtml(description)}</p>` : ""}</header><section class="min-w-0">${body}</section></section>`;
+	return `<div class="card min-w-0 overflow-hidden"><header class="min-w-0"><h2>${escapeHtml(title)}</h2>${description ? `<p>${cellHtml(description)}</p>` : ""}</header><section class="min-w-0">${body}</section></div>`;
+}
+
+type FilterName = keyof AdminPageFilters;
+
+type SelectFilter = {
+	name: Extract<FilterName, "type" | "state">;
+	label: string;
+	allLabel: string;
+	options: Array<[string, string]>;
+};
+
+type ComboboxFilter = {
+	name: Extract<FilterName, "channel" | "actor" | "scope">;
+	label: string;
+	allLabel: string;
+	options: string[];
+};
+
+function tableControls(
+	path: string,
+	page: { limit: number; truncated?: boolean; filters?: AdminPageFilters; facets?: AdminFilterFacets },
+	input: { selects?: SelectFilter[]; comboboxes?: ComboboxFilter[] } = {},
+): string {
+	const filters = page.filters ?? {};
+	const hasFilters = activeFilters(filters);
+	return `<form class="mb-4 flex w-full flex-nowrap items-center gap-2 overflow-x-visible pb-1 whitespace-nowrap max-[760px]:overflow-x-auto" method="get" action="${escapeHtml(path)}">
+	<input type="hidden" name="limit" value="${page.limit}">
+	<div class="relative h-8 w-[14rem] shrink-0">
+	<input type="text" name="q" class="input h-8 pl-8 text-sm" placeholder="Search..." value="${escapeHtml(filters.q ?? "")}" aria-label="Search">
+	<div class="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground [&>svg]:size-4">
+	${icon("search")}
+	</div>
+	</div>
+	${(input.selects ?? []).map((filter) => selectFilter(filter, filters)).join("")}
+	${(input.comboboxes ?? []).map((filter) => comboboxFilter(filter, filters)).join("")}
+		<button class="btn-sm shrink-0" type="submit">Filter</button>
+		${hasFilters ? `<a class="btn-sm-ghost shrink-0" href="${escapeHtml(path)}">Reset</a>` : ""}
+	</form>${scanNotice(page)}`;
+}
+
+function scanNotice(page: { truncated?: boolean }): string {
+	if (!page.truncated) return "";
+	return `<div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">Filtered results may be incomplete. Narrow the filters to scan a smaller set.</div>`;
+}
+
+function selectFilter(input: SelectFilter, filters: AdminPageFilters): string {
+	const value = filters[input.name] ?? "";
+	return `<select class="select h-8 w-[9rem] shrink-0 py-1 text-sm" name="${input.name}" aria-label="${escapeHtml(input.label)}">
+	<option value="">${escapeHtml(input.allLabel)}</option>
+	${input.options
+		.map(
+			([optionValue, label]) =>
+				`<option value="${escapeHtml(optionValue)}"${optionValue === value ? " selected" : ""}>${escapeHtml(label)}</option>`,
+		)
+		.join("")}
+	</select>`;
+}
+
+function comboboxFilter(input: ComboboxFilter, filters: AdminPageFilters): string {
+	const value = filters[input.name] ?? "";
+	const options = filterOptions(input.options, value);
+	const id = `filter-${input.name}`;
+	const label = value || input.allLabel;
+	return `<div id="${id}" class="select h-8 w-[11rem] shrink-0">
+	<button type="button" class="btn-sm-outline h-8 w-full" id="${id}-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}-listbox" aria-label="${escapeHtml(input.label)}">
+	<span class="truncate">${escapeHtml(label)}</span>
+	${icon("chevrons-up-down", "text-muted-foreground opacity-50 shrink-0")}
+	</button>
+	<div id="${id}-popover" data-popover aria-hidden="true">
+	<header>
+	${icon("search")}
+	<input type="text" value="" placeholder="Search ${escapeHtml(input.label.toLowerCase())}..." autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="false" aria-controls="${id}-listbox" aria-labelledby="${id}-trigger">
+	</header>
+	<div role="listbox" id="${id}-listbox" aria-orientation="vertical" aria-labelledby="${id}-trigger" data-empty="No ${escapeHtml(input.label.toLowerCase())} found.">
+	<div id="${id}-all" role="option" data-value=""${value ? "" : ' aria-selected="true"'}>${escapeHtml(input.allLabel)}</div>
+	${options
+		.map(
+			(option, index) =>
+				`<div id="${id}-option-${index}" role="option" data-value="${escapeHtml(option)}"${option === value ? ' aria-selected="true"' : ""}>${escapeHtml(option)}</div>`,
+		)
+		.join("")}
+	</div>
+	</div>
+	<input type="hidden" name="${input.name}" value="${escapeHtml(value)}">
+	</div>`;
+}
+
+function filterOptions(options: string[], value: string): string[] {
+	const out = new Set(options);
+	if (value) out.add(value);
+	return [...out].sort((left, right) => left.localeCompare(right));
+}
+
+function activeFilters(filters: AdminPageFilters | undefined): boolean {
+	return Boolean(filters && Object.values(filters).some(Boolean));
+}
+
+function emptyStateForFilters(
+	filters: AdminPageFilters | undefined,
+	fallback: { title: string; message: string },
+): { title: string; message: string } {
+	if (!activeFilters(filters)) return fallback;
+	return {
+		title: "No matching results",
+		message: "Adjust the search or filters to show more rows.",
+	};
 }
 
 function table(headers: string[], rows: Cell[][], emptyInput?: { title: string; message: string }): string {
@@ -419,11 +978,11 @@ function pagination<T>(path: string, page: AdminPage<T>): string {
 	const prevDisabled = page.offset === 0;
 	const nextDisabled = !page.hasNext;
 	return `<nav role="navigation" aria-label="pagination" class="mt-4 flex w-full justify-end">
-<ul class="flex flex-row items-center gap-1">
-<li>${pageLink("Previous", path, page.limit, prevOffset, prevDisabled, "left")}</li>
-<li>${pageLink("Next", path, page.limit, nextOffset, nextDisabled, "right")}</li>
-</ul>
-</nav>`;
+	<ul class="flex flex-row items-center gap-1">
+	<li>${pageLink("Previous", path, page.limit, prevOffset, prevDisabled, "left", page.filters)}</li>
+	<li>${pageLink("Next", path, page.limit, nextOffset, nextDisabled, "right", page.filters)}</li>
+	</ul>
+	</nav>`;
 }
 
 function pageLink(
@@ -433,12 +992,22 @@ function pageLink(
 	offset: number,
 	disabled: boolean,
 	direction: "left" | "right",
+	filters?: AdminPageFilters,
 ): string {
 	const left = direction === "left" ? icon("chevron-left") : "";
 	const right = direction === "right" ? icon("chevron-right") : "";
 	const content = `${left}${escapeHtml(label)}${right}`;
 	if (disabled) return `<span class="btn-sm-ghost opacity-50" aria-disabled="true">${content}</span>`;
-	return `<a class="btn-sm-ghost" href="${path}?limit=${limit}&offset=${offset}">${content}</a>`;
+	return `<a class="btn-sm-ghost" href="${escapeHtml(pageHref(path, limit, offset, filters))}">${content}</a>`;
+}
+
+function pageHref(path: string, limit: number, offset: number, filters?: AdminPageFilters): string {
+	const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+	for (const key of ["q", "type", "state", "channel", "actor", "scope"] as const) {
+		const value = filters?.[key];
+		if (value) params.set(key, value);
+	}
+	return `${path}?${params.toString()}`;
 }
 
 function emptyState(input: {
@@ -467,22 +1036,26 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 }
 
 function themeToggle(): string {
-	return `<button type="button" aria-label="Toggle dark mode" data-admin-theme-toggle class="btn-icon-ghost">
-<span class="hidden dark:block">${icon("sun")}</span>
-<span class="block dark:hidden">${icon("moon")}</span>
-</button>`;
+	return `<button type="button" aria-label="Toggle theme" data-admin-theme-toggle class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" data-tooltip="Toggle theme" data-side="bottom" data-align="end">
+	<span class="block dark:hidden">${icon("moon")}</span>
+	<span class="hidden dark:block">${icon("sun")}</span>
+	</button>`;
 }
 
 function docsLink(): string {
-	return `<a class="btn-ghost" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer">Docs</a>`;
+	return `<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="bottom">${icon("book-text")}</a>`;
 }
 
 function kindBadge(kind: AdminActivityRow["kind"]): Cell {
-	return { html: `<span class="badge-secondary">${escapeHtml(kindLabel(kind))}</span>` };
+	return badge(kindLabel(kind));
 }
 
 function statusBadge(state: string): Cell {
 	return { html: `<span class="badge-secondary ${stateBg(state)}">${escapeHtml(stateLabel(state))}</span>` };
+}
+
+function badge(input: string): Cell {
+	return { html: `<span class="badge-secondary">${escapeHtml(input)}</span>` };
 }
 
 function html(input: string): Cell {
@@ -498,7 +1071,7 @@ function mutedHtml(input: string): Cell {
 }
 
 function mono(input: string): Cell {
-	return { html: `<span class="font-mono [overflow-wrap:anywhere]">${escapeHtml(input)}</span>` };
+	return { html: `<span class="font-mono text-[13px] [overflow-wrap:anywhere]">${escapeHtml(input)}</span>` };
 }
 
 function wrapText(input: string): Cell {
@@ -521,6 +1094,20 @@ function truncatedText(input: string): Cell {
 	};
 }
 
+function preWrapText(input: string): Cell {
+	return html(
+		`<div class="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${escapeHtml(input)}</div>`,
+	);
+}
+
+function activityValue(row: AdminActivityRow): Cell {
+	return row.kind === "message" || row.kind === "run" ? truncatedText(row.title) : mono(row.title);
+}
+
+function activityDetailValue(row: AdminActivityRow): Cell {
+	return row.kind === "message" || row.kind === "run" ? preWrapText(row.title) : mono(row.title);
+}
+
 function stateBg(state: string): string {
 	if (["active", "approved", "completed", "done", "succeeded", "success"].includes(state)) {
 		return "bg-emerald-100 dark:bg-emerald-900";
@@ -531,7 +1118,7 @@ function stateBg(state: string): string {
 	if (["cancelled", "denied", "expired", "failed", "rejected", "unauthorized"].includes(state)) {
 		return "bg-red-100 dark:bg-red-900";
 	}
-	if (["paused", "skipped"].includes(state)) return "bg-zinc-100 dark:bg-zinc-900";
+	if (["idle", "paused", "skipped"].includes(state)) return "bg-zinc-100 dark:bg-zinc-900";
 	return "bg-muted";
 }
 
@@ -541,7 +1128,7 @@ function adapterList(adapters: AdminOverview["adapters"]): Cell {
 		`<span class="flex min-w-0 flex-wrap items-center gap-2">${adapters
 			.map(
 				(adapter) =>
-					`<span class="inline-flex min-w-0 items-center gap-1.5" title="${escapeHtml(adapter.kind)}">${adapterIcon(adapter.kind)}<span class="min-w-0 truncate font-mono">${escapeHtml(adapter.name)}</span></span>`,
+					`<span class="inline-flex min-w-0 items-center gap-1.5" title="${escapeHtml(adapter.kind)}">${adapterIcon(adapter.kind)}<span class="min-w-0 truncate font-mono text-[13px]">${escapeHtml(adapter.name)}</span></span>`,
 			)
 			.join("")}</span>`,
 	);
@@ -568,17 +1155,7 @@ function scheduleText(row: AdminJob): string {
 
 function activityDetails(row: AdminActivityRow, index: number): Cell {
 	const id = `activity-detail-${index}`;
-	const detailRows: Array<[string, Cell]> = [
-		["Record", kindLabel(row.kind)],
-		["State", stateLabel(row.state)],
-		["Value", copyable("value", row.title, mono(row.title))],
-		["Detail", row.summary ? copyable("detail", row.summary, row.summary) : "-"],
-		["Channel", row.channel ? copyable("channel", row.channel, row.channel) : "-"],
-		["Actor", row.actor ? copyable("actor", row.actor, row.actor) : "-"],
-		["Updated", `${duration(Math.max(Date.now() - row.time, 0))} ago (${time(row.time)})`],
-		["Duration", row.durationMs === undefined ? "-" : duration(row.durationMs)],
-		["ID", copyable("ID", row.id, mono(row.id))],
-	];
+	const detailRows = activityDetailRows(row);
 	return html(`<button type="button" class="btn-sm-ghost" data-admin-dialog-open="${id}">Details</button>
 <dialog id="${id}" class="dialog w-[calc(100vw-2rem)] max-w-[840px] max-h-[calc(100vh-2rem)] overflow-hidden" aria-labelledby="${id}-title" data-admin-dialog>
 <div class="w-full min-w-0 overflow-hidden">
@@ -587,6 +1164,88 @@ function activityDetails(row: AdminActivityRow, index: number): Cell {
 <button type="button" aria-label="Close dialog" data-admin-dialog-close>${icon("x")}</button>
 </div>
 </dialog>`);
+}
+
+function activityDetailRows(row: AdminActivityRow): Array<[string, Cell]> {
+	const rows: Array<[string, Cell]> = [
+		["Type", kindBadge(row.kind)],
+		["State", statusBadge(row.state)],
+	];
+	if (row.provider) rows.push(["Provider", badge(row.provider)]);
+	if (row.eventType) rows.push(["Kind", badge(row.eventType)]);
+	if (row.role) rows.push(["Role", badge(roleLabel(row.role))]);
+	rows.push(["Channel", row.channel ? copyable("channel", row.channel, wrapText(row.channel)) : "-"]);
+	rows.push(["Actor", row.actor ? copyable("actor", row.actor, wrapText(row.actor)) : "-"]);
+	rows.push(["Updated", `${duration(Math.max(Date.now() - row.time, 0))} ago (${time(row.time)})`]);
+	if (row.durationMs !== undefined) rows.push(["Duration", duration(row.durationMs)]);
+	rows.push(...activityContentRows(row));
+	rows.push(["ID", copyable("ID", row.id, mono(row.id))]);
+	rows.push(...technicalActivityDetails(row));
+	return rows;
+}
+
+function activityContentRows(row: AdminActivityRow): Array<[string, Cell]> {
+	const input = activityDetail(row, "Input")?.value;
+	const result = activityDetail(row, "Result")?.value;
+	const text = activityDetail(row, "Text")?.value;
+	if (row.kind === "run") {
+		const fallbackResult =
+			row.summary && row.summary !== `${row.provider ?? ""}/${row.eventType ?? ""}` ? row.summary : undefined;
+		return compactRows([
+			input
+				? ["Input", copyable("input", input, preWrapText(input))]
+				: ["Input", copyable("input", row.title, activityDetailValue(row))],
+			result
+				? ["Result", copyable("result", result, preWrapText(result))]
+				: fallbackResult
+					? ["Result", copyable("result", fallbackResult, preWrapText(fallbackResult))]
+					: undefined,
+		]);
+	}
+	if (row.kind === "message") {
+		const value = text ?? row.title;
+		return [["Text", copyable("text", value, preWrapText(value))]];
+	}
+	return compactRows([
+		["Value", copyable("value", row.title, activityDetailValue(row))],
+		row.summary ? ["Detail", copyable("detail", row.summary, wrapText(row.summary))] : undefined,
+	]);
+}
+
+function technicalActivityDetails(row: AdminActivityRow): Array<[string, Cell]> {
+	const contentLabels = new Set(["Input", "Result", "Text", "Provider", "Kind", "Role"]);
+	return (row.details ?? [])
+		.filter((detail) => !contentLabels.has(detail.label))
+		.map((detail) => {
+			const label = activityDetailLabel(detail.label);
+			return [
+				label,
+				copyable(
+					label.toLowerCase(),
+					detail.value,
+					detail.format === "mono" ? mono(detail.value) : preWrapText(detail.value),
+				),
+			] as [string, Cell];
+		});
+}
+
+function activityDetail(row: AdminActivityRow, label: string): AdminActivityDetail | undefined {
+	return row.details?.find((detail) => detail.label === label);
+}
+
+function compactRows(input: Array<[string, Cell] | undefined>): Array<[string, Cell]> {
+	return input.filter((row): row is [string, Cell] => row !== undefined);
+}
+
+function activityDetailLabel(label: string): string {
+	const labels: Record<string, string> = {
+		"Provider event ID": "Provider event",
+		"Result message ID": "Result message",
+		"Thread ID": "Thread",
+		"Run trace": "Trace",
+		"Input message ID": "Input message",
+	};
+	return labels[label] ?? label;
 }
 
 function memoryDetails(entry: AdminMemory["entries"][number], index: number): Cell {
@@ -623,9 +1282,9 @@ function memoryPreview(entry: AdminMemory["entries"][number]): string {
 	return entry.truncated ? `${text} ...` : text;
 }
 
-function relativeTimeHtml(input: number): string {
+function relativeTimeHtml(input: number, align?: "end"): string {
 	const ago = duration(Math.max(Date.now() - input, 0));
-	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(`${ago} ago`)}</span>`;
+	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top"${align ? ` data-align="${align}"` : ""}>${escapeHtml(`${ago} ago`)}</span>`;
 }
 
 function futureTimeHtml(input: number | null): string {
@@ -637,7 +1296,9 @@ function futureTimeHtml(input: number | null): string {
 
 function timeHintHtml(input: number | null, empty: string): string {
 	if (!input) return escapeHtml(empty);
-	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(`${duration(Math.max(Date.now() - input, 0))} ago`)}</span>`;
+	const delta = input - Date.now();
+	const label = delta > 0 ? `in ${duration(delta)}` : `${duration(Math.abs(delta))} ago`;
+	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(label)}</span>`;
 }
 
 function kindLabel(kind: AdminActivityRow["kind"]): string {
@@ -645,6 +1306,7 @@ function kindLabel(kind: AdminActivityRow["kind"]): string {
 		approval: "Approval",
 		call: "Tool call",
 		job: "Job",
+		message: "Message",
 		run: "Run",
 	};
 	return labels[kind];
@@ -659,6 +1321,7 @@ function stateLabel(state: string): string {
 		denied: "Denied",
 		done: "Done",
 		failed: "Failed",
+		idle: "Idle",
 		paused: "Paused",
 		pending: "Pending",
 		pending_approval: "Needs approval",
@@ -667,6 +1330,16 @@ function stateLabel(state: string): string {
 		unauthorized: "Unauthorized",
 	};
 	return labels[state] ?? state;
+}
+
+function roleLabel(role: string): string {
+	const labels: Record<string, string> = {
+		assistant: "Assistant",
+		system: "System",
+		tool: "Tool",
+		user: "User",
+	};
+	return labels[role] ?? role;
 }
 
 function docsAction(): string {
@@ -714,9 +1387,12 @@ function icon(name: string, className?: string): string {
 	const paths: Record<string, string> = {
 		activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
 		"arrow-up-right": '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+		"book-text":
+			'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 11h8"/><path d="M8 7h6"/>',
 		check: '<path d="M20 6 9 17l-5-5"/>',
 		"chevron-left": '<path d="m15 18-6-6 6-6"/>',
 		"chevron-right": '<path d="m9 18 6-6-6-6"/>',
+		"chevrons-up-down": '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
 		circle: '<circle cx="12" cy="12" r="4"/>',
 		clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
 		copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
@@ -726,17 +1402,19 @@ function icon(name: string, className?: string): string {
 		layout: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',
 		"log-out":
 			'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
-		moon: '<path d="M20.9 13.5A8.5 8.5 0 0 1 10.5 3.1 7 7 0 1 0 20.9 13.5Z"/>',
+		menu: '<path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/>',
+		moon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>',
 		minus: '<path d="M5 12h14"/>',
 		pause: '<path d="M10 4v16"/><path d="M14 4v16"/>',
 		refresh:
 			'<path d="M21 12a9 9 0 0 0-9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.8 9.8 0 0 0 6.7-2.7L21 16"/><path d="M16 16h5v5"/>',
 		route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+		search: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
 		sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
 		warning:
 			'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
 		webhook:
-			'<path d="M18 16.98h-5.99c-1.1 0-2.01-.9-2.01-2.01v-.04"/><path d="m6 17 3-3-3-3"/><path d="M11.99 7.03H18"/><path d="M18 7.03A3 3 0 1 0 15 4"/><path d="M6 17a3 3 0 1 0 3 3"/><path d="M18 16.98A3 3 0 1 0 21 20"/>',
+			'<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>',
 		x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 	};
 	return `<svg ${common}${className ? ` class="${escapeHtml(className)}"` : ""}>${paths[name] ?? paths.layout}</svg>`;
@@ -752,26 +1430,37 @@ function themeScript(nonce: string, interactive = false): string {
 	});`
 		: "";
 	return `<script nonce="${escapeHtml(nonce)}">
-(() => {
-	try {
-		const stored = localStorage.getItem("themeMode");
-		if (stored ? stored === "dark" : matchMedia("(prefers-color-scheme: dark)").matches) {
-			document.documentElement.classList.add("dark");
-		}
-	} catch {}
-	const apply = (dark) => {
-		document.documentElement.classList.toggle("dark", dark);
-		try { localStorage.setItem("themeMode", dark ? "dark" : "light"); } catch {}
-	};
-	document.addEventListener("basecoat:theme", (event) => {
-		const mode = event.detail?.mode;
-		apply(mode === "dark" ? true : mode === "light" ? false : !document.documentElement.classList.contains("dark"));
-	});${clickHandler}
-})();
+	(() => {
+		const key = "themeMode";
+		const query = matchMedia("(prefers-color-scheme: dark)");
+		const storedMode = () => {
+			try {
+				const value = localStorage.getItem(key);
+				return value === "dark" || value === "light" ? value : undefined;
+			} catch {
+				return undefined;
+			}
+		};
+		const apply = (dark, persist) => {
+			document.documentElement.classList.toggle("dark", dark);
+			if (persist) {
+				try { localStorage.setItem(key, dark ? "dark" : "light"); } catch {}
+			}
+		};
+		const stored = storedMode();
+		apply(stored ? stored === "dark" : query.matches, false);
+		query.addEventListener?.("change", (event) => {
+			if (!storedMode()) apply(event.matches, false);
+		});
+		document.addEventListener("basecoat:theme", (event) => {
+			const mode = event.detail?.mode;
+			apply(mode === "dark" ? true : mode === "light" ? false : !document.documentElement.classList.contains("dark"), true);
+		});${clickHandler}
+	})();
 </script>`;
 }
 
-export function escapeHtml(input: string): string {
+function escapeHtml(input: string): string {
 	return input
 		.replaceAll("&", "&amp;")
 		.replaceAll("<", "&lt;")

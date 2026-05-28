@@ -37,7 +37,7 @@ Then send `/start` to the bot DM, or post in the target group. The CLI prints:
 targets: { telegram: { channels: ["123456789"] } }
 ```
 
-The printed chat id is the value to use in `allow.chats` and scheduled job `targets.telegram.channels`.
+For groups and channels, the printed chat id is the value to use in `allow.chats` and scheduled job `targets.telegram.channels`. For DM-only bots, leave `allow.chats` empty or restrict by user id with `allow.users`.
 
 Use `targets` for explicit cron jobs. Heartbeat jobs can use `scope: { telegram: {} }` after the bot has seen the chat once.
 

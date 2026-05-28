@@ -17,9 +17,11 @@ import type { AgentToolDefinition } from "./core-tools.js";
 import type { AttachmentProcessingConfig, AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
 import type { RuntimeName } from "./runtime/types.js";
+import type { StateConfig } from "./state.js";
 import type { Store } from "./store/types.js";
 
 export type { AdminConfig } from "./admin/index.js";
+export type { StateConfig } from "./state.js";
 
 export type ModelConfig = {
 	provider: string;
@@ -145,6 +147,7 @@ export type HttpConfig = {
 
 export type HeypiConfig = {
 	store?: Store;
+	state: StateConfig;
 	adapters: Adapter[];
 	agent: AgentConfig;
 	runtime: RuntimeConfig;

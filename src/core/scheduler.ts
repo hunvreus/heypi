@@ -49,10 +49,18 @@ export function createScheduler(input: {
 
 	async function runJob(row: Job | undefined, now: number): Promise<void> {
 		if (!row) return;
-		const schedule = parseJson<JobSchedule>(row.schedule);
-		if (!schedule) throw new Error(`job has invalid schedule: ${row.id}`);
-		const scope = parseJson<JobScope | undefined>(row.scope ?? undefined);
-		const routeTargets = parseJson<JobTargets | undefined>(row.target ?? undefined);
+		const parsed = parseJob(row);
+		if (!parsed.ok) {
+			input.logger.error("job.invalid_config", {
+				agent: row.agent,
+				job: row.id,
+				field: parsed.field,
+				error: parsed.error,
+			});
+			await store.jobs.setState({ agent: row.agent, id: row.id }, "paused");
+			return;
+		}
+		const { schedule, scope, targets: routeTargets } = parsed;
 		const lockOwner = randomUUID();
 		const lockKey = `job:${row.agent}:${row.id}`;
 		const lock = await store.locks.acquire({
@@ -73,14 +81,11 @@ export function createScheduler(input: {
 			});
 			if (!targets.length) {
 				input.logger.warn("job.no_target", { job: row.id, kind: row.kind });
-				await store.jobs.finish(
-					{ agent: row.agent, id: row.id },
-					{ lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) },
-				);
+				await store.jobs.finish({ agent: row.agent, id: row.id }, finishResult(schedule, now, row.nextAt));
 				return;
 			}
 			for (const resolved of targets) await runTarget(row, resolved, schedule, now);
-			await finishJob(row, { lastAt: now, nextAt: nextAt(schedule, now, row.nextAt) });
+			await finishJob(row, finishResult(schedule, now, row.nextAt));
 		} finally {
 			await store.locks.release({ key: lockKey, owner: lockOwner });
 		}
@@ -158,7 +163,7 @@ export function createScheduler(input: {
 		});
 	}
 
-	async function finishJob(row: Job, result: { lastAt: number; nextAt?: number }): Promise<void> {
+	async function finishJob(row: Job, result: { lastAt: number; nextAt: number | null }): Promise<void> {
 		await transaction(input.store, async (inner) => {
 			const store = inner as SchedulerStore;
 			await store.jobs.finish({ agent: row.agent, id: row.id }, result);
@@ -185,13 +190,21 @@ export function createScheduler(input: {
 				if (stopped) return;
 				timer = setTimeout(loop, input.config?.pollMs ?? DEFAULT_POLL_MS);
 			};
-			loop();
+			void loop();
 		},
 		async stop(): Promise<void> {
 			stopped = true;
 			if (timer) clearTimeout(timer);
 		},
 	};
+}
+
+function finishResult(
+	schedule: JobSchedule,
+	lastAt: number,
+	previous: number | null,
+): { lastAt: number; nextAt: number | null } {
+	return { lastAt, nextAt: nextAt(schedule, lastAt, previous) ?? null };
 }
 
 async function installJobs(input: {
@@ -337,9 +350,28 @@ function targetThread(thread: Thread): string | undefined {
 	return suffix && suffix !== thread.channel ? suffix : undefined;
 }
 
-function parseJson<T>(input?: string): T | undefined {
-	if (!input) return undefined;
-	return JSON.parse(input) as T;
+type ParsedJob =
+	| { ok: true; schedule: JobSchedule; scope?: JobScope; targets?: JobTargets }
+	| { ok: false; field: "schedule" | "scope" | "target"; error: string };
+
+function parseJob(row: Job): ParsedJob {
+	const schedule = parseJson<JobSchedule>(row.schedule);
+	if (!schedule.ok) return { ok: false, field: "schedule", error: schedule.error };
+	const scope = parseJson<JobScope>(row.scope);
+	if (!scope.ok) return { ok: false, field: "scope", error: scope.error };
+	const targets = parseJson<JobTargets>(row.target);
+	if (!targets.ok) return { ok: false, field: "target", error: targets.error };
+	if (!schedule.value) return { ok: false, field: "schedule", error: "missing schedule" };
+	return { ok: true, schedule: schedule.value, scope: scope.value, targets: targets.value };
+}
+
+function parseJson<T>(input?: string | null): { ok: true; value?: T } | { ok: false; error: string } {
+	if (!input) return { ok: true };
+	try {
+		return { ok: true, value: JSON.parse(input) as T };
+	} catch (error) {
+		return { ok: false, error: errorMessage(error) };
+	}
 }
 
 function existingState(state: string | undefined): "active" | "paused" | undefined {

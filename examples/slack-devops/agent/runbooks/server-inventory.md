@@ -1,6 +1,6 @@
 # Server Inventory
 
-The live remote-host inventory is stored in `examples/slack-devops/state/hosts.json` and managed through `hosts_list`, `hosts_lookup`, `hosts_upsert`, and `hosts_remove`.
+The live remote-host inventory is stored in `state/hosts.json` and managed through `hosts_list`, `hosts_lookup`, `hosts_upsert`, and `hosts_remove`.
 
 If a user names a host that is not configured, ask for the missing host fields before using `hosts_upsert`.
 

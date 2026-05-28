@@ -1,21 +1,10 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import {
-	agentFrom,
-	consoleLogger,
-	coreTools,
-	createHeypi,
-	runHeypi,
-	sqliteStore,
-	telegram,
-	tool,
-	workspace,
-} from "@hunvreus/heypi";
+import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, telegram, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
-loadEnv("examples/telegram-workout/.env");
 loadEnv(".env");
 
 function loadEnv(path: string): void {
@@ -35,8 +24,9 @@ function list(name: string): string[] {
 		.filter(Boolean);
 }
 
-const logPath = resolve("./examples/telegram-workout/memory/workouts.md");
-const profilePath = resolve("./examples/telegram-workout/memory/profile.md");
+const stateRoot = "./state";
+const logPath = join(stateRoot, "memory/workouts.md");
+const profilePath = join(stateRoot, "memory/profile.md");
 
 const getProfile = tool({
 	name: "get_profile",
@@ -127,7 +117,7 @@ const logWorkout = tool<{
 });
 
 const app = createHeypi({
-	store: sqliteStore({ path: resolve("./examples/telegram-workout/heypi.db") }),
+	state: { root: stateRoot },
 	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	adapters: [
 		telegram({
@@ -137,7 +127,7 @@ const app = createHeypi({
 			streaming: true,
 		}),
 	],
-	agent: agentFrom("./examples/telegram-workout/agent", {
+	agent: agentFrom("./agent", {
 		model: "openai/gpt-5-mini",
 		tools: [...coreTools(), getProfile, saveProfile, logWorkout],
 	}),
@@ -155,7 +145,7 @@ const app = createHeypi({
 	scheduler: { pollMs: 60_000 },
 	runtime: {
 		name: "just-bash",
-		root: workspace("./examples/telegram-workout/workspace"),
+		root: workspace("./workspace"),
 		maxConcurrent: 6,
 		maxConcurrentPerChat: 1,
 		timeoutMs: 60_000,

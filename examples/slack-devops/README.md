@@ -24,13 +24,15 @@ cp examples/slack-devops/.env.example examples/slack-devops/.env
 pnpm run dev:slack
 ```
 
+The repo script runs `index.ts` with `examples/slack-devops` as the working directory.
+
 This example enables the local admin panel by default:
 
 ```text
 http://127.0.0.1:3000/admin
 ```
 
-On startup, heypi logs a one-time admin login link. If that link expires while the example is still running, mint a fresh one with `pnpm heypi admin link`.
+Admin auth is disabled in this local loopback example, so no login link is required. Do not expose this example admin server on a public interface with auth disabled.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
 
@@ -75,6 +77,15 @@ Use `slack channels` to find the channel ID for `HEYPI_SLACK_JOB_CHANNEL`. If yo
 
 Invite the Slack app to any channel where it should answer. heypi's allowlists filter events after Slack delivers them; they do not make Slack send events for channels the bot has not joined.
 
+Smoke test from the repo root:
+
+1. Fill `examples/slack-devops/.env` with `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `OPENAI_API_KEY`.
+2. Run `pnpm heypi slack check --env examples/slack-devops/.env`.
+3. Run `pnpm heypi slack channels --env examples/slack-devops/.env`, then set `HEYPI_SLACK_CHANNELS` to the channel you want to test.
+4. Invite the Slack app to that channel.
+5. Run `pnpm run dev:slack`.
+6. Mention the app in Slack, for example: `@heypi help`.
+
 Try:
 
 ```text
@@ -89,7 +100,8 @@ Check Linux health on prod hosts
 bash find . -maxdepth 3 -type f
 ```
 
-Live host inventory and generated SSH keys are stored under `examples/slack-devops/state/`, which is gitignored.
+Live host inventory and generated SSH keys are stored under the explicit `state.root` (`./state`), which is gitignored.
+Because the example omits `store`, heypi uses SQLite at `state/heypi.db`.
 The first host uses the `default` key unless you provide another key name. Keys are generated once and reused; `hosts.json` stores the key name and public key, not private key material.
 
 First host setup:

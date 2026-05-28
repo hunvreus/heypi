@@ -31,6 +31,7 @@ test("createHeypi installs configured jobs", async () => {
 		};
 		const app = createHeypi({
 			store,
+			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [appAdapter],
 			agent: agentFrom("./examples/telegram-workout/agent", { model: "openai/gpt-5-mini" }),
@@ -252,6 +253,50 @@ test("scheduler sends cron jobs to explicit target channels", async () => {
 	}
 });
 
+test("scheduler clears one-shot jobs after they run", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-once-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const at = Date.now() - 1_000;
+		await store.jobs?.upsert({
+			id: "once",
+			agent: "agent",
+			kind: "cron",
+			schedule: JSON.stringify({ at }),
+			target: JSON.stringify({ test: { channels: ["C1"] } }),
+			prompt: "once",
+			state: "active",
+			nextAt: at,
+		});
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(),
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				jobs: [
+					{ id: "once", kind: "cron", schedule: { at }, targets: { test: { channels: ["C1"] } }, prompt: "once" },
+				],
+			},
+		});
+
+		await scheduler?.start();
+		await waitFor(() => sent.length === 1);
+		await scheduler?.stop();
+
+		const job = await store.jobs?.get({ agent: "agent", id: "once" });
+		assert.equal(job?.nextAt, null);
+		assert.deepEqual(await store.jobs?.due({ agent: "agent", now: Date.now() + 60_000 }), []);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("scheduler fans heartbeat jobs out over scoped known threads", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-scope-"));
 	try {
@@ -303,6 +348,42 @@ test("scheduler fans heartbeat jobs out over scoped known threads", async () => 
 	}
 });
 
+test("scheduler pauses malformed persisted job config", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-malformed-"));
+	let scheduler: ReturnType<typeof createScheduler> | undefined;
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(),
+			adapters: [adapter()],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				jobs: [{ id: "keep", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "keep" }],
+			},
+		});
+		await scheduler?.start();
+		await store.jobs?.upsert({
+			id: "bad",
+			agent: "agent",
+			kind: "cron",
+			schedule: "{",
+			target: JSON.stringify({ test: { channels: ["C1"] } }),
+			prompt: "bad",
+			state: "active",
+			nextAt: Date.now() - 1,
+		});
+		await waitFor(async () => (await store.jobs?.get({ agent: "agent", id: "bad" }))?.state === "paused");
+	} finally {
+		await scheduler?.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 function adapter(name = "test", sent: Array<{ target: AdapterTarget; out: Outbound }> = []): Adapter {
 	return {
 		name,
@@ -322,9 +403,9 @@ function handler(seen: Inbound[] = []): Handler {
 	}, {});
 }
 
-async function waitFor(done: () => boolean): Promise<void> {
+async function waitFor(done: () => boolean | Promise<boolean>): Promise<void> {
 	const deadline = Date.now() + 1000;
-	while (!done()) {
+	while (!(await done())) {
 		if (Date.now() > deadline) throw new Error("Timed out waiting for scheduler");
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}

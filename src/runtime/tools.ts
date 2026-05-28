@@ -116,7 +116,8 @@ function runtimeTools(
 				before: Type.Optional(Type.Number()),
 				includeTools: Type.Optional(Type.Boolean()),
 			}),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				const rows = await messages.search({
 					threadId: context.thread as string,
 					query: optionalString(params, "query"),
@@ -162,7 +163,8 @@ function runtimeTools(
 				offset: Type.Optional(Type.Number()),
 				limit: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params, signal) => {
+			execute: async (id, params, signal) => {
+				void id;
 				const result = await read({
 					path: stringParam(params, "path"),
 					offset: numberParam(params, "offset"),
@@ -180,7 +182,8 @@ function runtimeTools(
 			label: "Write",
 			description: "Write a file in the runtime workspace, creating it if needed.",
 			parameters: Type.Object({ path: Type.String({ minLength: 1 }), content: Type.String() }),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				const result = await write({
 					path: stringParam(params, "path"),
 					content: stringParam(params, "content"),
@@ -201,7 +204,8 @@ function runtimeTools(
 				newText: Type.String(),
 				replaceAll: Type.Optional(Type.Boolean()),
 			}),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				const result = await edit({
 					path: stringParam(params, "path"),
 					oldText: stringParam(params, "oldText"),
@@ -223,7 +227,8 @@ function runtimeTools(
 				path: Type.Optional(Type.String()),
 				maxResults: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params, signal) => {
+			execute: async (id, params, signal) => {
+				void id;
 				const result = await grep({
 					query: stringParam(params, "query"),
 					path: optionalString(params, "path"),
@@ -247,7 +252,8 @@ function runtimeTools(
 				path: Type.Optional(Type.String()),
 				maxResults: Type.Optional(Type.Number()),
 			}),
-			execute: async (_id, params, signal) => {
+			execute: async (id, params, signal) => {
+				void id;
 				const result = await find({
 					pattern: optionalString(params, "pattern"),
 					path: optionalString(params, "path"),
@@ -265,7 +271,8 @@ function runtimeTools(
 			label: "List",
 			description: "List files and directories in the runtime workspace.",
 			parameters: Type.Object({ path: Type.Optional(Type.String()) }),
-			execute: async (_id, params, signal) => {
+			execute: async (id, params, signal) => {
+				void id;
 				const result = await ls({ path: optionalString(params, "path"), signal });
 				return text((result?.entries ?? []).map((entry) => `${entry.type}\t${entry.path}`).join("\n") || "empty");
 			},

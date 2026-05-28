@@ -54,6 +54,7 @@ Provider labels, card headings, button text, and help text are fixed. Bot outcom
 
 ```ts
 createHeypi({
+	// ...state, adapters, agent, runtime
 	chat: { busy: "steer" },
 	messages: {
 		busySteer: "Got it. I'll include that.",

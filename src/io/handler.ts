@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalConfig, ChatConfig, ModelConfig, Scope } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
 import type { CallRunner } from "../core/calls.js";
@@ -88,6 +89,7 @@ export type AdapterStart = {
 		agentDirectory?: string;
 		agentModel?: ModelConfig;
 		runtime: { name: string; root: string };
+		state: { root: string };
 		memory: NormalizedMemoryConfig;
 		adapters: Array<{ name: string; kind: string }>;
 		startedAt: number;
@@ -99,6 +101,7 @@ export interface Adapter {
 	name: string;
 	kind: string;
 	start(input: AdapterStart): Promise<void>;
+	ready?(input: AdapterStart): Promise<void>;
 	send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
 	stop?(): Promise<void>;
 }
@@ -109,12 +112,13 @@ export type HttpRoute = {
 	host?: string;
 	port?: number | string;
 	reserved?: boolean;
-	handler(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void | Promise<void>;
+	handler(req: IncomingMessage, res: ServerResponse): void | Promise<void>;
 };
 
 export type HttpRegistrar = {
 	register(route: HttpRoute): void;
 	routes?(): Array<{ method: string; path: string; host: string; port: number | string; reserved: boolean }>;
+	address?(): { host: string; port: number | string } | undefined;
 };
 
 export type AdapterTarget = {
@@ -204,6 +208,7 @@ export function createHandler(input: {
 		const lockOwner = `${trace}:${randomUUID()}`;
 		if (intent.kind === "cancel") {
 			const target = active.info(intent.id);
+			// Do not reveal whether a run id exists in another thread.
 			if (!target || target.threadId !== thread.id) return cancelReply("not_found", messages);
 			if (!canCancelRun(input.approval, msg.actor, target.actor)) return cancelReply("unauthorized", messages);
 			return cancelReply(active.cancel(intent.id), messages);
@@ -212,7 +217,7 @@ export function createHandler(input: {
 			if (!canListApprovals(input.approval, msg.actor)) {
 				return { text: messages.approvalsUnauthorized, private: true };
 			}
-			const all = await input.store.approvals.listPending({ limit: 25 });
+			const all = await input.store.approvals.listPending({ agent: agentId, limit: 25 });
 			const rows = all.filter((row) => approvalVisible(row, input.approval, msg, thread.id));
 			return renderApprovals(rows);
 		}
@@ -220,10 +225,11 @@ export function createHandler(input: {
 			const [turns, calls, approvals, currentLock] = await Promise.all([
 				input.store.turns.listForThread(thread.id, { limit: 5 }),
 				input.store.calls.listForThread(thread.id, {
+					agent: agentId,
 					states: ["running", "pending_approval"],
 					limit: 5,
 				}),
-				input.store.approvals.listPending({ threadId: thread.id, limit: 5 }),
+				input.store.approvals.listPending({ agent: agentId, threadId: thread.id, limit: 5 }),
 				input.store.locks?.get(lockKey),
 			]);
 			return renderThreadStatus({
@@ -278,7 +284,9 @@ export function createHandler(input: {
 		let base: HandlerBase | undefined;
 		try {
 			if (intent.kind === "ask") {
-				const pending = (await input.store.approvals.listPending({ threadId: thread.id, limit: 1 }))[0];
+				const pending = (
+					await input.store.approvals.listPending({ agent: agentId, threadId: thread.id, limit: 1 })
+				)[0];
 				if (pending) {
 					log.debug("handler.pending_approval", {
 						trace,
@@ -455,7 +463,7 @@ export function createHandler(input: {
 				threadId: thread.id,
 				provider: msg.provider,
 				kind: msg.kind ?? msg.provider,
-				text: userError("handler", messages.error),
+				text: userError(messages.error),
 				state: "failed",
 			});
 		} finally {
@@ -475,7 +483,9 @@ export function createStatus(input: { agentId?: string; store: Store }): Status 
 		const turn = await input.store.turns.getByTrace(thread.id, runId);
 		if (!turn) return undefined;
 		const result = turn.resultMessageId ? await input.store.messages.get(turn.resultMessageId) : undefined;
-		const approval = (await input.store.approvals.listPending({ threadId: thread.id, turnId: turn.id, limit: 1 }))[0];
+		const approval = (
+			await input.store.approvals.listPending({ agent: agentId, threadId: thread.id, turnId: turn.id, limit: 1 })
+		)[0];
 		return {
 			ok: turn.state !== "failed",
 			threadId,

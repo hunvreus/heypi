@@ -17,7 +17,7 @@ DISCORD_BOT_TOKEN=...
 Check:
 
 ```bash
-pnpm exec heypi discord check --env .env
+pnpm exec heypi discord check --env examples/discord-project/.env
 ```
 
 For a runnable app, see [`../examples/discord-project`](../examples/discord-project). It includes streaming, core tools, and an approval-gated status update tool.
@@ -60,7 +60,7 @@ The discovery commands use the bot token from `DISCORD_BOT_TOKEN` in the env fil
 List visible text channels:
 
 ```bash
-pnpm exec heypi discord channels --env .env
+pnpm exec heypi discord channels --env examples/discord-project/.env
 ```
 
 This prints one row per visible text/announcement channel:
@@ -72,7 +72,7 @@ This prints one row per visible text/announcement channel:
 Observe a delivered message:
 
 ```bash
-pnpm exec heypi discord observe --env .env
+pnpm exec heypi discord observe --env examples/discord-project/.env
 ```
 
 Then send a DM or post in a channel the bot can read. The CLI prints guild, channel, and user IDs:

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "18a9ee41-f085-4674-89d3-362e124c43c1",
+  "id": "59b6c02c-ea11-466c-a3a6-33ee416e8acf",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "approval": {
@@ -11,6 +11,13 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -127,6 +134,23 @@
             "call_id"
           ],
           "isUnique": false
+        },
+        "approval_agent_channel_idx": {
+          "name": "approval_agent_channel_idx",
+          "columns": [
+            "agent",
+            "channel"
+          ],
+          "isUnique": false
+        },
+        "approval_agent_state_requested_idx": {
+          "name": "approval_agent_state_requested_idx",
+          "columns": [
+            "agent",
+            "state",
+            "requested_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -141,6 +165,13 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -292,6 +323,22 @@
             "turn_id"
           ],
           "isUnique": false
+        },
+        "call_agent_channel_idx": {
+          "name": "call_agent_channel_idx",
+          "columns": [
+            "agent",
+            "channel"
+          ],
+          "isUnique": false
+        },
+        "call_agent_updated_idx": {
+          "name": "call_agent_updated_idx",
+          "columns": [
+            "agent",
+            "updated_at"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -305,7 +352,7 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -395,9 +442,10 @@
         }
       },
       "indexes": {
-        "job_state_next_idx": {
-          "name": "job_state_next_idx",
+        "job_agent_state_next_idx": {
+          "name": "job_agent_state_next_idx",
           "columns": [
+            "agent",
             "state",
             "next_at"
           ],
@@ -405,7 +453,15 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "job_agent_id_pk": {
+          "columns": [
+            "agent",
+            "id"
+          ],
+          "name": "job_agent_id_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -416,6 +472,13 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "job_agent": {
+          "name": "job_agent",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -487,6 +550,7 @@
         "job_run_job_idx": {
           "name": "job_run_job_idx",
           "columns": [
+            "job_agent",
             "job_id"
           ],
           "isUnique": false
@@ -543,7 +607,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "lock_expires_idx": {
+          "name": "lock_expires_idx",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

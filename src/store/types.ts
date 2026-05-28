@@ -33,6 +33,12 @@ export type Message = {
 	updatedAt: number;
 };
 
+export type MessageWithThread = Message & {
+	agent: string;
+	channel: string;
+	threadActor: string | null;
+};
+
 export type HistoryMessage = Pick<Message, "id" | "role" | "actor" | "text" | "createdAt">;
 
 export type Turn = {
@@ -53,6 +59,7 @@ export type Turn = {
 
 export type Call = {
 	id: string;
+	agent: string;
 	turnId: string | null;
 	threadId: string | null;
 	messageId: string | null;
@@ -76,6 +83,7 @@ export type Call = {
 
 export type Approval = {
 	id: string;
+	agent: string;
 	callId: string;
 	channel: string;
 	threadId: string | null;
@@ -187,6 +195,7 @@ export interface Messages {
 		createdAt?: number;
 	}): Promise<{ row: Message; inserted: boolean }>;
 	listForThread(threadId: string, input?: { limit?: number; excludeId?: string }): Promise<Message[]>;
+	listRecent?(input?: { agent?: string; limit?: number; offset?: number }): Promise<MessageWithThread[]>;
 	search(input: {
 		threadId: string;
 		query?: string;
@@ -220,6 +229,7 @@ export interface Turns {
 /** Tool call store. Persists lifecycle state and output for bash and later custom tools. */
 export interface Calls {
 	create(input: {
+		agent: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -233,11 +243,11 @@ export interface Calls {
 		state: CallState;
 		policyReason?: string;
 	}): Promise<Call>;
-	get(id: string): Promise<Call | undefined>;
-	getByChannel(channel: string, id: string): Promise<Call | undefined>;
-	listForThread(threadId: string, input?: { states?: CallState[]; limit?: number }): Promise<Call[]>;
-	listRecent?(input?: { states?: CallState[]; limit?: number; offset?: number }): Promise<Call[]>;
-	setState(id: string, state: CallState): Promise<void>;
+	get(id: string, input?: { agent?: string }): Promise<Call | undefined>;
+	getByChannel(channel: string, id: string, input?: { agent?: string }): Promise<Call | undefined>;
+	listForThread(threadId: string, input?: { agent?: string; states?: CallState[]; limit?: number }): Promise<Call[]>;
+	listRecent?(input?: { agent?: string; states?: CallState[]; limit?: number; offset?: number }): Promise<Call[]>;
+	setState(id: string, state: CallState, input?: { agent?: string }): Promise<void>;
 	finish(
 		id: string,
 		input: { state: CallState; code: number; out: string; err: string; ms: number; queueWaitMs: number },
@@ -247,6 +257,7 @@ export interface Calls {
 /** Approval store for calls that require human confirmation before execution. */
 export interface Approvals {
 	create(input: {
+		agent: string;
 		callId: string;
 		channel: string;
 		threadId?: string;
@@ -259,11 +270,18 @@ export interface Approvals {
 		reason: string;
 		details?: string;
 	}): Promise<Approval>;
-	get(id: string): Promise<Approval | undefined>;
-	getByChannel(channel: string, id: string): Promise<Approval | undefined>;
-	getPending(channel: string, id: string): Promise<Approval | undefined>;
-	listPending(input?: { threadId?: string; turnId?: string; limit?: number; offset?: number }): Promise<Approval[]>;
-	resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean>;
+	get(id: string, input?: { agent?: string }): Promise<Approval | undefined>;
+	getByChannel(channel: string, id: string, input?: { agent?: string }): Promise<Approval | undefined>;
+	getPending(channel: string, id: string, input?: { agent?: string }): Promise<Approval | undefined>;
+	listForThread?(threadId: string, input?: { agent?: string; limit?: number; offset?: number }): Promise<Approval[]>;
+	listPending(input?: {
+		agent?: string;
+		threadId?: string;
+		turnId?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<Approval[]>;
+	resolve(id: string, state: "approved" | "denied", actor: string, input?: { agent?: string }): Promise<boolean>;
 }
 
 /** Durable concurrency guard for logical conversation processing across processes. */
@@ -272,7 +290,7 @@ export interface Locks {
 	get(key: string): Promise<Lock | undefined>;
 	refresh(input: { key: string; owner: string; ttlMs?: number }): Promise<Lock | undefined>;
 	release(input: { key: string; owner: string }): Promise<void>;
-	clear?(input?: { prefix?: string }): Promise<number>;
+	clear?(input?: { key?: string; prefix?: string }): Promise<number>;
 }
 
 export type SchedulerStore = Store & {
@@ -300,7 +318,7 @@ export interface Jobs {
 	list(input?: { agent?: string; limit?: number; offset?: number }): Promise<Job[]>;
 	setState(input: { agent?: string; id: string }, state: JobState): Promise<void>;
 	runNow(input: { agent?: string; id: string }): Promise<void>;
-	finish(input: { agent: string; id: string }, result: { nextAt?: number; lastAt: number }): Promise<void>;
+	finish(input: { agent: string; id: string }, result: { nextAt: number | null; lastAt: number }): Promise<void>;
 	pauseMissing(agent: string, ids: string[]): Promise<number>;
 }
 

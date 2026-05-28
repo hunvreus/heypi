@@ -160,6 +160,8 @@ Memory is shared by every user who can talk to the bot in that scope. With `chan
 - jobs and job runs
 - locks
 
+Apps must set `state.root`. The default SQLite path is `<state.root>/heypi.db`. Admin state lives under `<state.root>/admin/`: `secret` stores local signing material, and `server.<pid>.json` stores non-secret listener discovery data after the HTTP listener has a real port.
+
 Pi session history lives in JSONL files under the app runtime root, for example `sessions/<session-id>.jsonl`. The per-thread lock gates writes to the corresponding Pi session file.
 
 Thread routes store both `sessionId` and `sessionPath`. New routes use a random session id and a relative path under the runtime root; absolute session paths are resolved as-is by the Pi runtime adapter. SQLite is operational state and audit/search/status data only. It is not replayed as Pi protocol history.

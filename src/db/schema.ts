@@ -64,6 +64,7 @@ export const call = sqliteTable(
 	"call",
 	{
 		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
 		turnId: text("turn_id"),
 		threadId: text("thread_id"),
 		messageId: text("message_id"),
@@ -84,13 +85,19 @@ export const call = sqliteTable(
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
-	(table) => [index("call_channel_idx").on(table.channel), index("call_turn_idx").on(table.turnId)],
+	(table) => [
+		index("call_channel_idx").on(table.channel),
+		index("call_turn_idx").on(table.turnId),
+		index("call_agent_channel_idx").on(table.agent, table.channel),
+		index("call_agent_updated_idx").on(table.agent, table.updatedAt),
+	],
 );
 
 export const approval = sqliteTable(
 	"approval",
 	{
 		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
 		callId: text("call_id").notNull(),
 		channel: text("channel").notNull(),
 		threadId: text("thread_id"),
@@ -107,16 +114,24 @@ export const approval = sqliteTable(
 		resolvedAt: integer("resolved_at"),
 		resolvedBy: text("resolved_by"),
 	},
-	(table) => [index("approval_call_idx").on(table.callId)],
+	(table) => [
+		index("approval_call_idx").on(table.callId),
+		index("approval_agent_channel_idx").on(table.agent, table.channel),
+		index("approval_agent_state_requested_idx").on(table.agent, table.state, table.requestedAt),
+	],
 );
 
-export const lock = sqliteTable("lock", {
-	key: text("key").primaryKey(),
-	owner: text("owner").notNull(),
-	expiresAt: integer("expires_at").notNull(),
-	createdAt: integer("created_at").notNull(),
-	updatedAt: integer("updated_at").notNull(),
-});
+export const lock = sqliteTable(
+	"lock",
+	{
+		key: text("key").primaryKey(),
+		owner: text("owner").notNull(),
+		expiresAt: integer("expires_at").notNull(),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [index("lock_expires_idx").on(table.expiresAt)],
+);
 
 export const job = sqliteTable(
 	"job",

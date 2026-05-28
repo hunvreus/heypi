@@ -6,6 +6,8 @@
 		"strict": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
 		"noEmit": true

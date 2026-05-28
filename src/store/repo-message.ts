@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, lt, ne } from "drizzle-orm";
-import { message } from "../db/schema.js";
+import { message, thread } from "../db/schema.js";
 import type { Db } from "./db.js";
-import type { HistoryMessage } from "./types.js";
+import type { HistoryMessage, MessageWithThread } from "./types.js";
 
 export type MessageRow = typeof message.$inferSelect;
 
@@ -94,6 +94,36 @@ export class MessageRepo {
 			.orderBy(desc(message.createdAt))
 			.limit(limit);
 		return rows.reverse();
+	}
+
+	async listRecent(input: { agent?: string; limit?: number; offset?: number } = {}): Promise<MessageWithThread[]> {
+		const filters = [];
+		if (input.agent) filters.push(eq(thread.agent, input.agent));
+		const query = this.db
+			.select({
+				id: message.id,
+				threadId: message.threadId,
+				provider: message.provider,
+				kind: message.kind,
+				providerEventId: message.providerEventId,
+				role: message.role,
+				actor: message.actor,
+				text: message.text,
+				data: message.data,
+				state: message.state,
+				createdAt: message.createdAt,
+				updatedAt: message.updatedAt,
+				agent: thread.agent,
+				channel: thread.channel,
+				threadActor: thread.actor,
+			})
+			.from(message)
+			.innerJoin(thread, eq(message.threadId, thread.id));
+		const withFilter = filters.length ? query.where(and(...filters)) : query;
+		return await withFilter
+			.orderBy(desc(message.createdAt))
+			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500))
+			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
 	async search(input: {

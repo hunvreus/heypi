@@ -61,7 +61,7 @@ export type ApprovalDetail = {
 
 export type ApprovalResolution = "approved" | "rejected" | "expired";
 
-export type ConfirmResult = {
+type ConfirmResult = {
 	message?: string;
 	reason?: string;
 	policyReason?: string;

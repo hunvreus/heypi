@@ -18,9 +18,11 @@
 		}
 	},
 	"files": [
-		"bin",
+		"bin/heypi-convert-document",
+		"bin/heypi-convert-document.py",
 		"dist",
 		"docs",
+		"CHANGELOG.md",
 		"README.md",
 		"LICENSE"
 	],
@@ -30,7 +32,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+ssh://git@github.com/hunvreus/heypi.git"
+		"url": "https://github.com/hunvreus/heypi.git"
 	},
 	"bugs": {
 		"url": "https://github.com/hunvreus/heypi/issues"
@@ -58,23 +60,23 @@
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
 		"heypi": "tsx --conditions development src/cli.ts",
-		"dev": "tsx watch --conditions development examples/slack-devops/index.ts",
+		"dev": "pnpm run dev:slack",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "pnpm run build && tsc --noEmit",
 		"db:generate": "drizzle-kit generate",
-		"dev:slack": "tsx watch --conditions development examples/slack-devops/index.ts",
-		"dev:discord": "tsx watch --conditions development examples/discord-project/index.ts",
-		"dev:telegram": "tsx watch --conditions development examples/telegram-workout/index.ts",
-		"dev:webhook": "tsx watch --conditions development examples/webhook-notes/index.ts",
-		"start:slack": "tsx --conditions development examples/slack-devops/index.ts",
-		"start:discord": "tsx --conditions development examples/discord-project/index.ts",
-		"start:telegram": "tsx --conditions development examples/telegram-workout/index.ts",
-		"start:webhook": "tsx --conditions development examples/webhook-notes/index.ts",
+		"dev:slack": "cd examples/slack-devops && tsx watch --conditions development index.ts",
+		"dev:discord": "cd examples/discord-project && tsx watch --conditions development index.ts",
+		"dev:telegram": "cd examples/telegram-workout && tsx watch --conditions development index.ts",
+		"dev:webhook": "cd examples/webhook-notes && tsx watch --conditions development index.ts",
+		"start:slack": "cd examples/slack-devops && tsx --conditions development index.ts",
+		"start:discord": "cd examples/discord-project && tsx --conditions development index.ts",
+		"start:telegram": "cd examples/telegram-workout && tsx --conditions development index.ts",
+		"start:webhook": "cd examples/webhook-notes && tsx --conditions development index.ts",
 		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "^0.75.4",
+		"@earendil-works/pi-coding-agent": "^0.75.5",
 		"@libsql/client": "^0.17.3",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
@@ -94,6 +96,14 @@
 		"tailwindcss": "^4.3.0",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
+	},
+	"pnpm": {
+		"overrides": {
+			"@esbuild-kit/core-utils>esbuild": "^0.25.12",
+			"brace-expansion": "^5.0.6",
+			"qs": "^6.15.2",
+			"ws": "^8.20.1"
+		}
 	},
 	"packageManager": "pnpm@10.17.1"
 }

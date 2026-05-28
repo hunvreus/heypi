@@ -86,7 +86,7 @@ For private channels, invite the bot to the channel, add the Slack `groups:read`
 pnpm exec heypi slack channels --env examples/slack-devops/.env --private
 ```
 
-When running the Slack example locally, open the one-time admin login link printed at startup. If it expires while the example is still running, mint a fresh link with `pnpm heypi admin link`.
+When running the Slack example locally, open the one-time admin login link printed at startup. If it expires while the example is still running, mint a fresh link with `pnpm heypi admin link --state examples/slack-devops/state`.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the Slack example configures two app-level jobs:
 
@@ -113,6 +113,7 @@ Use:
 
 ```ts
 createHeypi({
+  state: { root: "./state" },
   http: { port: Number(process.env.PORT ?? 3000) },
   adapters: [
     slack({

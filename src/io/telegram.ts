@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { codeFence } from "../core/approval-view.js";
+import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
@@ -315,7 +315,7 @@ async function handleUpdate(input: {
 			},
 		},
 		sendError: async () => {
-			const text = userError("handler", input.start.messages?.error);
+			const text = userError(input.start.messages?.error);
 			const edited = await pending.update({ text });
 			await sendChunks({
 				client: input.client,
@@ -532,7 +532,7 @@ async function handleCallback(input: {
 			() =>
 				input.client.answerCallbackQuery({
 					callback_query_id: input.callback.id,
-					text: userError("handler", input.messages?.error),
+					text: userError(input.messages?.error),
 					show_alert: true,
 				}),
 			context(),
@@ -939,16 +939,11 @@ export function telegramApprovalText(
 }
 
 function approvalResolutionText(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
-	if (state === "approved") return actor ? `Approved by ${actor}.` : "Approved.";
-	if (state === "rejected") return actor ? `Rejected by ${actor}.` : "Rejected.";
-	return "Approval expired.";
+	return approvalStateLine(state, actor);
 }
 
 function approvalTitleText(state?: Outbound["approvalResolution"]): string {
-	if (state === "approved") return "*Approved*";
-	if (state === "rejected") return "*Rejected*";
-	if (state === "expired") return "*Expired*";
-	return "*Approval required*";
+	return `*${approvalStateTitle(state)}*`;
 }
 
 function progressMarkup(id: string): TelegramReplyMarkup {

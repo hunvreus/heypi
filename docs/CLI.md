@@ -6,12 +6,14 @@ Use it for setup checks, provider diagnostics, database migrations, and schedule
 
 Most provider commands load `./.env` when it exists. Pass `--env <path>` to load a different file. You can pass tokens directly with command-specific flags, but env files keep setup checks aligned with the app you are about to run.
 
+Apps must set `state.root`. When they omit `store`, heypi uses the default SQLite database at `<state.root>/heypi.db`. Offline CLI commands that inspect or migrate the database still need `--db`; from the app folder, pass that default path explicitly as `--db ./state/heypi.db`.
+
 ## Commands
 
 ```bash
-heypi check [--env .env] [--db heypi.db] [--runtime-root ./workspace]
-heypi db check --db heypi.db
-heypi db migrate --db heypi.db
+heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
+heypi db check --db ./state/heypi.db
+heypi db migrate --db ./state/heypi.db
 ```
 
 Slack:
@@ -51,16 +53,16 @@ Provider discovery commands print IDs needed in config:
 Admin:
 
 ```bash
-heypi admin link [--control .heypi/admin-control.json] [--url http://127.0.0.1:3000] [--json]
+heypi admin link [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
 ```
 
-`admin link` mints a fresh one-time login URL from a running heypi process. The app writes `.heypi/admin-control.json` at startup; the CLI reads that generated local token and calls the running admin server. The token file is local control material and should not be committed.
+`admin link` mints a fresh one-time login URL from local admin state. The app writes `<state.root>/admin/server.<pid>.json` after the HTTP listener starts. When no manual `admin.secret` is configured, it also stores generated signing material at `<state.root>/admin/secret`. The CLI uses `HEYPI_ADMIN_SECRET` when set, otherwise it reads the state secret and signs a short-lived canonical-state-root-scoped login URL locally; it does not ask the running server to mint or store tokens. Descriptor-selected links are probed against the admin instance id before printing. `--url` overrides the descriptor URL, but the CLI still probes that URL against the descriptor instance id and still requires `--state` or discoverable local admin state for token scope. Use `--pid` when selecting one descriptor from multiple live instances. If no admin state is discoverable from the current directory, pass `--state`.
 
 Approvals:
 
 ```bash
-heypi approvals list --db heypi.db [--json]
-heypi approvals show <id> --db heypi.db [--json]
+heypi approvals list --db ./state/heypi.db [--json]
+heypi approvals show <id> --db ./state/heypi.db [--json]
 ```
 
 Approval CLI commands are read-only. Approve or reject from the original chat provider so the audit trail records the provider actor that made the decision.
@@ -68,11 +70,11 @@ Approval CLI commands are read-only. Approve or reject from the original chat pr
 Jobs:
 
 ```bash
-heypi jobs list --db heypi.db [--agent <id>] [--json]
-heypi jobs show <id> --db heypi.db [--agent <id>] [--json]
-heypi jobs run <id> --db heypi.db [--agent <id>]
-heypi jobs pause <id> --db heypi.db [--agent <id>]
-heypi jobs resume <id> --db heypi.db [--agent <id>]
+heypi jobs list --db ./state/heypi.db [--agent <id>] [--json]
+heypi jobs show <id> --db ./state/heypi.db [--agent <id>] [--json]
+heypi jobs run <id> --db ./state/heypi.db [--agent <id>]
+heypi jobs pause <id> --db ./state/heypi.db [--agent <id>]
+heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
 ```
 
 Job commands are scheduler admin commands. Jobs are scoped by agent. Use `--agent` when a DB contains more than one agent or when mutating a job. `jobs run` marks the job due now. A running heypi app executes it on its next scheduler tick because execution needs the app's agent, adapters, runtime, and tools.
@@ -105,4 +107,4 @@ pnpm run pack:dry
 
 ## Migrations
 
-`heypi db migrate` applies the SQL files shipped in the package. Applied migration hashes are recorded in the database; if a migration file changes after it was applied, migration fails instead of replaying it. The initial `drizzle/0000_*.sql` file is the baseline and should be treated as immutable after release. Subsequent schema changes should be generated as new migration files with Drizzle's statement breakpoints, not by editing the baseline.
+`heypi db migrate` applies the SQL files shipped in the package. Applied migration hashes are recorded in the database; if a migration file changes after it was applied, migration fails instead of replaying it. The repo currently carries one generated baseline, `drizzle/0000_baseline.sql`, with matching `drizzle/meta/` metadata. After release, treat applied migration files as immutable and generate new migration files with Drizzle's statement breakpoints instead of editing the baseline.

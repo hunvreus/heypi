@@ -9,6 +9,8 @@ cp examples/webhook-notes/.env.example examples/webhook-notes/.env
 pnpm run dev:webhook
 ```
 
+The repo script runs `index.ts` with `examples/webhook-notes` as the working directory.
+
 Required env vars:
 
 ```bash
@@ -32,4 +34,4 @@ curl http://127.0.0.1:3000/webhook/notes/threads/<threadId>/runs/<runId> \
   -H "authorization: Bearer dev-secret-change-me"
 ```
 
-Notes are written to `examples/webhook-notes/state/notes.md`.
+Notes and the default SQLite database live under the explicit example state root, `./state`.

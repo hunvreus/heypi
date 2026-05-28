@@ -18,8 +18,8 @@ test("redact removes provider secrets from logged errors", () => {
 });
 
 test("user errors are generic", () => {
-	assert.equal(userError("model"), "Something went wrong. Ask an admin to check the server logs.");
-	assert.equal(userError("handler"), "Something went wrong. Ask an admin to check the server logs.");
+	assert.equal(userError(), "Something went wrong. Ask an admin to check the server logs.");
+	assert.equal(userError("Custom fallback."), "Custom fallback.");
 });
 
 test("pretty logger writes single-line redacted fields", () => {

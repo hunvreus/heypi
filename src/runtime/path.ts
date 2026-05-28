@@ -1,7 +1,7 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 
-export function inside(root: string, path: string): boolean {
+function inside(root: string, path: string): boolean {
 	const rel = relative(resolve(root), resolve(path));
 	return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
 }
@@ -19,7 +19,7 @@ export function safeRoot(input: { root: string; app: string; agent?: string }): 
 	return root;
 }
 
-export function hostPath(root: string, path = "."): string {
+function hostPath(root: string, path = "."): string {
 	const full = resolve(root, path.replace(/^\/+/, ""));
 	if (!inside(root, full)) throw new Error(`path escapes runtime root: ${path}`);
 	return full;

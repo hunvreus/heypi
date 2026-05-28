@@ -1,11 +1,28 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type Adapter, agentFrom, createHeypi, type Logger, sqliteStore, workspace } from "@hunvreus/heypi";
-import { activityView, approvalsView, jobsView, memoryView, overviewView } from "../src/admin/view.js";
+import {
+	type Adapter,
+	agentFrom,
+	consoleLogger,
+	createHeypi,
+	type Logger,
+	sqliteStore,
+	workspace,
+} from "@hunvreus/heypi";
+import {
+	adminLoginUrl,
+	createAdminLoginToken,
+	readAdminSecret,
+	readAdminServerDescriptors,
+	verifyAdminLoginToken,
+} from "../src/admin/auth.js";
+import { createAdminService } from "../src/admin/service.js";
+import { activityView, approvalsView, jobsView, memoryView, overviewView, threadsView } from "../src/admin/view.js";
+import type { AdapterStart } from "../src/io/handler.js";
 
 type LogEntry = {
 	event: string;
@@ -18,6 +35,7 @@ test("admin tables use Basecoat pagination markup", () => {
 		limit: 50,
 		offset: 50,
 		hasNext: true,
+		filters: { q: "daily", type: "cron" },
 		rows: [
 			{
 				id: "daily",
@@ -40,8 +58,49 @@ test("admin tables use Basecoat pagination markup", () => {
 	assert.match(body, /aria-label="pagination"/);
 	assert.match(body, /mt-4 flex w-full justify-end/);
 	assert.match(body, /btn-sm-ghost/);
+	assert.match(body, /name="q" class="input h-8 pl-8 text-sm" placeholder="Search\.\.\." value="daily"/);
+	assert.match(body, /class="select h-8 w-\[9rem\] shrink-0 py-1 text-sm" name="type"/);
+	assert.match(body, /<button class="btn-sm shrink-0" type="submit">Filter<\/button>/);
+	assert.match(body, /<a class="btn-sm-ghost shrink-0" href="\/admin\/jobs">Reset<\/a>/);
+	assert.match(body, /<option value="cron" selected>Cron<\/option>/);
+	assert.match(body, /href="\/admin\/jobs\?limit=50&amp;offset=100&amp;q=daily&amp;type=cron"/);
 	assert.doesNotMatch(body, /Rows 51-51/);
 	assert.doesNotMatch(body, /btn-icon-outline/);
+});
+
+test("admin jobs page labels future next runs as upcoming", () => {
+	const realNow = Date.now;
+	Date.now = () => 1_700_000_000_000;
+	try {
+		const body = jobsView({
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [
+				{
+					id: "daily",
+					agent: "default",
+					kind: "cron",
+					schedule: "FREQ=DAILY",
+					scope: null,
+					target: null,
+					prompt: "Check in",
+					state: "active",
+					nextAt: Date.now() + 60_000,
+					lastAt: Date.now() - 120_000,
+					idleMs: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					lastRun: null,
+				},
+			],
+		});
+		assert.match(body, /in 1m 0s/);
+		assert.match(body, /2m 0s ago/);
+		assert.doesNotMatch(body, /0ms ago/);
+	} finally {
+		Date.now = realNow;
+	}
 });
 
 test("admin jobs page renders explicit targets and scoped heartbeat routes", async () => {
@@ -56,9 +115,10 @@ test("admin jobs page renders explicit targets and scoped heartbeat routes", asy
 	};
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger([]),
 		http: { port },
-		admin: { ...adminConfig(root), auth: false },
+		admin: { auth: false },
 		adapters: [adapter],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
@@ -89,8 +149,226 @@ test("admin jobs page renders explicit targets and scoped heartbeat routes", asy
 		assert.match(body, /scope: slack channel C123/);
 		assert.match(body, /<th>Route<\/th>/);
 		assert.doesNotMatch(body, /"channels":\["C123"\]/);
+
+		const filtered = await fetch(`http://127.0.0.1:${port}/admin/jobs?q=Daily&type=cron`);
+		assert.equal(filtered.status, 200);
+		const filteredBody = await filtered.text();
+		assert.match(filteredBody, /Daily check/);
+		assert.doesNotMatch(filteredBody, /Idle check/);
+		assert.match(filteredBody, /value="Daily"/);
+		assert.match(filteredBody, /<option value="cron" selected>Cron<\/option>/);
 	} finally {
 		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin filtered jobs report incomplete scans", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-filter-truncated-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const now = Date.now();
+		for (let index = 0; index < 501; index++) {
+			await store.jobs?.upsert({
+				id: index === 500 ? "zzzz-target" : `job-${String(index).padStart(3, "0")}`,
+				agent: "default",
+				kind: "cron",
+				schedule: JSON.stringify({ everyMs: 60_000 }),
+				target: JSON.stringify({ slack: { channels: ["C123"] } }),
+				prompt: index === 500 ? "hidden match" : "routine",
+				state: "active",
+				nextAt: now + 60_000,
+			});
+		}
+		const service = createAdminService({
+			store,
+			handler: async () => undefined,
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				startedAt: now,
+			},
+		} as AdapterStart);
+
+		const page = await service.jobs({ q: "hidden", limit: 25 });
+		assert.equal(page.truncated, true);
+		assert.deepEqual(page.rows, []);
+		assert.match(jobsView(page), /Filtered results may be incomplete/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin service scopes approvals and calls to the current agent", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-agent-scope-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const now = Date.now();
+		const ownThread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "slack",
+			team: "T1",
+			channel: "slack:T1:C1",
+			actor: "U1",
+			key: "C1",
+		});
+		const otherThread = await store.threads.getOrCreate({
+			agent: "other",
+			provider: "slack",
+			team: "T1",
+			channel: "slack:T1:C2",
+			actor: "U2",
+			key: "C2",
+		});
+		const inputMessage = await store.messages.create({
+			threadId: ownThread.id,
+			provider: "slack",
+			kind: "slack",
+			role: "user",
+			actor: "U1",
+			text: "please deploy default",
+			createdAt: now - 2000,
+		});
+		const ownTurn = await store.turns.create({
+			threadId: ownThread.id,
+			inputMessageId: inputMessage.id,
+			agent: "default",
+			provider: "slack",
+			kind: "slack",
+			channel: ownThread.channel,
+			actor: "U1",
+			trace: "trace-default",
+		});
+		const resultMessage = await store.messages.create({
+			threadId: ownThread.id,
+			provider: "slack",
+			kind: "slack",
+			role: "assistant",
+			actor: "heypi",
+			text: "deployment started",
+			createdAt: now - 1000,
+		});
+		await store.turns.finish(ownTurn.id, { state: "done", resultMessageId: resultMessage.id });
+		const otherMessage = await store.messages.create({
+			threadId: otherThread.id,
+			provider: "slack",
+			kind: "slack",
+			role: "user",
+			actor: "U2",
+			text: "deploy other",
+			createdAt: now - 500,
+		});
+		const ownCall = await store.calls.create({
+			agent: "default",
+			threadId: ownThread.id,
+			turnId: ownTurn.id,
+			messageId: inputMessage.id,
+			channel: "slack:T1:C1",
+			actor: "U1",
+			tool: "bash",
+			command: "deploy default",
+			state: "pending_approval",
+		});
+		const otherCall = await store.calls.create({
+			agent: "other",
+			channel: "slack:T1:C2",
+			actor: "U2",
+			tool: "bash",
+			command: "deploy other",
+			state: "pending_approval",
+		});
+		const ownApproval = await store.approvals.create({
+			agent: "default",
+			callId: ownCall.id,
+			channel: ownCall.channel,
+			threadId: ownThread.id,
+			turnId: ownTurn.id,
+			requestMessageId: inputMessage.id,
+			command: "deploy default",
+			runtime: "host-bash",
+			reason: "Default approval",
+		});
+		const otherApproval = await store.approvals.create({
+			agent: "other",
+			callId: otherCall.id,
+			channel: otherCall.channel,
+			command: "deploy other",
+			runtime: "host-bash",
+			reason: "Other approval",
+		});
+		const service = createAdminService({
+			store,
+			handler: async () => undefined,
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				startedAt: now,
+			},
+		} as AdapterStart);
+
+		const live = await service.live();
+		assert.equal(live.pendingApprovals, 1);
+		assert.equal(live.recentCalls, 1);
+
+		const approvals = await service.approvals();
+		assert.deepEqual(
+			approvals.rows.map((row) => row.id),
+			[ownApproval.id],
+		);
+
+		const activity = await service.activity();
+		const ids = activity.rows.map((row) => row.id);
+		assert.equal(ids.includes(ownApproval.id), true);
+		assert.equal(ids.includes(ownCall.id), true);
+		assert.equal(ids.includes(ownTurn.id), true);
+		assert.equal(ids.includes(inputMessage.id), true);
+		assert.equal(ids.includes(resultMessage.id), true);
+		assert.equal(ids.includes(otherApproval.id), false);
+		assert.equal(ids.includes(otherCall.id), false);
+		assert.equal(ids.includes(otherMessage.id), false);
+		const run = activity.rows.find((row) => row.id === ownTurn.id);
+		assert.equal(run?.title, "please deploy default");
+		assert.equal(run?.summary, "deployment started");
+		assert.equal(run?.provider, "slack");
+		assert.equal(run?.eventType, "slack");
+		assert.deepEqual(
+			run?.details?.map((row) => row.label),
+			["Trace", "Thread", "Input message", "Input", "Result message", "Result"],
+		);
+		const message = activity.rows.find((row) => row.id === inputMessage.id);
+		assert.equal(message?.kind, "message");
+		assert.equal(message?.title, "please deploy default");
+		assert.equal(message?.provider, "slack");
+		assert.equal(message?.eventType, "slack");
+		assert.equal(message?.role, "user");
+		assert.deepEqual(activity.facets?.channels, ["slack:T1:C1"]);
+		assert.deepEqual(activity.facets?.actors, ["heypi", "U1"]);
+		const threads = await service.threads();
+		assert.deepEqual(
+			threads.rows.map((row) => row.id),
+			[ownThread.id],
+		);
+		assert.equal(threads.rows[0]?.summary, "deployment started");
+		assert.equal(threads.rows[0]?.runningRuns, 0);
+		const thread = await service.thread(ownThread.id, { event: `message:${inputMessage.id}` });
+		assert.equal(thread?.selected?.id, inputMessage.id);
+		const timeline = new Set(thread?.timeline.map((row) => `${row.kind}:${row.id}`));
+		assert.equal(timeline.has(`message:${resultMessage.id}`), true);
+		assert.equal(timeline.has(`run:${ownTurn.id}`), true);
+		assert.equal(timeline.has(`message:${inputMessage.id}`), true);
+		assert.equal(timeline.has(`approval:${ownApproval.id}`), true);
+		assert.equal(timeline.has(`call:${ownCall.id}`), true);
+	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
@@ -171,6 +449,7 @@ test("admin approvals expiry uses duration labels", () => {
 		rows: [
 			{
 				id: "approval-1",
+				agent: "default",
 				callId: "call-1",
 				channel: "slack::C123",
 				threadId: null,
@@ -211,6 +490,24 @@ test("admin memory empty state explains saved memory files", () => {
 	assert.match(body, /<h3 class="font-medium tracking-tight">No memory files<\/h3>/);
 	assert.doesNotMatch(body, /text-lg font-medium tracking-tight/);
 	assert.doesNotMatch(body, /mb-2 bg-muted/);
+});
+
+test("admin memory page explains disabled memory", () => {
+	const body = memoryView({
+		enabled: false,
+		scope: "agent",
+		writePolicy: "off",
+		maxChars: 4000,
+		total: 0,
+		limit: 25,
+		offset: 0,
+		hasNext: false,
+		entries: [],
+	});
+	assert.match(body, /Memory disabled/);
+	assert.match(body, /running without durable memory/);
+	assert.match(body, /Enable memory in the app config/);
+	assert.doesNotMatch(body, /No memory files/);
 });
 
 test("admin memory table uses details dialog for file content", () => {
@@ -288,12 +585,40 @@ test("admin activity table uses compact values and dialog details", () => {
 			{
 				id: "run-1",
 				kind: "run",
-				title: "trace-1",
-				summary: "slack/slack",
+				threadId: "thread-1",
+				title: "please restart the API",
+				summary: "API restart queued",
 				state: "pending_approval",
+				provider: "slack",
+				eventType: "slack",
 				channel: "C123",
 				actor: "U123",
 				time: now - 120_000,
+				details: [
+					{ label: "Trace", value: "trace-1", format: "mono" },
+					{ label: "Input message", value: "message-in-1", format: "mono" },
+					{ label: "Input", value: "please restart the API", format: "text" },
+					{ label: "Result message", value: "message-out-1", format: "mono" },
+					{ label: "Result", value: "API restart queued", format: "text" },
+				],
+			},
+			{
+				id: "message-1",
+				kind: "message",
+				threadId: "thread-1",
+				title: "Can you check why deploy failed?",
+				summary: "user / slack / slack",
+				state: "done",
+				provider: "slack",
+				eventType: "slack",
+				role: "user",
+				channel: "slack::C123",
+				actor: "U123",
+				time: now - 150_000,
+				details: [
+					{ label: "Thread", value: "thread-1", format: "mono" },
+					{ label: "Text", value: "Can you check why deploy failed?", format: "text" },
+				],
 			},
 			{
 				id: "call-2",
@@ -307,16 +632,33 @@ test("admin activity table uses compact values and dialog details", () => {
 				durationMs: 300,
 			},
 		],
+		filters: { q: "host", type: "call", channel: "C123" },
 	});
 	assert.doesNotMatch(body, /<th>Summary<\/th>/);
 	assert.match(body, /<th class="pl-4">State<\/th>/);
 	assert.match(body, /<th>Value<\/th>/);
+	assert.match(body, /<th>Type<\/th>/);
+	assert.doesNotMatch(body, /<th>Record<\/th>/);
+	assert.match(body, /absolute left-2\.5 top-1\/2 -translate-y-1\/2 pointer-events-none/);
+	assert.match(body, /<circle cx="11" cy="11" r="8"\/>/);
+	assert.match(body, /name="q" class="input h-8 pl-8 text-sm" placeholder="Search\.\.\." value="host"/);
+	assert.match(body, /<button class="btn-sm shrink-0" type="submit">Filter<\/button>/);
+	assert.match(body, /<option value="call" selected>Tool call<\/option>/);
+	assert.match(body, /<option value="message">Message<\/option>/);
+	assert.match(body, /id="filter-channel"/);
+	assert.match(body, /id="filter-channel" class="select h-8 w-\[11rem\] shrink-0"/);
+	assert.match(body, /class="btn-sm-outline h-8 w-full" id="filter-channel-trigger"/);
+	assert.match(body, /placeholder="Search channel\.\.\."/);
+	assert.match(body, /data-value="C123" aria-selected="true"/);
+	assert.match(body, /name="channel" value="C123"/);
 	assert.match(body, /<th class="pr-4"><\/th>/);
 	assert.match(body, /<span class="badge-secondary bg-amber-100 dark:bg-amber-900">Waiting approval<\/span>/);
 	assert.match(body, /<span class="badge-secondary bg-amber-100 dark:bg-amber-900">Needs approval<\/span>/);
 	assert.match(body, /<span class="badge-secondary bg-red-100 dark:bg-red-900">Failed<\/span>/);
 	assert.match(body, /Tool call/);
 	assert.match(body, /host_exec/);
+	assert.match(body, /Message/);
+	assert.match(body, /Can you check why deploy failed\?/);
 	assert.match(body, /Waiting approval/);
 	assert.match(body, /Needs approval/);
 	assert.match(body, /data-tooltip=/);
@@ -330,14 +672,193 @@ test("admin activity table uses compact values and dialog details", () => {
 	assert.match(body, /btn-sm-ghost/);
 	assert.match(body, /data-admin-dialog-open=/);
 	assert.match(body, /data-admin-dialog-close/);
+	assert.match(body, />Type<\/div>/);
+	assert.match(body, />Detail<\/div>/);
+	assert.match(body, />ID<\/div>/);
+	assert.doesNotMatch(body, />Summary<\/div>/);
+	assert.doesNotMatch(body, />Activity ID<\/div>/);
 	assert.match(body, /aria-label="Copy ID"/);
 	assert.match(body, /aria-label="Copy actor"/);
 	assert.match(body, /aria-label="Copy channel"/);
 	assert.match(body, /data-admin-copy="call-1"/);
+	assert.match(body, /href="\/admin\/threads\/thread-1\?event=run%3Arun-1"/);
 	assert.doesNotMatch(body, /<footer><button class="btn-outline" data-admin-dialog-close>Close<\/button><\/footer>/);
 	assert.doesNotMatch(body, /onclick=/);
 	assert.match(body, /Activity details/);
 	assert.match(body, /systemctl restart api/);
+});
+
+test("admin chats threads and thread detail render URL-backed timeline", () => {
+	const now = Date.now();
+	const threadRow = {
+		id: "thread-1",
+		provider: "slack",
+		kind: "slack",
+		channel: "C123",
+		actor: "U123",
+		state: "running",
+		title: "C123 · U123",
+		summary: "Message: deploy api",
+		createdAt: now - 5000,
+		updatedAt: now - 5000,
+		lastActivityAt: now - 1000,
+		pendingApprovals: 0,
+		runningRuns: 1,
+		latestEvent: "message:message-1",
+	};
+	const threadsBody = threadsView(
+		{
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [threadRow],
+		},
+		{ checkedAt: now },
+	);
+	assert.match(threadsBody, /<h1 class="leading-none font-semibold">Chats<\/h1>/);
+	assert.match(threadsBody, /Recent conversations across connected channels\./);
+	assert.doesNotMatch(threadsBody, /role="tab"/);
+	assert.match(threadsBody, /grid h-\[calc\(100vh-5\.5rem\)\] min-w-0/);
+	assert.match(threadsBody, /<div class="card !p-0 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">/);
+	assert.match(
+		threadsBody,
+		/<aside class="flex max-h-\[36vh\] min-h-0 min-w-0 flex-col gap-3 overflow-hidden border-b p-4 lg:max-h-none lg:border-b-0">/,
+	);
+	assert.match(threadsBody, /<div class="relative">/);
+	assert.match(threadsBody, /type="search" name="q" class="input h-8 pr-9 text-sm"/);
+	assert.match(threadsBody, /aria-label="Search query"/);
+	assert.match(
+		threadsBody,
+		/<button class="absolute right-1\.5 top-1\/2 -translate-y-1\/2 btn-icon-ghost text-muted-foreground hover:text-accent-foreground size-6" type="submit" aria-label="Search chats" data-tooltip="Search chats" data-side="top" data-align="end"/,
+	);
+	assert.doesNotMatch(threadsBody, /rounded-r-none/);
+	assert.doesNotMatch(threadsBody, /border-l-0/);
+	assert.doesNotMatch(threadsBody, /pl-8/);
+	assert.doesNotMatch(threadsBody, /absolute left-2\.5/);
+	assert.doesNotMatch(threadsBody, /All states/);
+	assert.doesNotMatch(threadsBody, /All channels/);
+	assert.doesNotMatch(threadsBody, /All actors/);
+	assert.doesNotMatch(threadsBody, />Filter<\/button>/);
+	assert.match(
+		threadsBody,
+		/grid-rows-\[auto_minmax\(0,1fr\)\] lg:grid-cols-\[minmax\(17rem,22rem\)_minmax\(0,1fr\)\] lg:grid-rows-1/,
+	);
+	assert.match(threadsBody, /<span class="shrink-0 font-mono text-\[13px\]">C123<\/span>/);
+	assert.match(threadsBody, /<span class="text-muted-foreground" aria-hidden="true">·<\/span>/);
+	assert.doesNotMatch(threadsBody, /<span class="font-mono text-muted-foreground">thread-1<\/span>/);
+	assert.match(threadsBody, /<span class="min-w-0 truncate text-muted-foreground">deploy api<\/span>/);
+	assert.match(threadsBody, /<div class="pl-6 text-xs text-muted-foreground">/);
+	assert.doesNotMatch(threadsBody, /<span class="badge-secondary bg-amber-100 dark:bg-amber-900">Running<\/span>/);
+	assert.match(threadsBody, /href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
+	assert.match(threadsBody, /deploy api/);
+	assert.doesNotMatch(threadsBody, /Message: deploy api/);
+	assert.match(threadsBody, /Select a thread/);
+
+	const event = {
+		id: "message-1",
+		kind: "message" as const,
+		threadId: "thread-1",
+		title: "deploy api",
+		summary: "user / slack / slack",
+		state: "done",
+		provider: "slack",
+		eventType: "slack",
+		role: "user",
+		channel: "C123",
+		actor: "U123",
+		time: now - 1000,
+		details: [
+			{ label: "Thread", value: "thread-1", format: "mono" as const },
+			{ label: "Text", value: "**deploy** `api`\n- first check", format: "text" as const },
+		],
+	};
+	const runEvent = {
+		id: "run-1",
+		kind: "run" as const,
+		threadId: "thread-1",
+		title: "deploy api",
+		summary: "Deployment queued",
+		state: "done",
+		provider: "slack",
+		eventType: "slack",
+		channel: "C123",
+		actor: "U123",
+		time: now - 900,
+	};
+	const callEvent = {
+		id: "call-1",
+		kind: "call" as const,
+		threadId: "thread-1",
+		title: "host_exec",
+		summary: "npm test",
+		state: "done",
+		channel: "C123",
+		actor: "U123",
+		time: now - 800,
+		durationMs: 1200,
+		details: [
+			{ label: "Thread", value: "thread-1", format: "mono" as const },
+			{ label: "Runtime", value: "host-bash" },
+			{ label: "Stdout", value: "tests passed", format: "text" as const },
+		],
+	};
+	const threadBody = threadsView(
+		{
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [threadRow],
+		},
+		{
+			checkedAt: now,
+			selected: {
+				thread: threadRow,
+				timeline: [runEvent, callEvent, event],
+				selected: callEvent,
+				event: "call:call-1",
+			},
+		},
+	);
+	assert.match(threadBody, /data-tooltip="slack"/);
+	assert.match(threadBody, /<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm">/);
+	assert.match(
+		threadBody,
+		/<h2 class="min-w-0 truncate font-mono text-\[13px\]">C123<\/h2><span class="min-w-0 truncate font-mono text-\[13px\] text-muted-foreground">thread-1<\/span>/,
+	);
+	assert.doesNotMatch(threadBody, /Channel C123 · Created /);
+	assert.doesNotMatch(threadBody, / · Last updated /);
+	assert.match(threadBody, /href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
+	assert.match(threadBody, /aria-current="true"/);
+	assert.match(threadBody, /data-selected-event="true"/);
+	assert.match(
+		threadBody,
+		/scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll/,
+	);
+	assert.match(threadBody, /scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto/);
+	assert.match(threadBody, /<article id="event-message-message-1"/);
+	assert.match(threadBody, /justify-items-end/);
+	assert.match(threadBody, /rounded-lg bg-muted px-4 py-3/);
+	assert.match(threadBody, /<footer class="text-xs text-muted-foreground">U123 <span aria-hidden="true">·<\/span>/);
+	assert.match(threadBody, /data-align="end"/);
+	assert.match(threadBody, /<strong>deploy<\/strong> api/);
+	assert.doesNotMatch(threadBody, /<code class=/);
+	assert.match(threadBody, /<ul class="list-disc pl-5"><li>first check<\/li><\/ul>/);
+	assert.match(threadBody, /<details id="event-call-call-1" data-selected-event="true"/);
+	assert.match(threadBody, /<summary class="flex min-w-0 items-center gap-2">/);
+	assert.match(threadBody, /class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm"/);
+	assert.doesNotMatch(threadBody, /border-t pt-2/);
+	assert.match(threadBody, /group-open:rotate-90/);
+	assert.match(threadBody, />Runtime<\/span>/);
+	assert.doesNotMatch(threadBody, />Stdout<\/span>/);
+	assert.doesNotMatch(threadBody, />ID<\/div>/);
+	assert.match(threadBody, /host_exec/);
+	assert.doesNotMatch(threadBody, /tests passed/);
+	assert.match(threadBody, /npm test/);
+	assert.match(threadBody, /deploy api/);
+	assert.doesNotMatch(threadBody, /Deployment queued/);
+	assert.doesNotMatch(threadBody, /user \/ slack \/ slack/);
+	assert.doesNotMatch(threadBody, /C123 · U123<\/h2>/);
+	assert.doesNotMatch(threadBody, /Activity details/);
 });
 
 test("admin one-time login issues a session and logout requires CSRF", async () => {
@@ -346,9 +867,10 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 	const logs: LogEntry[] = [];
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger(logs),
 		http: { port },
-		admin: adminConfig(root),
+		admin: true,
 		adapters: [],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
@@ -387,50 +909,110 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 
 		const adminPage = await fetch(`http://127.0.0.1:${port}/admin`, { headers: { cookie } });
 		assert.equal(adminPage.status, 200);
+		assert.match(adminPage.headers.get("content-security-policy") ?? "", /style-src 'self' 'nonce-[^']+'/);
 		const body = await adminPage.text();
 		assert.match(body, /heypi admin/);
 		assert.match(body, /aria-label="heypi"/);
 		assert.match(body, /h-4/);
-		assert.match(body, /btn-icon-ghost/);
+		assert.match(body, /btn-sm-icon-ghost/);
 		assert.match(
 			body,
-			/<a class="btn-ghost" href="https:\/\/heypi\.dev\/docs" target="_blank" rel="noopener noreferrer">Docs<\/a>/,
+			/<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="https:\/\/heypi\.dev\/docs" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="bottom"><svg [^>]+><path d="M4 19\.5v-15A2\.5 2\.5 0 0 1 6\.5 2H19/,
 		);
+		assert.match(body, /<path d="M8 11h8"\/><path d="M8 7h6"\/>/);
+		assert.match(
+			body,
+			/<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="Log out" data-tooltip="Log out" data-side="bottom"><svg [^>]+><path d="M9 21H5/,
+		);
+		const header = body.match(/<header[\s\S]*?<\/header>/u)?.[0] ?? "";
+		assert.ok(header.indexOf("Configuration") < header.indexOf('class="mx-1 h-4 w-px bg-border"'));
+		assert.ok(header.indexOf('class="mx-1 h-4 w-px bg-border"') < header.indexOf('aria-label="Docs"'));
+		assert.ok(header.indexOf('data-tooltip="Log out"') < header.indexOf("data-admin-theme-toggle"));
+		assert.match(body, /<style nonce="[^"]+">\n\[data-admin-nav-mobile\]\{display:none\}/);
+		assert.match(body, /\[data-admin-nav-desktop\]\{display:none!important\}/);
+		assert.match(body, /\[data-admin-nav-mobile\]\{display:block!important\}/);
+		assert.match(body, /data-admin-nav-desktop class="flex min-w-0 flex-wrap items-center justify-end gap-1"/);
+		assert.match(body, /id="admin-mobile-menu" data-admin-nav-mobile class="dropdown-menu"/);
+		assert.match(
+			body,
+			/id="admin-mobile-menu-trigger" aria-haspopup="menu" aria-controls="admin-mobile-menu-menu" aria-expanded="false"/,
+		);
+		assert.match(body, /aria-label="Open menu" data-tooltip="Menu" data-side="bottom" data-align="end"/);
+		assert.match(body, /<path d="M4 5h16"\/><path d="M4 12h16"\/><path d="M4 19h16"\/>/);
+		assert.match(
+			body,
+			/id="admin-mobile-menu-popover" data-popover aria-hidden="true" data-align="end" class="min-w-56"/,
+		);
+		assert.match(body, /role="menu" id="admin-mobile-menu-menu" aria-labelledby="admin-mobile-menu-trigger"/);
+		assert.match(
+			body,
+			/<a role="menuitem" href="\/admin" aria-current="page" class="bg-muted text-foreground">Chats<\/a>/,
+		);
+		assert.match(body, /Approvals<span class="badge-secondary ml-auto" data-live-field="pendingApprovals">0<\/span>/);
+		assert.match(
+			body,
+			/<a role="menuitem" href="https:\/\/heypi\.dev\/docs" target="_blank" rel="noopener noreferrer">/,
+		);
+		assert.match(body, /<button type="button" role="menuitem" data-admin-theme-toggle class="w-full">/);
+		assert.match(body, /Toggle theme/);
+		assert.match(body, /<button type="submit" role="menuitem" class="w-full">/);
+		assert.match(body, /<span class="block dark:hidden"><svg [^>]+><path d="M20\.985 12\.486/);
+		assert.match(body, /<span class="hidden dark:block"><svg [^>]+><circle cx="12" cy="12" r="4"\/>/);
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"/);
+		assert.match(body, /aria-label="Docs"/);
+		assert.match(body, /data-tooltip="Docs"/);
+		assert.match(body, /aria-label="Toggle theme"/);
+		assert.match(body, /data-tooltip="Toggle theme"/);
+		assert.match(body, /data-align="end"/);
 		assert.doesNotMatch(body, /data-tooltip="Toggle dark mode"/);
 		assert.doesNotMatch(body, /title="Toggle dark mode"/);
 		assert.match(body, /max-w-7xl/);
-		assert.match(body, /<h1 class="sr-only">Activity<\/h1>/);
-		assert.match(body, /role="tablist"/);
-		assert.match(body, /aria-selected="true" class="min-w-0 inline-flex items-center gap-2" href="\/admin">Activity/);
+		assert.match(body, /gap-4 px-6 py-3/);
+		assert.match(body, /<h1 class="sr-only">Chats<\/h1>/);
+		assert.match(body, /Recent conversations across connected channels\./);
+		assert.doesNotMatch(body, /role="tablist"/);
+		assert.doesNotMatch(body, /href="\/admin\/activity"/);
+		assert.match(body, /Select a thread/);
+		assert.doesNotMatch(body, /Chats<span class="badge-secondary"/);
+		assert.match(body, /class="btn-sm-ghost hover:text-foreground bg-muted text-foreground" href="\/admin"/);
 		assert.match(
 			body,
-			/Approvals<span class="badge-secondary bg-black\/10 dark:bg-black\/20 h-4 px-1\.5 text-\[11px\]" data-live-field="pendingApprovals">0<\/span>/,
+			/class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/approvals"/,
 		);
+		assert.match(body, /class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/jobs"/);
 		assert.match(
 			body,
-			/Memory<span class="badge-secondary bg-black\/10 dark:bg-black\/20 h-4 px-1\.5 text-\[11px\]">0<\/span>/,
+			/class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/memory"/,
 		);
+		assert.match(body, /Approvals<span class="badge-secondary" data-live-field="pendingApprovals">0<\/span>/);
+		assert.match(body, /Jobs<span class="badge-secondary" data-live-field="jobs">0<\/span>/);
+		assert.match(body, /Memory<span class="badge-secondary">0<\/span>/);
 		assert.doesNotMatch(body, /badge-secondary font-mono/);
-		assert.match(body, /href="\/admin\/configuration">Configuration/);
-		assert.match(body, /ml-auto min-w-0/);
+		assert.match(body, /href="\/admin\/configuration"[^>]*>Configuration/);
+		assert.doesNotMatch(body, /ml-auto min-w-0/);
 		assert.doesNotMatch(body, /Agent folder/);
 		assert.doesNotMatch(body, /Uptime/);
 		assert.doesNotMatch(body, /Admin auth/);
 		assert.doesNotMatch(body, /Cookies/);
-		assert.doesNotMatch(body, /Threads/);
 		assert.doesNotMatch(body, /Pending approvals/);
 		assert.match(body, /\/admin\/approvals/);
 		assert.match(body, /\/admin\/jobs/);
 		assert.match(body, /\/admin\/memory/);
 		assert.match(body, /\/admin\/configuration/);
+		assert.doesNotMatch(body, /<a class="btn-ghost" href="https:\/\/heypi\.dev\/docs"[\s\S]* Docs<\/a>/);
 		assert.doesNotMatch(body, /\/admin\/access/);
 		assert.doesNotMatch(body, /\/admin\/routes/);
 		assert.match(body, /text-muted-foreground/);
 		assert.match(body, /prefers-color-scheme: dark/);
-		assert.match(body, /localStorage\.getItem\("themeMode"\)/);
+		assert.match(body, /localStorage\.getItem\(key\)/);
+		assert.match(body, /addEventListener\?\.\("change"/);
 		assert.match(body, /basecoat:theme/);
 		assert.match(body, /data-admin-theme-toggle/);
+		assert.match(body, /function threadScrollContainer\(\)/);
+		assert.match(body, /heypi:admin:thread-scroll:/);
+		assert.match(body, /sessionStorage\.setItem\(threadScrollKey\(\), threadAtBottom\(container\) \? "bottom"/);
+		assert.match(body, /new MutationObserver/);
+		assert.doesNotMatch(body, /scrollIntoView/);
 		assert.doesNotMatch(body, /data-admin-theme-toggle class="btn-icon-ghost size-8"/);
 		assert.match(body, /navigator\.clipboard/);
 		assert.match(body, /button\.innerHTML = '<svg/);
@@ -473,14 +1055,12 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(configBody, /ago \(/);
 		assert.doesNotMatch(configBody, /Uptime/);
 
-		const empty = await fetch(`http://127.0.0.1:${port}/admin/activity`, { headers: { cookie } });
-		assert.equal(empty.status, 200);
-		const emptyBody = await empty.text();
-		assert.match(emptyBody, /No activity yet/);
-		assert.match(emptyBody, /Once the agent starts handling messages/);
-		assert.match(emptyBody, /border-dashed/);
-		assert.doesNotMatch(emptyBody, /min-h-\[calc\(100vh-11rem\)\]/);
-		assert.doesNotMatch(emptyBody, /mb-2 bg-muted/);
+		const activity = await fetch(`http://127.0.0.1:${port}/admin/activity`, {
+			headers: { cookie },
+			redirect: "manual",
+		});
+		assert.equal(activity.status, 303);
+		assert.equal(activity.headers.get("location"), "/admin");
 
 		const jobs = await fetch(`http://127.0.0.1:${port}/admin/jobs`, { headers: { cookie } });
 		assert.equal(jobs.status, 200);
@@ -543,9 +1123,10 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 	const logs: LogEntry[] = [];
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger(logs),
 		http: { port },
-		admin: { ...adminConfig(root), auth: false },
+		admin: { auth: false },
 		adapters: [],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
@@ -572,60 +1153,187 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 	}
 });
 
-test("admin control endpoint mints fresh one-time login links", async () => {
+test("admin state signs fresh one-time login links", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-admin-link-"));
-	const port = await freePort();
 	const logs: LogEntry[] = [];
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger(logs),
-		http: { port },
-		admin: adminConfig(root),
+		http: { port: 0 },
+		admin: true,
 		adapters: [],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
 		await app.start();
-		const denied = await fetch(`http://127.0.0.1:${port}/admin/_control/links`, { method: "POST" });
-		assert.equal(denied.status, 401);
-
-		const control = await controlFile(root);
-		const mintedByCli = await fetch(`http://127.0.0.1:${port}/admin/_control/links`, {
-			method: "POST",
-			headers: { authorization: `Bearer ${control.token}` },
-		});
-		assert.equal(mintedByCli.status, 200);
-		const cliLink = (await mintedByCli.json()) as { url?: string; expiresAt?: number };
-		assert.ok(cliLink.url);
-		assert.ok(cliLink.expiresAt);
-		const cliLogin = await fetch(cliLink.url, { redirect: "manual" });
+		const servers = readAdminServerDescriptors(stateRoot(root));
+		assert.equal(servers.length, 1);
+		const server = servers[0].descriptor;
+		assert.ok(server.instanceId);
+		assert.doesNotMatch(server.url, /:0(?:\/|$)/);
+		const loginPage = await fetch(`${server.url}/admin/login`, { redirect: "manual" });
+		assert.equal(loginPage.headers.get("x-heypi-admin-instance"), server.instanceId);
+		if (process.platform !== "win32") {
+			const adminState = await stat(join(stateRoot(root), "admin"));
+			assert.equal(adminState.mode & 0o077, 0);
+		}
+		const signed = createAdminLoginToken(readAdminSecret(stateRoot(root)), 300_000, { stateRoot: stateRoot(root) });
+		assert.ok(signed.token.length < 120);
+		const signedUrl = adminLoginUrl(server.url, signed.token);
+		const cliLogin = await fetch(signedUrl, { redirect: "manual" });
 		assert.equal(cliLogin.status, 303);
 		assert.equal(cliLogin.headers.get("location"), "/admin");
-		const cliReuse = await fetch(cliLink.url, { redirect: "manual" });
+		const cliReuse = await fetch(signedUrl, { redirect: "manual" });
 		assert.equal(cliReuse.status, 401);
+		const expired = createAdminLoginToken(
+			readAdminSecret(stateRoot(root)),
+			1,
+			{ stateRoot: stateRoot(root) },
+			Date.now() - 10_000,
+		);
+		const expiredLogin = await fetch(adminLoginUrl(server.url, expired.token), { redirect: "manual" });
+		assert.equal(expiredLogin.status, 401);
+		const tampered = `${signed.token.slice(0, -1)}${signed.token.endsWith("a") ? "b" : "a"}`;
+		const tamperedLogin = await fetch(adminLoginUrl(server.url, tampered), { redirect: "manual" });
+		assert.equal(tamperedLogin.status, 401);
+		const parallel = createAdminLoginToken(readAdminSecret(stateRoot(root)), 300_000, { stateRoot: stateRoot(root) });
+		const parallelUrl = adminLoginUrl(server.url, parallel.token);
+		const parallelResults = await Promise.all([
+			fetch(parallelUrl, { redirect: "manual" }),
+			fetch(parallelUrl, { redirect: "manual" }),
+		]);
+		assert.deepEqual(parallelResults.map((response) => response.status).sort(), [303, 401]);
 
 		const cookie = await login(logs);
-		const access = await fetch(`http://127.0.0.1:${port}/admin/access`, { headers: { cookie }, redirect: "manual" });
+		const access = await fetch(`${server.url}/admin/access`, { headers: { cookie }, redirect: "manual" });
 		assert.equal(access.status, 303);
 		assert.equal(access.headers.get("location"), "/admin/configuration");
 
-		const routes = await fetch(`http://127.0.0.1:${port}/admin/routes`, { headers: { cookie }, redirect: "manual" });
+		const routes = await fetch(`${server.url}/admin/routes`, { headers: { cookie }, redirect: "manual" });
 		assert.equal(routes.status, 303);
 		assert.equal(routes.headers.get("location"), "/admin/configuration");
 
-		const webMint = await fetch(`http://127.0.0.1:${port}/admin/access/links`, {
+		const webMint = await fetch(`${server.url}/admin/access/links`, {
 			method: "POST",
 			headers: {
 				cookie,
 				"content-type": "application/x-www-form-urlencoded",
-				origin: `http://127.0.0.1:${port}`,
+				origin: server.url,
 			},
 			redirect: "manual",
 		});
 		assert.equal(webMint.status, 405);
 	} finally {
 		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin manual secret signs links without generated state secret", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-manual-secret-"));
+	const logs: LogEntry[] = [];
+	const secret = "manual-admin-secret-with-enough-entropy-123";
+	const app = createHeypi({
+		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
+		logger: captureLogger(logs),
+		http: { port: 0 },
+		admin: { secret },
+		adapters: [],
+		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+	});
+	try {
+		await app.start();
+		assert.equal(loginUrls(logs).length, 0);
+		await assert.rejects(() => access(join(stateRoot(root), "admin", "secret")));
+		const server = readAdminServerDescriptors(stateRoot(root))[0]?.descriptor;
+		assert.ok(server);
+		const signed = createAdminLoginToken(secret, 300_000, { stateRoot: stateRoot(root) });
+		const response = await fetch(adminLoginUrl(server.url, signed.token), { redirect: "manual" });
+		assert.equal(response.status, 303);
+		assert.equal(response.headers.get("location"), "/admin");
+	} finally {
+		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin manual secret must be strong even on loopback", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-weak-secret-"));
+	const app = createHeypi({
+		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
+		logger: captureLogger([]),
+		http: { port: 0 },
+		admin: { secret: "weak" },
+		adapters: [],
+		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+	});
+	try {
+		await assert.rejects(() => app.start(), /admin secret must be at least 32 varied characters/);
+	} finally {
+		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin login tokens are scoped to the state root", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-token-scope-"));
+	const secret = "shared-admin-secret-with-enough-entropy-123";
+	const appA = createHeypi({
+		store: sqliteStore({ path: join(root, "a.db") }),
+		state: { root: join(root, "a-state") },
+		logger: captureLogger([]),
+		http: { port: 0 },
+		admin: { secret },
+		adapters: [],
+		agent: agentFrom("./examples/slack-devops/agent", { id: "a", model: "openai/gpt-5-mini" }),
+		runtime: { name: "host-bash", root: workspace(join(root, "a-workspace")) },
+	});
+	const appB = createHeypi({
+		store: sqliteStore({ path: join(root, "b.db") }),
+		state: { root: join(root, "b-state") },
+		logger: captureLogger([]),
+		http: { port: 0 },
+		admin: { secret },
+		adapters: [],
+		agent: agentFrom("./examples/slack-devops/agent", { id: "b", model: "openai/gpt-5-mini" }),
+		runtime: { name: "host-bash", root: workspace(join(root, "b-workspace")) },
+	});
+	try {
+		await appA.start();
+		await appB.start();
+		const serverB = readAdminServerDescriptors(join(root, "b-state"))[0]?.descriptor;
+		assert.ok(serverB);
+		const tokenA = createAdminLoginToken(secret, 300_000, { stateRoot: join(root, "a-state") });
+		const rejected = await fetch(adminLoginUrl(serverB.url, tokenA.token), { redirect: "manual" });
+		assert.equal(rejected.status, 401);
+		const tokenB = createAdminLoginToken(secret, 300_000, { stateRoot: join(root, "b-state") });
+		const accepted = await fetch(adminLoginUrl(serverB.url, tokenB.token), { redirect: "manual" });
+		assert.equal(accepted.status, 303);
+	} finally {
+		await appB.stop();
+		await appA.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin login token scope canonicalizes symlinked state roots", async () => {
+	if (process.platform === "win32") return;
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-scope-realpath-"));
+	try {
+		const real = join(root, "real-state");
+		const linked = join(root, "linked-state");
+		const secret = "admin-symlink-scope-secret-with-enough-entropy";
+		await mkdir(real, { recursive: true });
+		await symlink(real, linked, "dir");
+		const signed = createAdminLoginToken(secret, 300_000, { stateRoot: linked });
+		assert.equal(verifyAdminLoginToken(secret, signed.token, { stateRoot: real }).ok, true);
+	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
@@ -640,9 +1348,10 @@ test("admin memory page renders memory as escaped read-only text", async () => {
 	await writeFile(join(memoryDir, "MEMORY.md"), "- <script>alert(1)</script>\n", "utf8");
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger(logs),
 		http: { port },
-		admin: adminConfig(root),
+		admin: true,
 		adapters: [],
 		memory: true,
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
@@ -666,22 +1375,51 @@ test("admin memory page renders memory as escaped read-only text", async () => {
 	}
 });
 
-test("admin non-loopback binding can use generated control-token link access", async () => {
+test("admin non-loopback binding can use generated signed link access", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-admin-public-"));
 	const port = await freePort();
+	const logs: LogEntry[] = [];
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
-		logger: captureLogger([]),
+		state: { root: stateRoot(root) },
+		logger: captureLogger(logs),
 		http: { host: "0.0.0.0", port },
-		admin: adminConfig(root),
+		admin: { secureCookies: true },
 		adapters: [],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
 		await app.start();
-		await app.stop();
+		assert.equal(loginUrls(logs).length, 0);
+		const server = readAdminServerDescriptors(stateRoot(root))[0]?.descriptor;
+		assert.ok(server);
+		const signed = createAdminLoginToken(readAdminSecret(stateRoot(root)), 300_000, { stateRoot: stateRoot(root) });
+		const response = await fetch(adminLoginUrl(server.url, signed.token), { redirect: "manual" });
+		assert.equal(response.status, 303);
 	} finally {
+		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin non-loopback binding requires secure cookies", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-public-insecure-"));
+	const port = await freePort();
+	const app = createHeypi({
+		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
+		logger: captureLogger([]),
+		http: { host: "0.0.0.0", port },
+		admin: true,
+		adapters: [],
+		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+	});
+	try {
+		await assert.rejects(() => app.start(), /admin secureCookies must be enabled for non-loopback hosts/);
+	} finally {
+		await app.stop();
 		await rm(root, { recursive: true, force: true });
 	}
 });
@@ -691,9 +1429,10 @@ test("admin auth disabled rejects non-loopback binding", async () => {
 	const port = await freePort();
 	const app = createHeypi({
 		store: sqliteStore({ path: join(root, "heypi.db") }),
+		state: { root: stateRoot(root) },
 		logger: captureLogger([]),
 		http: { host: "0.0.0.0", port },
-		admin: { ...adminConfig(root), auth: false },
+		admin: { auth: false },
 		adapters: [],
 		agent: agentFrom("./examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
@@ -706,12 +1445,8 @@ test("admin auth disabled rejects non-loopback binding", async () => {
 	}
 });
 
-function adminConfig(root: string): { controlPath: string } {
-	return { controlPath: join(root, "admin-control.json") };
-}
-
-async function controlFile(root: string): Promise<{ token: string; url: string }> {
-	return JSON.parse(await readFile(join(root, "admin-control.json"), "utf8")) as { token: string; url: string };
+function stateRoot(root: string): string {
+	return join(root, "state");
 }
 
 async function login(logs: LogEntry[]): Promise<string> {

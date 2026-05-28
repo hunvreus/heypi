@@ -6,7 +6,7 @@ export type DeliveryConfig = {
 	baseMs?: number;
 };
 
-export type DeliveryRetry = "idempotent" | "send";
+type DeliveryRetry = "idempotent" | "send";
 export type DeliveryContext = Record<string, unknown> & { retry?: DeliveryRetry };
 
 /** Serializes provider delivery calls and retries transient failures. */
@@ -56,7 +56,7 @@ export class DeliveryQueue {
 	}
 }
 
-export async function withRetry<T>(
+async function withRetry<T>(
 	fn: () => Promise<T>,
 	input: {
 		retries?: number;

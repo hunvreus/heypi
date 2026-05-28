@@ -30,6 +30,7 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 		setup: () => migrate(db),
 		transaction: (fn) => {
 			if (nested) throw new Error("nested store transactions are not supported");
+			// Drizzle transaction handles expose the query surface we use, but not the full client type.
 			return db.transaction(async (tx) => fn(sqliteStoreFromDb(tx as unknown as ReturnType<typeof openDb>, true)));
 		},
 	};

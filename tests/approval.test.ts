@@ -89,6 +89,50 @@ test("authorized approval executes the pending command", async () => {
 	);
 });
 
+test("approval resolution is scoped by agent", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["U_ALLOWED"] },
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com", { agent: "agent-b" });
+	const wrongAgent = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "C1",
+			actor: "U_ALLOWED",
+		},
+		{ agent: "agent-a" },
+	);
+
+	assert.equal(wrongAgent.private, true);
+	assert.match(wrongAgent.text, /Approval unavailable/);
+	assert.equal(approvals.rows[0].state, "pending");
+	assert.equal(calls.rows[0].state, "pending_approval");
+
+	const approved = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "C1",
+			actor: "U_ALLOWED",
+		},
+		{ agent: "agent-b" },
+	);
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(approvals.rows[0].state, "approved");
+	assert.equal(calls.rows[0].state, "done");
+});
+
 test("command confirmation allow pattern bypasses default approval pattern", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
@@ -591,6 +635,7 @@ class FakeCalls implements Calls {
 	readonly rows: Call[] = [];
 
 	async create(input: {
+		agent: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -607,6 +652,7 @@ class FakeCalls implements Calls {
 		const now = Date.now();
 		const row: Call = {
 			id: `call-${this.rows.length + 1}`,
+			agent: input.agent,
 			turnId: input.turnId ?? null,
 			threadId: input.threadId ?? null,
 			messageId: input.messageId ?? null,
@@ -631,20 +677,22 @@ class FakeCalls implements Calls {
 		return row;
 	}
 
-	async get(id: string): Promise<Call | undefined> {
-		return this.rows.find((row) => row.id === id);
+	async get(id: string, input: { agent?: string } = {}): Promise<Call | undefined> {
+		return this.rows.find((row) => row.id === id && (!input.agent || row.agent === input.agent));
 	}
 
-	async getByChannel(channel: string, id: string): Promise<Call | undefined> {
-		return this.rows.find((row) => row.channel === channel && row.id === id);
+	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<Call | undefined> {
+		return this.rows.find(
+			(row) => row.channel === channel && row.id === id && (!input.agent || row.agent === input.agent),
+		);
 	}
 
-	async listForThread(threadId: string): Promise<Call[]> {
-		return this.rows.filter((row) => row.threadId === threadId);
+	async listForThread(threadId: string, input: { agent?: string } = {}): Promise<Call[]> {
+		return this.rows.filter((row) => row.threadId === threadId && (!input.agent || row.agent === input.agent));
 	}
 
-	async setState(id: string, state: CallState): Promise<void> {
-		const row = await this.get(id);
+	async setState(id: string, state: CallState, input: { agent?: string } = {}): Promise<void> {
+		const row = await this.get(id, input);
 		if (row) row.state = state;
 	}
 
@@ -687,6 +735,7 @@ class FakeApprovals implements Approvals {
 	readonly rows: Approval[] = [];
 
 	async create(input: {
+		agent: string;
 		callId: string;
 		channel: string;
 		threadId?: string;
@@ -701,6 +750,7 @@ class FakeApprovals implements Approvals {
 	}): Promise<Approval> {
 		const row: Approval = {
 			id: `approval-${this.rows.length + 1}`,
+			agent: input.agent,
 			callId: input.callId,
 			channel: input.channel,
 			threadId: input.threadId ?? null,
@@ -721,29 +771,43 @@ class FakeApprovals implements Approvals {
 		return row;
 	}
 
-	async get(id: string): Promise<Approval | undefined> {
-		return this.rows.find((row) => row.id === id);
+	async get(id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
+		return this.rows.find((row) => row.id === id && (!input.agent || row.agent === input.agent));
 	}
 
-	async getByChannel(channel: string, id: string): Promise<Approval | undefined> {
-		return this.rows.find((row) => row.channel === channel && row.id === id);
+	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
+		return this.rows.find(
+			(row) => row.channel === channel && row.id === id && (!input.agent || row.agent === input.agent),
+		);
 	}
 
-	async getPending(channel: string, id: string): Promise<Approval | undefined> {
-		return this.rows.find((row) => row.channel === channel && row.id === id && row.state === "pending");
+	async getPending(channel: string, id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
+		return this.rows.find(
+			(row) =>
+				row.channel === channel &&
+				row.id === id &&
+				row.state === "pending" &&
+				(!input.agent || row.agent === input.agent),
+		);
 	}
 
-	async listPending(input: { threadId?: string; turnId?: string } = {}): Promise<Approval[]> {
+	async listPending(input: { agent?: string; threadId?: string; turnId?: string } = {}): Promise<Approval[]> {
 		return this.rows.filter(
 			(row) =>
 				row.state === "pending" &&
+				(!input.agent || row.agent === input.agent) &&
 				(!input.threadId || row.threadId === input.threadId) &&
 				(!input.turnId || row.turnId === input.turnId),
 		);
 	}
 
-	async resolve(id: string, state: "approved" | "denied", actor: string): Promise<boolean> {
-		const row = await this.get(id);
+	async resolve(
+		id: string,
+		state: "approved" | "denied",
+		actor: string,
+		input: { agent?: string } = {},
+	): Promise<boolean> {
+		const row = await this.get(id, input);
 		if (!row || row.state !== "pending") return false;
 		row.state = state;
 		row.resolvedBy = actor;

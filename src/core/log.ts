@@ -27,7 +27,7 @@ export function consoleLogger(input: { level?: Level; format?: Format } = {}): L
 	};
 }
 
-export function userError(_kind: "handler" | "model", message?: string): string {
+export function userError(message?: string): string {
 	return message ?? "Something went wrong. Ask an admin to check the server logs.";
 }
 

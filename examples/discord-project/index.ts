@@ -1,21 +1,10 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import {
-	agentFrom,
-	consoleLogger,
-	coreTools,
-	createHeypi,
-	discord,
-	runHeypi,
-	sqliteStore,
-	tool,
-	workspace,
-} from "@hunvreus/heypi";
+import { agentFrom, consoleLogger, coreTools, createHeypi, discord, runHeypi, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
-loadEnv("examples/discord-project/.env");
 loadEnv(".env");
 
 function loadEnv(path: string): void {
@@ -35,7 +24,8 @@ function list(name: string): string[] {
 		.filter(Boolean);
 }
 
-const notesPath = resolve("./examples/discord-project/state/project-notes.md");
+const stateRoot = "./state";
+const notesPath = join(stateRoot, "project-notes.md");
 
 const projectNote = tool<{ note: string; project?: string }>({
 	name: "project_note",
@@ -89,7 +79,7 @@ const readProjectNotes = tool({
 });
 
 const app = createHeypi({
-	store: sqliteStore({ path: resolve("./examples/discord-project/heypi.db") }),
+	state: { root: stateRoot },
 	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	adapters: [
 		discord({
@@ -103,7 +93,7 @@ const app = createHeypi({
 			streaming: true,
 		}),
 	],
-	agent: agentFrom("./examples/discord-project/agent", {
+	agent: agentFrom("./agent", {
 		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
 		tools: [...coreTools(), projectNote, setProjectStatus, readProjectNotes],
 	}),
@@ -113,7 +103,7 @@ const app = createHeypi({
 	},
 	runtime: {
 		name: "just-bash",
-		root: workspace("./examples/discord-project/workspace"),
+		root: workspace("./workspace"),
 		maxConcurrentPerChat: 1,
 		timeoutMs: 60_000,
 		justBash: { python: false, javascript: false },

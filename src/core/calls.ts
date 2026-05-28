@@ -32,6 +32,8 @@ type CallBase = {
 	context?: CallContext;
 };
 
+type PendingApprovalResult = { ok: true; approval: Approval } | { ok: false; reply: Reply };
+
 /** Runs governed calls through policy, approval, queueing, runtime execution, and audit persistence. */
 export class CallRunner {
 	private readonly executes = new Map<string, ToolExecute>();
@@ -46,6 +48,7 @@ export class CallRunner {
 		private readonly transaction?: Store["transaction"],
 		private readonly bashConfirm?: Confirm,
 		private readonly messages: AppMessages = DEFAULT_APP_MESSAGES,
+		private readonly agent = "default",
 	) {}
 
 	register(tool: string, execute: ToolExecute): void {
@@ -60,9 +63,9 @@ export class CallRunner {
 		onExpired?: (reply: Reply) => Promise<void>,
 	): Promise<Reply> {
 		if (intent.kind === "bash") return this.bash(intent.channel, intent.actor, intent.cmd, context, signal);
-		if (intent.kind === "approve") return this.handleApprove(intent, signal, onApproved, onExpired);
-		if (intent.kind === "deny") return this.handleDeny(intent, onExpired);
-		return this.handleStatus(intent);
+		if (intent.kind === "approve") return this.handleApprove(intent, context, signal, onApproved, onExpired);
+		if (intent.kind === "deny") return this.handleDeny(intent, context, onExpired);
+		return this.handleStatus(intent, context);
 	}
 
 	async bash(
@@ -135,7 +138,9 @@ export class CallRunner {
 
 	private async requestApproval(input: CallBase, reason: string): Promise<Reply> {
 		const row = await this.createCall(input, "pending_approval");
+		const agent = this.contextAgent(input.context);
 		const approval = await this.approvals.create({
+			agent,
 			callId: row.id,
 			channel: input.channel,
 			threadId: input.context?.thread,
@@ -170,6 +175,7 @@ export class CallRunner {
 
 	private async createCall(input: CallBase, state: "running" | "pending_approval" | "blocked") {
 		return await this.calls.create({
+			agent: this.contextAgent(input.context),
 			turnId: input.context?.turn,
 			threadId: input.context?.thread,
 			messageId: input.context?.message,
@@ -274,28 +280,14 @@ export class CallRunner {
 
 	private async handleApprove(
 		intent: Extract<Intent, { kind: "approve" }>,
+		context: CallContext,
 		signal?: AbortSignal,
 		onApproved?: (reply: Reply) => Promise<void>,
 		onExpired?: (reply: Reply) => Promise<void>,
 	): Promise<Reply> {
-		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId);
-		if (!approval) return staleApproval(this.messages.approvalUnavailable);
-		if (approval.state !== "pending") {
-			this.log.info("approval.already_resolved", {
-				approval: approval.id,
-				call: approval.callId,
-				channel: approval.channel,
-				actor: intent.actor,
-				state: approval.state,
-				resolvedBy: approval.resolvedBy ?? undefined,
-			});
-			return staleApproval(
-				renderMessage(this.messages.approvalAlreadyResolved, {
-					state: approval.state,
-					resolvedBy: approval.resolvedBy ?? undefined,
-				}),
-			);
-		}
+		const pending = await this.pendingApproval(intent, this.contextAgent(context));
+		if (!pending.ok) return pending.reply;
+		const { approval } = pending;
 		if (!this.canApprove(intent.actor)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
@@ -312,10 +304,19 @@ export class CallRunner {
 			});
 		}
 		if (this.expired(approval.expiresAt)) return this.expireApproval(approval, intent.actor, onExpired);
-		const current = await this.calls.get(approval.callId);
+		const current = await this.calls.get(approval.callId, { agent: approval.agent });
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "running");
-		if (!(await this.updateApprovalCall(approval.id, "approved", intent.actor, approval.callId, "running"))) {
+		if (
+			!(await this.updateApprovalCall(
+				approval.id,
+				"approved",
+				intent.actor,
+				approval.callId,
+				"running",
+				approval.agent,
+			))
+		) {
 			this.log.info("approval.already_resolved", {
 				approval: approval.id,
 				call: approval.callId,
@@ -348,8 +349,8 @@ export class CallRunner {
 			}
 		}
 		if (current.tool === "bash") {
-			const callContext = context(current);
-			const runtime = this.runtimeFor(callContext.runtimeScope);
+			const approvedContext = callContext(current);
+			const runtime = this.runtimeFor(approvedContext.runtimeScope);
 			if (approval.runtime !== runtime.name) throw new Error(`approval runtime mismatch: ${approval.runtime}`);
 			if (!current.command) throw new Error("approved bash call missing command");
 			return this.executeBash(
@@ -357,7 +358,7 @@ export class CallRunner {
 				approval.channel,
 				current.actor,
 				current.command,
-				callContext,
+				approvedContext,
 				signal,
 			);
 		}
@@ -369,33 +370,19 @@ export class CallRunner {
 			current.actor,
 			args(current.args),
 			execute,
-			context(current),
+			callContext(current),
 			signal,
 		);
 	}
 
 	private async handleDeny(
 		intent: Extract<Intent, { kind: "deny" }>,
+		context: CallContext,
 		onExpired?: (reply: Reply) => Promise<void>,
 	): Promise<Reply> {
-		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId);
-		if (!approval) return staleApproval(this.messages.approvalUnavailable);
-		if (approval.state !== "pending") {
-			this.log.info("approval.already_resolved", {
-				approval: approval.id,
-				call: approval.callId,
-				channel: approval.channel,
-				actor: intent.actor,
-				state: approval.state,
-				resolvedBy: approval.resolvedBy ?? undefined,
-			});
-			return staleApproval(
-				renderMessage(this.messages.approvalAlreadyResolved, {
-					state: approval.state,
-					resolvedBy: approval.resolvedBy ?? undefined,
-				}),
-			);
-		}
+		const pending = await this.pendingApproval(intent, this.contextAgent(context));
+		if (!pending.ok) return pending.reply;
+		const { approval } = pending;
 		if (!this.canDeny(intent.actor, approval.requestedBy ?? undefined)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
@@ -412,10 +399,19 @@ export class CallRunner {
 			});
 		}
 		if (this.expired(approval.expiresAt)) return this.expireApproval(approval, intent.actor, onExpired);
-		const current = await this.calls.get(approval.callId);
+		const current = await this.calls.get(approval.callId, { agent: approval.agent });
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "blocked");
-		if (!(await this.updateApprovalCall(approval.id, "denied", intent.actor, approval.callId, "blocked"))) {
+		if (
+			!(await this.updateApprovalCall(
+				approval.id,
+				"denied",
+				intent.actor,
+				approval.callId,
+				"blocked",
+				approval.agent,
+			))
+		) {
 			this.log.info("approval.already_resolved", {
 				approval: approval.id,
 				call: approval.callId,
@@ -437,21 +433,50 @@ export class CallRunner {
 		return this.approvalSummary(approval, current, "rejected");
 	}
 
+	private async pendingApproval(
+		intent: Extract<Intent, { kind: "approve" | "deny" }>,
+		agent: string,
+	): Promise<PendingApprovalResult> {
+		const approval = await this.approvals.getByChannel(intent.channel, intent.approvalId, { agent });
+		if (!approval) return { ok: false, reply: staleApproval(this.messages.approvalUnavailable) };
+		if (approval.state !== "pending") {
+			this.log.info("approval.already_resolved", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+				state: approval.state,
+				resolvedBy: approval.resolvedBy ?? undefined,
+			});
+			return {
+				ok: false,
+				reply: staleApproval(
+					renderMessage(this.messages.approvalAlreadyResolved, {
+						state: approval.state,
+						resolvedBy: approval.resolvedBy ?? undefined,
+					}),
+				),
+			};
+		}
+		return { ok: true, approval };
+	}
+
 	private async updateApprovalCall(
 		approvalId: string,
 		approvalState: "approved" | "denied",
 		actor: string,
 		callId: string,
 		callState: "running" | "blocked",
+		agent: string,
 	): Promise<boolean> {
 		if (!this.transaction) {
-			const resolved = await this.approvals.resolve(approvalId, approvalState, actor);
-			if (resolved) await this.calls.setState(callId, callState);
+			const resolved = await this.approvals.resolve(approvalId, approvalState, actor, { agent });
+			if (resolved) await this.calls.setState(callId, callState, { agent });
 			return resolved;
 		}
 		return await this.transaction(async (store) => {
-			const resolved = await store.approvals.resolve(approvalId, approvalState, actor);
-			if (resolved) await store.calls.setState(callId, callState);
+			const resolved = await store.approvals.resolve(approvalId, approvalState, actor, { agent });
+			if (resolved) await store.calls.setState(callId, callState, { agent });
 			return resolved;
 		});
 	}
@@ -483,7 +508,14 @@ export class CallRunner {
 		actor: string,
 		onExpired?: (reply: Reply) => Promise<void>,
 	): Promise<Reply> {
-		const resolved = await this.updateApprovalCall(approval.id, "denied", "heypi", approval.callId, "blocked");
+		const resolved = await this.updateApprovalCall(
+			approval.id,
+			"denied",
+			"heypi",
+			approval.callId,
+			"blocked",
+			approval.agent,
+		);
 		if (!resolved) {
 			this.log.info("approval.already_resolved", {
 				approval: approval.id,
@@ -501,7 +533,7 @@ export class CallRunner {
 			actor,
 			expiresAt: approval.expiresAt ?? undefined,
 		});
-		const current = await this.calls.get(approval.callId);
+		const current = await this.calls.get(approval.callId, { agent: approval.agent });
 		const summary = current ? this.approvalSummary(approval, current, "expired") : undefined;
 		const reply = {
 			...(summary ?? {}),
@@ -553,8 +585,8 @@ export class CallRunner {
 		};
 	}
 
-	private async handleStatus(intent: Extract<Intent, { kind: "status" }>): Promise<Reply> {
-		const row = await this.calls.getByChannel(intent.channel, intent.callId);
+	private async handleStatus(intent: Extract<Intent, { kind: "status" }>, context: CallContext): Promise<Reply> {
+		const row = await this.calls.getByChannel(intent.channel, intent.callId, { agent: this.contextAgent(context) });
 		if (!row) return { text: "Call not found.", private: true };
 		return renderCall({
 			callId: row.id,
@@ -568,6 +600,10 @@ export class CallRunner {
 
 	private runtimeFor(scope?: string): Runtime {
 		return typeof this.runtime === "function" ? this.runtime(scope) : this.runtime;
+	}
+
+	private contextAgent(context?: CallContext): string {
+		return context?.agent ?? this.agent;
 	}
 }
 
@@ -608,7 +644,7 @@ function args(input: string | null): Record<string, unknown> {
 	return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 }
 
-function context(call: {
+function callContext(call: {
 	threadId: string | null;
 	turnId: string | null;
 	messageId: string | null;

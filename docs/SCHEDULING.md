@@ -34,7 +34,7 @@ Jobs are stored under `(agent, id)`. Two agents can use the same job id in the s
 
 ```ts
 createHeypi({
-  // ...store, adapters, agent, runtime
+  // ...state, adapters, agent, runtime
   jobs: [
     {
       id: "daily-checkin",
@@ -79,6 +79,8 @@ scope: {
 The scheduler stores job definitions and run attempts in SQLite, uses durable locks to avoid duplicate execution across processes, and uses idempotent event IDs for each job run target.
 
 Job output is recorded in `job_run`. Delivery is tracked separately from execution.
+
+Target failures are recorded as failed `job_run` rows. The job cursor still advances after the scheduled attempt, so transient provider delivery failures are visible in history but are not retried automatically by the scheduler.
 
 Custom stores that support scheduling must provide `jobs`, `jobRuns`, and `locks`. They should also implement `transaction()` so job run updates and job cursor updates can commit atomically. Nested transactions are not supported. `idleMs` is a first-class `Job` field, not part of serialized `scope`.
 

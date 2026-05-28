@@ -23,7 +23,7 @@ export type Attachment = {
 	scope?: string;
 };
 
-export type AttachmentSaveInput = {
+type AttachmentSaveInput = {
 	provider: string;
 	id?: string;
 	name: string;

@@ -218,7 +218,7 @@ Keep detail values concise. Adapters preserve the same fields, but provider mess
 - Custom adapters implement the `Adapter` interface.
 - Custom stores implement the `Store` interface. Production shared stores must provide durable `locks`; scheduler-capable stores also need `jobs` and `jobRuns`. Implement `transaction()` when multiple repository updates must commit atomically.
 - Custom attachment stores implement `AttachmentStore` and are configured with `attachments: { store }`. Stores receive the current scope on save/resolve and should reject cross-scope refs.
-- Attachment processing is configured with `attachments.process`; document conversion is optional and should run through a local converter with byte, time, and output limits.
+- Attachment processing is configured with `attachments.process`; document conversion is optional and should run through a local converter with byte, time, and output limits. The bundled document converter requires Python 3 and either `uv` or MarkItDown installed in the Python environment.
 - Runtime behavior is configured through `runtime`, including `justBash`, `hostEnv`, timeouts, process limits, and file limits.
 - Pi extensions are loaded from explicit `agent.extensions` paths or `agent/extensions/`. heypi disables Pi's default/global extension discovery; configure each chat agent's extension set directly.
   Extension code runs in-process and should be treated as trusted application code. Interactive Pi extension UI and slash-command flows are not exposed as first-class chat features.

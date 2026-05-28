@@ -39,6 +39,35 @@ test("sqlite store transaction rolls back repo writes on failure", async () => {
 	}
 });
 
+test("sqlite approval resolve reports one winner per pending approval", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-approval-resolve-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const approval = await store.approvals.create({
+			agent: "a",
+			callId: "call-1",
+			channel: "slack::C1",
+			command: "npm test",
+			runtime: "host-bash",
+			reason: "Run tests.",
+		});
+		const realNow = Date.now;
+		Date.now = () => 1234567890;
+		try {
+			assert.equal(await store.approvals.resolve(approval.id, "approved", "U1", { agent: "a" }), true);
+			assert.equal(await store.approvals.resolve(approval.id, "approved", "U1", { agent: "a" }), false);
+		} finally {
+			Date.now = realNow;
+		}
+		const row = await store.approvals.get(approval.id, { agent: "a" });
+		assert.equal(row?.state, "approved");
+		assert.equal(row?.resolvedBy, "U1");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("sqlite store rejects nested transactions", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-transaction-nested-"));
 	try {

@@ -1,20 +1,9 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
-import {
-	agentFrom,
-	consoleLogger,
-	coreTools,
-	createHeypi,
-	runHeypi,
-	slack,
-	sqliteStore,
-	workspace,
-} from "@hunvreus/heypi";
+import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
-loadEnv("examples/slack-devops/.env");
 loadEnv(".env");
 
 function loadEnv(path: string): void {
@@ -56,14 +45,15 @@ const commandPolicy = {
 	block: [/\bcat\s+.*(?:\.env|id_rsa|id_ed25519)\b/i, /\bchmod\s+777\b/i],
 };
 
+const stateRoot = "./state";
 const hostTools = createHostTools({
-	root: resolve("./examples/slack-devops/state"),
+	root: stateRoot,
 	commandPolicy,
 	timeoutMs: 60_000,
 });
-const runbookTools = createRunbookTools({ root: resolve("./examples/slack-devops/agent/runbooks") });
-const hostContext = createHostContext({ root: resolve("./examples/slack-devops/state") });
-const runtimeRoot = workspace("./examples/slack-devops/workspace");
+const runbookTools = createRunbookTools({ root: "./agent/runbooks" });
+const hostContext = createHostContext({ root: stateRoot });
+const runtimeRoot = workspace("./workspace");
 const log = consoleLogger({ level: "debug", format: "pretty" });
 const jobChannel = optional("HEYPI_SLACK_JOB_CHANNEL");
 
@@ -75,9 +65,9 @@ if (!jobChannel) {
 }
 
 const app = createHeypi({
-	store: sqliteStore({ path: resolve("./examples/slack-devops/heypi.db") }),
+	state: { root: stateRoot },
 	logger: log,
-	admin: true,
+	admin: { auth: false },
 	adapters: [
 		slack({
 			botToken: required("SLACK_BOT_TOKEN"),
@@ -107,7 +97,7 @@ const app = createHeypi({
 		// 	streaming: true,
 		// }),
 	],
-	agent: agentFrom("./examples/slack-devops/agent", {
+	agent: agentFrom("./agent", {
 		id: "slack-devops",
 		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
 		context: [hostContext],

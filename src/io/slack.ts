@@ -1,5 +1,5 @@
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
-import { codeFence } from "../core/approval-view.js";
+import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
@@ -314,7 +314,7 @@ export function slack(input: SlackConfig): Adapter {
 						},
 					},
 					sendError: async () => {
-						const text = userError("handler", start.messages?.error);
+						const text = userError(start.messages?.error);
 						const sent = await pending.update(text);
 						await postPublicChunks({
 							client,
@@ -1152,14 +1152,14 @@ async function handleAction(input: {
 				client: input.client,
 				channel: context.channel,
 				user: context.actor,
-				text: userError("handler", input.messages?.error),
+				text: userError(input.messages?.error),
 				thread: context.threadTs ?? context.message,
 				delivery: input.delivery,
 			}).catch(() => undefined);
 			return;
 		}
 		if (context.message) {
-			const text = userError("handler", input.messages?.error);
+			const text = userError(input.messages?.error);
 			await input.client.chat
 				.update({
 					channel: context.channel,
@@ -1206,9 +1206,7 @@ function slackApprovalFallbackText(out: Outbound, state: Outbound["approvalResol
 }
 
 function approvalResolutionText(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
-	if (state === "approved") return actor ? `Approved by <@${actor}>.` : "Approved.";
-	if (state === "rejected") return actor ? `Rejected by <@${actor}>.` : "Rejected.";
-	return "Approval expired.";
+	return approvalStateLine(state, actor ? `<@${actor}>` : undefined);
 }
 
 function cancelBlocks(text: string, id: string): SlackBlock[] {
@@ -1349,10 +1347,7 @@ function stripSlackBlockId(block: SlackBlock): SlackBlock {
 }
 
 function approvalTitleText(state?: Outbound["approvalResolution"]): string {
-	if (state === "approved") return "*Approved*";
-	if (state === "rejected") return "*Rejected*";
-	if (state === "expired") return "*Expired*";
-	return "*Approval required*";
+	return `*${approvalStateTitle(state)}*`;
 }
 
 function labeledBlock(label: string, value: string): SlackBlock[] {

@@ -185,6 +185,7 @@ test("handler blocks new asks while the thread has a pending approval", async ()
 			trace: "trace-pending",
 		});
 		const call = await store.calls.create({
+			agent: "a",
 			turnId: turn.id,
 			threadId: thread.id,
 			messageId: message.id,
@@ -196,6 +197,7 @@ test("handler blocks new asks while the thread has a pending approval", async ()
 			state: "pending_approval",
 		});
 		await store.approvals.create({
+			agent: "a",
 			callId: call.id,
 			channel: "test::C1",
 			threadId: thread.id,
@@ -563,6 +565,7 @@ test("status only reports pending approvals for the requested run", async () => 
 		});
 		const command = `curl -H 'Authorization: Bearer ${secret("secret")}' https://example.com`;
 		const call = await store.calls.create({
+			agent: "a",
 			turnId: firstTurn.id,
 			threadId: thread.id,
 			messageId: firstMessage.id,
@@ -574,6 +577,7 @@ test("status only reports pending approvals for the requested run", async () => 
 			state: "pending_approval",
 		});
 		const approval = await store.approvals.create({
+			agent: "a",
 			callId: call.id,
 			channel: "webhook::whch_test",
 			threadId: thread.id,

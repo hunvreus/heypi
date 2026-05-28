@@ -99,6 +99,23 @@ test("sqlite locks can clear by prefix", async () => {
 	}
 });
 
+test("sqlite locks can clear one exact key", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		assert.ok(store.locks);
+		await store.locks.acquire({ key: "thread:a", owner: "one" });
+		await store.locks.acquire({ key: "thread:ab", owner: "two" });
+
+		assert.equal(await store.locks.clear?.({ key: "thread:a" }), 1);
+		assert.equal(await store.locks.get("thread:a"), undefined);
+		assert.equal((await store.locks.get("thread:ab"))?.owner, "two");
+	} finally {
+		await db.cleanup();
+	}
+});
+
 test("handler returns public busy reply when a thread lock is held without an active run", async () => {
 	const db = await tempDb();
 	try {
@@ -375,6 +392,7 @@ test("handler returns private thread status", async () => {
 			trace: "trace-1",
 		});
 		const call = await store.calls.create({
+			agent: "a",
 			turnId: turn.id,
 			threadId: thread.id,
 			messageId: message.id,
@@ -385,6 +403,7 @@ test("handler returns private thread status", async () => {
 			state: "pending_approval",
 		});
 		await store.approvals.create({
+			agent: "a",
 			callId: call.id,
 			channel: "C1",
 			threadId: thread.id,
@@ -519,6 +538,7 @@ test("thread status does not list stale blocked calls as needing attention", asy
 			trace: "trace-1",
 		});
 		await store.calls.create({
+			agent: "a",
 			turnId: turn.id,
 			threadId: thread.id,
 			messageId: message.id,

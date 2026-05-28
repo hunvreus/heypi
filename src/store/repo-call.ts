@@ -10,6 +10,7 @@ export class CallRepo {
 	constructor(private readonly db: Db) {}
 
 	async create(input: {
+		agent: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -27,6 +28,7 @@ export class CallRepo {
 		const now = Date.now();
 		await this.db.insert(call).values({
 			id,
+			agent: input.agent,
 			turnId: input.turnId,
 			threadId: input.threadId,
 			messageId: input.messageId,
@@ -45,22 +47,34 @@ export class CallRepo {
 		return (await this.get(id)) as CallRow;
 	}
 
-	async get(id: string): Promise<CallRow | undefined> {
-		const rows = await this.db.select().from(call).where(eq(call.id, id)).limit(1);
-		return rows[0];
-	}
-
-	async getByChannel(channel: string, id: string): Promise<CallRow | undefined> {
+	async get(id: string, input: { agent?: string } = {}): Promise<CallRow | undefined> {
+		const filters = [eq(call.id, id)];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
 		const rows = await this.db
 			.select()
 			.from(call)
-			.where(and(eq(call.channel, channel), eq(call.id, id)))
+			.where(and(...filters))
 			.limit(1);
 		return rows[0];
 	}
 
-	async listForThread(threadId: string, input: { states?: CallState[]; limit?: number } = {}): Promise<CallRow[]> {
+	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<CallRow | undefined> {
+		const filters = [eq(call.channel, channel), eq(call.id, id)];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
+		const rows = await this.db
+			.select()
+			.from(call)
+			.where(and(...filters))
+			.limit(1);
+		return rows[0];
+	}
+
+	async listForThread(
+		threadId: string,
+		input: { agent?: string; states?: CallState[]; limit?: number } = {},
+	): Promise<CallRow[]> {
 		const filters = [eq(call.threadId, threadId)];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
 		if (input.states?.length) filters.push(inArray(call.state, input.states));
 		return await this.db
 			.select()
@@ -70,8 +84,11 @@ export class CallRepo {
 			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
 	}
 
-	async listRecent(input: { states?: CallState[]; limit?: number; offset?: number } = {}): Promise<CallRow[]> {
+	async listRecent(
+		input: { agent?: string; states?: CallState[]; limit?: number; offset?: number } = {},
+	): Promise<CallRow[]> {
 		const filters = [];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
 		if (input.states?.length) filters.push(inArray(call.state, input.states));
 		const query = this.db.select().from(call);
 		const withFilter = filters.length ? query.where(and(...filters)) : query;
@@ -81,8 +98,13 @@ export class CallRepo {
 			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
-	async setState(id: string, state: CallState): Promise<void> {
-		await this.db.update(call).set({ state, updatedAt: Date.now() }).where(eq(call.id, id));
+	async setState(id: string, state: CallState, input: { agent?: string } = {}): Promise<void> {
+		const filters = [eq(call.id, id)];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
+		await this.db
+			.update(call)
+			.set({ state, updatedAt: Date.now() })
+			.where(and(...filters));
 	}
 
 	async finish(

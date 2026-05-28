@@ -1,18 +1,27 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { message } from "../core/log.js";
 import type { Adapter, AdapterStart } from "../io/handler.js";
-import { DEFAULT_ADMIN_CONTROL_PATH, ensureAdminControl } from "./control.js";
+import {
+	adminLoginUrl,
+	canonicalStateRoot,
+	createAdminLoginToken,
+	ensureAdminSecret,
+	removeAdminServerDescriptor,
+	removeStaleAdminServerDescriptors,
+	verifyAdminLoginToken,
+	writeAdminServerDescriptor,
+} from "./auth.js";
 import { type AdminService, createAdminService } from "./service.js";
-import { activityView, approvalsView, errorPage, jobsView, loginPage, memoryView, overviewView, page } from "./view.js";
+import { approvalsView, errorPage, jobsView, loginPage, memoryView, overviewView, page, threadsView } from "./view.js";
 
 export type AdminConfig = {
 	auth?: boolean;
 	secret?: string;
-	controlPath?: string;
 	loginTtlMs?: number;
 	sessionTtlMs?: number;
 	idleTtlMs?: number;
@@ -24,9 +33,10 @@ export type AdminHttpConfig = {
 	port: number | string;
 };
 
-type LoginToken = {
-	expiresAt: number;
-	used: boolean;
+export type AdminStateConfig = {
+	root: string;
+	agent: string;
+	project: string;
 };
 
 type Session = {
@@ -45,17 +55,21 @@ type AdminState = {
 	auth: boolean;
 	host: string;
 	port: number | string;
+	instanceId: string;
 	secretHash?: string;
+	signingSecret?: string;
 	loginTtlMs: number;
 	sessionTtlMs: number;
 	idleTtlMs: number;
 	secureCookies: boolean;
-	controlHash: string;
-	loginTokens: Map<string, LoginToken>;
+	usedLoginJtis: Map<string, number>;
 	sessions: Map<string, Session>;
 	failures: Map<string, number[]>;
 	service: AdminService;
 	start: AdapterStart;
+	stateRoot: string;
+	agent: string;
+	project: string;
 };
 
 const ADMIN_PATH = "/admin";
@@ -80,7 +94,6 @@ const ADMIN_ROUTES = [
 	["GET", "/admin/events"],
 	["GET", "/admin/assets/admin.css"],
 	["GET", "/admin/assets/basecoat.all.min.js"],
-	["POST", "/admin/_control/links"],
 	["GET", "/admin/adapters"],
 	["GET", "/admin/threads"],
 	["GET", "/admin/runs"],
@@ -90,7 +103,7 @@ const ADMIN_ROUTES = [
 ] as const;
 
 /** Creates the internal read-only admin HTTP surface served under `/admin/*`. */
-export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig): Adapter {
+export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, stateConfig: AdminStateConfig): Adapter {
 	const host = http.host;
 	const port = http.port;
 	const auth = config.auth !== false;
@@ -99,36 +112,43 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig): 
 	const idleTtlMs = config.idleTtlMs ?? DEFAULT_IDLE_TTL_MS;
 	const secretHash = config.secret ? hash(config.secret) : undefined;
 	const secureCookies = config.secureCookies === true;
-	const loginTokens = new Map<string, LoginToken>();
+	const usedLoginJtis = new Map<string, number>();
 	const sessions = new Map<string, Session>();
 	const failures = new Map<string, number[]>();
+	const instanceId = randomToken(16);
 	let start: AdapterStart | undefined;
+	let state: AdminState | undefined;
 
 	return {
 		name: "admin",
 		kind: "admin",
 		async start(input): Promise<void> {
 			if (!input.http) throw new Error("admin requires the heypi HTTP registrar");
-			const controlPath = config.controlPath ?? DEFAULT_ADMIN_CONTROL_PATH;
-			const control = ensureAdminControl(controlPath, adminUrl(host, port));
-			assertAdminConfig({ auth, host, secret: config.secret, controlToken: control.token });
+			const stateRoot = canonicalStateRoot(stateConfig.root);
+			const signingSecret = auth ? (config.secret ?? ensureAdminSecret(stateRoot)) : undefined;
+			assertAdminConfig({ auth, host, secret: config.secret, secureCookies, signingSecret });
 			start = input;
-			const state: AdminState = {
+			state = {
 				auth,
 				host,
 				port,
+				instanceId,
 				secretHash,
+				signingSecret,
 				loginTtlMs,
 				sessionTtlMs,
 				idleTtlMs,
 				secureCookies,
-				controlHash: hash(control.token),
-				loginTokens,
+				usedLoginJtis,
 				sessions,
 				failures,
 				service: createAdminService(input),
 				start: input,
+				stateRoot,
+				agent: stateConfig.agent,
+				project: stateConfig.project,
 			};
+			const current = state;
 			for (const [method, path] of ADMIN_ROUTES) {
 				input.http.register({
 					method,
@@ -136,40 +156,60 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig): 
 					host,
 					port,
 					reserved: true,
-					handler: (req, res) => handle(req, res, state),
+					handler: (req, res) => handle(req, res, current),
 				});
-			}
-			if (auth && !secretHash && loopbackHost(host)) {
-				const link = mintLoginLink(state);
-				input.logger.warn("admin.login_link", {
-					url: link.url,
-					expiresInMs: loginTtlMs,
-				});
-			}
-			if (!loopbackHost(host) && !secureCookies) {
-				input.logger.warn("admin.cookie_not_secure", { host, port });
 			}
 			input.logger.info("admin.start", {
 				host,
 				port,
 				path: ADMIN_PATH,
 				auth: auth ? (secretHash ? "secret" : "local-link") : "disabled",
-				controlPath,
+				stateRoot,
 			});
+		},
+		async ready(input): Promise<void> {
+			if (!state) return;
+			const address = input.http?.address?.();
+			if (address) {
+				state.host = address.host;
+				state.port = address.port;
+			}
+			if (!state.auth) return;
+			removeStaleAdminServerDescriptors(state.stateRoot);
+			writeAdminServerDescriptor(state.stateRoot, {
+				version: 1,
+				pid: process.pid,
+				instanceId: state.instanceId,
+				hostname: hostname(),
+				url: adminUrl(state.host, state.port),
+				agent: state.agent,
+				project: state.project,
+				startedAt: new Date(state.start.app?.startedAt ?? Date.now()).toISOString(),
+				adminPath: ADMIN_PATH,
+			});
+			if (!state.secretHash && loopbackHost(state.host)) {
+				const link = mintLoginLink(state);
+				input.logger.warn("admin.login_link", {
+					url: link.url,
+					expiresInMs: loginTtlMs,
+				});
+			}
 		},
 		async stop(): Promise<void> {
 			start?.logger.info("admin.stop", { path: ADMIN_PATH });
-			loginTokens.clear();
+			if (state?.auth) removeAdminServerDescriptor(state.stateRoot);
+			usedLoginJtis.clear();
 			sessions.clear();
 			failures.clear();
 			start = undefined;
+			state = undefined;
 		},
 	};
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, state: AdminState): Promise<void> {
 	const nonce = randomToken(16);
-	securityHeaders(res, nonce);
+	securityHeaders(res, nonce, state.instanceId);
 	try {
 		cleanup(state);
 		const url = new URL(req.url ?? ADMIN_PATH, "http://localhost");
@@ -177,9 +217,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: AdminSta
 		if (method === "GET" && url.pathname === "/admin/assets/admin.css") return css(res, 200, loadAdminCss());
 		if (method === "GET" && url.pathname === "/admin/assets/basecoat.all.min.js") {
 			return javascript(res, 200, loadAdminJs());
-		}
-		if (method === "POST" && url.pathname === "/admin/_control/links") {
-			return controlLink(req, res, state);
 		}
 		if (!state.auth) return await handleWithoutAuth(req, res, state, nonce, url, method);
 		if (method === "GET" && url.pathname === "/admin/login") {
@@ -242,17 +279,6 @@ async function handleReadRoute(
 	return await routePage(res, state, session, nonce, url);
 }
 
-function controlLink(req: IncomingMessage, res: ServerResponse, state: AdminState): void {
-	const token = bearer(req);
-	if (!token || !safeHashEqual(hash(token), state.controlHash)) {
-		json(res, 401, { error: "unauthorized" });
-		return;
-	}
-	const link = mintLoginLink(state);
-	state.start.logger.warn("admin.login_link", { url: link.url, expiresInMs: state.loginTtlMs, source: "cli" });
-	json(res, 200, link);
-}
-
 async function loginGet(
 	req: IncomingMessage,
 	res: ServerResponse,
@@ -262,7 +288,7 @@ async function loginGet(
 ): Promise<void> {
 	const session = currentSession(req, state);
 	if (session) return redirect(res, "/admin");
-	const token = url.searchParams.get("token");
+	const token = url.searchParams.get("t");
 	if (token) {
 		if (!consumeLoginToken(state, token)) {
 			return html(
@@ -302,27 +328,49 @@ async function routePage(
 	const path = url.pathname;
 	if (path === "/admin/access" || path === "/admin/routes" || path === "/admin/adapters")
 		return redirect(res, "/admin/configuration");
-	if (path === "/admin/threads" || path === "/admin/runs" || path === "/admin/calls") {
+	if (path === "/admin/threads" || path === "/admin/activity") return redirect(res, "/admin");
+	if (path === "/admin/runs" || path === "/admin/calls") {
 		return redirect(res, "/admin");
 	}
-	if (path === "/admin" || path === "/admin/activity") {
-		const [overview, activity] = await Promise.all([
+	const threadId = threadPathId(path);
+	if (threadId) {
+		const [overview, threads, thread] = await Promise.all([
 			state.service.overview(),
-			state.service.activity(pageInput(url)),
+			state.service.threads(pageInput(url)),
+			state.service.thread(threadId, { event: stringParam(url.searchParams.get("event")) }),
 		]);
+		if (!thread) return adminError(res, 404, "Thread not found", "This admin thread does not exist.", nonce);
 		return html(
 			res,
 			200,
 			page({
-				title: "Activity",
-				active: "activity",
+				title: "Thread",
+				active: "chats",
 				csrf: session.csrf,
 				auth: state.auth,
 				live: overview.live,
 				memoryFiles: overview.memory.total,
 				nonce,
 				livePage: true,
-				body: activityView(activity, overview.live.checkedAt),
+				body: threadsView(threads, { checkedAt: overview.live.checkedAt, selected: thread }),
+			}),
+		);
+	}
+	if (path === "/admin") {
+		const [overview, threads] = await Promise.all([state.service.overview(), state.service.threads(pageInput(url))]);
+		return html(
+			res,
+			200,
+			page({
+				title: "Chats",
+				active: "chats",
+				csrf: session.csrf,
+				auth: state.auth,
+				live: overview.live,
+				memoryFiles: overview.memory.total,
+				nonce,
+				livePage: true,
+				body: threadsView(threads, { checkedAt: overview.live.checkedAt }),
 			}),
 		);
 	}
@@ -419,29 +467,51 @@ async function events(req: IncomingMessage, res: ServerResponse, state: AdminSta
 		connection: "keep-alive",
 	});
 	let closed = false;
-	let timer: ReturnType<typeof setInterval> | undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
 	const send = async (): Promise<void> => {
 		if (closed) return;
 		try {
 			const live = await state.service.live();
+			if (closed) return;
 			res.write(`event: summary\ndata: ${JSON.stringify(live)}\n\n`);
 		} catch (error) {
 			state.start.logger.warn("admin.events_failed", { error: message(error) });
 		}
 	};
+	const schedule = (): void => {
+		if (closed) return;
+		timer = setTimeout(() => {
+			void send().finally(schedule);
+		}, 3000);
+		timer.unref?.();
+	};
 	req.on("close", () => {
 		closed = true;
-		if (timer) clearInterval(timer);
+		if (timer) clearTimeout(timer);
 	});
-	timer = setInterval(() => void send(), 3000);
-	timer.unref?.();
 	await send();
+	schedule();
 }
 
-function pageInput(url: URL): { limit: number; offset: number } {
+function pageInput(url: URL): {
+	limit: number;
+	offset: number;
+	q?: string;
+	type?: string;
+	state?: string;
+	channel?: string;
+	actor?: string;
+	scope?: string;
+} {
 	return {
 		limit: numberParam(url.searchParams.get("limit"), 25),
 		offset: numberParam(url.searchParams.get("offset"), 0),
+		q: stringParam(url.searchParams.get("q")),
+		type: stringParam(url.searchParams.get("type")),
+		state: stringParam(url.searchParams.get("state")),
+		channel: stringParam(url.searchParams.get("channel")),
+		actor: stringParam(url.searchParams.get("actor")),
+		scope: stringParam(url.searchParams.get("scope")),
 	};
 }
 
@@ -451,14 +521,22 @@ function numberParam(input: string | null, fallback: number): number {
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function stringParam(input: string | null): string | undefined {
+	const value = input?.trim();
+	return value ? value : undefined;
+}
+
+function threadPathId(path: string): string | undefined {
+	const prefix = "/admin/threads/";
+	if (!path.startsWith(prefix)) return undefined;
+	const id = path.slice(prefix.length).trim();
+	return id ? decodeURIComponent(id) : undefined;
+}
+
 function mintLoginLink(state: AdminState): AdminLoginLink {
-	const token = randomToken();
-	const expiresAt = Date.now() + state.loginTtlMs;
-	state.loginTokens.set(hash(token), { expiresAt, used: false });
-	return {
-		url: `${adminUrl(state.host, state.port)}/admin/login?token=${encodeURIComponent(token)}`,
-		expiresAt,
-	};
+	if (!state.signingSecret) throw new Error("admin signing secret is unavailable");
+	const token = createAdminLoginToken(state.signingSecret, state.loginTtlMs, { stateRoot: state.stateRoot });
+	return { url: adminLoginUrl(adminUrl(state.host, state.port), token.token, ADMIN_PATH), expiresAt: token.expiresAt };
 }
 
 function adminInfo(state: AdminState): {
@@ -511,10 +589,11 @@ async function requireCsrf(req: IncomingMessage, session: Session): Promise<URLS
 }
 
 function consumeLoginToken(state: AdminState, token: string): boolean {
-	const key = hash(token);
-	const row = state.loginTokens.get(key);
-	if (!row || row.used || row.expiresAt <= Date.now()) return false;
-	row.used = true;
+	if (!state.signingSecret) return false;
+	const result = verifyAdminLoginToken(state.signingSecret, token, { stateRoot: state.stateRoot });
+	if (!result.ok) return false;
+	if (state.usedLoginJtis.has(result.payload.jti)) return false;
+	state.usedLoginJtis.set(result.payload.jti, result.payload.exp);
 	return true;
 }
 
@@ -532,8 +611,8 @@ async function formBody(req: IncomingMessage): Promise<URLSearchParams> {
 
 function cleanup(state: AdminState): void {
 	const now = Date.now();
-	for (const [key, row] of state.loginTokens) {
-		if (row.expiresAt <= now) state.loginTokens.delete(key);
+	for (const [key, expiresAt] of state.usedLoginJtis) {
+		if (expiresAt <= now) state.usedLoginJtis.delete(key);
 	}
 	for (const [key, row] of state.sessions) {
 		if (row.expiresAt <= now || row.idleExpiresAt <= now) state.sessions.delete(key);
@@ -595,20 +674,16 @@ function cookie(req: IncomingMessage, name: string): string | undefined {
 	return undefined;
 }
 
-function bearer(req: IncomingMessage): string | undefined {
-	const raw = headerValue(req.headers.authorization);
-	if (!raw?.startsWith("Bearer ")) return undefined;
-	return raw.slice("Bearer ".length).trim();
-}
-
 function sameOrigin(req: IncomingMessage): boolean {
 	const host = req.headers.host;
+	// Non-browser or HTTP/1.0-style clients may omit all origin headers; CSRF tokens still gate unsafe actions.
 	if (!host) return true;
 	const expected = host.toLowerCase();
 	const origin = headerValue(req.headers.origin);
 	if (origin) return originHost(origin)?.toLowerCase() === expected;
 	const referer = headerValue(req.headers.referer);
 	if (referer) return originHost(referer)?.toLowerCase() === expected;
+	// Same-origin is enforced when a browser sends origin metadata.
 	return true;
 }
 
@@ -660,11 +735,6 @@ function text(res: ServerResponse, status: number, body: string): void {
 	res.end(body);
 }
 
-function json(res: ServerResponse, status: number, body: unknown): void {
-	res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-	res.end(JSON.stringify(body));
-}
-
 function css(res: ServerResponse, status: number, body: string): void {
 	res.writeHead(status, { "content-type": "text/css; charset=utf-8", "cache-control": "no-store" });
 	res.end(body);
@@ -675,25 +745,37 @@ function javascript(res: ServerResponse, status: number, body: string): void {
 	res.end(body);
 }
 
-function securityHeaders(res: ServerResponse, nonce: string): void {
+function securityHeaders(res: ServerResponse, nonce: string, instanceId: string): void {
 	res.setHeader("cache-control", "no-store");
 	res.setHeader(
 		"content-security-policy",
-		`default-src 'self'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+		`default-src 'self'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
 	);
 	res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
 	res.setHeader("referrer-policy", "no-referrer");
+	res.setHeader("x-heypi-admin-instance", instanceId);
 	res.setHeader("x-content-type-options", "nosniff");
 	res.setHeader("x-frame-options", "DENY");
 }
 
-function assertAdminConfig(input: { auth: boolean; host: string; secret?: string; controlToken: string }): void {
-	if (!input.auth && !loopbackHost(input.host)) throw new Error("admin auth can only be disabled on loopback hosts");
-	if (loopbackHost(input.host)) return;
+function assertAdminConfig(input: {
+	auth: boolean;
+	host: string;
+	secret?: string;
+	secureCookies: boolean;
+	signingSecret?: string;
+}): void {
+	if (!input.auth) {
+		if (!loopbackHost(input.host)) throw new Error("admin auth can only be disabled on loopback hosts");
+		return;
+	}
+	if (!loopbackHost(input.host) && !input.secureCookies) {
+		throw new Error("admin secureCookies must be enabled for non-loopback hosts");
+	}
 	if (input.secret && !strongSecret(input.secret))
 		throw new Error("admin secret must be at least 32 varied characters");
-	if (!strongSecret(input.secret ?? input.controlToken)) {
-		throw new Error("admin control token must be at least 32 varied characters");
+	if (!input.signingSecret || !strongSecret(input.signingSecret)) {
+		throw new Error("admin signing secret must be at least 32 varied characters");
 	}
 }
 

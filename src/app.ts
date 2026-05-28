@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { createAdminAdapter } from "./admin/index.js";
 import type { AppLockConfig, HeypiConfig, HttpConfig } from "./config.js";
 import { ActiveRuns } from "./core/active.js";
@@ -11,11 +13,12 @@ import { createScheduler } from "./core/scheduler.js";
 import { ScopedRuntimeRegistry } from "./core/scope.js";
 import { splitTools } from "./core-tools.js";
 import { runtimeAttachments } from "./io/attachments.js";
-import { type Adapter, createHandler, createStatus } from "./io/handler.js";
+import { type Adapter, type AdapterStart, createHandler, createStatus } from "./io/handler.js";
 import { createHttpServerRegistry } from "./io/http.js";
 import { createRuntime } from "./runtime/index.js";
 import { PiAgent } from "./runtime/pi-agent.js";
 import { Queue } from "./runtime/queue.js";
+import { normalizeStateRoot } from "./state.js";
 import { sqliteStore } from "./store/sqlite.js";
 import type { Store } from "./store/types.js";
 import { toolRunner } from "./tool-internal.js";
@@ -33,23 +36,30 @@ const DEFAULT_HTTP: Required<HttpConfig> = { host: "127.0.0.1", port: 3000 };
 
 /** Builds a heypi process from code-first config. Starts storage, runtime, handler, and adapters. */
 export function createHeypi(config: HeypiConfig): HeypiApp {
+	const cwd = process.cwd();
 	const log = config.logger ?? logger;
 	const messages = normalizeMessages(config.messages);
 	const httpConfig = normalizeHttpConfig(config.http);
+	const stateRoot = normalizeStateRoot(config.state);
+	mkdirSync(stateRoot, { recursive: true });
 	validateUserAdapters(config.adapters);
 	const adminAdapter = config.admin
-		? createAdminAdapter(config.admin === true ? {} : config.admin, httpConfig)
+		? createAdminAdapter(config.admin === true ? {} : config.admin, httpConfig, {
+				root: stateRoot,
+				agent: config.agent.id,
+				project: cwd,
+			})
 		: undefined;
 	const lifecycleAdapters = adminAdapter ? [...config.adapters, adminAdapter] : config.adapters;
 	validateAdapterNames(lifecycleAdapters);
-	const store = config.store ?? sqliteStore({ path: "./heypi.db" });
+	const store = config.store ?? sqliteStore({ path: join(stateRoot, "heypi.db") });
 	const active = new ActiveRuns();
 	const appRuntime = createRuntime({
 		...config.runtime,
-		app: process.cwd(),
+		app: cwd,
 		agent: config.agent.directory,
 	});
-	const runtimes = new ScopedRuntimeRegistry(config.runtime, { app: process.cwd(), agent: config.agent.directory });
+	const runtimes = new ScopedRuntimeRegistry(config.runtime, { app: cwd, agent: config.agent.directory });
 	const runtime = (scope?: string) => runtimes.getPath(scope);
 	const memoryConfig = normalizeMemoryConfig(config.memory, {
 		scope: config.scope,
@@ -73,6 +83,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		store.transaction,
 		bashConfirm,
 		messages,
+		config.agent.id,
 	);
 	for (const tool of agentTools.custom) {
 		const execute = toolRunner(tool);
@@ -106,7 +117,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		logger: log,
 	});
 	const status = createStatus({ agentId: config.agent.id, store });
-	const starts = new Map();
+	const starts = new Map<Adapter, AdapterStart>();
 	const scheduler = createScheduler({
 		agent: config.agent.id,
 		store,
@@ -169,16 +180,21 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 						agentDirectory: config.agent.directory,
 						agentModel: config.agent.model,
 						runtime: { name: appRuntime.name, root: config.runtime.root },
+						state: { root: stateRoot },
 						memory: memoryConfig,
 						adapters: config.adapters.map((item) => ({ name: item.name, kind: item.kind })),
 						startedAt: appStartedAt,
 					},
-				};
+				} satisfies AdapterStart;
 				starts.set(adapter, start);
 				await adapter.start(start);
 				started.push(adapter);
 			}
 			await http.listen();
+			for (const adapter of lifecycleAdapters) {
+				const start = starts.get(adapter);
+				if (start) await adapter.ready?.(start);
+			}
 			await scheduler?.start();
 		} catch (error) {
 			await Promise.allSettled(started.reverse().map((adapter) => adapter.stop?.()));
@@ -406,6 +422,7 @@ async function releaseAppLock(input: { lock: AppLockState; store: Store }): Prom
 
 async function recoverStartup(input: { store: Store; agent: string; logger: Logger }): Promise<void> {
 	const turns = await input.store.turns.listRunning?.({ agent: input.agent, limit: 500 });
+	const recoveredThreads = new Set<string>();
 	if (turns?.length) {
 		for (const turn of turns) {
 			try {
@@ -418,6 +435,7 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 					state: "failed",
 				});
 				await input.store.turns.finish(turn.id, { state: "failed", resultMessageId: result.id });
+				recoveredThreads.add(turn.threadId);
 			} catch (error) {
 				input.logger.warn("app.recovery_turn_failed", {
 					agent: input.agent,
@@ -428,6 +446,9 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 		}
 		input.logger.warn("app.recovered_turns", { agent: input.agent, turns: turns.length });
 	}
-	const locks = await input.store.locks?.clear?.({ prefix: "thread:" });
+	let locks = 0;
+	for (const threadId of recoveredThreads) {
+		locks += (await input.store.locks?.clear?.({ key: `thread:${threadId}` })) ?? 0;
+	}
 	if (locks) input.logger.warn("app.recovered_locks", { agent: input.agent, locks });
 }

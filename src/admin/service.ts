@@ -1,11 +1,25 @@
 import { createHash } from "node:crypto";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
-import type { Approval, Call, Job, JobRun, Turn } from "../store/types.js";
+import type { Approval, Call, Job, JobRun, Message, MessageWithThread, Thread, Turn } from "../store/types.js";
 
-export type AdminPageInput = {
+type AdminPageInput = {
 	limit?: number;
 	offset?: number;
+	q?: string;
+	type?: string;
+	state?: string;
+	channel?: string;
+	actor?: string;
+	scope?: string;
+};
+
+export type AdminPageFilters = Pick<AdminPageInput, "q" | "type" | "state" | "channel" | "actor" | "scope">;
+
+export type AdminFilterFacets = {
+	channels: string[];
+	actors: string[];
+	scopes: string[];
 };
 
 export type AdminPage<T> = {
@@ -13,11 +27,16 @@ export type AdminPage<T> = {
 	limit: number;
 	offset: number;
 	hasNext: boolean;
+	truncated?: boolean;
+	filters?: AdminPageFilters;
+	facets?: AdminFilterFacets;
 };
 
 export type AdminService = {
 	overview(): Promise<AdminOverview>;
 	live(): Promise<AdminLiveSummary>;
+	threads(input?: AdminPageInput): Promise<AdminPage<AdminThreadRow>>;
+	thread(id: string, input?: { event?: string }): Promise<AdminThreadView | undefined>;
 	approvals(input?: AdminPageInput): Promise<AdminPage<Approval>>;
 	jobs(input?: AdminPageInput): Promise<AdminPage<AdminJob>>;
 	activity(input?: AdminPageInput): Promise<AdminPage<AdminActivityRow>>;
@@ -34,7 +53,7 @@ export type AdminOverview = {
 	live: AdminLiveSummary;
 };
 
-export type AdminLiveSummary = {
+type AdminLiveSummary = {
 	pendingApprovals: number;
 	runningRuns: number;
 	jobs: number;
@@ -47,17 +66,53 @@ export type AdminLiveSummary = {
 
 export type AdminJob = Job & { route?: string; lastRun?: JobRun | null };
 
+export type AdminThreadRow = {
+	id: string;
+	provider: string;
+	kind: string;
+	team?: string;
+	channel: string;
+	actor?: string;
+	state: string;
+	title: string;
+	summary: string;
+	createdAt: number;
+	updatedAt: number;
+	lastActivityAt: number;
+	pendingApprovals: number;
+	runningRuns: number;
+	latestEvent?: string;
+};
+
+export type AdminThreadView = {
+	thread: AdminThreadRow;
+	timeline: AdminActivityRow[];
+	selected?: AdminActivityRow;
+	event?: string;
+};
+
+export type AdminActivityDetail = {
+	label: string;
+	value: string;
+	format?: "mono" | "text";
+};
+
 export type AdminActivityRow = {
 	id: string;
-	kind: "approval" | "call" | "job" | "run";
+	kind: "approval" | "call" | "job" | "message" | "run";
+	threadId?: string;
 	title: string;
 	summary: string;
 	state: string;
+	provider?: string;
+	eventType?: string;
+	role?: string;
 	channel?: string;
 	actor?: string;
 	time: number;
 	durationMs?: number;
 	href?: string;
+	details?: AdminActivityDetail[];
 };
 
 export type AdminMemory = {
@@ -69,6 +124,9 @@ export type AdminMemory = {
 	limit: number;
 	offset: number;
 	hasNext: boolean;
+	truncated?: boolean;
+	filters?: AdminPageFilters;
+	facets?: AdminFilterFacets;
 	entries: Array<{
 		scopePath: string;
 		path: string;
@@ -82,6 +140,7 @@ export type AdminMemory = {
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 50;
+const ADMIN_SCAN_LIMIT = 500;
 
 export function createAdminService(start: AdapterStart): AdminService {
 	const app = required(start.app, "admin requires app context");
@@ -109,17 +168,23 @@ export function createAdminService(start: AdapterStart): AdminService {
 			};
 		},
 		async live(): Promise<AdminLiveSummary> {
-			const [approvals, jobs, runningRuns, calls] = await Promise.all([
-				store.approvals.listPending({ limit: 100 }),
+			const [approvals, jobs, runningRuns, recentTurns, recentThreads, recentMessages, calls] = await Promise.all([
+				store.approvals.listPending({ agent: app.agent, limit: 100 }),
 				store.jobs?.list({ agent: app.agent, limit: 1000 }) ?? [],
 				store.turns.listRunning?.({ agent: app.agent, limit: 100 }) ?? [],
-				store.calls.listRecent?.({ limit: 100 }) ?? [],
+				store.turns.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
+				store.threads.list({ agent: app.agent, limit: 100 }),
+				store.messages.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
+				store.calls.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
 			]);
 			const checkedAt = Date.now();
 			const revision = revisionHash([
 				...approvals.map((row) => ["approval", row.id, row.state, row.requestedAt, row.resolvedAt]),
 				...jobs.map((row) => ["job", row.id, row.state, row.nextAt, row.lastAt, row.updatedAt]),
 				...runningRuns.map((row) => ["run", row.id, row.state, row.updatedAt]),
+				...recentTurns.map((row) => ["turn", row.id, row.state, row.channel, row.actor, row.updatedAt]),
+				...recentThreads.map((row) => ["thread", row.id, row.channel, row.actor, row.updatedAt]),
+				...recentMessages.map((row) => ["message", row.id, row.state, row.actor, row.createdAt, row.updatedAt]),
 				...calls.map((row) => ["call", row.id, row.state, row.updatedAt]),
 			]);
 			return {
@@ -133,14 +198,79 @@ export function createAdminService(start: AdapterStart): AdminService {
 				revision,
 			};
 		},
+		async threads(input: AdminPageInput = {}): Promise<AdminPage<AdminThreadRow>> {
+			const page = pageInput(input);
+			const filters = filtersFromInput(input);
+			const [threads, recent] = await Promise.all([
+				store.threads.list({ agent: app.agent, limit: 1000 }),
+				recentThreadActivityRows(),
+			]);
+			const summaries = threadSummaries(threads, recent);
+			const facets = rowFacets(summaries, {
+				channel: (row) => row.channel,
+				actor: (row) => row.actor,
+			});
+			return {
+				...toPage(
+					filterRows(summaries, filters, threadSearchText),
+					page,
+					filters,
+					page.offset,
+					threads.length >= 1000,
+				),
+				facets,
+			};
+		},
+		async thread(id: string, input: { event?: string } = {}): Promise<AdminThreadView | undefined> {
+			const thread = await store.threads.get(id);
+			if (!thread || thread.agent !== app.agent) return undefined;
+			const timeline = await threadTimeline(thread);
+			const summary = threadSummaries([thread], timeline)[0];
+			const selected =
+				timeline.find((row) => activityEvent(row) === input.event || row.id === input.event) ?? timeline[0];
+			return { thread: summary, timeline, selected, event: selected ? activityEvent(selected) : input.event };
+		},
 		async approvals(input: AdminPageInput = {}): Promise<AdminPage<Approval>> {
 			const page = pageInput(input);
-			const rows = await store.approvals.listPending({ limit: page.limit + 1, offset: page.offset });
-			return toPage(rows, page);
+			const filters = filtersFromInput(input);
+			const [baseFacets, scan] = await Promise.all([
+				knownFacets(),
+				scanRows((input) => store.approvals.listPending({ agent: app.agent, ...input })),
+			]);
+			const facets = mergeFacets(
+				baseFacets,
+				rowFacets(scan.rows, {
+					channel: (row) => row.channel,
+					actor: (row) => row.requestedBy ?? undefined,
+				}),
+			);
+			if (!filtersActive(filters)) {
+				const rows = await store.approvals.listPending({
+					agent: app.agent,
+					limit: page.limit + 1,
+					offset: page.offset,
+				});
+				return { ...toPage(rows, page, filters, 0), facets };
+			}
+			return {
+				...toPage(filterRows(scan.rows, filters, approvalSearchText), page, filters, page.offset, scan.truncated),
+				facets,
+			};
 		},
 		async jobs(input: AdminPageInput = {}): Promise<AdminPage<AdminJob>> {
 			const page = pageInput(input);
-			const rows = await (store.jobs?.list({ agent: app.agent, limit: page.limit + 1, offset: page.offset }) ?? []);
+			const filters = filtersFromInput(input);
+			const filtering = filtersActive(filters);
+			const scan = filtering
+				? await scanRows((input) => store.jobs?.list({ agent: app.agent, ...input }) ?? Promise.resolve([]))
+				: undefined;
+			const rows =
+				scan?.rows ??
+				(await (store.jobs?.list({
+					agent: app.agent,
+					limit: page.limit + 1,
+					offset: page.offset,
+				}) ?? []));
 			const withRuns = await Promise.all(
 				rows.map(async (job) => ({
 					...job,
@@ -148,29 +278,87 @@ export function createAdminService(start: AdapterStart): AdminService {
 					lastRun: (await store.jobRuns?.lastForJob({ agent: job.agent, id: job.id })) ?? null,
 				})),
 			);
-			return toPage(withRuns, page);
+			return filtering && scan
+				? toPage(filterRows(withRuns, filters, jobSearchText), page, filters, page.offset, scan.truncated)
+				: toPage(withRuns, page, filters, 0);
 		},
 		async activity(input: AdminPageInput = {}): Promise<AdminPage<AdminActivityRow>> {
 			const page = pageInput(input);
-			const fetchLimit = page.offset + page.limit + 1;
-			const [approvals, jobs, runs, calls] = await Promise.all([
-				store.approvals.listPending({ limit: fetchLimit }),
-				store.jobs?.list({ agent: app.agent, limit: fetchLimit }) ?? [],
-				store.turns.listRecent?.({ agent: app.agent, limit: fetchLimit }) ?? [],
-				store.calls.listRecent?.({ limit: fetchLimit }) ?? [],
+			const filters = filtersFromInput(input);
+			const filtering = filtersActive(filters);
+			const baseFacets = await knownFacets();
+			const fetchLimit = filtering ? ADMIN_SCAN_LIMIT : page.offset + page.limit + 1;
+			const [approvalScan, jobScan, runScan, messageScan, callScan] = await Promise.all([
+				filtering
+					? scanRows((input) => store.approvals.listPending({ agent: app.agent, ...input }))
+					: listPage((input) => store.approvals.listPending({ agent: app.agent, ...input }), fetchLimit),
+				filtering
+					? scanRows((input) => store.jobs?.list({ agent: app.agent, ...input }) ?? Promise.resolve([]))
+					: listPage(
+							(input) => store.jobs?.list({ agent: app.agent, ...input }) ?? Promise.resolve([]),
+							fetchLimit,
+						),
+				filtering
+					? scanRows((input) => store.turns.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]))
+					: listPage(
+							(input) => store.turns.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]),
+							fetchLimit,
+						),
+				filtering
+					? scanRows((input) => store.messages.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]))
+					: listPage(
+							(input) => store.messages.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]),
+							fetchLimit,
+						),
+				filtering
+					? scanRows((input) => store.calls.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]))
+					: listPage(
+							(input) => store.calls.listRecent?.({ agent: app.agent, ...input }) ?? Promise.resolve([]),
+							fetchLimit,
+						),
 			]);
+			const runMessages = await runMessageContexts(runScan.rows);
 			const rows = [
-				...approvals.map(approvalActivity),
-				...jobs.map(jobActivity),
-				...runs.map(runActivity),
-				...calls.map(callActivity),
-			].sort((left, right) => right.time - left.time || left.kind.localeCompare(right.kind));
-			return toPage(rows.slice(page.offset), page);
+				...approvalScan.rows.map(approvalActivity),
+				...jobScan.rows.map(jobActivity),
+				...runScan.rows.map((row) => runActivity(row, runMessages.get(row.id))),
+				...messageScan.rows.map(messageActivity),
+				...callScan.rows.map(callActivity),
+			].sort(activitySort);
+			const facets = mergeFacets(
+				baseFacets,
+				rowFacets(rows, {
+					channel: (row) => row.channel,
+					actor: (row) => row.actor,
+				}),
+			);
+			return {
+				...toPage(
+					filterRows(rows, filters, activitySearchText),
+					page,
+					filters,
+					page.offset,
+					approvalScan.truncated ||
+						jobScan.truncated ||
+						runScan.truncated ||
+						messageScan.truncated ||
+						callScan.truncated,
+				),
+				facets,
+			};
 		},
 		async memory(input: AdminPageInput = {}): Promise<AdminMemory> {
 			const page = pageInput(input);
+			const filters = filtersFromInput(input);
+			const filtering = filtersActive(filters);
 			const settings = start.memory?.settings() ?? app.memory;
-			const rows = await (start.memory?.list({ limit: page.limit + 1, offset: page.offset }) ?? Promise.resolve([]));
+			const scan = filtering
+				? await scanRows((input) => start.memory?.list(input) ?? Promise.resolve([]))
+				: await listPage((input) => start.memory?.list(input) ?? Promise.resolve([]), page.limit + 1, page.offset);
+			const pageRows = filtering
+				? filterRows(scan.rows, filters, memorySearchText).slice(page.offset, page.offset + page.limit + 1)
+				: scan.rows;
+			const facets = rowFacets(scan.rows, { scope: (row) => row.scopePath });
 			return {
 				enabled: settings.enabled,
 				scope: settings.scope,
@@ -179,11 +367,69 @@ export function createAdminService(start: AdapterStart): AdminService {
 				total: await (start.memory?.count() ?? Promise.resolve(0)),
 				limit: page.limit,
 				offset: page.offset,
-				hasNext: rows.length > page.limit,
-				entries: rows.slice(0, page.limit),
+				hasNext: pageRows.length > page.limit,
+				truncated: filtering ? scan.truncated : false,
+				filters,
+				facets,
+				entries: pageRows.slice(0, page.limit),
 			};
 		},
 	};
+
+	async function knownFacets(): Promise<AdminFilterFacets> {
+		const rows = await store.threads.list({ agent: app.agent, limit: 1000 });
+		return rowFacets(rows, {
+			channel: (row) => row.channel,
+			actor: (row) => row.actor ?? undefined,
+		});
+	}
+
+	async function recentThreadActivityRows(): Promise<AdminActivityRow[]> {
+		const [approvals, runs, messages, calls] = await Promise.all([
+			store.approvals.listPending({ agent: app.agent, limit: ADMIN_SCAN_LIMIT }),
+			store.turns.listRecent?.({ agent: app.agent, limit: ADMIN_SCAN_LIMIT }) ?? [],
+			store.messages.listRecent?.({ agent: app.agent, limit: ADMIN_SCAN_LIMIT }) ?? [],
+			store.calls.listRecent?.({ agent: app.agent, limit: ADMIN_SCAN_LIMIT }) ?? [],
+		]);
+		const runMessages = await runMessageContexts(runs);
+		return [
+			...approvals.map(approvalActivity),
+			...runs.map((row) => runActivity(row, runMessages.get(row.id))),
+			...messages.map(messageActivity),
+			...calls.map(callActivity),
+		].sort(activitySort);
+	}
+
+	async function threadTimeline(thread: Thread): Promise<AdminActivityRow[]> {
+		const [messages, runs, calls, approvals] = await Promise.all([
+			store.messages.listForThread(thread.id, { limit: 100 }),
+			store.turns.listForThread(thread.id, { limit: 25 }),
+			store.calls.listForThread(thread.id, { agent: app.agent, limit: 25 }),
+			store.approvals.listForThread?.(thread.id, { agent: app.agent, limit: 50 }) ??
+				store.approvals.listPending({ agent: app.agent, threadId: thread.id, limit: 50 }),
+		]);
+		const runMessages = await runMessageContexts(runs);
+		const rows = [
+			...messages.map((row) => messageActivity(messageWithThread(row, thread))),
+			...runs.map((row) => runActivity(row, runMessages.get(row.id))),
+			...calls.map(callActivity),
+			...approvals.map(approvalActivity),
+		];
+		return rows.sort(activitySort);
+	}
+
+	async function runMessageContexts(rows: Turn[]): Promise<Map<string, { input?: Message; result?: Message }>> {
+		const entries = await Promise.all(
+			rows.map(async (row) => {
+				const [input, result] = await Promise.all([
+					store.messages.get(row.inputMessageId),
+					row.resultMessageId ? store.messages.get(row.resultMessageId) : Promise.resolve(undefined),
+				]);
+				return [row.id, { input, result }] as const;
+			}),
+		);
+		return new Map(entries);
+	}
 
 	return service;
 }
@@ -192,13 +438,23 @@ function approvalActivity(row: Approval): AdminActivityRow {
 	return {
 		id: row.id,
 		kind: "approval",
+		threadId: row.threadId ?? undefined,
 		title: row.command,
 		summary: row.reason,
 		state: row.state,
 		channel: row.channel,
 		actor: row.requestedBy ?? undefined,
-		time: row.requestedAt,
+		time: row.resolvedAt ?? row.requestedAt,
 		href: "/admin/approvals",
+		details: compactDetails([
+			{ label: "Call", value: row.callId, format: "mono" },
+			row.threadId ? { label: "Thread", value: row.threadId, format: "mono" } : undefined,
+			row.turnId ? { label: "Turn", value: row.turnId, format: "mono" } : undefined,
+			row.requestMessageId ? { label: "Request message", value: row.requestMessageId, format: "mono" } : undefined,
+			{ label: "Runtime", value: row.runtime },
+			row.expiresAt ? { label: "Expires", value: new Date(row.expiresAt).toLocaleString() } : undefined,
+			row.resolvedBy ? { label: "Resolved by", value: row.resolvedBy } : undefined,
+		]),
 	};
 }
 
@@ -250,16 +506,51 @@ function parseJson<T>(input: string | null): T | undefined {
 	}
 }
 
-function runActivity(row: Turn): AdminActivityRow {
+function runActivity(row: Turn, messages?: { input?: Message; result?: Message }): AdminActivityRow {
+	const input = messages?.input?.text;
+	const result = messages?.result?.text;
 	return {
 		id: row.id,
 		kind: "run",
-		title: row.trace ?? row.id,
-		summary: `${row.provider}/${row.kind}`,
+		threadId: row.threadId,
+		title: preview(input) || row.trace || row.id,
+		summary: preview(result) || `${row.provider}/${row.kind}`,
 		state: row.state,
+		provider: row.provider,
+		eventType: row.kind,
 		channel: row.channel,
 		actor: row.actor ?? undefined,
 		time: row.updatedAt,
+		details: compactDetails([
+			row.trace ? { label: "Trace", value: row.trace, format: "mono" } : undefined,
+			{ label: "Thread", value: row.threadId, format: "mono" },
+			{ label: "Input message", value: row.inputMessageId, format: "mono" },
+			input ? { label: "Input", value: input, format: "text" } : undefined,
+			row.resultMessageId ? { label: "Result message", value: row.resultMessageId, format: "mono" } : undefined,
+			result ? { label: "Result", value: result, format: "text" } : undefined,
+		]),
+	};
+}
+
+function messageActivity(row: MessageWithThread): AdminActivityRow {
+	return {
+		id: row.id,
+		kind: "message",
+		threadId: row.threadId,
+		title: preview(row.text) || "(empty message)",
+		summary: [row.role, row.provider, row.kind].filter(Boolean).join(" / "),
+		state: row.state,
+		provider: row.provider,
+		eventType: row.kind,
+		role: row.role,
+		channel: row.channel,
+		actor: row.actor ?? row.threadActor ?? undefined,
+		time: row.createdAt,
+		details: compactDetails([
+			{ label: "Thread", value: row.threadId, format: "mono" },
+			row.providerEventId ? { label: "Provider event", value: row.providerEventId, format: "mono" } : undefined,
+			{ label: "Text", value: row.text, format: "text" },
+		]),
 	};
 }
 
@@ -267,6 +558,7 @@ function callActivity(row: Call): AdminActivityRow {
 	return {
 		id: row.id,
 		kind: "call",
+		threadId: row.threadId ?? undefined,
 		title: row.tool,
 		summary: row.command ?? row.args ?? "",
 		state: row.state,
@@ -274,7 +566,96 @@ function callActivity(row: Call): AdminActivityRow {
 		actor: row.actor ?? undefined,
 		time: row.updatedAt,
 		durationMs: row.ms ?? undefined,
+		details: compactDetails([
+			row.threadId ? { label: "Thread", value: row.threadId, format: "mono" } : undefined,
+			row.turnId ? { label: "Turn", value: row.turnId, format: "mono" } : undefined,
+			row.messageId ? { label: "Message", value: row.messageId, format: "mono" } : undefined,
+			row.toolCallId ? { label: "Tool call", value: row.toolCallId, format: "mono" } : undefined,
+			row.runtime ? { label: "Runtime", value: row.runtime } : undefined,
+			row.policyReason ? { label: "Policy", value: row.policyReason } : undefined,
+			row.out ? { label: "Stdout", value: row.out, format: "text" } : undefined,
+			row.err ? { label: "Stderr", value: row.err, format: "text" } : undefined,
+		]),
 	};
+}
+
+function messageWithThread(row: Message, thread: Thread): MessageWithThread {
+	return {
+		...row,
+		agent: thread.agent,
+		channel: thread.channel,
+		threadActor: thread.actor,
+	};
+}
+
+function threadSummaries(threads: Thread[], activity: AdminActivityRow[]): AdminThreadRow[] {
+	const byThread = new Map<string, AdminActivityRow[]>();
+	for (const row of activity) {
+		if (!row.threadId) continue;
+		const rows = byThread.get(row.threadId) ?? [];
+		rows.push(row);
+		byThread.set(row.threadId, rows);
+	}
+	return threads
+		.map((thread) => threadSummary(thread, byThread.get(thread.id) ?? []))
+		.sort((left, right) => right.lastActivityAt - left.lastActivityAt || left.channel.localeCompare(right.channel));
+}
+
+function threadSummary(row: Thread, activity: AdminActivityRow[]): AdminThreadRow {
+	const sorted = [...activity].sort(activitySort);
+	const latest = sorted[0];
+	const latestMessage = sorted.find((item) => item.kind === "message");
+	const pendingApprovals = activity.filter((item) => item.kind === "approval" && item.state === "pending").length;
+	const runningRuns = activity.filter((item) => item.kind === "run" && item.state === "running").length;
+	const failed = latest?.state === "failed";
+	const state = pendingApprovals ? "pending_approval" : runningRuns ? "running" : failed ? "failed" : "idle";
+	const summary = latestMessage?.title ?? (latest ? `${kindText(latest.kind)}: ${latest.title}` : "No activity yet");
+	return {
+		id: row.id,
+		provider: row.provider,
+		kind: row.kind,
+		team: row.team ?? undefined,
+		channel: row.channel,
+		actor: row.actor ?? undefined,
+		state,
+		title: row.actor ? `${row.channel} · ${row.actor}` : row.channel,
+		summary,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
+		lastActivityAt: latest?.time ?? row.updatedAt,
+		pendingApprovals,
+		runningRuns,
+		latestEvent: latest ? activityEvent(latest) : undefined,
+	};
+}
+
+export function activityEvent(row: AdminActivityRow): string {
+	return `${row.kind}:${row.id}`;
+}
+
+function activitySort(left: AdminActivityRow, right: AdminActivityRow): number {
+	return right.time - left.time || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
+}
+
+function kindText(kind: AdminActivityRow["kind"]): string {
+	const labels: Record<AdminActivityRow["kind"], string> = {
+		approval: "Approval",
+		call: "Tool call",
+		job: "Job",
+		message: "Message",
+		run: "Run",
+	};
+	return labels[kind];
+}
+
+function preview(input: string | null | undefined): string {
+	const value = input?.trim().replace(/\s+/gu, " ");
+	if (!value) return "";
+	return value.length > 240 ? `${value.slice(0, 237)}...` : value;
+}
+
+function compactDetails(input: Array<AdminActivityDetail | undefined>): AdminActivityDetail[] {
+	return input.filter((row): row is AdminActivityDetail => row !== undefined && Boolean(row.value));
 }
 
 function pageInput(input: AdminPageInput): Pick<AdminPage<never>, "limit" | "offset"> {
@@ -285,14 +666,210 @@ function pageInput(input: AdminPageInput): Pick<AdminPage<never>, "limit" | "off
 	return { limit, offset };
 }
 
-function toPage<T>(rows: T[], page: Pick<AdminPage<T>, "limit" | "offset">): AdminPage<T> {
+function toPage<T>(
+	rows: T[],
+	page: Pick<AdminPage<T>, "limit" | "offset">,
+	filters?: AdminPageFilters,
+	sliceOffset = page.offset,
+	truncated = false,
+): AdminPage<T> {
+	const pageRows = rows.slice(sliceOffset, sliceOffset + page.limit + 1);
 	return {
-		rows: rows.slice(0, page.limit),
+		rows: pageRows.slice(0, page.limit),
 		limit: page.limit,
 		offset: page.offset,
-		hasNext: rows.length > page.limit,
+		hasNext: pageRows.length > page.limit,
+		truncated,
+		filters,
 	};
 }
+
+async function scanRows<T>(
+	list: (input: { limit: number; offset?: number }) => Promise<T[]>,
+): Promise<{ rows: T[]; truncated: boolean }> {
+	const rows = await list({ limit: ADMIN_SCAN_LIMIT, offset: 0 });
+	if (rows.length < ADMIN_SCAN_LIMIT) return { rows, truncated: false };
+	const next = await list({ limit: 1, offset: rows.length });
+	return { rows, truncated: next.length > 0 };
+}
+
+async function listPage<T>(
+	list: (input: { limit: number; offset?: number }) => Promise<T[]>,
+	limit: number,
+	offset = 0,
+): Promise<{ rows: T[]; truncated: boolean }> {
+	return { rows: await list({ limit, offset }), truncated: false };
+}
+
+function filtersFromInput(input: AdminPageInput): AdminPageFilters {
+	return compactFilters({
+		q: cleanFilter(input.q),
+		type: cleanFilter(input.type),
+		state: cleanFilter(input.state),
+		channel: cleanFilter(input.channel),
+		actor: cleanFilter(input.actor),
+		scope: cleanFilter(input.scope),
+	});
+}
+
+function compactFilters(input: AdminPageFilters): AdminPageFilters {
+	const out: AdminPageFilters = {};
+	for (const key of ["q", "type", "state", "channel", "actor", "scope"] as const) {
+		if (input[key]) out[key] = input[key];
+	}
+	return out;
+}
+
+function cleanFilter(input: string | undefined): string | undefined {
+	const value = input?.trim();
+	return value ? value.slice(0, 120) : undefined;
+}
+
+function filterRows<T>(
+	rows: T[],
+	filters: AdminPageFilters,
+	input: {
+		search: (row: T) => Array<string | number | null | undefined>;
+		type?: (row: T) => string | undefined;
+		state?: (row: T) => string | undefined;
+		channel?: (row: T) => string | undefined;
+		actor?: (row: T) => string | undefined;
+		scope?: (row: T) => string | undefined;
+	},
+): T[] {
+	return rows.filter((row) => {
+		if (filters.type && input.type?.(row) !== filters.type) return false;
+		if (filters.state && input.state?.(row) !== filters.state) return false;
+		if (!includesFilter(input.channel?.(row), filters.channel)) return false;
+		if (!includesFilter(input.actor?.(row), filters.actor)) return false;
+		if (!includesFilter(input.scope?.(row), filters.scope)) return false;
+		if (!filters.q) return true;
+		const query = filters.q.toLowerCase();
+		return input.search(row).some((value) =>
+			String(value ?? "")
+				.toLowerCase()
+				.includes(query),
+		);
+	});
+}
+
+function includesFilter(value: string | undefined, filter: string | undefined): boolean {
+	return !filter || (value ?? "").toLowerCase().includes(filter.toLowerCase());
+}
+
+function filtersActive(filters: AdminPageFilters): boolean {
+	return Object.values(filters).some(Boolean);
+}
+
+function rowFacets<T>(
+	rows: T[],
+	input: {
+		channel?: (row: T) => string | undefined;
+		actor?: (row: T) => string | undefined;
+		scope?: (row: T) => string | undefined;
+	},
+): AdminFilterFacets {
+	return {
+		channels: sortedValues(rows.map((row) => input.channel?.(row))),
+		actors: sortedValues(rows.map((row) => input.actor?.(row))),
+		scopes: sortedValues(rows.map((row) => input.scope?.(row))),
+	};
+}
+
+function mergeFacets(...facets: AdminFilterFacets[]): AdminFilterFacets {
+	return {
+		channels: sortedValues(facets.flatMap((facet) => facet.channels)),
+		actors: sortedValues(facets.flatMap((facet) => facet.actors)),
+		scopes: sortedValues(facets.flatMap((facet) => facet.scopes)),
+	};
+}
+
+function sortedValues(input: Array<string | null | undefined>): string[] {
+	return [...new Set(input.filter((value): value is string => Boolean(value)))].sort((left, right) =>
+		left.localeCompare(right),
+	);
+}
+
+const approvalSearchText = {
+	search: (row: Approval): Array<string | number | null | undefined> => [
+		row.id,
+		row.callId,
+		row.command,
+		row.runtime,
+		row.reason,
+		row.channel,
+		row.requestedBy,
+		row.state,
+	],
+	state: (row: Approval) => row.state,
+	channel: (row: Approval) => row.channel,
+	actor: (row: Approval) => row.requestedBy ?? undefined,
+};
+
+const jobSearchText = {
+	search: (row: AdminJob): Array<string | number | null | undefined> => [
+		row.id,
+		row.kind,
+		row.schedule,
+		row.route,
+		row.prompt,
+		row.state,
+		row.nextAt,
+		row.lastAt,
+	],
+	type: (row: AdminJob) => row.kind,
+	state: (row: AdminJob) => row.state,
+};
+
+const threadSearchText = {
+	search: (row: AdminThreadRow): Array<string | number | null | undefined> => [
+		row.id,
+		row.provider,
+		row.kind,
+		row.team,
+		row.channel,
+		row.actor,
+		row.state,
+		row.title,
+		row.summary,
+		row.pendingApprovals,
+		row.runningRuns,
+	],
+	state: (row: AdminThreadRow) => row.state,
+	channel: (row: AdminThreadRow) => row.channel,
+	actor: (row: AdminThreadRow) => row.actor,
+};
+
+const activitySearchText = {
+	search: (row: AdminActivityRow): Array<string | number | null | undefined> => [
+		row.id,
+		row.kind,
+		row.title,
+		row.summary,
+		row.state,
+		row.provider,
+		row.eventType,
+		row.role,
+		row.channel,
+		row.actor,
+		...(row.details?.map((detail) => detail.value) ?? []),
+	],
+	type: (row: AdminActivityRow) => row.kind,
+	state: (row: AdminActivityRow) => row.state,
+	channel: (row: AdminActivityRow) => row.channel,
+	actor: (row: AdminActivityRow) => row.actor,
+};
+
+const memorySearchText = {
+	search: (row: AdminMemory["entries"][number]): Array<string | number | null | undefined> => [
+		row.scopePath,
+		row.path,
+		row.text,
+		row.sha256,
+		row.size,
+	],
+	scope: (row: AdminMemory["entries"][number]) => row.scopePath,
+};
 
 function revisionHash(input: unknown): string {
 	return createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 16);

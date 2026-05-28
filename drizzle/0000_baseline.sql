@@ -1,5 +1,6 @@
 CREATE TABLE `approval` (
 	`id` text PRIMARY KEY NOT NULL,
+	`agent` text NOT NULL,
 	`call_id` text NOT NULL,
 	`channel` text NOT NULL,
 	`thread_id` text,
@@ -18,8 +19,11 @@ CREATE TABLE `approval` (
 );
 --> statement-breakpoint
 CREATE INDEX `approval_call_idx` ON `approval` (`call_id`);--> statement-breakpoint
+CREATE INDEX `approval_agent_channel_idx` ON `approval` (`agent`,`channel`);--> statement-breakpoint
+CREATE INDEX `approval_agent_state_requested_idx` ON `approval` (`agent`,`state`,`requested_at`);--> statement-breakpoint
 CREATE TABLE `call` (
 	`id` text PRIMARY KEY NOT NULL,
+	`agent` text NOT NULL,
 	`turn_id` text,
 	`thread_id` text,
 	`message_id` text,
@@ -43,8 +47,10 @@ CREATE TABLE `call` (
 --> statement-breakpoint
 CREATE INDEX `call_channel_idx` ON `call` (`channel`);--> statement-breakpoint
 CREATE INDEX `call_turn_idx` ON `call` (`turn_id`);--> statement-breakpoint
+CREATE INDEX `call_agent_channel_idx` ON `call` (`agent`,`channel`);--> statement-breakpoint
+CREATE INDEX `call_agent_updated_idx` ON `call` (`agent`,`updated_at`);--> statement-breakpoint
 CREATE TABLE `job` (
-	`id` text PRIMARY KEY NOT NULL,
+	`id` text NOT NULL,
 	`agent` text NOT NULL,
 	`kind` text NOT NULL,
 	`schedule` text NOT NULL,
@@ -56,12 +62,14 @@ CREATE TABLE `job` (
 	`last_at` integer,
 	`idle_ms` integer,
 	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL
+	`updated_at` integer NOT NULL,
+	PRIMARY KEY(`agent`, `id`)
 );
 --> statement-breakpoint
-CREATE INDEX `job_state_next_idx` ON `job` (`state`,`next_at`);--> statement-breakpoint
+CREATE INDEX `job_agent_state_next_idx` ON `job` (`agent`,`state`,`next_at`);--> statement-breakpoint
 CREATE TABLE `job_run` (
 	`id` text PRIMARY KEY NOT NULL,
+	`job_agent` text NOT NULL,
 	`job_id` text NOT NULL,
 	`thread_id` text,
 	`trace` text NOT NULL,
@@ -73,7 +81,7 @@ CREATE TABLE `job_run` (
 	`ended_at` integer
 );
 --> statement-breakpoint
-CREATE INDEX `job_run_job_idx` ON `job_run` (`job_id`);--> statement-breakpoint
+CREATE INDEX `job_run_job_idx` ON `job_run` (`job_agent`,`job_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `job_run_trace_idx` ON `job_run` (`trace`);--> statement-breakpoint
 CREATE TABLE `lock` (
 	`key` text PRIMARY KEY NOT NULL,
@@ -83,6 +91,7 @@ CREATE TABLE `lock` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX `lock_expires_idx` ON `lock` (`expires_at`);--> statement-breakpoint
 CREATE TABLE `message` (
 	`id` text PRIMARY KEY NOT NULL,
 	`thread_id` text NOT NULL,

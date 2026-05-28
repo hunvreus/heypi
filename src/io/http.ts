@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { Logger } from "../core/log.js";
 import type { HttpRegistrar, HttpRoute } from "./handler.js";
 
@@ -7,9 +8,9 @@ export type HttpListen = {
 	port?: number | string;
 };
 
-export type RegisteredHttpRoute = HttpRoute & HttpListen;
+type RegisteredHttpRoute = HttpRoute & HttpListen;
 
-export type RegisteredHttpRouteInfo = {
+type RegisteredHttpRouteInfo = {
 	method: string;
 	path: string;
 	host: string;
@@ -21,6 +22,7 @@ export type HttpServerRegistry = HttpRegistrar & {
 	listen(): Promise<void>;
 	close(): Promise<void>;
 	routes(): RegisteredHttpRouteInfo[];
+	address(): { host: string; port: number | string } | undefined;
 };
 
 type Route = Required<Pick<HttpRoute, "method" | "path">> & {
@@ -39,6 +41,7 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 	const defaults = normalizeListen(input.listen);
 	const routes = new Map<string, Route>();
 	let listen: { host: string; port: number | string } | undefined;
+	let address: { host: string; port: number | string } | undefined;
 	let server: Server | undefined;
 
 	return {
@@ -83,7 +86,12 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 				server?.once("error", reject);
 				server?.listen(port, target.host, () => {
 					server?.off("error", reject);
-					input.logger.info("http.start", { host: target.host, port: target.port, routes: routes.size });
+					const bound = server?.address();
+					address = {
+						host: target.host,
+						port: bound && typeof bound !== "string" ? (bound as AddressInfo).port : target.port,
+					};
+					input.logger.info("http.start", { host: address.host, port: address.port, routes: routes.size });
 					resolve();
 				});
 			});
@@ -95,6 +103,7 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 			});
 			if (server) input.logger.info("http.stop", { routes: routes.size });
 			server = undefined;
+			address = undefined;
 			routes.clear();
 			listen = undefined;
 		},
@@ -106,6 +115,9 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 				port: route.port,
 				reserved: route.reserved,
 			}));
+		},
+		address(): { host: string; port: number | string } | undefined {
+			return address;
 		},
 	};
 }

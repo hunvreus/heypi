@@ -6,6 +6,7 @@ heypi exposes one workspace/files scope and an optional memory scope:
 
 ```ts
 createHeypi({
+	// ...state, adapters, agent, runtime
 	scope: "channel", // default: "channel" | "user" | "adapter" | "agent"
 	memory: {
 		enabled: true,
@@ -34,6 +35,7 @@ Common configurations:
 ```ts
 // Shared files and shared memory per channel.
 createHeypi({
+	// ...state, adapters, agent, runtime
 	scope: "channel",
 	memory: true,
 });
@@ -42,6 +44,7 @@ createHeypi({
 ```ts
 // Shared channel files, but each user gets separate memory.
 createHeypi({
+	// ...state, adapters, agent, runtime
 	scope: "channel",
 	memory: { enabled: true, scope: "user" },
 });
@@ -50,6 +53,7 @@ createHeypi({
 ```ts
 // Each user gets separate files and memory.
 createHeypi({
+	// ...state, adapters, agent, runtime
 	scope: "user",
 	memory: true,
 });

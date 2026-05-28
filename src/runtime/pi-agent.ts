@@ -217,7 +217,7 @@ export class PiAgent implements Agent {
 				actor: req.actor,
 				error,
 			});
-			return { text: userError("model", this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
+			return { text: userError(this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
 		}
 		if (!out.trim()) out = lastAssistantText(session);
 		const messages = session.messages.slice(generatedAt) as StoredMessage[];
@@ -233,7 +233,7 @@ export class PiAgent implements Agent {
 				actor: req.actor,
 				error: "empty model response",
 			});
-			return { text: userError("model", this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
+			return { text: userError(this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
 		}
 		const text = out.trim();
 		const silent = silentReply(text);
@@ -319,7 +319,7 @@ export class PiAgent implements Agent {
 			logger: log,
 		});
 		const activeToolNames: string[] = [];
-		const loader = await resourceLoader(agent, settings, log, contextBlocks, () => activeToolNames);
+		const loader = await resourceLoader(agent, settings, contextBlocks, () => activeToolNames);
 		const activeTools = [...extensionToolNames(loader), ...customTools.map((tool) => tool.name)];
 		activeToolNames.push(...activeTools);
 
@@ -383,7 +383,8 @@ function memoryTools(
 			label: "Memory Write",
 			description: "Append one concise persistent memory item for this chat workspace.",
 			parameters: Type.Object({ content: Type.String({ minLength: 1 }) }),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				assertCanWrite();
 				const item = await memory.append(scope, stringParam(params, "content"));
 				return toolText(`saved memory: ${item}`, "memory_write");
@@ -394,7 +395,8 @@ function memoryTools(
 			label: "Memory Replace",
 			description: "Replace exact text in persistent memory for this chat workspace.",
 			parameters: Type.Object({ oldText: Type.String({ minLength: 1 }), newText: Type.String({ minLength: 1 }) }),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				assertCanWrite();
 				await memory.replace(scope, stringParam(params, "oldText"), stringParam(params, "newText"));
 				return toolText("memory updated", "memory_replace");
@@ -405,7 +407,8 @@ function memoryTools(
 			label: "Memory Delete",
 			description: "Delete exact text from persistent memory for this chat workspace.",
 			parameters: Type.Object({ text: Type.String({ minLength: 1 }) }),
-			execute: async (_id, params) => {
+			execute: async (id, params) => {
+				void id;
 				assertCanWrite();
 				await memory.delete(scope, stringParam(params, "text"));
 				return toolText("memory deleted", "memory_delete");
@@ -470,7 +473,6 @@ function plainObject(value: unknown): value is Record<string, unknown> {
 async function resourceLoader(
 	agent: AgentConfig,
 	settings: SettingsManager,
-	_log: Logger,
 	contextBlocks: string[] = [],
 	activeTools: () => string[] = () => [],
 ): Promise<ResourceLoader> {

@@ -23,7 +23,7 @@ export type ChatMessageRun = {
 	stream?: ReplyStream;
 	progress?: Progress;
 	loadAttachments?: (scope: ScopedKey | undefined) => Promise<Attachment[] | undefined>;
-	inbound(attachments: Attachment[] | undefined): Inbound;
+	inbound(): Inbound;
 	sendPrivate?: (out: Outbound) => Promise<void>;
 	placement: PlacementHandlers;
 	sendError(error: unknown): Promise<void>;
@@ -33,7 +33,7 @@ export type ChatMessageRun = {
 /** Runs a normalized chat message through the shared handler and platform-provided send callbacks. */
 export async function runChatMessage(input: ChatMessageRun): Promise<void> {
 	try {
-		const inbound = input.inbound(undefined);
+		const inbound = input.inbound();
 		const scope = input.handler.attachmentScope?.(inbound);
 		const attachments = await input.loadAttachments?.(scope);
 		const out = await input.handler({ ...inbound, attachments, stream: input.stream });

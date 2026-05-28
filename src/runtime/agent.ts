@@ -4,7 +4,7 @@ import type { Reply, ToolContinuation } from "../core/types.js";
 import type { Attachment } from "../io/attachments.js";
 import type { ReplyStream } from "../io/reply-stream.js";
 
-export type AgentLiveSession = {
+type AgentLiveSession = {
 	steer(text: string, attachments?: Attachment[]): Promise<void>;
 	followUp(text: string, attachments?: Attachment[]): Promise<void>;
 };

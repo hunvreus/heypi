@@ -48,7 +48,7 @@ export function coreTools(config: CoreToolsConfig = {}): CoreToolDefinition[] {
 	return out;
 }
 
-export function isCoreTool(input: unknown): input is CoreToolDefinition {
+function isCoreTool(input: unknown): input is CoreToolDefinition {
 	return Boolean(input && typeof input === "object" && (input as { [CORE_TOOL]?: unknown })[CORE_TOOL]);
 }
 

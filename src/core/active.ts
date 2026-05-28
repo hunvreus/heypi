@@ -163,6 +163,5 @@ export function cancelReply(result: CancelResult, messages: AppMessages): { text
 
 export function isAbortError(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
-	const text = `${error.name}\n${error.message}`.toLowerCase();
-	return text.includes("abort") || text.includes("cancel");
+	return error.name === "AbortError";
 }

@@ -22,6 +22,7 @@ export {
 	type RuntimeConfig,
 	type RuntimeLimits,
 	type Scope,
+	type StateConfig,
 } from "./config.js";
 export { consoleLogger, type Format, type Level, type Logger } from "./core/log.js";
 export type { AppMessages, AppMessagesConfig } from "./core/messages.js";

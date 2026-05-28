@@ -80,6 +80,6 @@ function scoped(level: Scope, segments: string[]): ScopedKey {
 }
 
 function segment(value: string): string {
-	// Use ~ as a path-safe stand-in for percent escapes while preserving reversibility.
+	// Use ~ as a readable, path-safe stand-in for percent escapes.
 	return encodeURIComponent(value).replaceAll("%", "~");
 }

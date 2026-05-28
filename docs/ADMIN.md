@@ -5,6 +5,7 @@ The admin panel serves a small web UI under `/admin/*`. It is disabled by defaul
 ```ts
 createHeypi({
 	// ...
+	state: { root: "./state" },
 	admin: true,
 });
 ```
@@ -17,28 +18,28 @@ For local UI testing only, auth can be disabled:
 
 ```ts
 createHeypi({
-	// ...
+	// ...state, adapters, agent, runtime
 	admin: { auth: false },
 });
 ```
 
 That mode is only accepted on loopback hosts and should not be used for production.
 
-The Slack DevOps example uses `admin: true`, so `pnpm run dev:slack` prints a one-time admin login link at startup.
+The Slack DevOps example uses `admin: { auth: false }` for local loopback development, so `pnpm run dev:slack` opens the admin panel without a login link. Do not expose that example server on a public interface with auth disabled.
 
-heypi also writes a local control file at `.heypi/admin-control.json`. If the startup link expires while the process is still running, mint a fresh one:
+heypi also writes admin state under `<state.root>/admin/`. If the startup link expires while the process is still running, mint a fresh one:
 
 ```sh
 heypi admin link
 ```
 
-The command reads the control file, calls the running admin server, and prints a fresh single-use URL. Use `--control <path>` when the app configured a custom `admin.controlPath`, or `--url <url>` when the admin server is not at the URL recorded in the control file.
+The command reads `server.<pid>.json` plus `HEYPI_ADMIN_SECRET` or the generated local admin secret, verifies that the descriptor still points at the same admin instance, signs a short-lived URL, and prints it. Use `--state <path>` when running outside the app folder, or `--url <url>` when you need to override the descriptor URL, for example through a tunnel or proxy. `--url` is still probed against the descriptor instance id and still needs access to the same state root because the login token is scoped to it.
 
-For non-loopback binding, put admin behind HTTPS and an access-controlled proxy. A manual secret is optional; without one, login is only through one-time links minted from the local control file.
+For non-loopback binding, put admin behind HTTPS and an access-controlled proxy. `secureCookies: true` is required outside loopback. A manual secret is optional; without one, login is only through one-time links minted from local admin state.
 
 ```ts
 createHeypi({
-	// ...
+	// ...state, adapters, agent, runtime
 	http: { host: "0.0.0.0", port: 3000 },
 	admin: {
 		secret: process.env.HEYPI_ADMIN_SECRET!,
@@ -78,8 +79,10 @@ pnpm run build:admin-css
 - `/admin` is a reserved route prefix. Non-admin adapters cannot register routes under it.
 - `admin: { auth: false }` removes login/session checks and is restricted to loopback hosts.
 - Sessions are opaque random tokens stored only as hashes in process memory.
-- One-time login links are opaque tokens stored only as hashes in process memory. They are single-use and expire.
-- `.heypi/admin-control.json` contains a generated local bearer token used by `heypi admin link`. Keep it out of source control.
+- One-time login links are HMAC-signed with the local admin secret, scoped to the canonical state root, expire quickly, and are single-use within the running process. A restart clears the in-memory used-link cache, but unexpired links still expire by timestamp.
+- `state.root` is the admin auth boundary. Use a separate state root per agent when login access should be separated. Admin activity, approvals, and calls are filtered by agent when a database is shared.
+- `<state.root>/admin/secret` contains generated local admin signing material. The admin state directory is kept private and `state/` should not be committed.
+- `<state.root>/admin/server.<pid>.json` contains non-secret admin listener discovery data, including an instance id used by the CLI to reject stale descriptors. It is written only after the HTTP listener has a real port.
 - Unsafe actions require a CSRF token and same-origin check.
 - Memory is shown as untrusted text, not rendered Markdown.
 - Admin CSS and JavaScript are served locally from `/admin/assets/*`. Admin does not load UI assets from a CDN.

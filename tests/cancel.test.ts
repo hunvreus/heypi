@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ActiveRuns } from "../src/core/active.js";
+import { ActiveRuns, isAbortError } from "../src/core/active.js";
 import { parseIntent } from "../src/core/intent.js";
 import { Queue } from "../src/runtime/queue.js";
 
@@ -34,6 +34,12 @@ test("ActiveRuns drains active runs and aborts survivors", async () => {
 	run.stop();
 	assert.equal(await active.drain(1), true);
 	assert.equal(active.count(), 0);
+});
+
+test("isAbortError only matches explicit abort errors", () => {
+	assert.equal(isAbortError(new DOMException("This operation was aborted", "AbortError")), true);
+	assert.equal(isAbortError(new Error("Failed to cancel previous turn")), false);
+	assert.equal(isAbortError(new Error("provider cancellation policy rejected request")), false);
 });
 
 test("Queue rejects pending jobs immediately when cancelled", async () => {

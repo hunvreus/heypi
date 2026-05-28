@@ -6,6 +6,7 @@ For a tiny runnable app with curl examples, see [`../examples/webhook-notes`](..
 
 ```ts
 createHeypi({
+	state: { root: "./state" },
 	http: { host: "127.0.0.1", port: 3000 },
 	adapters: [
 		webhook({
