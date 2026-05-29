@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="packages/heypi/docs/assets/heypi-white.png">
+    <source media="(prefers-color-scheme: light)" srcset="packages/heypi/docs/assets/heypi-black.png">
+    <img alt="heypi" src="packages/heypi/docs/assets/heypi-black.png" width="320">
+  </picture>
+</p>
+
 # heypi
 
 Chat agents for your team, with approvals and sandboxed tools. Slack, Discord, Telegram, webhooks.
