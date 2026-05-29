@@ -211,7 +211,7 @@ test("cli admin link requires an explicit state root when no admin state is disc
 	try {
 		const result = spawnSync(process.execPath, [CLI, "admin", "link", "--url", "http://127.0.0.1:3000"], {
 			cwd: root,
-			env: { ...process.env, HEYPI_ADMIN_SECRET: "admin-signing-secret-with-enough-length-123" },
+			env: { ...process.env, HEYPI_ADMIN_SECRET: "admin-signing-secret-with-enough-length-123", INIT_CWD: root },
 			encoding: "utf8",
 		});
 		assert.notEqual(result.status, 0);
