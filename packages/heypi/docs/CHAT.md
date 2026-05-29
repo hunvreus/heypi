@@ -1,4 +1,4 @@
-# Chat Behavior
+# Chat
 
 Slack, Telegram, and Discord share the same chat behavior after a provider event is accepted.
 

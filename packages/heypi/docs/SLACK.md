@@ -1,4 +1,4 @@
-# Slack Setup
+# Slack
 
 heypi supports Slack Socket Mode and Node HTTP mode.
 

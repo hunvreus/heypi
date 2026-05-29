@@ -1,4 +1,4 @@
-# Discord Setup
+# Discord
 
 heypi supports Discord through the gateway using `discord.js`.
 

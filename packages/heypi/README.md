@@ -188,14 +188,14 @@ import { discord, slack, telegram, webhook } from "@hunvreus/heypi";
 
 Slack, Telegram, and Discord share access defaults, streaming, approvals, cancel, and busy-thread behavior. See [`docs/CHAT.md`](docs/CHAT.md).
 
-Setup docs:
+Guides:
 
-- [`docs/CHAT.md`](docs/CHAT.md)
-- [`docs/SLACK.md`](docs/SLACK.md)
-- [`docs/TELEGRAM.md`](docs/TELEGRAM.md)
-- [`docs/DISCORD.md`](docs/DISCORD.md)
-- [`docs/WEBHOOK.md`](docs/WEBHOOK.md)
-- [`docs/ADMIN.md`](docs/ADMIN.md)
+- [`docs/CHAT.md`](docs/CHAT.md): chat behavior
+- [`docs/SLACK.md`](docs/SLACK.md): Slack
+- [`docs/TELEGRAM.md`](docs/TELEGRAM.md): Telegram
+- [`docs/DISCORD.md`](docs/DISCORD.md): Discord
+- [`docs/WEBHOOK.md`](docs/WEBHOOK.md): webhooks
+- [`docs/ADMIN.md`](docs/ADMIN.md): admin UI
 
 Example adapter configs:
 

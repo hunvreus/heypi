@@ -1,6 +1,6 @@
 {
 	"name": "@hunvreus/heypi",
-	"version": "0.1.0-alpha.0",
+	"version": "0.1.0",
 	"description": "Chat agents for your team, with approvals and sandboxed tools.",
 	"license": "MIT",
 	"type": "module",

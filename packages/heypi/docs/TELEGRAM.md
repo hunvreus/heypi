@@ -1,4 +1,4 @@
-# Telegram Setup
+# Telegram
 
 heypi uses Telegram long polling.
 

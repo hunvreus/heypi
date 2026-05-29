@@ -18,7 +18,7 @@ Start here: [`@hunvreus/heypi` quickstart](packages/heypi/README.md).
 
 | Package | Stability | Description |
 | --- | --- | --- |
-| [`@hunvreus/heypi`](packages/heypi/README.md) | Alpha | Core chat-agent runtime, adapters, admin UI, tools, scheduler, and CLI. |
+| [`@hunvreus/heypi`](packages/heypi/README.md) | Early | Core chat-agent runtime, adapters, admin UI, tools, scheduler, and CLI. |
 | [`@hunvreus/heypi-runtime-docker`](packages/heypi-runtime-docker/README.md) | Experimental | Docker runtime provider with one warm container per heypi runtime scope. |
 | [`@hunvreus/heypi-runtime-gondolin`](packages/heypi-runtime-gondolin/README.md) | Experimental | Gondolin runtime provider with one warm VM per heypi runtime scope. |
 

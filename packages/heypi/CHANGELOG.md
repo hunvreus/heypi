@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.0-alpha.0
+## 0.1.0
 
-- Initial public alpha.
+- Initial public release.
 - Adds code-first chat agent apps for Slack, Discord, Telegram, and webhooks.
 - Adds persisted chat threads, approvals, scheduled jobs, memory, scoped runtime workspaces, attachment handling, admin UI, and SQLite migrations.
 - Adds runtime-backed core tools for shell, file, search, and chat history.
