@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .DS_Store
+mise.toml
 .local/
 .heypi/
 *.db
