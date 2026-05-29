@@ -418,7 +418,7 @@ See [`docs/CLI.md`](docs/CLI.md).
 
 ## Examples
 
-- [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops): Slack DevOps assistant with Docker-backed runtime tools, runbook search, approvals, SSH host tools, and host inventory.
+- [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops): Slack DevOps assistant with runtime tools, runbook search, approvals, SSH host tools, and host inventory.
 - [`examples/discord-project`](https://github.com/hunvreus/heypi/tree/main/examples/discord-project): Discord project assistant with streaming, approvals, and simple project-state tools.
 - [`examples/telegram-workout`](https://github.com/hunvreus/heypi/tree/main/examples/telegram-workout): Telegram fitness coach with onboarding, saved profile/plan, daily heartbeat check-ins, and a local workout log.
 - [`examples/webhook-notes`](https://github.com/hunvreus/heypi/tree/main/examples/webhook-notes): tiny webhook note-taking agent with curl examples.

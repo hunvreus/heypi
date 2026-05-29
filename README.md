@@ -24,7 +24,7 @@ Start here: [`@hunvreus/heypi` quickstart](packages/heypi/README.md).
 
 ## Examples
 
-- [`examples/slack-devops`](examples/slack-devops): Slack DevOps assistant with Docker-backed runtime tools, runbook search, approvals, SSH host tools, and host inventory.
+- [`examples/slack-devops`](examples/slack-devops): Slack DevOps assistant with runtime tools, runbook search, approvals, SSH host tools, and host inventory.
 - [`examples/discord-project`](examples/discord-project): Discord project assistant with streaming, approvals, and simple project-state tools.
 - [`examples/telegram-workout`](examples/telegram-workout): Telegram fitness coach with saved profile/plan and daily heartbeat check-ins.
 - [`examples/webhook-notes`](examples/webhook-notes): tiny webhook note-taking agent with curl examples.

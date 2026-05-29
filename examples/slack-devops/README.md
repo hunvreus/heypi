@@ -1,6 +1,6 @@
 # Slack DevOps
 
-Slack DevOps assistant for configured Linux/VPS hosts. It demonstrates scoped Slack behavior, runbook search, Docker-backed runtime tools, approval-gated remote host tools, SSH public-key onboarding, and file-backed host inventory.
+Slack DevOps assistant for configured Linux/VPS hosts. It demonstrates scoped Slack behavior, runbook search, runtime tools, approval-gated remote host tools, SSH public-key onboarding, and file-backed host inventory.
 
 This example uses Slack Socket Mode so it can run locally without a public HTTPS URL.
 
@@ -13,7 +13,7 @@ The agent loads:
 - Markdown runbooks from `runbooks/`, searched through the `runbook_search` custom tool.
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
 - Custom host tools from `tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
-- Core runtime tools through `coreTools({ bash: true })`. Local workspace commands run in a scoped Docker container without command confirmation in this example; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
+- Core runtime tools through `coreTools({ bash: true })`. Local workspace commands run in the default heypi runtime without command confirmation in this example; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
 
 Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
@@ -21,8 +21,6 @@ Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tool
 
 ```bash
 cp examples/slack-devops/.env.example examples/slack-devops/.env
-docker version
-docker pull buildpack-deps:bookworm-curl
 pnpm run dev:slack
 ```
 
@@ -34,7 +32,7 @@ This example enables the local admin panel by default:
 http://127.0.0.1:3000/admin
 ```
 
-Admin auth is disabled in this local loopback example, so no login link is required. Do not expose this example admin server on a public interface with auth disabled.
+On loopback, heypi logs a one-time admin login link at startup. If the link expires while the app is still running, run `pnpm heypi admin link --state examples/slack-devops/state` from the repo root.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
 
@@ -124,11 +122,11 @@ Host tools:
 - `host_facts_refresh`: probes and persists hostname, OS, architecture, kernel, distro, package manager, service manager, container runtime/version, root disk, memory, ports 80/443, git user, and passwordless sudo availability.
 - `host_exec`: runs commands over SSH from the heypi Node process. Each call includes a human purpose. Risky commands require approval through `commandConfirm()` and show target/command approval details; blocked commands do not run.
 
-This example uses the experimental `@hunvreus/heypi-runtime-docker` provider for the local workspace runtime. The runtime keeps one warm Docker container per heypi runtime scope, bind-mounts the scoped workspace at `/workspace`, and runs core bash/file/search tools inside that container. It uses `buildpack-deps:bookworm-curl` so common shell utilities and `curl` are available, with Docker network mode set to `bridge`. The example disables the provider idle TTL so the test container stays warm until the app stops; use a finite `idleMs` in production.
+This example uses heypi's default runtime for the local workspace. Core bash/file/search tools operate in the scoped workspace under `./workspace`.
 
-Remote SSH commands do not run inside the Docker runtime; they run from the heypi Node process through `host_exec`.
+Remote SSH commands run from the heypi Node process through `host_exec`.
 
-This example is intentionally more involved than the Telegram example: it shows custom tools, tool confirmation, file-backed state, SSH key generation, and a separate remote execution surface next to the Docker-backed local runtime.
+This example is intentionally more involved than the Telegram example: it shows custom tools, tool confirmation, file-backed state, SSH key generation, and a separate remote execution surface next to the local runtime.
 
 ## Slack HTTP Mode
 

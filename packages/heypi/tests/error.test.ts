@@ -49,18 +49,32 @@ test("pretty logger marks warnings and errors", () => {
 	const lines: string[] = [];
 	const warn = console.warn;
 	const error = console.error;
+	const forceColor = process.env.FORCE_COLOR;
+	const noColor = process.env.NO_COLOR;
 	console.warn = (message?: unknown) => {
 		lines.push(String(message));
 	};
 	console.error = (message?: unknown) => {
 		lines.push(String(message));
 	};
+	delete process.env.FORCE_COLOR;
+	process.env.NO_COLOR = "1";
 	try {
 		consoleLogger({ level: "debug", format: "pretty" }).warn("jobs.disabled", { missing: "target" });
 		consoleLogger({ level: "debug", format: "pretty" }).error("admin.failed", { reason: "bad" });
 	} finally {
 		console.warn = warn;
 		console.error = error;
+		if (forceColor === undefined) {
+			delete process.env.FORCE_COLOR;
+		} else {
+			process.env.FORCE_COLOR = forceColor;
+		}
+		if (noColor === undefined) {
+			delete process.env.NO_COLOR;
+		} else {
+			process.env.NO_COLOR = noColor;
+		}
 	}
 	assert.deepEqual(lines, ["[heypi] WARN jobs.disabled missing=target", "[heypi] ERROR admin.failed reason=bad"]);
 });

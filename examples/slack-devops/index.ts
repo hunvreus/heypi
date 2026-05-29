@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
-import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
@@ -67,7 +66,7 @@ if (!jobChannel) {
 const app = createHeypi({
 	state: { root: stateRoot },
 	logger: log,
-	admin: { auth: false },
+	admin: true,
 	adapters: [
 		slack({
 			botToken: required("SLACK_BOT_TOKEN"),
@@ -130,8 +129,6 @@ const app = createHeypi({
 	runtime: {
 		root: workspace("./workspace"),
 		scope: "channel",
-		// Local test loop: keep the Docker runtime warm until the app stops.
-		provider: dockerRuntime({ image: "buildpack-deps:bookworm-curl", network: "bridge", idleMs: false }),
 	},
 });
 
