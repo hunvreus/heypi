@@ -1,5 +1,7 @@
 # @hunvreus/heypi-runtime-docker
 
+**Experimental:** this provider is intended for local testing and early adopters. Its API and operational behavior may change before heypi 1.0.
+
 Docker runtime provider for heypi. It runs heypi's runtime API through a scoped Docker container: `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`.
 
 ## Requirements
@@ -54,6 +56,10 @@ await runHeypi(app);
 - File/search tools run shell scripts inside the container. They do not read or write through host filesystem shortcuts.
 - Containers stop after `idleMs` with no use. Set `idleMs: false` to keep them until app shutdown.
 - `network` defaults to `"none"`. Set `network: "bridge"` or another Docker network only when the agent needs network access.
+- The provider checks that the scoped container is still running before reuse and recreates it if Docker reports it stopped.
+- Containers are labeled with `heypi.runtime=docker`, `heypi.prefix`, and scope metadata for local inspection and cleanup.
+- Runtime lifecycle events are logged through the heypi app logger when the provider is used inside `createHeypi()`.
+- Cold starts emit a runtime progress event. heypi renders it with the global `messages.runtimeStarting` copy, which defaults to `Preparing runtime...` and can be set to `false`.
 
 ## Options
 
@@ -64,6 +70,7 @@ dockerRuntime({
 	idleMs: 10 * 60 * 1000,
 	timeoutMs: 120_000,
 	env: { NODE_ENV: "production" },
+	labels: { "com.example.app": "ops-agent" },
 	user: "1000:1000",
 	extraRunArgs: ["--cpus", "1"],
 	limits: {
@@ -72,6 +79,17 @@ dockerRuntime({
 		maxEntries: 10_000,
 	},
 });
+```
+
+The returned provider also exposes management hooks:
+
+```ts
+const provider = dockerRuntime({ image: "debian:bookworm-slim" });
+const [status] = (await provider.status?.()) ?? [];
+
+if (status) await provider.restart?.(status.scope);
+if (status) await provider.stop?.(status.scope);
+await provider.cleanup?.();
 ```
 
 Docker itself is trusted host infrastructure. Anyone who can control the Docker daemon can control the host.

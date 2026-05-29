@@ -1,7 +1,8 @@
+import { isRuntimeStartupErrorText, RUNTIME_STARTUP_ERROR_KIND } from "../runtime/errors.js";
 import { codeFence } from "./approval-view.js";
 import { redact } from "./log.js";
-import type { AppMessages } from "./messages.js";
-import type { ApprovalDetail, Reply } from "./types.js";
+import { type AppMessages, DEFAULT_APP_MESSAGES } from "./messages.js";
+import type { ApprovalDetail, CallErrorKind, Reply } from "./types.js";
 
 export type ApprovalSummary = {
 	id: string;
@@ -102,6 +103,7 @@ export function renderCall(input: {
 	code?: number;
 	out?: string;
 	err?: string;
+	errKind?: CallErrorKind | null;
 	ms?: number;
 	approvalId?: string;
 	reason?: string;
@@ -111,6 +113,7 @@ export function renderCall(input: {
 	requestedBy?: string;
 	details?: ApprovalDetail[];
 	messages?: AppMessages;
+	runtimeFailed?: boolean;
 }): Reply {
 	if (input.state === "pending_approval") {
 		const command = input.command ? redact(input.command) : undefined;
@@ -157,13 +160,19 @@ export function renderCall(input: {
 					: ["Action blocked", input.reason ?? "Policy blocked this action."].join("\n"),
 		};
 	}
+	const startupFailed =
+		input.runtimeFailed ||
+		input.errKind === RUNTIME_STARTUP_ERROR_KIND ||
+		(input.errKind === undefined && isRuntimeStartupErrorText(input.err));
+	const err =
+		input.err && startupFailed ? (input.messages?.runtimeFailed ?? DEFAULT_APP_MESSAGES.runtimeFailed) : input.err;
 	return {
 		text: [
 			`Result: \`${input.state}\`${typeof input.code === "number" ? ` exit=${input.code}` : ""}${
 				typeof input.ms === "number" ? ` ${input.ms}ms` : ""
 			}`,
 			input.out ? ["", "Output:", codeBlock(input.out)].join("\n") : undefined,
-			input.err ? ["", "Error:", codeBlock(input.err)].join("\n") : undefined,
+			err ? ["", "Error:", codeBlock(err)].join("\n") : undefined,
 		]
 			.filter((line): line is string => typeof line === "string")
 			.join("\n"),

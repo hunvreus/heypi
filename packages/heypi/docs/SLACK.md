@@ -4,7 +4,7 @@ heypi supports Slack Socket Mode and Node HTTP mode.
 
 For a runnable Slack app, see [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops).
 
-That example enables the local admin panel by default and prints a one-time login link at startup.
+That example enables the local admin panel with auth disabled for loopback-only local testing, so no startup login link is printed.
 
 ## Create App
 
@@ -86,7 +86,7 @@ For private channels, invite the bot to the channel, add the Slack `groups:read`
 pnpm exec heypi slack channels --env examples/slack-devops/.env --private
 ```
 
-When running the Slack example locally, open the one-time admin login link printed at startup. If it expires while the example is still running, mint a fresh link with `pnpm heypi admin link --state examples/slack-devops/state`.
+When running the Slack example locally, open `http://127.0.0.1:3000/admin`. Auth is disabled in that local loopback example. For apps with `admin: true`, heypi logs a one-time admin login link at startup; if it expires while the app is still running, mint a fresh link with `pnpm heypi admin link --state <state-root>`.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the Slack example configures two app-level jobs:
 

@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { textContent } from "./core/content.js";
 import type { Confirm, ToolExecutionContext } from "./core/types.js";
+import type { Runtime } from "./runtime/types.js";
 import { type ConfirmableToolDefinition, TOOL_EXECUTE, TOOL_PI_EXECUTE } from "./tool-internal.js";
 
 export type ToolParams = Record<string, unknown>;
@@ -37,14 +38,31 @@ export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDef
 		confirm: input.confirm,
 		[TOOL_EXECUTE]: execute,
 		[TOOL_PI_EXECUTE]: executePi,
-		async execute(_toolCallId, params, signal) {
+		async execute(toolCallId, params, signal) {
+			void toolCallId;
 			return executePi(params as Record<string, unknown>, {
-				runtime: { name: "unbound", root: "" },
+				runtime: unboundRuntime,
 				signal,
 			});
 		},
 	};
 	return out;
+}
+
+const unboundRuntime: Runtime = {
+	name: "unbound",
+	root: "",
+	bash: unbound,
+	read: unbound,
+	write: unbound,
+	edit: unbound,
+	grep: unbound,
+	find: unbound,
+	ls: unbound,
+};
+
+function unbound(): never {
+	throw new Error("runtime not bound; register this tool through heypi before using ctx.runtime");
 }
 
 function piResult(name: string, result: ToolResult): Awaited<ReturnType<ToolDefinition["execute"]>> {

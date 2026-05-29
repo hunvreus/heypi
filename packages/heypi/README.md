@@ -1,11 +1,3 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/heypi-white.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/heypi-black.png">
-    <img alt="heypi" src="docs/assets/heypi-black.png" width="320">
-  </picture>
-</p>
-
 # heypi
 
 Chat agents for your team, with approvals and sandboxed tools. Slack, Discord, Telegram, webhooks.
@@ -171,6 +163,8 @@ const inspect = tool({
 });
 ```
 
+`ctx.runtime` is the raw selected runtime for that turn. Calls made through it are covered by the custom tool's own `confirm` decision, but they do not create separate nested approval records.
+
 Slack, Telegram, and Discord also render provider-native approval buttons. Approvals are in-place; long approved calls continue as normal progress/results.
 
 Chat commands and permission defaults are covered in [`docs/CHAT.md`](docs/CHAT.md).
@@ -219,6 +213,8 @@ createHeypi({
 
 Slack is the representative chat-adapter example here. Telegram and Discord use the same `allow` and `streaming` shape; their setup docs cover provider-specific IDs, tokens, and trigger options.
 
+Custom adapter packages can implement the `Adapter` interface from `@hunvreus/heypi/adapter` and pass the result to `createHeypi({ adapters })`. The built-in adapters are concrete provider integrations, not subclassable bases.
+
 ## Streaming And Busy Threads
 
 Configure streaming on each adapter and override busy-thread behavior at the app level when the default `steer` behavior is not right. See [`docs/CHAT.md`](docs/CHAT.md) for behavior and the full system-message list:
@@ -236,6 +232,8 @@ createHeypi({
 		busyReject: "I'm still working on the previous message. Send this again after I reply, or use `cancel`.",
 		pendingApprovalReject: "I'm waiting for the pending approval first.",
 		approvalUnavailable: "That approval is no longer available.",
+		runtimeStarting: "Preparing runtime...",
+		runtimeFailed: "Runtime failed. Ask an admin to check the server logs.",
 	},
 });
 ```
@@ -309,9 +307,15 @@ runtime: {
 }
 ```
 
-`just-bash` disables network by default. Set `runtime.name` only when choosing another built-in runtime. `guarded-bash` and `host-bash` run on the host and should be used only for trusted deployments.
+Set `runtime.name` only when choosing another built-in runtime. `guarded-bash` and `host-bash` run on the host and should be used only for trusted deployments.
 
-External runtime providers live in separate packages:
+Network defaults are runtime-specific:
+
+- `just-bash`: network is disabled by default; enable `runtime.justBash.network` only for the URLs the agent needs.
+- `@hunvreus/heypi-runtime-docker`: Docker network defaults to `none`; set `network: "bridge"` or another Docker network explicitly.
+- `@hunvreus/heypi-runtime-gondolin`: VM egress is open by default; use Gondolin secret host restrictions for sensitive outbound credentials.
+
+Experimental runtime provider packages live outside the core package:
 
 ```bash
 npm install @hunvreus/heypi-runtime-docker
@@ -329,12 +333,12 @@ runtime: {
 }
 ```
 
-Provider packages can keep one warm container or VM per runtime scope. Docker and Gondolin runtime tools execute through the selected sandbox, including file/search tools.
+Provider packages can keep one warm container or VM per runtime scope. Docker and Gondolin implement the same runtime API as built-in runtimes, so core `bash`, file, and search tools execute through the selected sandbox. These provider packages are usable for local testing and early adopters, but their APIs and operational behavior may change before heypi 1.0.
 
 Provider-specific install steps and system prerequisites live with each package:
 
-- [`@hunvreus/heypi-runtime-docker`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-docker): Docker CLI and a running Docker daemon.
-- [`@hunvreus/heypi-runtime-gondolin`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-gondolin): Node.js 23.6+ and QEMU for Gondolin's VM backend.
+- [`@hunvreus/heypi-runtime-docker`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-docker): experimental preview; requires Docker CLI and a running Docker daemon.
+- [`@hunvreus/heypi-runtime-gondolin`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-gondolin): experimental preview; requires Node.js 23.6+ and QEMU for Gondolin's VM backend.
 
 Tool workspaces inherit the top-level `scope` by default; `runtime.scope` can override that sharing policy independently from memory. Inbound attachments use a separate scoped attachment tree, and outbound generated files resolve from the active scoped workspace, so files from one channel are not resolved from another channel under the default scope. Text-like files are inlined into the prompt, images are passed to Pi as image inputs, and unsupported binaries are kept as references. Optional PDF/Office conversion is available with:
 
@@ -406,7 +410,7 @@ See [`docs/CLI.md`](docs/CLI.md).
 
 ## Examples
 
-- [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops): Slack DevOps assistant with runbook search, approvals, SSH host tools, and host inventory.
+- [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops): Slack DevOps assistant with Docker-backed runtime tools, runbook search, approvals, SSH host tools, and host inventory.
 - [`examples/discord-project`](https://github.com/hunvreus/heypi/tree/main/examples/discord-project): Discord project assistant with streaming, approvals, and simple project-state tools.
 - [`examples/telegram-workout`](https://github.com/hunvreus/heypi/tree/main/examples/telegram-workout): Telegram fitness coach with onboarding, saved profile/plan, daily heartbeat check-ins, and a local workout log.
 - [`examples/webhook-notes`](https://github.com/hunvreus/heypi/tree/main/examples/webhook-notes): tiny webhook note-taking agent with curl examples.

@@ -44,6 +44,7 @@ const inspectWorkspace = tool({
 ```
 
 The runtime context is scoped to the current turn. Custom tool JavaScript itself is not sandboxed; the app developer owns that code.
+`ctx.runtime` is the raw selected runtime for that turn. Runtime calls made inside a custom tool are covered by the tool's own `confirm` result, but heypi does not create separate nested approval records for those internal calls.
 
 Raw Pi `ToolDefinition` objects are supported for tools that do not require confirmation. If a raw Pi tool includes `confirm`, heypi fails closed because it cannot safely replay the tool after approval.
 
@@ -154,6 +155,8 @@ runtime: {
 }
 ```
 
+Other runtime providers keep their own defaults. Docker defaults to no network unless configured with a Docker network such as `bridge`; Gondolin VM egress is open by default.
+
 Customize bash command confirmation through `coreTools()`:
 
 ```ts
@@ -240,12 +243,13 @@ import type { RuntimeProvider } from "@hunvreus/heypi/runtime";
 import type { Store } from "@hunvreus/heypi/store";
 ```
 
-- Custom adapters implement the `Adapter` interface.
+- Custom adapters implement the `Adapter` interface. A custom adapter can live in a separate package and be used like any built-in adapter: `createHeypi({ adapters: [teams({...})] })`. The built-in adapters are concrete provider integrations, not subclassable bases.
 - Custom stores implement the `Store` interface. Production shared stores must provide durable `locks`; scheduler-capable stores also need `jobs` and `jobRuns`. Implement `transaction()` when multiple repository updates must commit atomically.
 - Custom attachment stores implement `AttachmentStore` and are configured with `attachments: { store }`. Stores receive the current scope on save/resolve and should reject cross-scope refs.
 - Attachment processing is configured with `attachments.process`; document conversion is optional and should run through a local converter with byte, time, and output limits. The bundled document converter requires Python 3 and either `uv` or MarkItDown installed in the Python environment.
-- Custom runtime packages implement `RuntimeProvider` and are configured with `runtime.provider`. Managed providers can keep scoped runtimes warm and clean them up from `close()`.
-- Official runtime provider packages are `@hunvreus/heypi-runtime-docker` and `@hunvreus/heypi-runtime-gondolin`. They run bash and file/search tools through the selected scoped sandbox; each package README documents its system dependencies and quickstart.
+- Custom runtime packages implement `RuntimeProvider` and are configured with `runtime.provider`. Providers can add package-specific options and methods for previews, port forwarding, image setup, or remote workspace management without changing heypi core. Add methods to the core `Runtime` interface only when heypi itself must use the capability generically across providers.
+- Managed providers can keep scoped runtimes warm and clean them up from `close()`. Management hooks such as `status`, `stop`, and `restart` take the same `RuntimeScope` object returned by `RuntimeStatus.scope`.
+- Official experimental runtime provider packages are `@hunvreus/heypi-runtime-docker` and `@hunvreus/heypi-runtime-gondolin`. They run bash and file/search tools through the selected scoped sandbox; each package README documents its system dependencies and quickstart.
 - Built-in runtime behavior is configured through `runtime`, including `justBash`, `hostEnv`, timeouts, process limits, file limits, and `runtime.scope`.
 - Pi extensions are loaded from explicit `agent.extensions` paths or `agent/extensions/`. heypi disables Pi's default/global extension discovery; configure each chat agent's extension set directly.
   Extension code runs in-process and should be treated as trusted application code. Interactive Pi extension UI and slash-command flows are not exposed as first-class chat features.

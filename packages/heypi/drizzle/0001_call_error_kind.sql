@@ -1,0 +1,1 @@
+ALTER TABLE `call` ADD `err_kind` text;

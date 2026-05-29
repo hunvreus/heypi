@@ -1,6 +1,9 @@
+import type { RuntimeErrorKind } from "../runtime/errors.js";
 import type { Runtime } from "../runtime/types.js";
 
 export type CallState = "running" | "pending_approval" | "blocked" | "done" | "failed" | "cancelled";
+
+export type CallErrorKind = RuntimeErrorKind;
 
 export type TurnState = "running" | "done" | "failed" | "cancelled";
 

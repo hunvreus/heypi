@@ -15,6 +15,8 @@ export type AppMessages = {
 	cancelUnauthorized: string;
 	cancelNotFound: string;
 	approvalsUnauthorized: string;
+	runtimeStarting: string | false;
+	runtimeFailed: string;
 };
 
 export type AppMessagesConfig = Partial<AppMessages>;
@@ -34,6 +36,8 @@ export const DEFAULT_APP_MESSAGES: AppMessages = {
 	cancelUnauthorized: "You are not allowed to cancel this run.",
 	cancelNotFound: "No active run found for that id.",
 	approvalsUnauthorized: "You are not allowed to view pending approvals.",
+	runtimeStarting: "Preparing runtime...",
+	runtimeFailed: "Runtime failed. Ask an admin to check the server logs.",
 };
 
 export function normalizeMessages(input: AppMessagesConfig | undefined): AppMessages {

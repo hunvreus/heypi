@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { CallState } from "../core/types.js";
+import type { CallErrorKind, CallState } from "../core/types.js";
 import { call } from "../db/schema.js";
 import type { Db } from "./db.js";
 
@@ -109,7 +109,15 @@ export class CallRepo {
 
 	async finish(
 		id: string,
-		input: { state: CallState; code: number; out: string; err: string; ms: number; queueWaitMs: number },
+		input: {
+			state: CallState;
+			code: number;
+			out: string;
+			err: string;
+			errKind?: CallErrorKind;
+			ms: number;
+			queueWaitMs: number;
+		},
 	): Promise<void> {
 		await this.db
 			.update(call)
@@ -118,6 +126,7 @@ export class CallRepo {
 				code: input.code,
 				out: input.out,
 				err: input.err,
+				errKind: input.errKind,
 				ms: input.ms,
 				queueWaitMs: input.queueWaitMs,
 				updatedAt: Date.now(),

@@ -13,7 +13,7 @@ import {
 import { Type } from "@sinclair/typebox";
 import type { AgentConfig, AgentContextBlock, AgentContextInput, ModelConfig } from "../config.js";
 import { normalizeApprovalDetails } from "../core/approval-view.js";
-import type { CallRunner } from "../core/calls.js";
+import { type CallRunner, RUNTIME_EVENTS } from "../core/calls.js";
 import { type Logger, logError, logger, redact, userError } from "../core/log.js";
 import { type MemoryStore, memoryContext } from "../core/memory.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES } from "../core/messages.js";
@@ -24,9 +24,10 @@ import { type AttachmentProcessingConfig, attachmentInput } from "../io/attachme
 import type { ReplyStream } from "../io/reply-stream.js";
 import type { Messages, StoredMessage } from "../store/types.js";
 import type { Agent, AgentReq, AgentRes } from "./agent.js";
+import { runtimeWithEvents } from "./events.js";
 import { stringParam } from "./tool-util.js";
 import { tools } from "./tools.js";
-import type { Runtime } from "./types.js";
+import type { Runtime, RuntimeEventHandler } from "./types.js";
 
 const DEFAULT_SYSTEM = [
 	"Use available tools when needed. Prefer the narrowest available tool that directly matches the task. Do not say you used a tool unless you actually called it.",
@@ -254,7 +255,7 @@ export class PiAgent implements Agent {
 	private async create(
 		channel: string,
 		actor: string,
-		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope">,
+		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope" | "runtimeEvents">,
 		context: {
 			trace?: string;
 			agent: string;
@@ -300,14 +301,19 @@ export class PiAgent implements Agent {
 				: undefined;
 		if (memoryBlock) contextBlocks.push(memoryBlock);
 		const agentTools = splitTools(agent.tools);
-		const runtime = this.runtimeFor(req.scope?.workspace.path);
+		const runtime = this.runtimeFor(req.scope?.workspace.path, req.runtimeEvents);
+		const toolContext = {
+			...context,
+			runtimeScope: req.scope?.workspace.path,
+			...(req.runtimeEvents ? { [RUNTIME_EVENTS]: req.runtimeEvents } : {}),
+		};
 		const customTools = tools({
 			runtime,
 			callRunner: this.input.callRunner,
 			messages: this.input.messages,
 			channel,
 			actor,
-			context: { ...context, runtimeScope: req.scope?.workspace.path },
+			context: toolContext,
 			core: agentTools.core,
 			custom: [
 				...agentTools.custom,
@@ -345,8 +351,9 @@ export class PiAgent implements Agent {
 		return SessionManager.open(path, dirname(path), this.input.agent.directory);
 	}
 
-	private runtimeFor(scope?: string): Runtime {
-		return typeof this.input.runtime === "function" ? this.input.runtime(scope) : this.input.runtime;
+	private runtimeFor(scope?: string, runtimeEvents?: RuntimeEventHandler): Runtime {
+		const runtime = typeof this.input.runtime === "function" ? this.input.runtime(scope) : this.input.runtime;
+		return runtimeWithEvents(runtime, runtimeEvents);
 	}
 
 	private attachmentRuntime(): Runtime {

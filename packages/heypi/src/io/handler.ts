@@ -12,6 +12,7 @@ import type { ScopedKey, TurnScope } from "../core/scope.js";
 import { resolveScope, selectScope } from "../core/scope.js";
 import type { ApprovalPrompt, ApprovalResolution, Intent, ReplyAttachment } from "../core/types.js";
 import type { Agent } from "../runtime/agent.js";
+import type { RuntimeEventHandler } from "../runtime/types.js";
 import { transaction } from "../store/transaction.js";
 import { continueTool, saveReply } from "../store/transcript.js";
 import type { Store } from "../store/types.js";
@@ -38,6 +39,11 @@ export type Inbound = {
 	stream?: ReplyStream;
 	ack?: (out: Outbound) => Promise<void>;
 	replace?: (out: Outbound) => Promise<void>;
+	runtimeProgress?: RuntimeProgress;
+};
+
+export type RuntimeProgress = {
+	update(text: string): Promise<void> | void;
 };
 
 export type Outbound = {
@@ -194,6 +200,10 @@ export function createHandler(input: {
 		const messageText = intent.kind === "ask" ? text : rawText;
 		const scheduled = msg.scheduled === true;
 		const stream = intent.kind === "ask" ? msg.stream : undefined;
+		const runtimeEvents =
+			msg.runtimeProgress && messages.runtimeStarting !== false
+				? runtimeProgressEvents(msg.runtimeProgress, messages.runtimeStarting)
+				: undefined;
 
 		const thread = await input.store.threads.getOrCreate({
 			agent: agentId,
@@ -379,6 +389,7 @@ export function createHandler(input: {
 								attachments: msg.attachments,
 								signal: currentRun.signal,
 								stream,
+								runtimeEvents,
 								onLiveSession: (session) => {
 									if (session) currentRun.attach(session);
 									else currentRun.detach();
@@ -390,6 +401,7 @@ export function createHandler(input: {
 								currentRun.signal,
 								intent.kind === "approve" ? msg.ack : undefined,
 								intent.kind === "approve" || intent.kind === "deny" ? msg.replace : undefined,
+								runtimeEvents,
 							);
 			if (currentRun.signal.aborted) reply = { text: "cancelled" };
 			const targetThreadId = reply.continuation?.threadId;
@@ -405,6 +417,7 @@ export function createHandler(input: {
 					continuation: reply.continuation,
 					scope: turnScope,
 					stream,
+					runtimeEvents,
 				});
 			}
 			if (reply.silent) {
@@ -658,6 +671,16 @@ type NormalizedChat = Required<ChatConfig>;
 function normalizeChat(input: ChatConfig | undefined): NormalizedChat {
 	return {
 		busy: input?.busy ?? "steer",
+	};
+}
+
+function runtimeProgressEvents(progress: RuntimeProgress, text: string): RuntimeEventHandler {
+	let last = "";
+	return (event) => {
+		if (event.kind !== "starting") return;
+		if (text === last) return;
+		last = text;
+		void Promise.resolve(progress.update(text)).catch(() => undefined);
 	};
 }
 

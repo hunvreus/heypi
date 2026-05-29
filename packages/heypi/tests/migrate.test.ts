@@ -53,6 +53,7 @@ test("migrate creates the current baseline schema", async () => {
 			"queue_wait_ms",
 			"created_at",
 			"updated_at",
+			"err_kind",
 		]);
 		assert.deepEqual(await columns(db, "approval"), [
 			"id",

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { agentFrom, DEFAULT_SOUL, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
+import { normalizeMessages } from "../src/core/messages.js";
+import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
 import { approvalFromMessages, renderContextBlock, runtimeSystemPrompt } from "../src/runtime/pi-agent.js";
 
 test("agentFrom requires an explicit model or HEYPI_MODEL", () => {
@@ -79,6 +81,20 @@ test("renderCall formats confirmed tool arguments for approvals", () => {
 	assert.doesNotMatch(out.text, /host_exec \\{/);
 	assert.doesNotMatch(out.text, /purpose/);
 	assert.doesNotMatch(out.text, /Use the buttons below/);
+});
+
+test("renderCall hides runtime startup details from chat output", () => {
+	const out = renderCall({
+		callId: "call-1",
+		state: "failed",
+		code: 1,
+		err: "container could not boot: daemon unavailable",
+		errKind: RUNTIME_STARTUP_ERROR_KIND,
+		messages: normalizeMessages({ runtimeFailed: "Runtime unavailable." }),
+	});
+
+	assert.match(out.text, /Runtime unavailable\./);
+	assert.doesNotMatch(out.text, /container could not boot|daemon unavailable/);
 });
 
 test("approvalFromMessages extracts approval metadata from terminated tool results", () => {

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
@@ -53,7 +54,6 @@ const hostTools = createHostTools({
 });
 const runbookTools = createRunbookTools({ root: "./agent/runbooks" });
 const hostContext = createHostContext({ root: stateRoot });
-const runtimeRoot = workspace("./workspace");
 const log = consoleLogger({ level: "debug", format: "pretty" });
 const jobChannel = optional("HEYPI_SLACK_JOB_CHANNEL");
 
@@ -99,7 +99,7 @@ const app = createHeypi({
 	],
 	agent: agentFrom("./agent", {
 		id: "slack-devops",
-		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
+		model: "openai/gpt-5-mini",
 		context: [hostContext],
 		tools: [...coreTools({ bash: true }), ...runbookTools, ...hostTools],
 	}),
@@ -128,16 +128,10 @@ const app = createHeypi({
 			]
 		: [],
 	runtime: {
-		name: "just-bash",
-		root: runtimeRoot,
-		maxConcurrent: 12,
-		maxConcurrentPerChat: 1,
-		timeoutMs: 120_000,
-		justBash: {
-			network: { dangerouslyAllowFullInternetAccess: true },
-			python: false,
-			javascript: false,
-		},
+		root: workspace("./workspace"),
+		scope: "channel",
+		// Local test loop: keep the Docker runtime warm until the app stops.
+		provider: dockerRuntime({ image: "buildpack-deps:bookworm-curl", network: "bridge", idleMs: false }),
 	},
 });
 

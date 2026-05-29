@@ -524,7 +524,7 @@ export function startDiscordProgress(input: {
 	let id: string | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let send: Promise<void> | undefined;
-	const text = input.progress?.message === false ? undefined : (input.progress?.message ?? "Working...");
+	let text = input.progress?.message === false ? undefined : (input.progress?.message ?? "Working...");
 	if (text) {
 		timer = setTimeout(() => {
 			send = input.delivery
@@ -538,6 +538,20 @@ export function startDiscordProgress(input: {
 		}, input.progress?.delayMs ?? 1000);
 	}
 	return {
+		async notify(next: string): Promise<void> {
+			if (text === undefined) return;
+			text = next;
+			if (!id) return;
+			try {
+				const msg = await input.message.channel.messages.fetch(id);
+				await input.delivery.run(() => msg.edit({ content: next }), input.context);
+			} catch (error) {
+				input.logger.warn("discord.progress.notify_failed", {
+					...input.context,
+					error: errorMessage(error),
+				});
+			}
+		},
 		async update(out: Outbound): Promise<boolean> {
 			await send;
 			if (!id) return false;

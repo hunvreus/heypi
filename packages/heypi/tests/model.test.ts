@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CallRunner } from "../src/core/calls.js";
+import { normalizeMessages } from "../src/core/messages.js";
 import { commandConfirm } from "../src/core/policy.js";
 import { createHandler, createStatus } from "../src/io/handler.js";
 import type { ReplyStream } from "../src/io/reply-stream.js";
@@ -149,6 +150,94 @@ test("handler passes inbound attachments to agent", async () => {
 		assert.deepEqual(request?.attachments, [
 			{ name: "image.png", path: "/incoming/image.png", mimeType: "image/png", size: 5 },
 		]);
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler maps runtime startup events through configurable app messages", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const updates: string[] = [];
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					await req.runtimeEvents?.({ kind: "starting", runtime: "docker" });
+					return { text: "ok" };
+				},
+				continue: async () => ({ text: "ok" }),
+			},
+			messages: normalizeMessages({ runtimeStarting: "Preparing sandbox..." }),
+		});
+
+		await handler({
+			trace: "trace-runtime-progress",
+			provider: "test",
+			eventId: "event-runtime-progress",
+			channel: "C1",
+			actor: "U1",
+			thread: "T1",
+			text: "hello",
+			runtimeProgress: {
+				update: async (text) => {
+					updates.push(text);
+				},
+			},
+		});
+
+		assert.deepEqual(updates, ["Preparing sandbox..."]);
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler can suppress runtime startup progress updates", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const updates: string[] = [];
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					await req.runtimeEvents?.({ kind: "starting", runtime: "docker" });
+					return { text: "ok" };
+				},
+				continue: async () => ({ text: "ok" }),
+			},
+			messages: normalizeMessages({ runtimeStarting: false }),
+		});
+
+		await handler({
+			trace: "trace-runtime-progress-disabled",
+			provider: "test",
+			eventId: "event-runtime-progress-disabled",
+			channel: "C1",
+			actor: "U1",
+			thread: "T1",
+			text: "hello",
+			runtimeProgress: {
+				update: async (text) => {
+					updates.push(text);
+				},
+			},
+		});
+
+		assert.deepEqual(updates, []);
 	} finally {
 		await db.cleanup();
 	}

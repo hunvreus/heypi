@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, telegram, tool, workspace } from "@hunvreus/heypi";
+import { agentFrom, coreTools, createHeypi, runHeypi, telegram, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
@@ -118,7 +118,6 @@ const logWorkout = tool<{
 
 const app = createHeypi({
 	state: { root: stateRoot },
-	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	adapters: [
 		telegram({
 			token: required("TELEGRAM_BOT_TOKEN"),
@@ -142,15 +141,7 @@ const app = createHeypi({
 				"Use the daily-checkin skill. Review the saved profile and decide whether to check in today based on the plan, rest days, and recent context.",
 		},
 	],
-	scheduler: { pollMs: 60_000 },
-	runtime: {
-		name: "just-bash",
-		root: workspace("./workspace"),
-		maxConcurrent: 6,
-		maxConcurrentPerChat: 1,
-		timeoutMs: 60_000,
-		justBash: { python: false, javascript: false },
-	},
+	runtime: { root: workspace("./workspace") },
 });
 
 await runHeypi(app);

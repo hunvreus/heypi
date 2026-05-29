@@ -61,6 +61,35 @@ test("runChatMessage loads attachments with the handler attachment scope", async
 	});
 });
 
+test("runChatMessage forwards runtime progress updates to platform progress", async () => {
+	const calls: string[] = [];
+	const handler: Handler = async (input) => {
+		await input.runtimeProgress?.update("Preparing runtime...");
+		return { text: "done", finalPlacement: "thread" };
+	};
+
+	await runChatMessage({
+		logger: loggerStub(),
+		context: contextStub,
+		handler,
+		progress: {
+			notify: async (text) => {
+				calls.push(`notify:${text}`);
+			},
+			stop: async () => {
+				calls.push("progress.stop");
+			},
+		},
+		inbound: () => inbound(),
+		placement: placementStub(calls),
+		sendError: async () => {
+			calls.push("error");
+		},
+	});
+
+	assert.deepEqual(calls, ["notify:Preparing runtime...", "progress.stop", "fresh:done", "progress.stop"]);
+});
+
 test("runChatMessage sends private output through the private callback", async () => {
 	const calls: string[] = [];
 	await runChatMessage({

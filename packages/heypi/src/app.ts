@@ -38,6 +38,7 @@ const DEFAULT_HTTP: Required<HttpConfig> = { host: "127.0.0.1", port: 3000 };
 export function createHeypi(config: HeypiConfig): HeypiApp {
 	const cwd = process.cwd();
 	const log = config.logger ?? logger;
+	config.runtime.provider?.setLogger?.(log);
 	const messages = normalizeMessages(config.messages);
 	const httpConfig = normalizeHttpConfig(config.http);
 	const stateRoot = normalizeStateRoot(config.state);

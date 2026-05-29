@@ -3,19 +3,31 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { posix } from "node:path";
 import type {
+	BashInput,
 	BashResult,
+	EditInput,
 	EditResult,
+	FindInput,
 	FindResult,
 	GrepHit,
+	GrepInput,
 	GrepResult,
 	LsEntry,
+	LsInput,
 	LsResult,
+	ReadInput,
 	ReadResult,
 	Runtime,
+	RuntimeEvent,
+	RuntimeEventHandler,
+	RuntimeLogger,
 	RuntimeProvider,
 	RuntimeScope,
+	RuntimeStatus,
+	WriteInput,
 	WriteResult,
 } from "@hunvreus/heypi/runtime";
+import { RuntimeStartupError } from "@hunvreus/heypi/runtime";
 
 export type RuntimeToolLimits = {
 	maxFileBytes?: number;
@@ -30,6 +42,7 @@ export type DockerRuntimeConfig = {
 	workdir?: string;
 	network?: "none" | "host" | "bridge" | string;
 	env?: Record<string, string>;
+	labels?: Record<string, string>;
 	user?: string | false;
 	extraRunArgs?: string[];
 	timeoutMs?: number;
@@ -51,6 +64,7 @@ export function dockerRuntime(config: DockerRuntimeConfig = {}): RuntimeProvider
 
 class DockerRuntimeProvider implements RuntimeProvider {
 	private readonly scopes = new Map<string, DockerScopeRuntime>();
+	private log: RuntimeLogger | undefined;
 
 	constructor(private readonly config: DockerRuntimeConfig) {}
 
@@ -58,14 +72,63 @@ class DockerRuntimeProvider implements RuntimeProvider {
 		const key = scope.path;
 		const cached = this.scopes.get(key);
 		if (cached) return cached.runtime();
-		const next = new DockerScopeRuntime(scope, this.config);
+		const next = new DockerScopeRuntime(scope, this.config, this.log);
 		this.scopes.set(key, next);
 		return next.runtime();
 	}
 
+	setLogger(logger: RuntimeLogger): void {
+		this.log = logger;
+		for (const scope of this.scopes.values()) scope.setLogger(logger);
+	}
+
+	status(scope?: RuntimeScope): RuntimeStatus[] {
+		return this.selectScopes(scope).map((scope) => scope.status());
+	}
+
+	async stop(scope?: RuntimeScope): Promise<void> {
+		await Promise.allSettled(this.selectScopes(scope).map((scope) => scope.stop("manual")));
+	}
+
+	async restart(scope?: RuntimeScope): Promise<void> {
+		await Promise.allSettled(this.selectScopes(scope).map((scope) => scope.restart()));
+	}
+
+	async cleanup(): Promise<void> {
+		const docker = this.config.docker ?? "docker";
+		const runner = this.config.runner ?? runCommand;
+		const prefix = this.config.prefix ?? "heypi";
+		const listed = await runner(
+			docker,
+			[
+				"ps",
+				"-a",
+				"--filter",
+				"label=heypi.runtime=docker",
+				"--filter",
+				`label=heypi.prefix=${prefix}`,
+				"--format",
+				"{{.Names}}",
+			],
+			{ timeoutMs: 30_000 },
+		);
+		if (listed.code !== 0) throw new Error(listed.err.trim() || "Docker runtime cleanup failed");
+		const containers = listed.out.split(/\r?\n/).filter(Boolean);
+		for (const container of containers)
+			await runner(docker, ["rm", "-f", container], { timeoutMs: 30_000 }).catch(() => undefined);
+		this.log?.info("runtime.docker.cleanup", { prefix, containers: containers.length });
+	}
+
 	async close(): Promise<void> {
-		await Promise.allSettled([...this.scopes.values()].map((scope) => scope.stop()));
+		await Promise.allSettled([...this.scopes.values()].map((scope) => scope.stop("close")));
 		this.scopes.clear();
+	}
+
+	private selectScopes(scope: RuntimeScope | undefined): DockerScopeRuntime[] {
+		if (!scope) return [...this.scopes.values()];
+		const selected = this.scopes.get(scope.path);
+		if (!selected) throw new Error(`unknown Docker runtime scope: ${scope.path}`);
+		return [selected];
 	}
 }
 
@@ -77,13 +140,18 @@ class DockerScopeRuntime {
 	private readonly idleMs: number | false;
 	private readonly limits: Required<RuntimeToolLimits>;
 	private readonly runner: DockerCommandRunner;
+	private log: RuntimeLogger | undefined;
 	private starting: Promise<string> | undefined;
 	private container: string | undefined;
 	private idleTimer: NodeJS.Timeout | undefined;
+	private active = 0;
+	private startedAt: number | undefined;
+	private lastUsedAt: number | undefined;
 
 	constructor(
 		private readonly scope: RuntimeScope,
 		private readonly config: DockerRuntimeConfig,
+		log?: RuntimeLogger,
 	) {
 		this.docker = config.docker ?? "docker";
 		this.image = config.image ?? "debian:bookworm-slim";
@@ -92,6 +160,7 @@ class DockerScopeRuntime {
 		this.idleMs = config.idleMs === undefined ? 10 * 60 * 1000 : config.idleMs;
 		this.limits = runtimeLimits(config.limits);
 		this.runner = config.runner ?? runCommand;
+		this.log = log;
 	}
 
 	runtime(): Runtime {
@@ -108,19 +177,66 @@ class DockerScopeRuntime {
 		};
 	}
 
-	async stop(): Promise<void> {
-		this.clearIdleTimer();
-		const container = this.container;
-		this.container = undefined;
-		this.starting = undefined;
-		if (container)
-			await this.runner(this.docker, ["rm", "-f", container], { timeoutMs: 30_000 }).catch(() => undefined);
+	setLogger(logger: RuntimeLogger): void {
+		this.log = logger;
 	}
 
-	private async ensureContainer(signal?: AbortSignal): Promise<string> {
-		if (this.container) return this.container;
-		if (this.starting) return await this.starting;
-		this.starting = this.startContainer(signal);
+	status(): RuntimeStatus {
+		return {
+			name: "docker",
+			scope: this.scope,
+			root: this.scope.root,
+			state: this.starting ? "starting" : this.container ? "running" : "stopped",
+			id: this.container,
+			startedAt: this.startedAt,
+			lastUsedAt: this.lastUsedAt,
+			idleMs: this.idleMs,
+		};
+	}
+
+	async restart(): Promise<void> {
+		await this.stop("restart");
+		await this.ensureContainer();
+	}
+
+	async stop(reason = "manual"): Promise<void> {
+		this.clearIdleTimer();
+		const container = this.container ?? (this.starting ? await this.starting.catch(() => undefined) : undefined);
+		this.container = undefined;
+		this.starting = undefined;
+		this.startedAt = undefined;
+		if (container)
+			await this.runner(this.docker, ["rm", "-f", container], { timeoutMs: 30_000 })
+				.then(() => this.log?.info("runtime.docker.stop", this.fields({ container, reason })))
+				.catch((error) =>
+					this.log?.warn(
+						"runtime.docker.stop_failed",
+						this.fields({ container, reason, error: errorMessage(error) }),
+					),
+				);
+	}
+
+	private async ensureContainer(signal?: AbortSignal, runtimeEvents?: RuntimeEventHandler): Promise<string> {
+		if (this.container) {
+			if (await this.containerRunning(this.container, signal)) {
+				this.emit(runtimeEvents, { kind: "reuse", id: this.container });
+				this.log?.debug("runtime.docker.reuse", this.fields({ container: this.container }));
+				return this.container;
+			}
+			const stale = this.container;
+			this.container = undefined;
+			this.startedAt = undefined;
+			this.log?.warn("runtime.docker.unhealthy", this.fields({ container: stale }));
+			await this.runner(this.docker, ["rm", "-f", stale], { timeoutMs: 30_000, signal }).catch(() => undefined);
+		}
+		if (this.starting) {
+			this.emit(runtimeEvents, {
+				kind: "starting",
+				id: this.containerName(),
+			});
+			return await this.starting;
+		}
+		this.starting = this.startContainer(signal, runtimeEvents);
 		try {
 			this.container = await this.starting;
 			this.scheduleIdleStop();
@@ -130,14 +246,19 @@ class DockerScopeRuntime {
 		}
 	}
 
-	private async startContainer(signal?: AbortSignal): Promise<string> {
+	private async startContainer(signal?: AbortSignal, runtimeEvents?: RuntimeEventHandler): Promise<string> {
 		await mkdir(this.scope.root, { recursive: true });
 		const name = this.containerName();
 		const inspect = await this.runner(this.docker, ["inspect", "-f", "{{.State.Running}}", name], {
 			timeoutMs: 10_000,
 			signal,
 		}).catch(() => undefined);
-		if (inspect?.code === 0 && inspect.out.trim() === "true") return name;
+		if (inspect?.code === 0 && inspect.out.trim() === "true") {
+			this.startedAt = Date.now();
+			this.lastUsedAt = this.startedAt;
+			this.log?.info("runtime.docker.recover", this.fields({ container: name, image: this.image }));
+			return name;
+		}
 		await this.runner(this.docker, ["rm", "-f", name], { timeoutMs: 30_000, signal }).catch(() => undefined);
 
 		const args = [
@@ -152,13 +273,39 @@ class DockerScopeRuntime {
 			"--network",
 			this.config.network ?? "none",
 		];
+		for (const [key, value] of Object.entries(this.labels())) args.push("--label", `${key}=${value}`);
 		if (this.config.user) args.push("--user", this.config.user);
 		for (const [key, value] of Object.entries(this.config.env ?? {})) args.push("-e", `${key}=${value}`);
 		args.push(...(this.config.extraRunArgs ?? []), this.image, "sleep", "infinity");
 
+		this.emit(runtimeEvents, {
+			kind: "starting",
+			id: name,
+		});
+		this.log?.info("runtime.docker.starting", this.fields({ container: name, image: this.image }));
 		const started = await this.runner(this.docker, args, { timeoutMs: this.timeoutMs, signal });
-		if (started.code !== 0) throw new Error(started.err || `failed to start Docker container ${name}`);
+		if (started.code !== 0) {
+			const detail = started.err.trim() || started.out.trim() || `exit ${started.code}`;
+			this.emit(runtimeEvents, { kind: "start_failed", id: name, message: detail });
+			this.log?.error(
+				"runtime.docker.start_failed",
+				this.fields({ container: name, image: this.image, error: detail }),
+			);
+			throw new RuntimeStartupError(`Docker runtime failed to start container ${name}: ${detail}`);
+		}
+		this.startedAt = Date.now();
+		this.lastUsedAt = this.startedAt;
+		this.emit(runtimeEvents, { kind: "start", id: name });
+		this.log?.info("runtime.docker.start", this.fields({ container: name, image: this.image }));
 		return name;
+	}
+
+	private async containerRunning(container: string, signal?: AbortSignal): Promise<boolean> {
+		const inspect = await this.runner(this.docker, ["inspect", "-f", "{{.State.Running}}", container], {
+			timeoutMs: 10_000,
+			signal,
+		}).catch(() => undefined);
+		return inspect?.code === 0 && inspect.out.trim() === "true";
 	}
 
 	private containerName(): string {
@@ -169,9 +316,12 @@ class DockerScopeRuntime {
 
 	private scheduleIdleStop(): void {
 		this.clearIdleTimer();
+		if (this.active > 0 || !this.container) return;
 		if (!this.idleMs || this.idleMs <= 0) return;
 		this.idleTimer = setTimeout(() => {
-			void this.stop();
+			if (this.active > 0 || !this.container) return;
+			this.log?.info("runtime.docker.idle_stop", this.fields({ idleMs: this.idleMs }));
+			void this.stop("idle");
 		}, this.idleMs);
 		this.idleTimer.unref?.();
 	}
@@ -182,38 +332,31 @@ class DockerScopeRuntime {
 		this.idleTimer = undefined;
 	}
 
-	private async bash({
-		command,
-		timeoutMs,
-		signal,
-	}: {
-		command: string;
-		timeoutMs?: number;
-		signal?: AbortSignal;
-	}): Promise<BashResult> {
-		const container = await this.ensureContainer(signal);
-		const result = await this.runner(this.docker, ["exec", "-i", container, "bash", "-lc", command], {
-			timeoutMs: timeoutMs ?? this.timeoutMs,
-			signal,
-		});
-		this.scheduleIdleStop();
-		return result;
+	private async bash({ command, timeoutMs, signal, runtimeEvents }: BashInput): Promise<BashResult> {
+		this.beginUse();
+		try {
+			const container = await this.ensureContainer(signal, runtimeEvents);
+			this.log?.debug("runtime.docker.exec", this.fields({ container, op: "bash" }));
+			const result = await this.runner(this.docker, ["exec", "-i", container, "bash", "-lc", command], {
+				timeoutMs: timeoutMs ?? this.timeoutMs,
+				signal,
+			});
+			if (shouldResetContainer(result)) {
+				this.log?.warn("runtime.docker.exec_failed", this.fields({ container, op: "bash", code: result.code }));
+				await this.stop(result.code === 124 ? "timeout" : "exec_failed");
+				return result;
+			}
+			return result;
+		} finally {
+			this.endUse();
+		}
 	}
 
-	private async read({
-		path,
-		offset,
-		limit,
-		signal,
-	}: {
-		path: string;
-		offset?: number;
-		limit?: number;
-		signal?: AbortSignal;
-	}): Promise<ReadResult> {
+	private async read({ path, offset, limit, signal, runtimeEvents }: ReadInput): Promise<ReadResult> {
 		const normalized = workspacePath(path);
 		const out = await this.sh(READ_SCRIPT, [shellPath(normalized), String(this.limits.maxFileBytes)], {
 			signal,
+			runtimeEvents,
 		});
 		const marker = out.indexOf("\n");
 		const header = marker === -1 ? out : out.slice(0, marker);
@@ -225,44 +368,24 @@ class DockerScopeRuntime {
 		return { path: normalized, text: lines.slice(start, end).join("\n"), lines: lines.length };
 	}
 
-	private async write({ path, content }: { path: string; content: string }): Promise<WriteResult> {
+	private async write({ path, content, runtimeEvents }: WriteInput): Promise<WriteResult> {
 		const normalized = workspacePath(path);
 		assertSize(Buffer.byteLength(content), this.limits.maxFileBytes, normalized);
-		const out = await this.sh(WRITE_SCRIPT, [shellPath(normalized)], { input: content });
+		const out = await this.sh(WRITE_SCRIPT, [shellPath(normalized)], { input: content, runtimeEvents });
 		return { path: normalized, bytes: Number(out.trim()) || Buffer.byteLength(content) };
 	}
 
-	private async edit({
-		path,
-		oldText,
-		newText,
-		replaceAll,
-	}: {
-		path: string;
-		oldText: string;
-		newText: string;
-		replaceAll?: boolean;
-	}): Promise<EditResult> {
-		const current = await this.read({ path });
+	private async edit({ path, oldText, newText, replaceAll, runtimeEvents }: EditInput): Promise<EditResult> {
+		const current = await this.read({ path, runtimeEvents });
 		const count = current.text.split(oldText).length - 1;
 		if (count === 0) throw new Error(`text not found in ${current.path}`);
 		if (!replaceAll && count > 1) throw new Error(`text is not unique in ${current.path}`);
 		const next = replaceAll ? current.text.replaceAll(oldText, newText) : current.text.replace(oldText, newText);
-		await this.write({ path: current.path, content: next });
+		await this.write({ path: current.path, content: next, runtimeEvents });
 		return { path: current.path, replacements: replaceAll ? count : 1 };
 	}
 
-	private async grep({
-		query,
-		path = ".",
-		maxResults = 100,
-		signal,
-	}: {
-		query: string;
-		path?: string;
-		maxResults?: number;
-		signal?: AbortSignal;
-	}): Promise<GrepResult> {
+	private async grep({ query, path = ".", maxResults = 100, signal, runtimeEvents }: GrepInput): Promise<GrepResult> {
 		const out = await this.sh(
 			GREP_SCRIPT,
 			[
@@ -273,7 +396,7 @@ class DockerScopeRuntime {
 				String(this.limits.maxScanBytes),
 				String(this.limits.maxEntries),
 			],
-			{ signal },
+			{ signal, runtimeEvents },
 		);
 		const hits: GrepHit[] = [];
 		for (const line of out.split("\n")) {
@@ -289,14 +412,13 @@ class DockerScopeRuntime {
 		path = ".",
 		maxResults = 1000,
 		signal,
-	}: {
-		pattern?: string;
-		path?: string;
-		maxResults?: number;
-		signal?: AbortSignal;
-	}): Promise<FindResult> {
+		runtimeEvents,
+	}: FindInput): Promise<FindResult> {
 		const limit = Math.min(Math.max(1, maxResults), this.limits.maxEntries);
-		const out = await this.sh(FIND_SCRIPT, [shellPath(workspacePath(path)), String(limit)], { signal });
+		const out = await this.sh(FIND_SCRIPT, [shellPath(workspacePath(path)), String(limit)], {
+			signal,
+			runtimeEvents,
+		});
 		return {
 			paths: out
 				.split("\n")
@@ -305,9 +427,10 @@ class DockerScopeRuntime {
 		};
 	}
 
-	private async ls({ path = ".", signal }: { path?: string; signal?: AbortSignal }): Promise<LsResult> {
+	private async ls({ path = ".", signal, runtimeEvents }: LsInput): Promise<LsResult> {
 		const out = await this.sh(LS_SCRIPT, [shellPath(workspacePath(path)), String(this.limits.maxEntries)], {
 			signal,
+			runtimeEvents,
 		});
 		const entries: LsEntry[] = [];
 		for (const line of out.split("\n")) {
@@ -326,17 +449,84 @@ class DockerScopeRuntime {
 	private async sh(
 		script: string,
 		args: string[],
-		options: { signal?: AbortSignal; input?: string | Buffer; timeoutMs?: number } = {},
+		options: {
+			signal?: AbortSignal;
+			input?: string | Buffer;
+			timeoutMs?: number;
+			runtimeEvents?: RuntimeEventHandler;
+		} = {},
 	): Promise<string> {
-		const container = await this.ensureContainer(options.signal);
-		const result = await this.runner(this.docker, ["exec", "-i", container, "sh", "-c", script, "heypi", ...args], {
-			timeoutMs: options.timeoutMs ?? this.timeoutMs,
-			signal: options.signal,
-			input: options.input,
-		});
+		this.beginUse();
+		try {
+			const container = await this.ensureContainer(options.signal, options.runtimeEvents);
+			const result = await this.runner(
+				this.docker,
+				["exec", "-i", container, "sh", "-c", script, "heypi", ...args],
+				{
+					timeoutMs: options.timeoutMs ?? this.timeoutMs,
+					signal: options.signal,
+					input: options.input,
+				},
+			);
+			if (result.code !== 0) {
+				if (shouldResetContainer(result)) {
+					this.log?.warn("runtime.docker.exec_failed", this.fields({ container, op: "tool", code: result.code }));
+					await this.stop(result.code === 124 ? "timeout" : "exec_failed");
+				}
+				throw new Error(result.err.trim() || result.out.trim() || "Docker runtime command failed");
+			}
+			return result.out;
+		} finally {
+			this.endUse();
+		}
+	}
+
+	private beginUse(): void {
+		this.clearIdleTimer();
+		this.active++;
+	}
+
+	private endUse(): void {
+		if (this.active <= 0) this.log?.warn("runtime.docker.active_underflow", this.fields());
+		this.active = Math.max(0, this.active - 1);
+		this.lastUsedAt = Date.now();
 		this.scheduleIdleStop();
-		if (result.code !== 0) throw new Error(result.err.trim() || result.out.trim() || "Docker runtime command failed");
-		return result.out;
+	}
+
+	private labels(): Record<string, string> {
+		return {
+			"heypi.runtime": "docker",
+			"heypi.prefix": this.config.prefix ?? "heypi",
+			"heypi.scope.level": this.scope.level ?? "",
+			"heypi.scope.key": this.scope.key,
+			"heypi.scope.path": this.scope.path,
+			...this.config.labels,
+		};
+	}
+
+	private fields(extra: Record<string, unknown> = {}): Record<string, unknown> {
+		return {
+			runtime: "docker",
+			scope: this.scope.path,
+			level: this.scope.level,
+			root: this.scope.root,
+			...extra,
+		};
+	}
+
+	private emit(
+		runtimeEvents: RuntimeEventHandler | undefined,
+		event: Omit<RuntimeEvent, "runtime" | "scope" | "root">,
+	): void {
+		if (!runtimeEvents) return;
+		void Promise.resolve(
+			runtimeEvents({
+				runtime: "docker",
+				scope: this.scope,
+				root: this.scope.root,
+				...event,
+			}),
+		).catch(() => undefined);
 	}
 }
 
@@ -394,6 +584,19 @@ function runtimeLimits(input?: RuntimeToolLimits): Required<RuntimeToolLimits> {
 
 function assertSize(size: number, max: number, label: string): void {
 	if (size > max) throw new Error(`${label} exceeds limit: ${size} > ${max}`);
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function shouldResetContainer(result: BashResult): boolean {
+	const text = `${result.err}\n${result.out}`;
+	return (
+		/\b(Command timed out|Command cancelled|No such container|is not running|Cannot connect to the Docker daemon)\b/i.test(
+			text,
+		) || result.code === 125
+	);
 }
 
 function workspacePath(path = "."): string {

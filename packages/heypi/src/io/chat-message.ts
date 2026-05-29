@@ -7,6 +7,7 @@ import { dispatchPlacement } from "./output-placement.js";
 import type { ReplyStream } from "./reply-stream.js";
 
 type Progress = {
+	notify?(text: string): Promise<void> | void;
 	stop(): Promise<void> | void;
 };
 
@@ -36,7 +37,10 @@ export async function runChatMessage(input: ChatMessageRun): Promise<void> {
 		const inbound = input.inbound();
 		const scope = input.handler.attachmentScope?.(inbound);
 		const attachments = await input.loadAttachments?.(scope);
-		const out = await input.handler({ ...inbound, attachments, stream: input.stream });
+		const runtimeProgress = input.progress?.notify
+			? { update: (text: string) => input.progress?.notify?.(text) }
+			: undefined;
+		const out = await input.handler({ ...inbound, attachments, stream: input.stream, runtimeProgress });
 		if (!out) return;
 		if (out.private && input.sendPrivate) {
 			await input.stream?.clear?.();

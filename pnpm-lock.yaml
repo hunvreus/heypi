@@ -20,6 +20,9 @@ importers:
       '@hunvreus/heypi':
         specifier: workspace:*
         version: link:packages/heypi
+      '@hunvreus/heypi-runtime-docker':
+        specifier: workspace:*
+        version: link:packages/heypi-runtime-docker
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.49

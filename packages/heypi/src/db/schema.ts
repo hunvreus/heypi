@@ -1,4 +1,5 @@
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { RuntimeErrorKind } from "../runtime/errors.js";
 
 export const thread = sqliteTable(
 	"thread",
@@ -80,6 +81,7 @@ export const call = sqliteTable(
 		code: integer("code"),
 		out: text("out"),
 		err: text("err"),
+		errKind: text("err_kind").$type<RuntimeErrorKind>(),
 		ms: integer("ms"),
 		queueWaitMs: integer("queue_wait_ms"),
 		createdAt: integer("created_at").notNull(),

@@ -734,11 +734,16 @@ function startProgress(input: {
 	let active = true;
 	let placeholder: number | undefined;
 	let task: Promise<void> | undefined;
-	const message = input.progress ? (input.progress.message ?? "Working...") : false;
+	let message = input.progress ? (input.progress.message ?? "Working...") : false;
 	if (message) {
 		task = new Promise((resolve) => {
 			setTimeout(() => {
 				if (!active) {
+					resolve();
+					return;
+				}
+				const progressText = message;
+				if (progressText === false) {
 					resolve();
 					return;
 				}
@@ -749,7 +754,7 @@ function startProgress(input: {
 								chat_id: input.chatId,
 								message_thread_id: input.threadId,
 								reply_to_message_id: input.replyTo,
-								text: message,
+								text: progressText,
 								reply_markup: progressMarkup(input.cancelId),
 							}),
 						{ ...input.context, delivery: "progress", retry: "send" },
@@ -768,6 +773,28 @@ function startProgress(input: {
 		});
 	}
 	return {
+		async notify(text: string): Promise<void> {
+			if (message === false) return;
+			message = text;
+			if (!placeholder) return;
+			await input.delivery
+				.run(
+					() =>
+						input.client.editMessageText({
+							chat_id: input.chatId,
+							message_id: placeholder as number,
+							text,
+							reply_markup: progressMarkup(input.cancelId),
+						}),
+					{ ...input.context, delivery: "progress_notify" },
+				)
+				.catch((error) => {
+					input.logger.warn("telegram.progress.notify_failed", {
+						...input.context,
+						error: errorMessage(error),
+					});
+				});
+		},
 		async update(out: Outbound): Promise<boolean> {
 			active = false;
 			await task;

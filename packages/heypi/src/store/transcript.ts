@@ -2,6 +2,7 @@ import type { TurnScope } from "../core/scope.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
 import type { ReplyStream } from "../io/reply-stream.js";
 import type { Agent, AgentRes } from "../runtime/agent.js";
+import type { RuntimeEventHandler } from "../runtime/types.js";
 import type { Message, Store } from "./types.js";
 
 export type ContinueInput = {
@@ -15,6 +16,7 @@ export type ContinueInput = {
 	continuation: ToolContinuation;
 	scope?: TurnScope;
 	stream?: ReplyStream;
+	runtimeEvents?: RuntimeEventHandler;
 };
 
 export type SaveInput = {
@@ -40,6 +42,7 @@ export async function continueTool(input: ContinueInput): Promise<AgentRes> {
 		trace: input.trace,
 		scope: input.scope,
 		stream: input.stream,
+		runtimeEvents: input.runtimeEvents,
 		continuation: input.continuation,
 	});
 }

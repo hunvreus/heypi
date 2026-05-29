@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ExecOptions, ExecResult, VMOptions } from "@earendil-works/gondolin";
-import type { BashResult } from "@hunvreus/heypi/runtime";
+import type { BashResult, RuntimeEvent } from "@hunvreus/heypi/runtime";
 import { type GondolinVm, type GondolinVmFactory, gondolinRuntime } from "../src/index.js";
 
 test("gondolinRuntime keeps one VM per scope and routes bash through vm.exec", async () => {
@@ -31,7 +31,8 @@ test("gondolinRuntime keeps one VM per scope and routes bash through vm.exec", a
 		sessionLabel: (scope) => `test ${scope.path}`,
 		idleMs: false,
 	});
-	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+	const scope = { level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" };
+	const runtime = provider.get(scope);
 
 	const result = await runtime.bash?.({ command: "echo ok" });
 
@@ -99,6 +100,109 @@ test("gondolinRuntime exposes file and search tools inside the scoped VM workspa
 	}
 	assert.equal(closed, 1);
 });
+
+test("gondolinRuntime reports status and can restart a known scope", async () => {
+	let created = 0;
+	let closed = 0;
+	const provider = gondolinRuntime({
+		factory: async () => {
+			created++;
+			return {
+				id: `vm-${created}`,
+				exec() {
+					return Promise.resolve(new FakeExecResult() as ExecResult);
+				},
+				async close() {
+					closed++;
+				},
+			} satisfies GondolinVm;
+		},
+		idleMs: false,
+	});
+	const scope = { level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" };
+	const runtime = provider.get(scope);
+
+	await runtime.bash?.({ command: "echo ok" });
+	assert.equal((await provider.status?.())?.[0]?.state, "running");
+	assert.equal((await provider.status?.())?.[0]?.id, "vm-1");
+
+	await provider.restart?.(scope);
+
+	assert.equal((await provider.status?.(scope))?.[0]?.id, "vm-2");
+	assert.equal(created, 2);
+	assert.equal(closed, 1);
+	await provider.stop?.(scope);
+	assert.equal((await provider.status?.(scope))?.[0]?.state, "stopped");
+});
+
+test("gondolinRuntime emits startup events only when a scoped VM starts", async () => {
+	let created = 0;
+	const provider = gondolinRuntime({
+		factory: async () => {
+			created++;
+			return {
+				id: `vm-${created}`,
+				exec() {
+					return Promise.resolve(new FakeExecResult() as ExecResult);
+				},
+				async close() {
+					return undefined;
+				},
+			} satisfies GondolinVm;
+		},
+		idleMs: false,
+	});
+	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+	const events: RuntimeEvent[] = [];
+	const runtimeEvents = (event: RuntimeEvent) => {
+		events.push(event);
+	};
+
+	await runtime.bash?.({ command: "echo one", runtimeEvents });
+	assert.deepEqual(
+		events.map((event) => event.kind),
+		["starting", "start"],
+	);
+	assert.equal(events[0].message, undefined);
+
+	events.length = 0;
+	await runtime.bash?.({ command: "echo two", runtimeEvents });
+	assert.deepEqual(
+		events.map((event) => event.kind),
+		["reuse"],
+	);
+
+	await provider.close?.();
+});
+
+test("gondolinRuntime does not idle-stop a VM during an active command", async () => {
+	let closed = 0;
+	const provider = gondolinRuntime({
+		factory: async () =>
+			({
+				id: "vm-1",
+				async exec() {
+					await sleep(25);
+					assert.equal(closed, 0);
+					return new FakeExecResult() as ExecResult;
+				},
+				async close() {
+					closed++;
+				},
+			}) satisfies GondolinVm,
+		idleMs: 5,
+	});
+	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+
+	await runtime.bash?.({ command: "sleep" });
+	await sleep(20);
+
+	assert.equal(closed, 1);
+});
+
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function runLocal(
 	command: string | string[],

@@ -1,4 +1,12 @@
+export type { RuntimeErrorKind } from "./errors.js";
+export {
+	isRuntimeStartupError,
+	isRuntimeStartupErrorText,
+	RUNTIME_STARTUP_ERROR_KIND,
+	RuntimeStartupError,
+} from "./errors.js";
 export type {
+	BashInput,
 	BashResult,
 	EditInput,
 	EditResult,
@@ -13,9 +21,14 @@ export type {
 	ReadInput,
 	ReadResult,
 	Runtime,
+	RuntimeEvent,
+	RuntimeEventHandler,
+	RuntimeEventKind,
+	RuntimeLogger,
 	RuntimeName,
 	RuntimeProvider,
 	RuntimeScope,
+	RuntimeStatus,
 	WriteInput,
 	WriteResult,
 } from "./types.js";

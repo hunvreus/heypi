@@ -1,5 +1,7 @@
 # @hunvreus/heypi-runtime-gondolin
 
+**Experimental:** this provider is intended for local testing and early adopters. Its API and operational behavior may change before heypi 1.0.
+
 Gondolin runtime provider for heypi. It runs heypi's runtime API through a scoped Gondolin VM: `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`.
 
 ## Requirements
@@ -53,7 +55,11 @@ await runHeypi(app);
 - Bash and file/search tools execute through the VM. They do not read or write through host filesystem shortcuts.
 - VMs stop after `idleMs` with no use. Set `idleMs: false` to keep them until app shutdown.
 - Extra host directories can be mounted with `mounts`.
+- VM egress is open by default. Use Gondolin secrets with per-host `hosts` restrictions for sensitive outbound credentials.
 - Secrets can be passed with `secrets`; Gondolin exposes them through HTTP hooks instead of giving the agent raw secret values.
+- Runtime lifecycle events are logged through the heypi app logger when the provider is used inside `createHeypi()`.
+- Cold starts emit a runtime progress event. heypi renders it with the global `messages.runtimeStarting` copy, which defaults to `Preparing runtime...` and can be set to `false`.
+- Timed out, cancelled, or crashed VM executions close the VM so the next runtime call starts a fresh one.
 
 ## Options
 
@@ -77,4 +83,15 @@ gondolinRuntime({
 		maxEntries: 10_000,
 	},
 });
+```
+
+The returned provider also exposes management hooks:
+
+```ts
+const provider = gondolinRuntime();
+const [status] = (await provider.status?.()) ?? [];
+
+if (status) await provider.restart?.(status.scope);
+if (status) await provider.stop?.(status.scope);
+await provider.cleanup?.();
 ```

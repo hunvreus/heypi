@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, tool, webhook, workspace } from "@hunvreus/heypi";
+import { agentFrom, coreTools, createHeypi, runHeypi, tool, webhook, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
@@ -37,7 +37,6 @@ const saveNote = tool<{ note: string; topic?: string }>({
 
 const app = createHeypi({
 	state: { root: stateRoot },
-	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	http: {
 		host: "127.0.0.1",
 		port: Number(process.env.HEYPI_WEBHOOK_PORT ?? 3000),
@@ -49,16 +48,10 @@ const app = createHeypi({
 		}),
 	],
 	agent: agentFrom("./agent", {
-		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
+		model: "openai/gpt-5-mini",
 		tools: [...coreTools({ bash: false, write: false, edit: false }), saveNote],
 	}),
-	runtime: {
-		name: "just-bash",
-		root: workspace("./workspace"),
-		maxConcurrentPerChat: 1,
-		timeoutMs: 60_000,
-		justBash: { python: false, javascript: false },
-	},
+	runtime: { root: workspace("./workspace") },
 });
 
 await runHeypi(app);

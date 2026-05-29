@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { BashResult } from "@hunvreus/heypi/runtime";
+import type { BashResult, RuntimeEvent } from "@hunvreus/heypi/runtime";
 import { type DockerCommandRunner, dockerRuntime } from "../src/index.js";
 
 test("dockerRuntime keeps one warm container per scope and routes bash through docker exec", async () => {
@@ -29,7 +29,7 @@ test("dockerRuntime keeps one warm container per scope and routes bash through d
 	);
 	const container = calls[2].args[3];
 	assert.match(container, /^heypi-[a-f0-9]{16}$/);
-	assert.deepEqual(calls[2].args.slice(0, 12), [
+	assert.deepEqual(calls[2].args.slice(0, 10), [
 		"run",
 		"-d",
 		"--name",
@@ -40,9 +40,11 @@ test("dockerRuntime keeps one warm container per scope and routes bash through d
 		"/tmp/heypi-a:/workspace:rw",
 		"--network",
 		"none",
-		"test-image",
-		"sleep",
 	]);
+	assert.ok(calls[2].args.includes("--label"));
+	assert.ok(calls[2].args.includes("heypi.runtime=docker"));
+	assert.ok(calls[2].args.includes("heypi.scope.path=channel/a"));
+	assert.deepEqual(calls[2].args.slice(-3), ["test-image", "sleep", "infinity"]);
 	assert.deepEqual(calls[3].args, ["exec", "-i", container, "bash", "-lc", "echo ok"]);
 
 	await provider.close?.();
@@ -87,11 +89,151 @@ test("dockerRuntime exposes file and search tools inside the scoped container wo
 	}
 });
 
+test("dockerRuntime reports status and can restart a known scope", async () => {
+	const calls: Array<{ command: string; args: string[] }> = [];
+	let running = false;
+	const runner: DockerCommandRunner = async (command, args) => {
+		calls.push({ command, args });
+		if (args[0] === "inspect") return { code: running ? 0 : 1, out: running ? "true\n" : "", err: "", ms: 1 };
+		if (args[0] === "run") {
+			running = true;
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
+		if (args[0] === "exec") return { code: 0, out: "ok\n", err: "", ms: 1 };
+		if (args[0] === "rm") {
+			running = false;
+			return { code: 0, out: "", err: "", ms: 1 };
+		}
+		throw new Error(`unexpected docker command: ${args.join(" ")}`);
+	};
+	const provider = dockerRuntime({ runner, image: "test-image", idleMs: false });
+	const scope = { level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" };
+	const runtime = provider.get(scope);
+
+	await runtime.bash?.({ command: "echo ok" });
+	assert.equal((await provider.status?.())?.[0]?.state, "running");
+
+	await provider.restart?.(scope);
+
+	assert.equal((await provider.status?.(scope))?.[0]?.state, "running");
+	assert.equal(calls.filter((call) => call.args[0] === "run").length, 2);
+	await provider.stop?.(scope);
+	assert.equal((await provider.status?.(scope))?.[0]?.state, "stopped");
+});
+
+test("dockerRuntime emits startup events only when a scoped container starts", async () => {
+	let running = false;
+	const runner: DockerCommandRunner = async (_command, args) => {
+		if (args[0] === "inspect") return { code: running ? 0 : 1, out: running ? "true\n" : "", err: "", ms: 1 };
+		if (args[0] === "run") {
+			running = true;
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
+		if (args[0] === "exec") return { code: 0, out: "ok\n", err: "", ms: 1 };
+		if (args[0] === "rm") {
+			running = false;
+			return { code: 0, out: "", err: "", ms: 1 };
+		}
+		throw new Error(`unexpected docker command: ${args.join(" ")}`);
+	};
+	const provider = dockerRuntime({ runner, image: "test-image", idleMs: false });
+	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+	const events: RuntimeEvent[] = [];
+	const runtimeEvents = (event: RuntimeEvent) => {
+		events.push(event);
+	};
+
+	await runtime.bash?.({ command: "echo one", runtimeEvents });
+	assert.deepEqual(
+		events.map((event) => event.kind),
+		["starting", "start"],
+	);
+	assert.equal(events[0].message, undefined);
+
+	events.length = 0;
+	await runtime.bash?.({ command: "echo two", runtimeEvents });
+	assert.deepEqual(
+		events.map((event) => event.kind),
+		["reuse"],
+	);
+
+	await provider.close?.();
+});
+
+test("dockerRuntime recreates a cached container that is no longer running", async () => {
+	const calls: string[] = [];
+	let running = false;
+	let inspectCount = 0;
+	const runner: DockerCommandRunner = async (_command, args) => {
+		calls.push(args[0]);
+		if (args[0] === "inspect") {
+			inspectCount++;
+			const alive = running && inspectCount !== 2;
+			return { code: alive ? 0 : 1, out: alive ? "true\n" : "", err: "", ms: 1 };
+		}
+		if (args[0] === "run") {
+			running = true;
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
+		if (args[0] === "exec") return { code: 0, out: "ok\n", err: "", ms: 1 };
+		if (args[0] === "rm") {
+			running = false;
+			return { code: 0, out: "", err: "", ms: 1 };
+		}
+		throw new Error(`unexpected docker command: ${args.join(" ")}`);
+	};
+	const provider = dockerRuntime({ runner, image: "test-image", idleMs: false });
+	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+
+	await runtime.bash?.({ command: "echo one" });
+	await runtime.bash?.({ command: "echo two" });
+
+	assert.equal(calls.filter((call) => call === "run").length, 2);
+	await provider.close?.();
+});
+
+test("dockerRuntime does not idle-stop a container during an active command", async () => {
+	const calls: string[] = [];
+	let running = false;
+	const runner: DockerCommandRunner = async (_command, args) => {
+		calls.push(args[0]);
+		if (args[0] === "inspect") return { code: running ? 0 : 1, out: running ? "true\n" : "", err: "", ms: 1 };
+		if (args[0] === "run") {
+			running = true;
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
+		if (args[0] === "exec") {
+			await sleep(25);
+			assert.equal(calls.filter((call) => call === "rm").length, 1);
+			return { code: 0, out: "ok\n", err: "", ms: 25 };
+		}
+		if (args[0] === "rm") {
+			running = false;
+			return { code: 0, out: "", err: "", ms: 1 };
+		}
+		throw new Error(`unexpected docker command: ${args.join(" ")}`);
+	};
+	const provider = dockerRuntime({ runner, image: "test-image", idleMs: 5 });
+	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
+
+	await runtime.bash?.({ command: "sleep" });
+	await sleep(20);
+
+	assert.equal(calls.filter((call) => call === "rm").length, 2);
+});
+
 function localDockerRunner(root: string): DockerCommandRunner {
+	let running = false;
 	return async (_command, args, options) => {
-		if (args[0] === "inspect") return { code: 1, out: "", err: "missing", ms: 1 };
-		if (args[0] === "run") return { code: 0, out: "container\n", err: "", ms: 1 };
-		if (args[0] === "rm") return { code: 0, out: "", err: "", ms: 1 };
+		if (args[0] === "inspect") return { code: running ? 0 : 1, out: running ? "true\n" : "", err: "missing", ms: 1 };
+		if (args[0] === "run") {
+			running = true;
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
+		if (args[0] === "rm") {
+			running = false;
+			return { code: 0, out: "", err: "", ms: 1 };
+		}
 		if (args[0] !== "exec") throw new Error(`unexpected docker command: ${args.join(" ")}`);
 		return await runLocal(args.slice(3), root, options.input);
 	};
@@ -113,4 +255,8 @@ async function runLocal(args: string[], cwd: string, input?: string | Buffer): P
 		proc.on("error", (error) => resolve({ code: 127, out, err: `${err}${error.message}`, ms: Date.now() - start }));
 		proc.on("close", (code) => resolve({ code: code ?? 1, out, err, ms: Date.now() - start }));
 	});
+}
+
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, ms));
 }

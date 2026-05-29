@@ -62,6 +62,8 @@ Adapters under `src/io/` translate provider events into `Inbound` messages and r
 
 Slack, Telegram, and Discord share `runChatMessage()` after provider-specific allow/trigger checks. Provider lifecycle, buttons/callbacks, attachment transport, and error UX stay in each adapter.
 
+Third-party adapters should implement the public `Adapter` interface from `@hunvreus/heypi/adapter`. The built-in chat adapters are concrete provider integrations, not reusable base classes.
+
 HTTP adapters register routes on the shared Node listener. Routes use the top-level `http` host/port, defaulting to `127.0.0.1:3000`. Duplicate or ambiguous routes fail at startup. `/admin` is reserved.
 
 ```ts
@@ -116,10 +118,10 @@ Core tools and custom `tool()` definitions use the same confirmation path. Text 
 - `just-bash`: default production runtime.
 - `guarded-bash`: host bash with regex guardrails.
 - `host-bash`: host bash; unsafe/dev/admin mode.
-- `@hunvreus/heypi-runtime-docker`: external Docker provider with one warm container per runtime scope.
-- `@hunvreus/heypi-runtime-gondolin`: external Gondolin provider with one warm VM per runtime scope.
+- `@hunvreus/heypi-runtime-docker`: experimental external Docker provider with one warm container per runtime scope.
+- `@hunvreus/heypi-runtime-gondolin`: experimental external Gondolin provider with one warm VM per runtime scope.
 
-`scope` controls workspace sharing: `channel` by default, or `user`, `adapter`, or `agent`. `runtime.scope` can override that runtime/workspace sharing policy independently from memory. File tools enforce size, traversal, and symlink escape limits. `just-bash` disables network by default. Managed runtimes are implemented as `RuntimeProvider`s and can keep scoped runtimes warm until provider shutdown.
+`scope` controls workspace sharing: `channel` by default, or `user`, `adapter`, or `agent`. `runtime.scope` can override that runtime/workspace sharing policy independently from memory. File tools enforce size, traversal, and symlink escape limits. `just-bash` disables network by default. Managed runtimes are implemented as `RuntimeProvider`s and can keep scoped runtimes warm until idle timeout, provider shutdown, or explicit management calls.
 
 ### Memory
 

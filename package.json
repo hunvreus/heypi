@@ -11,6 +11,7 @@
 		"pack:dry": "pnpm --filter @hunvreus/heypi run pack:dry",
 		"pack:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run pack:dry",
 		"publish:dry": "pnpm --filter @hunvreus/heypi run publish:dry",
+		"publish:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
 		"heypi": "pnpm --filter @hunvreus/heypi exec tsx --conditions development src/cli.ts",
 		"dev": "pnpm run dev:slack",
 		"dev:slack": "cd examples/slack-devops && tsx watch --conditions development index.ts",
@@ -30,6 +31,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",
 		"@hunvreus/heypi": "workspace:*",
+		"@hunvreus/heypi-runtime-docker": "workspace:*",
 		"@sinclair/typebox": "^0.34.49",
 		"@tailwindcss/cli": "^4.3.0",
 		"@types/node": "^25.9.1",

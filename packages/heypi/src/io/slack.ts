@@ -648,7 +648,7 @@ function startProgress(input: {
 	let placeholder: string | undefined;
 	let placeholderTask: Promise<void> | undefined;
 	const reaction = input.progress ? (input.progress.reaction ?? "eyes") : false;
-	const message = input.progress ? (input.progress.message ?? "Working...") : false;
+	let message = input.progress ? (input.progress.message ?? "Working...") : false;
 
 	if (reaction && input.target && input.source) {
 		const source = input.source;
@@ -673,15 +673,28 @@ function startProgress(input: {
 					resolve();
 					return;
 				}
+				const progressText = message;
+				if (progressText === false) {
+					resolve();
+					return;
+				}
 				input.delivery
 					.run(
 						() =>
-							input.client.chat.postMessage({
-								channel: input.channel,
-								text: message,
-								thread_ts: input.target,
-								blocks: input.cancelId ? cancelBlocks(message, input.cancelId) : undefined,
-							}),
+							input.client.chat.postMessage(
+								input.cancelId
+									? {
+											channel: input.channel,
+											text: progressText,
+											thread_ts: input.target,
+											blocks: cancelBlocks(progressText, input.cancelId),
+										}
+									: {
+											channel: input.channel,
+											text: progressText,
+											thread_ts: input.target,
+										},
+							),
 						{ ...input.context, delivery: "progress", retry: "send" },
 					)
 					.then((out) => {
@@ -696,6 +709,34 @@ function startProgress(input: {
 	}
 
 	return {
+		async notify(text: string): Promise<void> {
+			if (message === false) return;
+			message = text;
+			if (!placeholder) return;
+			const ts = placeholder;
+			await input.delivery
+				.run(
+					() =>
+						input.client.chat.update(
+							input.cancelId
+								? {
+										channel: input.channel,
+										ts,
+										text,
+										blocks: cancelBlocks(text, input.cancelId),
+									}
+								: {
+										channel: input.channel,
+										ts,
+										text,
+									},
+						),
+					{ ...input.context, delivery: "progress_notify" },
+				)
+				.catch((error) => {
+					input.logger.warn("slack.progress.notify_failed", { ...input.context, error: errorMessage(error) });
+				});
+		},
 		async update(text: string, approval?: Outbound["approval"]): Promise<boolean> {
 			active = false;
 			await placeholderTask;

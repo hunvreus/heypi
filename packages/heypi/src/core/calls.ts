@@ -1,6 +1,8 @@
 import type { ApprovalConfig } from "../config.js";
+import { isRuntimeStartupError, RUNTIME_STARTUP_ERROR_KIND } from "../runtime/errors.js";
+import { runtimeWithEvents } from "../runtime/events.js";
 import type { Queue } from "../runtime/queue.js";
-import type { Runtime } from "../runtime/types.js";
+import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import type { Approval, Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
@@ -10,6 +12,8 @@ import { type AppMessages, DEFAULT_APP_MESSAGES, renderMessage } from "./message
 import { assertTransition, parseCallState } from "./state.js";
 import type { ApprovalDetail, ApprovalResolution, Confirm, Intent, Reply, ToolExecute } from "./types.js";
 
+export const RUNTIME_EVENTS = Symbol("runtime-events");
+
 export type CallContext = {
 	trace?: string;
 	agent?: string;
@@ -18,6 +22,7 @@ export type CallContext = {
 	message?: string;
 	toolCall?: string;
 	runtimeScope?: string;
+	[RUNTIME_EVENTS]?: RuntimeEventHandler;
 };
 
 type CallBase = {
@@ -61,11 +66,13 @@ export class CallRunner {
 		signal?: AbortSignal,
 		onApproved?: (reply: Reply) => Promise<void>,
 		onExpired?: (reply: Reply) => Promise<void>,
+		runtimeEvents?: RuntimeEventHandler,
 	): Promise<Reply> {
-		if (intent.kind === "bash") return this.bash(intent.channel, intent.actor, intent.cmd, context, signal);
-		if (intent.kind === "approve") return this.handleApprove(intent, context, signal, onApproved, onExpired);
-		if (intent.kind === "deny") return this.handleDeny(intent, context, onExpired);
-		return this.handleStatus(intent, context);
+		const eventContext = withRuntimeEvents(context, runtimeEvents);
+		if (intent.kind === "bash") return this.bash(intent.channel, intent.actor, intent.cmd, eventContext, signal);
+		if (intent.kind === "approve") return this.handleApprove(intent, eventContext, signal, onApproved, onExpired);
+		if (intent.kind === "deny") return this.handleDeny(intent, eventContext, onExpired);
+		return this.handleStatus(intent, eventContext);
 	}
 
 	async bash(
@@ -75,7 +82,7 @@ export class CallRunner {
 		context: CallContext = {},
 		signal?: AbortSignal,
 	): Promise<Reply> {
-		const runtime = this.runtimeFor(context.runtimeScope);
+		const runtime = this.runtimeFor(context.runtimeScope, context[RUNTIME_EVENTS]);
 		if (!runtime.bash) throw new Error(`runtime ${runtime.name} does not support bash`);
 		const confirmation = confirm(this.bashConfirm, { command });
 		const details = normalizeConfirmationDetails(confirmation?.details);
@@ -199,7 +206,7 @@ export class CallRunner {
 		context: CallContext,
 		signal?: AbortSignal,
 	): Promise<Reply> {
-		const runtime = this.runtimeFor(context.runtimeScope);
+		const runtime = this.runtimeFor(context.runtimeScope, context[RUNTIME_EVENTS]);
 		this.log.info("call.start", { ...context, channel, call: callId, tool: "bash", runtime: runtime.name });
 		let out: { result: { code: number; out: string; err: string; ms: number }; waitMs: number };
 		try {
@@ -210,12 +217,20 @@ export class CallRunner {
 			);
 		} catch (error) {
 			const err = error instanceof Error ? error.message : String(error);
-			const result = { code: 130, out: "", err, ms: 0 };
-			await this.calls.finish(callId, { state: "cancelled", ...result, queueWaitMs: 0 });
-			this.log.info("call.end", { ...context, channel, call: callId, tool: "bash", state: "cancelled", code: 130 });
+			const state = signal?.aborted || isAbortError(error) ? "cancelled" : "failed";
+			const result = { code: state === "cancelled" ? 130 : 1, out: "", err, ms: 0 };
+			const runtimeFailed = isRuntimeStartupError(error);
+			const visibleErr = runtimeFailed ? this.messages.runtimeFailed : err;
+			await this.calls.finish(callId, {
+				state,
+				...result,
+				errKind: runtimeFailed ? RUNTIME_STARTUP_ERROR_KIND : undefined,
+				queueWaitMs: 0,
+			});
+			this.log.info("call.end", { ...context, channel, call: callId, tool: "bash", state, code: result.code });
 			return {
-				...renderCall({ callId, state: "cancelled", ...result }),
-				continuation: continuation(callId, "bash", context, actor, "", err, true),
+				...renderCall({ callId, state, ...result, messages: this.messages, runtimeFailed }),
+				continuation: continuation(callId, "bash", context, actor, "", visibleErr, true),
 			};
 		}
 		const state = signal?.aborted ? "cancelled" : out.result.code === 0 ? "done" : "failed";
@@ -250,7 +265,7 @@ export class CallRunner {
 		this.log.info("call.start", { ...context, call: callId, tool });
 		try {
 			const out = await execute(args, {
-				runtime: this.runtimeFor(context.runtimeScope),
+				runtime: this.runtimeFor(context.runtimeScope, context[RUNTIME_EVENTS]),
 				runtimeScope: context.runtimeScope,
 				signal,
 			});
@@ -273,11 +288,21 @@ export class CallRunner {
 			const err = error instanceof Error ? error.message : String(error);
 			const state = signal?.aborted || isAbortError(error) ? "cancelled" : "failed";
 			const code = state === "cancelled" ? 130 : 1;
-			await this.calls.finish(callId, { state, code, out: "", err, ms, queueWaitMs: 0 });
+			const runtimeFailed = isRuntimeStartupError(error);
+			const visibleErr = runtimeFailed ? this.messages.runtimeFailed : err;
+			await this.calls.finish(callId, {
+				state,
+				code,
+				out: "",
+				err,
+				errKind: runtimeFailed ? RUNTIME_STARTUP_ERROR_KIND : undefined,
+				ms,
+				queueWaitMs: 0,
+			});
 			this.log.info("call.end", { ...context, call: callId, tool, state, code, ms });
 			return {
-				...renderCall({ callId, state, code, out: "", err, ms }),
-				continuation: continuation(callId, tool, context, actor, "", err, true),
+				...renderCall({ callId, state, code, out: "", err, ms, messages: this.messages, runtimeFailed }),
+				continuation: continuation(callId, tool, context, actor, "", visibleErr, true),
 			};
 		}
 	}
@@ -353,8 +378,8 @@ export class CallRunner {
 			}
 		}
 		if (current.tool === "bash") {
-			const approvedContext = callContext(current);
-			const runtime = this.runtimeFor(approvedContext.runtimeScope);
+			const approvedContext = withRuntimeEvents(callContext(current), context[RUNTIME_EVENTS]);
+			const runtime = this.runtimeFor(approvedContext.runtimeScope, approvedContext[RUNTIME_EVENTS]);
 			if (approval.runtime !== runtime.name) throw new Error(`approval runtime mismatch: ${approval.runtime}`);
 			if (!current.command) throw new Error("approved bash call missing command");
 			return this.executeBash(
@@ -374,7 +399,7 @@ export class CallRunner {
 			current.actor,
 			args(current.args),
 			execute,
-			callContext(current),
+			withRuntimeEvents(callContext(current), context[RUNTIME_EVENTS]),
 			signal,
 		);
 	}
@@ -598,12 +623,15 @@ export class CallRunner {
 			code: row.code ?? undefined,
 			out: row.out ?? undefined,
 			err: row.err ?? undefined,
+			errKind: row.errKind,
 			ms: row.ms ?? undefined,
+			messages: this.messages,
 		});
 	}
 
-	private runtimeFor(scope?: string): Runtime {
-		return typeof this.runtime === "function" ? this.runtime(scope) : this.runtime;
+	private runtimeFor(scope?: string, runtimeEvents?: RuntimeEventHandler): Runtime {
+		const runtime = typeof this.runtime === "function" ? this.runtime(scope) : this.runtime;
+		return runtimeWithEvents(runtime, runtimeEvents);
 	}
 
 	private contextAgent(context?: CallContext): string {
@@ -613,6 +641,11 @@ export class CallRunner {
 
 function staleApproval(text: string): Reply {
 	return { text, private: true, replaceOriginal: true };
+}
+
+function withRuntimeEvents(context: CallContext, runtimeEvents?: RuntimeEventHandler): CallContext {
+	if (!runtimeEvents) return context;
+	return { ...context, [RUNTIME_EVENTS]: runtimeEvents };
 }
 
 function confirm(

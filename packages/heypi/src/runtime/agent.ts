@@ -3,6 +3,7 @@ import type { TurnScope } from "../core/scope.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
 import type { Attachment } from "../io/attachments.js";
 import type { ReplyStream } from "../io/reply-stream.js";
+import type { RuntimeEventHandler } from "./types.js";
 
 type AgentLiveSession = {
 	steer(text: string, attachments?: Attachment[]): Promise<void>;
@@ -29,6 +30,7 @@ export type AgentReq = {
 	attachments?: Attachment[];
 	signal?: AbortSignal;
 	stream?: ReplyStream;
+	runtimeEvents?: RuntimeEventHandler;
 	onLiveSession?: (session: AgentLiveSession | undefined) => void;
 };
 

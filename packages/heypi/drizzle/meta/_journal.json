@@ -8,6 +8,13 @@
       "when": 1779885301145,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780044663508,
+      "tag": "0001_call_error_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -29,7 +29,7 @@ slack({ /* ... */ streaming: true });
 
 Use `true` for sensible defaults, or pass `{ intervalMs, minChars, maxFailures }` to tune draft edits.
 
-Progress defaults to `Working...`. Set `progress: false` to disable it. Confirmed tool calls stop draft streaming before approval UI is sent.
+Progress defaults to `Working...`. Set `progress: false` to disable it. Slow runtime providers can update the temporary progress message during cold start with `messages.runtimeStarting`, which defaults to `Preparing runtime...` and can be set to `false`. Confirmed tool calls stop draft streaming before approval UI is sent.
 
 Provider differences:
 
@@ -71,6 +71,8 @@ createHeypi({
 		cancelUnauthorized: "You are not allowed to cancel this run.",
 		cancelNotFound: "No active run found for that id.",
 		approvalsUnauthorized: "You are not allowed to view pending approvals.",
+		runtimeStarting: "Preparing runtime...", // set false to keep the adapter's normal progress text
+		runtimeFailed: "Runtime failed. Ask an admin to check the server logs.",
 		error: "Something went wrong. Ask an admin to check the server logs.",
 	},
 });

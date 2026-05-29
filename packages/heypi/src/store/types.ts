@@ -1,5 +1,5 @@
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
-import type { CallState, TurnState } from "../core/types.js";
+import type { CallErrorKind, CallState, TurnState } from "../core/types.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
 
@@ -75,6 +75,7 @@ export type Call = {
 	code: number | null;
 	out: string | null;
 	err: string | null;
+	errKind: CallErrorKind | null;
 	ms: number | null;
 	queueWaitMs: number | null;
 	createdAt: number;
@@ -250,7 +251,15 @@ export interface Calls {
 	setState(id: string, state: CallState, input?: { agent?: string }): Promise<void>;
 	finish(
 		id: string,
-		input: { state: CallState; code: number; out: string; err: string; ms: number; queueWaitMs: number },
+		input: {
+			state: CallState;
+			code: number;
+			out: string;
+			err: string;
+			errKind?: CallErrorKind;
+			ms: number;
+			queueWaitMs: number;
+		},
 	): Promise<void>;
 }
 

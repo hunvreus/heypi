@@ -4,7 +4,8 @@ import { CallRunner } from "../src/core/calls.js";
 import type { Logger } from "../src/core/log.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { commandConfirm } from "../src/core/policy.js";
-import type { CallState } from "../src/core/types.js";
+import type { CallErrorKind, CallState } from "../src/core/types.js";
+import { RUNTIME_STARTUP_ERROR_KIND, RuntimeStartupError } from "../src/runtime/errors.js";
 import { Queue } from "../src/runtime/queue.js";
 import type { Runtime } from "../src/runtime/types.js";
 import type { Approval, Approvals, Call, Calls } from "../src/store/types.js";
@@ -86,6 +87,34 @@ test("authorized approval executes the pending command", async () => {
 		events.some((event) => event.event === "approval.approved"),
 		true,
 	);
+});
+
+test("bash runtime startup failures are failed calls", async () => {
+	const calls = new FakeCalls();
+	const callRunner = new CallRunner(
+		calls,
+		new FakeApprovals(),
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		{
+			name: "docker",
+			root: "/tmp/unused",
+			bash: async () => {
+				throw new RuntimeStartupError("Docker runtime failed to start container heypi-test: daemon unavailable");
+			},
+		},
+		{},
+		noLogger(),
+	);
+
+	const failed = await callRunner.bash("C1", "U1", "echo ok");
+
+	assert.match(failed.text, /Result: `failed` exit=1/);
+	assert.match(failed.text, /Runtime failed\. Ask an admin to check the server logs\./);
+	assert.doesNotMatch(failed.text, /Docker|daemon unavailable/);
+	assert.equal(calls.rows[0].state, "failed");
+	assert.equal(calls.rows[0].code, 1);
+	assert.equal(calls.rows[0].err, "Docker runtime failed to start container heypi-test: daemon unavailable");
+	assert.equal(calls.rows[0].errKind, RUNTIME_STARTUP_ERROR_KIND);
 });
 
 test("approval resolution is scoped by agent", async () => {
@@ -667,6 +696,7 @@ class FakeCalls implements Calls {
 			code: null,
 			out: null,
 			err: null,
+			errKind: null,
 			ms: null,
 			queueWaitMs: null,
 			createdAt: now,
@@ -697,7 +727,15 @@ class FakeCalls implements Calls {
 
 	async finish(
 		id: string,
-		input: { state: CallState; code: number; out: string; err: string; ms: number; queueWaitMs: number },
+		input: {
+			state: CallState;
+			code: number;
+			out: string;
+			err: string;
+			errKind?: CallErrorKind;
+			ms: number;
+			queueWaitMs: number;
+		},
 	): Promise<void> {
 		const row = await this.get(id);
 		if (!row) return;
@@ -705,6 +743,7 @@ class FakeCalls implements Calls {
 		row.code = input.code;
 		row.out = input.out;
 		row.err = input.err;
+		row.errKind = input.errKind ?? null;
 		row.ms = input.ms;
 		row.queueWaitMs = input.queueWaitMs;
 	}

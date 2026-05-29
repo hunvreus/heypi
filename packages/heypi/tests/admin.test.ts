@@ -22,7 +22,7 @@ type LogEntry = {
 	input?: Record<string, unknown>;
 };
 
-test("admin tables use Basecoat pagination markup", () => {
+test("admin tables preserve pagination and filter state", () => {
 	const now = Date.now();
 	const body = jobsView({
 		limit: 50,
@@ -49,16 +49,14 @@ test("admin tables use Basecoat pagination markup", () => {
 		],
 	} satisfies Parameters<typeof jobsView>[0]);
 	assert.match(body, /aria-label="pagination"/);
-	assert.match(body, /mt-4 flex w-full justify-end/);
-	assert.match(body, /btn-sm-ghost/);
-	assert.match(body, /name="q" class="input h-8 pl-8 text-sm" placeholder="Search\.\.\." value="daily"/);
-	assert.match(body, /class="select h-8 w-\[9rem\] shrink-0 py-1 text-sm" name="type"/);
-	assert.match(body, /<button class="btn-sm shrink-0" type="submit">Filter<\/button>/);
-	assert.match(body, /<a class="btn-sm-ghost shrink-0" href="\/admin\/jobs">Reset<\/a>/);
+	assert.match(body, /data-admin-filter-form/);
+	assert.match(body, /name="q"[^>]+value="daily"[^>]+data-admin-filter-search/);
+	assert.match(body, /name="type"[^>]+data-admin-filter-select="type"/);
+	assert.match(body, /type="submit"[^>]+data-admin-filter-submit/);
+	assert.match(body, /href="\/admin\/jobs"[^>]+data-admin-filter-reset/);
 	assert.match(body, /<option value="cron" selected>Cron<\/option>/);
 	assert.match(body, /href="\/admin\/jobs\?limit=50&amp;offset=100&amp;q=daily&amp;type=cron"/);
 	assert.doesNotMatch(body, /Rows 51-51/);
-	assert.doesNotMatch(body, /btn-icon-outline/);
 });
 
 test("admin jobs page labels future next runs as upcoming", () => {
@@ -140,7 +138,7 @@ test("admin jobs page renders explicit targets and scoped heartbeat routes", asy
 		const body = await response.text();
 		assert.match(body, /targets: slack channel C123, slack user U123/);
 		assert.match(body, /scope: slack channel C123/);
-		assert.match(body, /<th>Route<\/th>/);
+		assert.match(body, /data-admin-column="Route"/);
 		assert.doesNotMatch(body, /"channels":\["C123"\]/);
 
 		const filtered = await fetch(`http://127.0.0.1:${port}/admin/jobs?q=Daily&type=cron`);
@@ -500,9 +498,8 @@ test("admin memory empty state explains saved memory files", () => {
 	});
 	assert.match(body, /No memory files/);
 	assert.match(body, /Once the agent starts saving memory/);
-	assert.match(body, /<h3 class="font-medium tracking-tight">No memory files<\/h3>/);
-	assert.doesNotMatch(body, /text-lg font-medium tracking-tight/);
-	assert.doesNotMatch(body, /mb-2 bg-muted/);
+	assert.match(body, /data-admin-empty-state/);
+	assert.match(body, /data-admin-empty-title>No memory files<\/h3>/);
 });
 
 test("admin memory page explains disabled memory", () => {
@@ -546,32 +543,26 @@ test("admin memory table uses details dialog for file content", () => {
 			},
 		],
 	});
-	assert.match(body, /<th class="pl-4">Scope<\/th>/);
-	assert.match(body, /<th>Content<\/th>/);
-	assert.match(body, /<th>Size<\/th>/);
-	assert.match(body, /<th>Updated<\/th>/);
-	assert.match(body, /<th>Hash<\/th>/);
+	assert.match(body, /data-admin-column="Scope"/);
+	assert.match(body, /data-admin-column="Content"/);
+	assert.match(body, /data-admin-column="Size"/);
+	assert.match(body, /data-admin-column="Updated"/);
+	assert.match(body, /data-admin-column="Hash"/);
 	assert.match(body, /user\/U123/);
-	assert.match(body, /max-w-\[34rem\] overflow-hidden text-ellipsis whitespace-nowrap/);
 	assert.match(body, /0123456789ab/);
 	assert.match(body, /data-admin-dialog-open="memory-detail-0"/);
-	assert.match(body, /max-w-\[1040px\]/);
 	assert.match(body, /Memory details/);
 	assert.match(body, /aria-label="Copy scope"/);
-	assert.match(body, /class="btn-sm-icon-ghost size-6 shrink-0 text-muted-foreground hover:text-foreground"/);
+	assert.match(body, /data-admin-copy-label="scope"/);
 	assert.match(body, /aria-label="Copy path"/);
 	assert.match(body, /aria-label="Copy SHA-256"/);
 	assert.match(body, /aria-label="Copy content"/);
 	assert.match(body, /data-admin-copy="\/tmp\/workspace\/memory\/scopes\/user\/U123\/MEMORY\.md"/);
-	assert.match(
-		body,
-		/<span class="break-words \[overflow-wrap:anywhere\]">\/tmp\/workspace\/memory\/scopes\/user\/U123\/MEMORY\.md<\/span>/,
-	);
+	assert.match(body, />\/tmp\/workspace\/memory\/scopes\/user\/U123\/MEMORY\.md<\/span>/);
 	assert.match(body, />Content<\/div>/);
-	assert.match(body, /<div class="max-w-full whitespace-pre-wrap break-words \[overflow-wrap:anywhere\]">/);
+	assert.match(body, /data-admin-memory-content/);
 	assert.match(body, /<rect width="14" height="14" x="8" y="8" rx="2" ry="2"\/>/);
-	assert.doesNotMatch(body, /whitespace-pre-wrap break-words font-mono/);
-	assert.doesNotMatch(body, /<pre class=/);
+	assert.doesNotMatch(body, /<pre/);
 	assert.match(body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 	assert.doesNotMatch(body, /<script>alert\(1\)<\/script>/);
 	assert.match(body, /aria-label="pagination"/);
@@ -604,40 +595,28 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		},
 		{ checkedAt: now },
 	);
-	assert.match(threadsBody, /<h2 class="leading-none font-semibold">Chats<\/h2>/);
+	assert.match(threadsBody, />Chats<\/h2>/);
 	assert.match(threadsBody, /Recent conversations across connected channels\./);
 	assert.doesNotMatch(threadsBody, /role="tab"/);
-	assert.match(threadsBody, /grid h-\[calc\(100vh-5\.5rem\)\] min-w-0/);
-	assert.match(threadsBody, /<div class="card !p-0 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">/);
-	assert.match(
-		threadsBody,
-		/<aside class="flex max-h-\[36vh\] min-h-0 min-w-0 flex-col gap-3 overflow-hidden border-b p-4 lg:max-h-none lg:border-b-0">/,
-	);
-	assert.match(threadsBody, /<div class="relative">/);
-	assert.match(threadsBody, /type="search" name="q" class="input h-8 pr-9 text-sm"/);
+	assert.match(threadsBody, /data-admin-chats/);
+	assert.match(threadsBody, /data-admin-chats-card/);
+	assert.match(threadsBody, /data-admin-chats-sidebar/);
+	assert.match(threadsBody, /data-admin-chat-search/);
+	assert.match(threadsBody, /type="search" name="q"[^>]+data-admin-chat-search-input/);
 	assert.match(threadsBody, /aria-label="Search query"/);
-	assert.match(
-		threadsBody,
-		/<button class="absolute right-1\.5 top-1\/2 -translate-y-1\/2 btn-icon-ghost text-muted-foreground hover:text-accent-foreground size-6" type="submit" aria-label="Search chats" data-tooltip="Search chats" data-side="top" data-align="end"/,
-	);
-	assert.doesNotMatch(threadsBody, /rounded-r-none/);
-	assert.doesNotMatch(threadsBody, /border-l-0/);
+	assert.match(threadsBody, /aria-label="Search chats"[^>]+data-admin-chat-search-submit/);
 	assert.doesNotMatch(threadsBody, /pl-8/);
 	assert.doesNotMatch(threadsBody, /absolute left-2\.5/);
 	assert.doesNotMatch(threadsBody, /All states/);
 	assert.doesNotMatch(threadsBody, /All channels/);
 	assert.doesNotMatch(threadsBody, /All actors/);
 	assert.doesNotMatch(threadsBody, />Filter<\/button>/);
-	assert.match(
-		threadsBody,
-		/grid-rows-\[auto_minmax\(0,1fr\)\] lg:grid-cols-\[minmax\(17rem,22rem\)_minmax\(0,1fr\)\] lg:grid-rows-1/,
-	);
-	assert.match(threadsBody, /<span class="shrink-0 font-mono text-\[13px\]">C123<\/span>/);
-	assert.match(threadsBody, /<span class="text-muted-foreground" aria-hidden="true">·<\/span>/);
-	assert.doesNotMatch(threadsBody, /<span class="font-mono text-muted-foreground">thread-1<\/span>/);
-	assert.match(threadsBody, /<span class="min-w-0 truncate text-muted-foreground">deploy api<\/span>/);
-	assert.match(threadsBody, /<div class="pl-6 text-xs text-muted-foreground">/);
-	assert.doesNotMatch(threadsBody, /<span class="badge-secondary bg-amber-100 dark:bg-amber-900">Running<\/span>/);
+	assert.match(threadsBody, /data-admin-chats-layout/);
+	assert.match(threadsBody, /data-admin-thread-item data-thread-id="thread-1"/);
+	assert.match(threadsBody, /data-admin-thread-channel>C123<\/span>/);
+	assert.match(threadsBody, /data-admin-thread-preview>deploy api<\/span>/);
+	assert.match(threadsBody, /data-admin-thread-updated/);
+	assert.doesNotMatch(threadsBody, />Running<\/span>/);
 	assert.match(threadsBody, /href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
 	assert.match(threadsBody, /deploy api/);
 	assert.doesNotMatch(threadsBody, /Message: deploy api/);
@@ -742,39 +721,34 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		},
 	);
 	assert.match(threadBody, /data-tooltip="slack"/);
-	assert.match(threadBody, /<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm">/);
-	assert.match(
-		threadBody,
-		/<h2 class="min-w-0 truncate font-mono text-\[13px\]">C123<\/h2><span class="min-w-0 truncate font-mono text-\[13px\] text-muted-foreground">thread-1<\/span>/,
-	);
+	assert.match(threadBody, /data-admin-thread-sticky-header/);
+	assert.match(threadBody, /data-admin-thread-header/);
+	assert.match(threadBody, /data-admin-thread-channel>C123<\/h2>/);
+	assert.match(threadBody, /data-admin-thread-id>thread-1<\/span>/);
 	assert.doesNotMatch(threadBody, /Channel C123 · Created /);
 	assert.doesNotMatch(threadBody, / · Last updated /);
 	assert.match(threadBody, /href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
 	assert.match(threadBody, /aria-current="true"/);
 	assert.match(threadBody, /data-selected-event="true"/);
-	assert.match(
-		threadBody,
-		/scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll/,
-	);
-	assert.match(threadBody, /scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto/);
-	assert.match(threadBody, /<article id="event-message-message-1"/);
-	assert.match(threadBody, /justify-items-end/);
-	assert.match(threadBody, /rounded-lg bg-muted px-4 py-3/);
-	assert.match(threadBody, /<footer class="text-xs text-muted-foreground">U123 <span aria-hidden="true">·<\/span>/);
+	assert.match(threadBody, /data-admin-thread-scroll/);
+	assert.match(threadBody, /data-admin-thread-list/);
+	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
+	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /data-align="end"/);
 	assert.match(threadBody, /Deployment is ready/);
-	assert.match(threadBody, /rounded-lg bg-blue-100 px-4 py-3 dark:bg-blue-950/);
-	assert.match(threadBody, /<p class="italic text-muted-foreground">Empty message<\/p>/);
+	assert.match(threadBody, /<article id="event-message-message-2" data-admin-message-role="assistant"/);
+	assert.match(threadBody, />Empty message<\/p>/);
 	assert.doesNotMatch(threadBody, /\(empty message\)/);
 	assert.doesNotMatch(threadBody, /heypi <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /<strong>deploy<\/strong> api/);
-	assert.doesNotMatch(threadBody, /<code class=/);
-	assert.match(threadBody, /<ul class="list-disc pl-5"><li>first check<\/li><\/ul>/);
-	assert.match(threadBody, /<details id="event-call-call-1" data-selected-event="true"/);
-	assert.match(threadBody, /<summary class="flex min-w-0 items-center gap-2">/);
-	assert.match(threadBody, /class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm"/);
-	assert.doesNotMatch(threadBody, /border-t pt-2/);
-	assert.match(threadBody, /group-open:rotate-90/);
+	assert.doesNotMatch(threadBody, /<code/);
+	assert.match(threadBody, /<ul[^>]*><li>first check<\/li><\/ul>/);
+	assert.match(
+		threadBody,
+		/<details id="event-call-call-1"[^>]+data-admin-context-row="call"[^>]+data-selected-event="true"/,
+	);
+	assert.match(threadBody, /data-admin-context-summary/);
+	assert.match(threadBody, /data-admin-context-details/);
 	assert.match(threadBody, />Runtime<\/span>/);
 	assert.doesNotMatch(threadBody, />Stdout<\/span>/);
 	assert.doesNotMatch(threadBody, />ID<\/div>/);
@@ -811,8 +785,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(loginBody, /More about heypi/);
 		assert.match(loginBody, /https:\/\/heypi\.dev\/docs/);
 		assert.match(loginBody, /target="_blank"/);
-		assert.match(loginBody, /inline-flex items-center/);
-		assert.match(loginBody, /opacity-50/);
+		assert.match(loginBody, /data-admin-empty-state/);
 
 		for (const path of ["/admin", "/admin/configuration", "/admin/events", "/admin/_pulse"]) {
 			const protectedRoute = await fetch(`http://127.0.0.1:${port}${path}`, { redirect: "manual" });
@@ -831,7 +804,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		const reusedBody = await reused.text();
 		assert.match(reusedBody, /Admin access failed/);
 		assert.match(reusedBody, /Invalid or expired login link/);
-		assert.match(reusedBody, /min-h-\[calc\(100vh-2rem\)\]/);
+		assert.match(reusedBody, /data-admin-empty-state/);
 		assert.doesNotMatch(reusedBody, /data-admin-theme-toggle/);
 
 		const adminPage = await fetch(`http://127.0.0.1:${port}/admin`, { headers: { cookie } });
@@ -840,51 +813,33 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		const body = await adminPage.text();
 		assert.match(body, /heypi admin/);
 		assert.match(body, /aria-label="heypi"/);
-		assert.match(body, /h-4/);
-		assert.match(body, /btn-sm-icon-ghost/);
-		assert.match(
-			body,
-			/<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="https:\/\/heypi\.dev\/docs" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="bottom"><svg [^>]+><path d="M4 19\.5v-15A2\.5 2\.5 0 0 1 6\.5 2H19/,
-		);
-		assert.match(body, /<path d="M8 11h8"\/><path d="M8 7h6"\/>/);
-		assert.match(
-			body,
-			/<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="Log out" data-tooltip="Log out" data-side="bottom"><svg [^>]+><path d="M9 21H5/,
-		);
+		assert.match(body, /data-admin-docs-link/);
+		assert.match(body, /data-admin-logout/);
 		const header = body.match(/<header[\s\S]*?<\/header>/u)?.[0] ?? "";
-		assert.ok(header.indexOf("Configuration") < header.indexOf('class="mx-1 h-4 w-px bg-border"'));
-		assert.ok(header.indexOf('class="mx-1 h-4 w-px bg-border"') < header.indexOf('aria-label="Docs"'));
+		assert.ok(header.indexOf("Configuration") < header.indexOf("data-admin-nav-separator"));
+		assert.ok(header.indexOf("data-admin-nav-separator") < header.indexOf('aria-label="Docs"'));
 		assert.ok(header.indexOf('data-tooltip="Log out"') < header.indexOf("data-admin-theme-toggle"));
 		assert.match(body, /<style nonce="[^"]+">\n\[data-admin-nav-mobile\]\{display:none\}/);
 		assert.match(body, /\[data-admin-nav-desktop\]\{display:none!important\}/);
 		assert.match(body, /\[data-admin-nav-mobile\]\{display:block!important\}/);
-		assert.match(body, /data-admin-nav-desktop class="flex min-w-0 flex-wrap items-center justify-end gap-1"/);
-		assert.match(body, /id="admin-mobile-menu" data-admin-nav-mobile class="dropdown-menu"/);
+		assert.match(body, /data-admin-nav-desktop/);
+		assert.match(body, /id="admin-mobile-menu" data-admin-nav-mobile/);
 		assert.match(
 			body,
 			/id="admin-mobile-menu-trigger" aria-haspopup="menu" aria-controls="admin-mobile-menu-menu" aria-expanded="false"/,
 		);
-		assert.match(body, /aria-label="Open menu" data-tooltip="Menu" data-side="bottom" data-align="end"/);
-		assert.match(body, /<path d="M4 5h16"\/><path d="M4 12h16"\/><path d="M4 19h16"\/>/);
-		assert.match(
-			body,
-			/id="admin-mobile-menu-popover" data-popover aria-hidden="true" data-align="end" class="min-w-56"/,
-		);
+		assert.match(body, /aria-label="Open menu"[^>]+data-tooltip="Menu"[^>]+data-align="end"/);
+		assert.match(body, /data-admin-mobile-menu-trigger/);
+		assert.match(body, /data-admin-mobile-menu-popover/);
 		assert.match(body, /role="menu" id="admin-mobile-menu-menu" aria-labelledby="admin-mobile-menu-trigger"/);
-		assert.match(
-			body,
-			/<a role="menuitem" href="\/admin" aria-current="page" class="bg-muted text-foreground">Chats<\/a>/,
-		);
-		assert.match(body, /Approvals<span class="badge-secondary ml-auto" data-live-field="pendingApprovals">0<\/span>/);
-		assert.match(
-			body,
-			/<a role="menuitem" href="https:\/\/heypi\.dev\/docs" target="_blank" rel="noopener noreferrer">/,
-		);
-		assert.match(body, /<button type="button" role="menuitem" data-admin-theme-toggle class="w-full">/);
+		assert.match(body, /data-admin-mobile-nav-link="chats" aria-current="page"/);
+		assert.match(body, /Approvals<span[^>]+data-live-field="pendingApprovals">0<\/span>/);
+		assert.match(body, /href="https:\/\/heypi\.dev\/docs"[^>]+data-admin-mobile-docs-link/);
+		assert.match(body, /<button type="button" role="menuitem" data-admin-theme-toggle/);
 		assert.match(body, /Toggle theme/);
-		assert.match(body, /<button type="submit" role="menuitem" class="w-full">/);
-		assert.match(body, /<span class="block dark:hidden"><svg [^>]+><path d="M20\.985 12\.486/);
-		assert.match(body, /<span class="hidden dark:block"><svg [^>]+><circle cx="12" cy="12" r="4"\/>/);
+		assert.match(body, /<button type="submit" role="menuitem"[^>]+data-admin-mobile-logout/);
+		assert.match(body, /data-admin-theme-icon="moon"/);
+		assert.match(body, /data-admin-theme-icon="sun"/);
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"/);
 		assert.match(body, /aria-label="Docs"/);
 		assert.match(body, /data-tooltip="Docs"/);
@@ -894,28 +849,20 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.doesNotMatch(body, /aria-current="false"/);
 		assert.doesNotMatch(body, /data-tooltip="Toggle dark mode"/);
 		assert.doesNotMatch(body, /title="Toggle dark mode"/);
-		assert.match(body, /max-w-7xl/);
-		assert.match(body, /gap-4 px-6 py-3/);
-		assert.match(body, /<h1 class="sr-only">Chats<\/h1>/);
+		assert.match(body, /data-admin-main/);
+		assert.match(body, /data-admin-page-title>Chats<\/h1>/);
 		assert.match(body, /Recent conversations across connected channels\./);
 		assert.doesNotMatch(body, /role="tablist"/);
 		assert.doesNotMatch(body, /href="\/admin\/activity"/);
 		assert.match(body, /Select a thread/);
-		assert.doesNotMatch(body, /Chats<span class="badge-secondary"/);
-		assert.match(body, /class="btn-sm-ghost hover:text-foreground bg-muted text-foreground" href="\/admin"/);
-		assert.match(
-			body,
-			/class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/approvals"/,
-		);
-		assert.match(body, /class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/jobs"/);
-		assert.match(
-			body,
-			/class="btn-sm-ghost hover:text-foreground text-muted-foreground pr-2" href="\/admin\/memory"/,
-		);
-		assert.match(body, /Approvals<span class="badge-secondary" data-live-field="pendingApprovals">0<\/span>/);
-		assert.match(body, /Jobs<span class="badge-secondary" data-live-field="jobs">0<\/span>/);
-		assert.match(body, /Memory<span class="badge-secondary">0<\/span>/);
-		assert.doesNotMatch(body, /badge-secondary font-mono/);
+		assert.doesNotMatch(body, /Chats<span/);
+		assert.match(body, /data-admin-nav-link="chats" aria-current="page"/);
+		assert.match(body, /data-admin-nav-link="approvals"/);
+		assert.match(body, /data-admin-nav-link="jobs"/);
+		assert.match(body, /data-admin-nav-link="memory"/);
+		assert.match(body, /Approvals<span[^>]+data-live-field="pendingApprovals">0<\/span>/);
+		assert.match(body, /Jobs<span[^>]+data-live-field="jobs">0<\/span>/);
+		assert.match(body, /Memory<span[^>]*>0<\/span>/);
 		assert.match(body, /href="\/admin\/configuration"[^>]*>Configuration/);
 		assert.doesNotMatch(body, /ml-auto min-w-0/);
 		assert.doesNotMatch(body, /Agent folder/);
@@ -927,10 +874,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /\/admin\/jobs/);
 		assert.match(body, /\/admin\/memory/);
 		assert.match(body, /\/admin\/configuration/);
-		assert.doesNotMatch(body, /<a class="btn-ghost" href="https:\/\/heypi\.dev\/docs"[\s\S]* Docs<\/a>/);
 		assert.doesNotMatch(body, /\/admin\/access/);
 		assert.doesNotMatch(body, /\/admin\/routes/);
-		assert.match(body, /text-muted-foreground/);
 		assert.match(body, /prefers-color-scheme: dark/);
 		assert.match(body, /localStorage\.getItem\(key\)/);
 		assert.match(body, /addEventListener\?\.\("change"/);
@@ -946,7 +891,6 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /sessionStorage\.setItem\(threadScrollKey\(\), threadAtBottom\(container\) \? "bottom"/);
 		assert.match(body, /new MutationObserver/);
 		assert.doesNotMatch(body, /scrollIntoView/);
-		assert.doesNotMatch(body, /data-admin-theme-toggle class="btn-icon-ghost size-8"/);
 		assert.match(body, /navigator\.clipboard/);
 		assert.match(body, /button\.innerHTML = '<svg/);
 		assert.match(body, /setTimeout\(\(\) => \{/);
@@ -977,7 +921,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		const config = await fetch(`http://127.0.0.1:${port}/admin/configuration`, { headers: { cookie } });
 		assert.equal(config.status, 200);
 		const configBody = await config.text();
-		assert.match(configBody, /<h1 class="sr-only">Configuration<\/h1>/);
+		assert.match(configBody, /data-admin-page-title>Configuration<\/h1>/);
 		assert.match(configBody, /Agent/);
 		assert.match(configBody, /Model/);
 		assert.match(configBody, /Runtime/);
@@ -1007,7 +951,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		const jobsBody = await jobs.text();
 		assert.match(jobsBody, /No jobs configured/);
 		assert.match(jobsBody, /Once scheduled or heartbeat jobs are configured/);
-		assert.doesNotMatch(jobsBody, /mb-2 bg-muted/);
+		assert.match(jobsBody, /data-admin-empty-state/);
 
 		const missing = await fetch(`http://127.0.0.1:${port}/admin/missing`, { headers: { cookie } });
 		assert.equal(missing.status, 404);
@@ -1015,12 +959,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(missingBody, /Page not found/);
 		assert.match(missingBody, /More about heypi/);
 		assert.match(missingBody, /https:\/\/heypi\.dev\/docs/);
-		assert.match(missingBody, /btn-sm-outline/);
 		assert.match(missingBody, /target="_blank"/);
-		assert.match(missingBody, /inline-flex items-center/);
-		assert.match(missingBody, /opacity-50/);
-		assert.match(missingBody, /min-h-\[calc\(100vh-2rem\)\]/);
-		assert.doesNotMatch(missingBody, /border-dashed/);
+		assert.match(missingBody, /data-admin-empty-state/);
 		assert.doesNotMatch(missingBody, /data-admin-theme-toggle/);
 
 		const blocked = await fetch(`http://127.0.0.1:${port}/admin/logout`, {

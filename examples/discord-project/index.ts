@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, consoleLogger, coreTools, createHeypi, discord, runHeypi, tool, workspace } from "@hunvreus/heypi";
+import { agentFrom, coreTools, createHeypi, discord, runHeypi, tool, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
@@ -80,7 +80,6 @@ const readProjectNotes = tool({
 
 const app = createHeypi({
 	state: { root: stateRoot },
-	logger: consoleLogger({ level: "debug", format: "pretty" }),
 	adapters: [
 		discord({
 			token: required("DISCORD_BOT_TOKEN"),
@@ -94,20 +93,14 @@ const app = createHeypi({
 		}),
 	],
 	agent: agentFrom("./agent", {
-		model: { provider: "openai", name: "gpt-5-mini", verbosity: "low" },
+		model: "openai/gpt-5-mini",
 		tools: [...coreTools(), projectNote, setProjectStatus, readProjectNotes],
 	}),
 	approval: {
 		approvers: list("HEYPI_APPROVERS"),
 		expiresInMs: 10 * 60 * 1000,
 	},
-	runtime: {
-		name: "just-bash",
-		root: workspace("./workspace"),
-		maxConcurrentPerChat: 1,
-		timeoutMs: 60_000,
-		justBash: { python: false, javascript: false },
-	},
+	runtime: { root: workspace("./workspace") },
 });
 
 await runHeypi(app);
