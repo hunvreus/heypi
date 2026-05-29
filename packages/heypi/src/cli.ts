@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { cac } from "cac";
 import {
@@ -564,10 +564,11 @@ function optionalSecret(flags: Flags, flag: string, env: string): string | undef
 
 function adminStateRoot(flags: Flags): string {
 	const explicit = stringFlag(flags, "state") ?? process.env.HEYPI_STATE_ROOT;
-	if (explicit) return resolve(explicit);
-	const local = resolve("state");
+	const searchRoot = invocationRoot();
+	if (explicit) return isAbsolute(explicit) ? resolve(explicit) : resolve(searchRoot, explicit);
+	const local = resolve(searchRoot, "state");
 	if (existsSync(join(local, "admin"))) return local;
-	const discovered = discoverStateRoots(resolve("."));
+	const discovered = discoverStateRoots(searchRoot);
 	if (discovered.length === 1) return discovered[0];
 	if (discovered.length > 1) {
 		throw new Error(
@@ -575,6 +576,10 @@ function adminStateRoot(flags: Flags): string {
 		);
 	}
 	throw new Error("no heypi admin state found; pass --state or run from the app folder");
+}
+
+function invocationRoot(): string {
+	return process.env.INIT_CWD ? resolve(process.env.INIT_CWD) : resolve(".");
 }
 
 async function selectAdminServer(
