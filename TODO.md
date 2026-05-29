@@ -13,10 +13,6 @@
   - Add scope-aware runtime roots so channels, actors, or threads can get separate workspaces when configured.
   - Add memory tools for explicit read/write/replace/delete with size limits, secret filtering, prompt-injection checks, and approval-gated broad-scope writes.
   - Keep actor memory DM-only by default unless explicitly enabled for group/channel contexts.
-- Add production hardening for `docker-bash`.
-  - Optional memory, CPU, read-only mount, and dropped-capability defaults.
-  - Image availability check in CLI health.
-
 ## Later
 
 - Add local web admin.

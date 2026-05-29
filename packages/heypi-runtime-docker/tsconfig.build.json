@@ -1,0 +1,16 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"outDir": "dist",
+		"paths": {
+			"@hunvreus/heypi/runtime": ["../heypi/dist/runtime/public.d.ts"]
+		},
+		"rootDir": "src"
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["tests", "dist", "node_modules"]
+}

@@ -144,7 +144,7 @@ export function createHostTools(options: HostToolOptions) {
 					),
 				),
 			}),
-			execute: async ({ hosts }, signal) => {
+			execute: async ({ hosts }, ctx) => {
 				const targets = hosts?.length ? await store.resolveMany(hosts) : (await store.read()).hosts;
 				if (!targets.length) return hosts?.length ? `no hosts matched: ${hosts.join(", ")}` : "no hosts configured";
 				const out: string[] = [];
@@ -160,7 +160,7 @@ export function createHostTools(options: HostToolOptions) {
 						store.knownHostsPath(),
 						factsCommand(),
 						Math.min(timeoutMs, 20_000),
-						signal,
+						ctx.signal,
 					);
 					if (result.code !== 0 && !result.out.trim()) {
 						out.push(`${host.id}: ${result.err.trim() || `fact probe failed with exit ${result.code}`}`);
@@ -265,7 +265,7 @@ export function createHostTools(options: HostToolOptions) {
 					],
 				};
 			},
-			execute: async ({ hosts, command }, signal) => {
+			execute: async ({ hosts, command }, ctx) => {
 				const risk = classifyCommand(command, options.commandPolicy);
 				if (risk.risk === "block") return `blocked: ${risk.reason}`;
 				const targets = await store.resolveMany(hosts);
@@ -277,7 +277,7 @@ export function createHostTools(options: HostToolOptions) {
 						out.push(`## ${host.id}\nmissing private key: ${host.key}; run host_key_ensure first`);
 						continue;
 					}
-					const result = await ssh(host, key, store.knownHostsPath(), command, timeoutMs, signal);
+					const result = await ssh(host, key, store.knownHostsPath(), command, timeoutMs, ctx.signal);
 					out.push(renderExec(host, result));
 				}
 				return out.join("\n\n");

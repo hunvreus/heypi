@@ -1,7 +1,14 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
 	"files": {
-		"includes": ["**", "!dist", "!drizzle/meta", "!.heypi", "!examples/*/state", "!src/admin/assets"]
+		"includes": [
+			"**",
+			"!**/dist",
+			"!packages/heypi/drizzle/meta",
+			"!.heypi",
+			"!examples/*/state",
+			"!packages/heypi/src/admin/assets"
+		]
 	},
 	"linter": {
 		"enabled": true,

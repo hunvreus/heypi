@@ -63,7 +63,7 @@ Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers.
 
 `SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`.
 
-This example enables `streaming: true`. See [`../../docs/CHAT.md`](../../docs/CHAT.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
+This example enables `streaming: true`. See [`../../packages/heypi/docs/CHAT.md`](../../packages/heypi/docs/CHAT.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup:
 

@@ -1,0 +1,52 @@
+{
+	"name": "@hunvreus/heypi-runtime-gondolin",
+	"version": "0.1.0-alpha.0",
+	"description": "Gondolin runtime provider for heypi.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"sideEffects": false,
+	"engines": {
+		"node": ">=23.6"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/hunvreus/heypi.git",
+		"directory": "packages/heypi-runtime-gondolin"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "pnpm --filter @hunvreus/heypi run build && pnpm run build:package",
+		"build:package": "rm -rf dist && tsc -p tsconfig.build.json",
+		"check": "biome check . && tsc --noEmit",
+		"test": "node --import tsx --test tests/*.test.ts",
+		"pack:dry": "npm pack --dry-run",
+		"prepack": "pnpm run build"
+	},
+	"peerDependencies": {
+		"@hunvreus/heypi": "0.1.0-alpha.0"
+	},
+	"dependencies": {
+		"@earendil-works/gondolin": "^0.12.0"
+	},
+	"devDependencies": {
+		"@hunvreus/heypi": "workspace:*",
+		"@types/node": "^25.9.1",
+		"tsx": "^4.22.3",
+		"typescript": "^6.0.3"
+	}
+}
