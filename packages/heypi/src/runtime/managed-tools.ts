@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { type ActorPolicy, actorAllowed, hasActorPolicy } from "../core/approvers.js";
 import type { MemoryStore } from "../core/memory.js";
 import type { ScopedKey } from "../core/scope.js";
 import type { SecretStore } from "../core/secrets.js";
@@ -8,7 +9,8 @@ import { stringParam } from "./tool-util.js";
 
 type WritePolicy = {
 	actor: string;
-	approvers: string[];
+	groups?: string[];
+	approvers: ActorPolicy;
 };
 
 export function memoryTools(
@@ -19,7 +21,10 @@ export function memoryTools(
 	if (!memory?.enabled() || !scope) return [];
 	const assertCanWrite = () => {
 		if (memory.writePolicy() === "off") throw new Error("memory writes are disabled");
-		if (memory.writePolicy() === "approvers" && !policy.approvers.includes(policy.actor)) {
+		if (
+			memory.writePolicy() === "approvers" &&
+			(!hasActorPolicy(policy.approvers) || !actorAllowed(policy.approvers, policy))
+		) {
 			throw new Error("memory writes require an approver");
 		}
 	};
@@ -78,7 +83,10 @@ export function skillTools(
 	if (!skills?.enabled() || !scope) return [];
 	const assertCanWrite = () => {
 		if (skills.writePolicy() === "off") throw new Error("skill writes are disabled");
-		if (skills.writePolicy() === "approvers" && !policy.approvers.includes(policy.actor)) {
+		if (
+			skills.writePolicy() === "approvers" &&
+			(!hasActorPolicy(policy.approvers) || !actorAllowed(policy.approvers, policy))
+		) {
 			throw new Error("skill writes require an approver");
 		}
 	};

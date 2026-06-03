@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createAdminAdapter } from "./admin/index.js";
 import type { AppLockConfig, HeypiConfig, HttpConfig } from "./config.js";
 import { ActiveRuns } from "./core/active.js";
+import { actorLabels, hasActorPolicy } from "./core/approvers.js";
 import { CallRunner } from "./core/calls.js";
 import { type Logger, logger, message } from "./core/log.js";
 import { MemoryStore, normalizeMemoryConfig } from "./core/memory.js";
@@ -74,12 +75,12 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	const runtime = (scope?: string) => runtimes.getPath(scope);
 	const memoryConfig = normalizeMemoryConfig(config.memory, {
 		scope: config.scope,
-		approvers: config.approval?.approvers,
+		approvers: hasActorPolicy(config.approval?.approvers) ? actorLabels(config.approval?.approvers) : [],
 	});
 	const memory = new MemoryStore(config.runtime.root, memoryConfig);
 	const skillsConfig = normalizeSkillsConfig(config.skills, {
 		scope: config.scope,
-		approvers: config.approval?.approvers,
+		approvers: hasActorPolicy(config.approval?.approvers) ? actorLabels(config.approval?.approvers) : [],
 	});
 	const skills = new SkillStore(config.runtime.root, skillsConfig);
 	const secretsConfig = normalizeSecretsConfig(config.secrets);
@@ -239,6 +240,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 					attachments,
 					http,
 					store,
+					approval: config.approval,
 					memory,
 					app: {
 						agent: config.agent.id,

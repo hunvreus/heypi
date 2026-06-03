@@ -46,7 +46,7 @@ HEYPI_TELEGRAM_USERS=
 
 Leave the `HEYPI_TELEGRAM_*` allowlists empty to accept every update Telegram delivers. Set comma-separated IDs to restrict which chats or users may trigger the agent.
 
-This example enables `streaming: true`. See [`../../packages/heypi/docs/CHAT.md`](../../packages/heypi/docs/CHAT.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
+This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters.md`](../../packages/heypi/docs/adapters.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup and discover a target chat:
 

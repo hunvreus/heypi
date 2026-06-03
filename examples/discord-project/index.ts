@@ -34,9 +34,9 @@ const app = createHeypi({
 		discord({
 			token: required("DISCORD_BOT_TOKEN"),
 			allow: {
-				guilds: list("HEYPI_DISCORD_GUILDS"),
 				channels: list("HEYPI_DISCORD_CHANNELS"),
 				users: list("HEYPI_DISCORD_USERS"),
+				groups: list("HEYPI_DISCORD_GROUPS"),
 			},
 			trigger: "mention",
 			streaming: true,
@@ -47,7 +47,7 @@ const app = createHeypi({
 		tools: coreTools({ bash: true }),
 	}),
 	approval: {
-		approvers: list("HEYPI_APPROVERS"),
+		approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
 		expiresInMs: 10 * 60 * 1000,
 	},
 	runtime: {

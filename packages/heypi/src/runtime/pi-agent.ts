@@ -9,7 +9,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentConfig, AgentContextBlock, AgentContextInput, ModelConfig } from "../config.js";
+import type { AgentConfig, AgentContextBlock, AgentContextInput, ApprovalConfig, ModelConfig } from "../config.js";
 import { normalizeApprovalDetails } from "../core/approval-view.js";
 import { type CallRunner, RUNTIME_EVENTS } from "../core/calls.js";
 import { type Logger, logError, logger, redact, userError } from "../core/log.js";
@@ -44,7 +44,7 @@ export type PiAgentInput = {
 	memory?: MemoryStore;
 	skills?: SkillStore;
 	secrets?: SecretStore;
-	approvalApprovers?: string[];
+	approvalApprovers?: ApprovalConfig["approvers"];
 	logger?: Logger;
 	appMessages?: AppMessages;
 };
@@ -277,7 +277,7 @@ export class PiAgent implements Agent {
 	private async create(
 		channel: string,
 		actor: string,
-		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope" | "runtimeEvents">,
+		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope" | "runtimeEvents" | "actorGroups">,
 		context: {
 			trace?: string;
 			agent: string;
@@ -348,10 +348,12 @@ export class PiAgent implements Agent {
 				...agentTools.custom,
 				...memoryTools(this.input.memory, req.scope?.memory, {
 					actor,
+					groups: req.actorGroups,
 					approvers: this.input.approvalApprovers ?? [],
 				}),
 				...skillTools(this.input.skills, req.scope?.skills, {
 					actor,
+					groups: req.actorGroups,
 					approvers: this.input.approvalApprovers ?? [],
 				}),
 				...secretTools(this.input.secrets, req.scope?.workspace),

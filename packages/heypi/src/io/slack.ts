@@ -1,5 +1,6 @@
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
 import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
@@ -52,9 +53,9 @@ export type SlackReply = "thread" | "same" | "channel";
 export type SlackTrigger = "mention" | "message";
 
 export type SlackAllow = {
-	teams?: string[];
 	channels?: string[];
 	users?: string[];
+	groups?: string[];
 	dms?: boolean;
 };
 
@@ -85,6 +86,10 @@ export function slack(input: SlackConfig): Adapter {
 			log.info("adapter.start", { adapter: name, kind, mode: setup.mode });
 			const receiver = setup.mode === "http" ? createSlackReceiver(input, setup, start) : undefined;
 			const bolt = createSlackApp(input, setup, receiver);
+			const groups = new SlackGroupResolver(
+				[...(input.allow?.groups ?? []), ...configuredGroups(start.approval?.approvers)],
+				log,
+			);
 			app = bolt;
 			botUserId = await slackBotUserId(bolt.client, log);
 			bolt.action(APPROVE, async ({ ack, body, action, client }) => {
@@ -99,6 +104,7 @@ export function slack(input: SlackConfig): Adapter {
 					delivery,
 					provider: name,
 					adapterKind: kind,
+					groups,
 					progress: input.progress,
 					streaming: input.streaming,
 					messages: start.messages,
@@ -116,6 +122,7 @@ export function slack(input: SlackConfig): Adapter {
 					delivery,
 					provider: name,
 					adapterKind: kind,
+					groups,
 					messages: start.messages,
 				});
 			});
@@ -131,6 +138,7 @@ export function slack(input: SlackConfig): Adapter {
 					delivery,
 					provider: name,
 					adapterKind: kind,
+					groups,
 					messages: start.messages,
 				});
 			});
@@ -146,6 +154,7 @@ export function slack(input: SlackConfig): Adapter {
 					delivery,
 					provider: name,
 					adapterKind: kind,
+					groups,
 					messages: start.messages,
 				});
 			});
@@ -171,7 +180,13 @@ export function slack(input: SlackConfig): Adapter {
 				const reply = target(mode, msg);
 				const trace = msg.client_msg_id ?? msg.ts;
 				const context = (extra?: Record<string, unknown>) => logCtx({ trace, adapter: name, kind, channel }, extra);
-				const allow = slackAllowed(input.allow, { team, channel, user: msg.user, isDm: slackDm(msg) });
+				const actorGroups = await groups.forUser(client, msg.user);
+				const allow = slackAllowed(input.allow, {
+					channel,
+					user: msg.user,
+					groups: actorGroups,
+					isDm: slackDm(msg),
+				});
 				if (!allow.ok) {
 					log.debug(
 						"adapter.drop",
@@ -205,6 +220,7 @@ export function slack(input: SlackConfig): Adapter {
 					context({
 						thread: msg.thread_ts,
 						actor: msg.user,
+						actorGroups,
 						event: msg.client_msg_id ?? msg.ts,
 					}),
 				);
@@ -256,6 +272,7 @@ export function slack(input: SlackConfig): Adapter {
 						team,
 						channel,
 						actor: msg.user ?? "unknown",
+						actorGroups,
 						thread: threadKey(input.reply ?? "thread", msg),
 						text: msg.text ?? "",
 						data: { channel: msg.channel, ts: msg.ts, thread_ts: msg.thread_ts, files: msg.files },
@@ -837,18 +854,29 @@ function slackDm(msg: { channel?: string; channel_type?: string }): boolean {
 
 export function slackAllowed(
 	allow: SlackAllow | undefined,
-	event: { team?: string; channel?: string; user?: string; isDm: boolean },
+	event: { channel?: string; user?: string; groups?: string[]; isDm: boolean },
 ): { ok: true } | { ok: false; reason: string } {
 	return allowByDimensions({
 		dms: allow?.dms,
 		isDm: event.isDm,
 		dmReason: "dm_not_allowed",
 		dimensions: [
-			{ allowlist: allow?.teams, value: event.team, reason: "team_not_allowed" },
 			{ allowlist: allow?.channels, value: event.channel, reason: "channel_not_allowed", skip: event.isDm },
-			{ allowlist: allow?.users, value: event.user, reason: "user_not_allowed" },
+			{ allowlist: actorAllowlist(allow), value: actorValue(allow, event), reason: "actor_not_allowed" },
 		],
 	});
+}
+
+function actorAllowlist(allow: SlackAllow | undefined): string[] | undefined {
+	if (!allow?.users?.length && !allow?.groups?.length) return undefined;
+	return ["allowed"];
+}
+
+function actorValue(allow: SlackAllow | undefined, event: { user?: string; groups?: string[] }): string | undefined {
+	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
+	if (event.user && allow.users?.includes(event.user)) return "allowed";
+	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
+	return undefined;
 }
 
 export function slackTriggered(
@@ -878,6 +906,37 @@ type SlackClient = AllMiddlewareArgs["client"];
 type SlackMessage = Parameters<SlackClient["chat"]["postMessage"]>[0];
 type SlackBlock = types.Block | types.KnownBlock;
 type SlackUpdate = { text: string; blocks?: SlackBlock[] };
+
+const SLACK_GROUP_CACHE_MS = 60_000;
+
+class SlackGroupResolver {
+	private readonly groups: string[];
+	private readonly cache = new Map<string, { groups: string[]; expiresAt: number }>();
+
+	constructor(
+		groups: string[],
+		private readonly logger: Logger,
+	) {
+		this.groups = [...new Set(groups)];
+	}
+
+	async forUser(client: SlackClient, user?: string): Promise<string[]> {
+		if (!user || this.groups.length === 0) return [];
+		const cached = this.cache.get(user);
+		if (cached && cached.expiresAt > Date.now()) return cached.groups;
+		const groups: string[] = [];
+		for (const group of this.groups) {
+			try {
+				const response = await client.usergroups.users.list({ usergroup: group });
+				if (response.users?.includes(user)) groups.push(group);
+			} catch (error) {
+				this.logger.warn("slack.usergroup_lookup_failed", { group, user, error: errorMessage(error) });
+			}
+		}
+		this.cache.set(user, { groups, expiresAt: Date.now() + SLACK_GROUP_CACHE_MS });
+		return groups;
+	}
+}
 
 type SlackFile = {
 	id?: string;
@@ -966,6 +1025,7 @@ async function handleAction(input: {
 	delivery: DeliveryQueue;
 	provider: string;
 	adapterKind: string;
+	groups: SlackGroupResolver;
 	progress?: SlackConfig["progress"];
 	streaming?: ReplyStreamOption;
 	messages?: AppMessages;
@@ -976,6 +1036,7 @@ async function handleAction(input: {
 	if (!value && input.kind !== "status") return;
 	const actionChannel = context.channel;
 	const actionActor = context.actor;
+	const actorGroups = await input.groups.forUser(input.client, actionActor);
 	const trace = `${input.kind}:${value ?? context.message ?? context.trigger ?? Date.now()}`;
 	const target = context.threadTs ?? context.message;
 	const logContext = (extra?: Record<string, unknown>) =>
@@ -1050,6 +1111,7 @@ async function handleAction(input: {
 			team: context.team,
 			channel: context.channel,
 			actor: context.actor,
+			actorGroups,
 			thread: context.thread,
 			text: input.kind === "status" ? "status" : `${input.kind} ${value}`,
 			data: input.body,

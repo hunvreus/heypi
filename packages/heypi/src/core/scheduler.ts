@@ -269,7 +269,6 @@ async function resolveTargets(input: {
 		const threads = await input.store.threads.list({
 			agent: input.agent,
 			providers: [adapter],
-			teams: scope.teams,
 			channels: scope.channels,
 			users: scope.users,
 		});

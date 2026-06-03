@@ -1,6 +1,6 @@
 {
 	"name": "@hunvreus/heypi",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Chat agents for your team, with approvals and sandboxed tools.",
 	"license": "MIT",
 	"type": "module",
@@ -43,6 +43,7 @@
 		"bin/heypi-convert-document.py",
 		"dist",
 		"docs",
+		"ARCHITECTURE.md",
 		"README.md",
 		"LICENSE"
 	],

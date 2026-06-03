@@ -54,17 +54,18 @@ Optional env vars:
 
 ```bash
 HEYPI_APPROVERS=U123456,U234567
-HEYPI_SLACK_TEAMS=
+HEYPI_APPROVER_GROUPS=S123456
 HEYPI_SLACK_CHANNELS=
 HEYPI_SLACK_USERS=
+HEYPI_SLACK_GROUPS=
 HEYPI_SLACK_JOB_CHANNEL=C1234567890
 ```
 
-Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which teams, channels, or users may trigger the agent.
+Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which channels, users, or Slack user groups may trigger the agent. Slack user groups require the `usergroups:read` bot scope.
 
 `SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`.
 
-This example enables `streaming: true`. See [`../../packages/heypi/docs/CHAT.md`](../../packages/heypi/docs/CHAT.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
+This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters.md`](../../packages/heypi/docs/adapters.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup:
 
@@ -112,7 +113,7 @@ First host setup:
 3. Copy the public key returned by Slack into `~/.ssh/authorized_keys` for that SSH user on the VPS.
 4. Tell the bot the key is installed. It can then test the connection and refresh cached facts with safe probes.
 
-If `HEYPI_APPROVERS` is empty, any Slack user who can interact with the bot can approve pending actions. Set `HEYPI_APPROVERS` for a real workspace.
+If `HEYPI_APPROVERS` and `HEYPI_APPROVER_GROUPS` are empty, any Slack user who can interact with the bot can approve pending actions. Set user or group approvers for a real workspace.
 
 Host tools:
 
@@ -125,7 +126,7 @@ Host tools:
 
 This example uses heypi's default runtime for the local workspace. Core bash/file/search tools operate in the scoped workspace under `./workspace`.
 
-Memory is enabled with the default channel scope. Memory files are stored under `./workspace/memory/scopes/...` and are gitignored. With no `HEYPI_APPROVERS` configured, channel users can update memory automatically. When `HEYPI_APPROVERS` is set, memory writes default to approver-only.
+Memory is enabled with the default channel scope. Memory files are stored under `./workspace/memory/scopes/...` and are gitignored. With no approvers configured, channel users can update memory automatically. When user or group approvers are set, memory writes default to approver-only.
 
 Remote SSH commands run from the heypi Node process through `host_exec`.
 
@@ -141,9 +142,9 @@ slack({
 	signingSecret: required("SLACK_SIGNING_SECRET"),
 	mode: "http",
 	allow: {
-		teams: list("HEYPI_SLACK_TEAMS"),
 		channels: list("HEYPI_SLACK_CHANNELS"),
 		users: list("HEYPI_SLACK_USERS"),
+		groups: list("HEYPI_SLACK_GROUPS"),
 	},
 	trigger: "mention",
 	reply: "thread",

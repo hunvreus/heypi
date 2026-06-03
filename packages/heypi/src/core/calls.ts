@@ -6,6 +6,7 @@ import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import type { Approval, Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
+import { actorAllowed, actorLabels } from "./approvers.js";
 import { renderCall } from "./format.js";
 import { type Logger, logger } from "./log.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES, renderMessage } from "./messages.js";
@@ -21,6 +22,7 @@ export type CallContext = {
 	turn?: string;
 	message?: string;
 	toolCall?: string;
+	actorGroups?: string[];
 	runtimeScope?: string;
 	[RUNTIME_EVENTS]?: RuntimeEventHandler;
 };
@@ -317,7 +319,7 @@ export class CallRunner {
 		const pending = await this.pendingApproval(intent, this.contextAgent(context));
 		if (!pending.ok) return pending.reply;
 		const { approval } = pending;
-		if (!this.canApprove(intent.actor)) {
+		if (!this.canApprove(intent.actor, context.actorGroups)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
 				call: approval.callId,
@@ -412,7 +414,7 @@ export class CallRunner {
 		const pending = await this.pendingApproval(intent, this.contextAgent(context));
 		if (!pending.ok) return pending.reply;
 		const { approval } = pending;
-		if (!this.canDeny(intent.actor, approval.requestedBy ?? undefined)) {
+		if (!this.canDeny(intent.actor, context.actorGroups, approval.requestedBy ?? undefined)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
 				call: approval.callId,
@@ -510,17 +512,16 @@ export class CallRunner {
 		});
 	}
 
-	private canApprove(actor: string): boolean {
-		const approvers = this.approval.approvers ?? [];
-		return approvers.length === 0 || approvers.includes(actor);
+	private canApprove(actor: string, groups?: string[]): boolean {
+		return actorAllowed(this.approval.approvers, { actor, groups });
 	}
 
-	private canDeny(actor: string, requestedBy?: string): boolean {
-		return this.canApprove(actor) || actor === requestedBy;
+	private canDeny(actor: string, groups: string[] | undefined, requestedBy?: string): boolean {
+		return this.canApprove(actor, groups) || actor === requestedBy;
 	}
 
 	private approvers(): string[] {
-		return this.approval.approvers ?? [];
+		return actorLabels(this.approval.approvers);
 	}
 
 	private expiresAt(): number | undefined {

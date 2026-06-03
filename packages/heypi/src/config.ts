@@ -10,6 +10,7 @@ import type {
 	NetworkConfig,
 } from "just-bash";
 import type { AdminConfig } from "./admin/index.js";
+import type { ActorPolicy } from "./core/approvers.js";
 import type { Logger } from "./core/log.js";
 import type { AppMessagesConfig } from "./core/messages.js";
 import type { SchedulerConfig } from "./core/scheduler.js";
@@ -105,7 +106,7 @@ export type AttachmentConfig = {
 };
 
 export type ApprovalConfig = {
-	approvers?: string[];
+	approvers?: ActorPolicy;
 	expiresInMs?: number;
 };
 
@@ -206,6 +207,7 @@ export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentCo
 		systemPrompt: options.systemPrompt ?? readIfFile(resolve(directory, "SYSTEM.md")),
 		soul: options.soul ?? readIfFile(resolve(directory, "SOUL.md")) ?? DEFAULT_SOUL,
 		prompt: options.prompt ?? readIfFile(resolve(directory, "AGENTS.md")),
+		context: options.context,
 		skills: options.skills ?? dirList(resolve(directory, "skills")),
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),
 		tools: options.tools,

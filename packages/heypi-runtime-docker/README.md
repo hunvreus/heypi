@@ -1,17 +1,15 @@
-# @hunvreus/heypi-runtime-docker
+# heypi Docker runtime
 
-**Experimental:** this provider is intended for local testing and early adopters. Its API and operational behavior may change before heypi 1.0.
-
-Docker runtime provider for heypi. It runs heypi's runtime API through a scoped Docker container: `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`.
+Docker runtime provider for [`@hunvreus/heypi`](https://www.npmjs.com/package/@hunvreus/heypi). It runs heypi's runtime API through one warm Docker container per runtime scope: `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`.
 
 ## Requirements
 
 - Node.js 22 or newer.
-- `@hunvreus/heypi` installed in the same app. This package declares it as a peer dependency.
+- `@hunvreus/heypi` installed in the same app.
 - Docker CLI on `PATH`.
 - Docker daemon running and accessible to the app process.
-- A Linux image that includes `bash` for the `bash` tool.
-- The image also needs standard POSIX utilities for file/search tools: `sh`, `find`, `awk`, `wc`, `sed`, `cat`, and `head`.
+- A Linux image with `bash`.
+- Standard POSIX utilities in the image for file/search tools: `sh`, `find`, `awk`, `wc`, `sed`, `cat`, and `head`.
 
 ## Quickstart
 
@@ -22,18 +20,11 @@ docker pull debian:bookworm-slim
 ```
 
 ```ts
-import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, workspace } from "@hunvreus/heypi";
 import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 
-const app = createHeypi({
-	state: { root: "./state" },
-	adapters: [
-		slack({
-			botToken: process.env.SLACK_BOT_TOKEN!,
-			appToken: process.env.SLACK_APP_TOKEN!,
-		}),
-	],
-	agent: agentFrom("./agent", { model: "openai/gpt-5-mini" }),
+createHeypi({
+	// ...state, adapters, agent
 	runtime: {
 		root: workspace("./workspace"),
 		scope: "channel",
@@ -44,22 +35,19 @@ const app = createHeypi({
 		}),
 	},
 });
-
-await runHeypi(app);
 ```
+
+Use `network: "bridge"` only when the agent needs network access.
 
 ## Behavior
 
-- One warm container is kept per heypi runtime scope.
 - The scoped runtime root is bind-mounted at `/workspace`.
 - Commands run with `docker exec` inside the container.
-- File/search tools run shell scripts inside the container. They do not read or write through host filesystem shortcuts.
+- File/search tools execute inside the container, not through host filesystem shortcuts.
 - Containers stop after `idleMs` with no use. Set `idleMs: false` to keep them until app shutdown.
-- `network` defaults to `"none"`. Set `network: "bridge"` or another Docker network only when the agent needs network access.
-- The provider checks that the scoped container is still running before reuse and recreates it if Docker reports it stopped.
+- The provider checks that a cached scoped container is still running before reuse and recreates it if needed.
 - Containers are labeled with `heypi.runtime=docker`, `heypi.prefix`, and scope metadata for local inspection and cleanup.
-- Runtime lifecycle events are logged through the heypi app logger when the provider is used inside `createHeypi()`.
-- Cold starts emit a runtime progress event. heypi renders it with the global `messages.runtimeStarting` copy, which defaults to `Preparing runtime...` and can be set to `false`.
+- Cold starts emit a runtime progress event. heypi renders it with `messages.runtimeStarting`, which defaults to `Preparing runtime...`.
 
 ## Options
 
@@ -81,10 +69,10 @@ dockerRuntime({
 });
 ```
 
-The returned provider also exposes management hooks:
+The provider exposes optional management hooks:
 
 ```ts
-const provider = dockerRuntime({ image: "debian:bookworm-slim" });
+const provider = dockerRuntime();
 const [status] = (await provider.status?.()) ?? [];
 
 if (status) await provider.restart?.(status.scope);

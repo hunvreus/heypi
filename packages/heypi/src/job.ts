@@ -7,7 +7,6 @@ export type JobSchedule =
 	| { cron: string; timezone?: string };
 
 export type JobRoute = {
-	teams?: string[];
 	channels?: string[];
 	users?: string[];
 };

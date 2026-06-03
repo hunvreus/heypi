@@ -1,6 +1,6 @@
 # Architecture
 
-Maintainer reference for heypi internals. For app setup, start with [`../README.md`](../README.md), [`CHAT.md`](CHAT.md), [`SLACK.md`](SLACK.md), [`TELEGRAM.md`](TELEGRAM.md), [`DISCORD.md`](DISCORD.md), or [`WEBHOOK.md`](WEBHOOK.md).
+Maintainer reference for heypi internals. For app setup, start with [`README.md`](README.md), [`docs/index.md`](docs/index.md), or an adapter guide under [`docs/`](docs/).
 
 heypi is a long-running Node.js process around Pi. It adds chat adapters, durable state, approvals, scheduling, scoped command/file tools, attachments, and admin/runtime integration.
 
@@ -118,8 +118,8 @@ Core tools and custom `tool()` definitions use the same confirmation path. Text 
 - `just-bash`: default production runtime.
 - `guarded-bash`: host bash with regex guardrails.
 - `host-bash`: host bash; unsafe/dev/admin mode.
-- `@hunvreus/heypi-runtime-docker`: experimental external Docker provider with one warm container per runtime scope.
-- `@hunvreus/heypi-runtime-gondolin`: experimental external Gondolin provider with one warm VM per runtime scope.
+- `@hunvreus/heypi-runtime-docker`: external Docker provider with one warm container per runtime scope.
+- `@hunvreus/heypi-runtime-gondolin`: external Gondolin provider with one warm VM per runtime scope.
 
 `scope` controls workspace sharing: `channel` by default, or `user`, `adapter`, or `agent`. `runtime.scope` can override that runtime/workspace sharing policy independently from memory and skills. File tools enforce size, traversal, and symlink escape limits. `just-bash` disables network by default. Managed runtimes are implemented as `RuntimeProvider`s and can keep scoped runtimes warm until idle timeout, provider shutdown, or explicit management calls. Docker and Gondolin default to a 10-minute idle timeout; `idleMs: false` disables idle shutdown.
 
@@ -131,9 +131,9 @@ Memory writes are controlled by `memory.writePolicy`. The default becomes `appro
 
 ### Scoped Skills
 
-Scoped skills are optional durable procedures. When enabled, heypi stores one `SKILL.md` per skill under `skills/scopes/<scope-key>/<skill>/`, injects a compact skill catalog, and exposes `skill_list`, `skill_read`, `skill_write`, `skill_patch`, and `skill_delete`.
+Skills are optional durable procedures. When enabled, heypi stores one `SKILL.md` per skill under `skills/scopes/<scope-key>/<skill>/`, injects a compact skill catalog, and exposes `skill_list`, `skill_read`, `skill_write`, `skill_patch`, and `skill_delete`.
 
-Skill writes are controlled by `skills.writePolicy`. Defaults are conservative: writes are `approvers` only when `approval.approvers` is configured, otherwise `off`. Scoped skills are user-authored guidance, not trusted policy. heypi does not include registry install/sync or supporting-file tools for scoped skills yet.
+Skill writes are controlled by `skills.writePolicy`. Defaults are conservative: writes are `approvers` only when `approval.approvers` is configured, otherwise `off`. Skills are user-authored guidance, not trusted policy. heypi does not include registry install/sync or supporting-file tools for skills yet.
 
 ### Secrets
 

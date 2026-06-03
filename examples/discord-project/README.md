@@ -1,6 +1,6 @@
 # Discord Gondolin
 
-Discord assistant with a channel-scoped Gondolin VM, memory, scoped skills, secret requests, generated-file attachments, streaming replies, and approval-aware tools.
+Discord assistant with a channel-scoped Gondolin VM, memory, skills, secret requests, generated-file attachments, streaming replies, and approval-aware tools.
 
 This is the full runtime example. It is closer to pi-chat than the Slack and Telegram examples, but keeps heypi's service model: runtimes start lazily and stop after idle timeout.
 
@@ -22,7 +22,7 @@ This is the full runtime example. It is closer to pi-chat than the Slack and Tel
 - `memory: true` enables durable channel memory.
 - `skills.enabled` enables scoped channel skills. With `HEYPI_APPROVERS` set, skill writes default to approver-only.
 - `secrets` serves a local encrypted handoff page at `http://127.0.0.1:3000/secret`.
-- Admin UI is enabled at `http://127.0.0.1:3000/admin`; use `pnpm exec heypi admin link --state examples/discord-project/state` if you need a fresh login link.
+- Admin is enabled at `http://127.0.0.1:3000/admin`; use `pnpm exec heypi admin link --state examples/discord-project/state` if you need a fresh login link.
 
 ## Run
 
@@ -43,10 +43,11 @@ OPENAI_API_KEY=...
 Optional env vars:
 
 ```bash
-HEYPI_DISCORD_GUILDS=
 HEYPI_DISCORD_CHANNELS=
 HEYPI_DISCORD_USERS=
+HEYPI_DISCORD_GROUPS=
 HEYPI_APPROVERS=
+HEYPI_APPROVER_GROUPS=
 ```
 
 Leave allowlists empty to accept every event Discord delivers. Guild channel messages need a bot mention with the default trigger.
@@ -59,7 +60,7 @@ pnpm exec heypi discord channels --env examples/discord-project/.env
 pnpm exec heypi discord observe --env examples/discord-project/.env
 ```
 
-Use `discord check` to verify the token and get an invite URL. Use `discord channels` or `discord observe` to find IDs for `HEYPI_DISCORD_GUILDS`, `HEYPI_DISCORD_CHANNELS`, `HEYPI_DISCORD_USERS`, and `HEYPI_APPROVERS`.
+Use `discord check` to verify the token and get an invite URL. Use `discord channels` or `discord observe` to find IDs for `HEYPI_DISCORD_CHANNELS`, `HEYPI_DISCORD_USERS`, and `HEYPI_APPROVERS`. Use Discord role IDs for `HEYPI_DISCORD_GROUPS` and `HEYPI_APPROVER_GROUPS`.
 
 Smoke test from the repo root:
 

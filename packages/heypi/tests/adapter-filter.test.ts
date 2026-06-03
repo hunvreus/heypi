@@ -5,36 +5,38 @@ import { approvalBlocks, slack, slackAllowed, slackMessageSubtypeAllowed, slackT
 import { telegramAllowed, telegramTriggered } from "../src/io/telegram.js";
 
 test("Slack allowlists default to accepting delivered message events", () => {
-	assert.deepEqual(slackAllowed(undefined, { team: "T1", channel: "C1", user: "U1", isDm: false }), { ok: true });
-	assert.deepEqual(slackAllowed(undefined, { team: "T1", channel: "C1", user: undefined, isDm: false }), {
+	assert.deepEqual(slackAllowed(undefined, { channel: "C1", user: "U1", isDm: false }), { ok: true });
+	assert.deepEqual(slackAllowed(undefined, { channel: "C1", user: undefined, isDm: false }), {
 		ok: true,
 	});
-	assert.deepEqual(slackAllowed(undefined, { team: "T1", channel: "D1", user: "U1", isDm: true }), { ok: true });
+	assert.deepEqual(slackAllowed(undefined, { channel: "D1", user: "U1", isDm: true }), { ok: true });
 });
 
 test("Slack allowlists reject mismatched dimensions and disabled DMs", () => {
-	assert.deepEqual(slackAllowed({ teams: ["T2"] }, { team: "T1", channel: "C1", user: "U1", isDm: false }), {
-		ok: false,
-		reason: "team_not_allowed",
-	});
-	assert.deepEqual(slackAllowed({ channels: ["C2"] }, { team: "T1", channel: "C1", user: "U1", isDm: false }), {
+	assert.deepEqual(slackAllowed({ channels: ["C2"] }, { channel: "C1", user: "U1", isDm: false }), {
 		ok: false,
 		reason: "channel_not_allowed",
 	});
-	assert.deepEqual(slackAllowed({ users: ["U2"] }, { team: "T1", channel: "C1", user: "U1", isDm: false }), {
+	assert.deepEqual(slackAllowed({ users: ["U2"] }, { channel: "C1", user: "U1", isDm: false }), {
 		ok: false,
-		reason: "user_not_allowed",
+		reason: "actor_not_allowed",
 	});
-	assert.deepEqual(slackAllowed({ dms: false }, { team: "T1", channel: "D1", user: "U1", isDm: true }), {
-		ok: false,
-		reason: "dm_not_allowed",
+	assert.deepEqual(slackAllowed({ groups: ["S1"] }, { channel: "C1", user: "U1", groups: ["S1"], isDm: false }), {
+		ok: true,
 	});
 	assert.deepEqual(
-		slackAllowed({ channels: ["C1"], dms: true }, { team: "T1", channel: "D1", user: "U1", isDm: true }),
+		slackAllowed({ users: ["U2"], groups: ["S1"] }, { channel: "C1", user: "U1", groups: ["S1"], isDm: false }),
 		{
 			ok: true,
 		},
 	);
+	assert.deepEqual(slackAllowed({ dms: false }, { channel: "D1", user: "U1", isDm: true }), {
+		ok: false,
+		reason: "dm_not_allowed",
+	});
+	assert.deepEqual(slackAllowed({ channels: ["C1"], dms: true }, { channel: "D1", user: "U1", isDm: true }), {
+		ok: true,
+	});
 });
 
 test("Slack trigger defaults to mention for channels and message for DMs", () => {
@@ -167,26 +169,34 @@ test("Telegram trigger defaults to mention for groups and message for DMs", () =
 });
 
 test("Discord allowlists default to accepting delivered messages", () => {
-	assert.deepEqual(discordAllowed(undefined, { guild: "G1", channel: "C1", user: "U1", isDm: false }), { ok: true });
+	assert.deepEqual(discordAllowed(undefined, { channel: "C1", user: "U1", isDm: false }), { ok: true });
 	assert.deepEqual(discordAllowed(undefined, { channel: "D1", user: "U1", isDm: true }), { ok: true });
 });
 
 test("Discord allowlists reject mismatched dimensions and disabled DMs", () => {
-	assert.deepEqual(discordAllowed({ guilds: ["G2"] }, { guild: "G1", channel: "C1", user: "U1", isDm: false }), {
-		ok: false,
-		reason: "guild not allowed",
-	});
-	assert.deepEqual(discordAllowed({ channels: ["C2"] }, { guild: "G1", channel: "C1", user: "U1", isDm: false }), {
+	assert.deepEqual(discordAllowed({ channels: ["C2"] }, { channel: "C1", user: "U1", isDm: false }), {
 		ok: false,
 		reason: "channel not allowed",
 	});
-	assert.deepEqual(discordAllowed({ users: ["U2"] }, { guild: "G1", channel: "C1", user: "U1", isDm: false }), {
+	assert.deepEqual(discordAllowed({ users: ["U2"] }, { channel: "C1", user: "U1", isDm: false }), {
 		ok: false,
-		reason: "user not allowed",
+		reason: "actor not allowed",
 	});
+	assert.deepEqual(discordAllowed({ groups: ["R1"] }, { channel: "C1", user: "U1", groups: ["R1"], isDm: false }), {
+		ok: true,
+	});
+	assert.deepEqual(
+		discordAllowed({ users: ["U2"], groups: ["R1"] }, { channel: "C1", user: "U1", groups: ["R1"], isDm: false }),
+		{
+			ok: true,
+		},
+	);
 	assert.deepEqual(discordAllowed({ dms: false }, { channel: "D1", user: "U1", isDm: true }), {
 		ok: false,
 		reason: "dm disabled",
+	});
+	assert.deepEqual(discordAllowed({ channels: ["C1"], dms: true }, { channel: "D1", user: "U1", isDm: true }), {
+		ok: true,
 	});
 });
 

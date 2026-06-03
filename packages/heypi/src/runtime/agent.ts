@@ -23,6 +23,7 @@ export type AgentReq = {
 	threadName?: string;
 	actor: string;
 	actorName?: string;
+	actorGroups?: string[];
 	trace?: string;
 	text: string;
 	model?: ModelConfig;

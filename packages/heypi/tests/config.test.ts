@@ -47,6 +47,13 @@ test("agentFrom uses a default SOUL.md fallback", () => {
 	assert.equal(agent.soul, DEFAULT_SOUL);
 });
 
+test("agentFrom preserves configured dynamic context providers", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	const provider = async () => ({ title: "Request context", text: "channel=C1" });
+	const agent = agentFrom(root, { model: "openai/gpt-5-mini", context: [provider] });
+	assert.equal(agent.context?.[0], provider);
+});
+
 test("runtimeSystemPrompt generates core tool guidance from active tools", () => {
 	assert.match(runtimeSystemPrompt(["bash", "read", "grep"]), /prefer them over shell commands/i);
 	assert.match(runtimeSystemPrompt(["bash"]), /shell commands and file exploration/i);

@@ -1,6 +1,8 @@
 # Scope
 
-Scope controls which chats and users share runtime files, generated files, attachments, memory, and scoped skills.
+Scope controls which chats and users share runtime workspace files, attachments, memory, and skills.
+
+## Config
 
 ```ts
 createHeypi({
@@ -22,6 +24,15 @@ createHeypi({
 });
 ```
 
+## Options
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `scope` | No | `"channel"` | Default scope for scoped features. |
+| `runtime.scope` | No | Top-level `scope` | Runtime workspace override. |
+| `memory.scope` | No | Top-level `scope` | Memory override. |
+| `skills.scope` | No | Top-level `scope` | Skills override. |
+
 ## Levels
 
 - `channel`: one scope per Slack channel, Telegram chat, Discord channel, or webhook channel.
@@ -29,7 +40,7 @@ createHeypi({
 - `adapter`: one scope per configured adapter instance.
 - `agent`: one scope across adapters for this configured agent.
 
-Pi sessions, chat history, approvals, and active-run locks remain per thread. Scope controls shared working context, not the conversation identity.
+Sessions, chat history, approvals, and active-run locks remain per thread. Scope controls shared working context, not the conversation identity.
 
 Use `adapter` or `agent` only when you intentionally want one conversation to affect another through shared files, memory, or skills.
 
@@ -60,7 +71,7 @@ workspace/
       channel/<agent>/<provider>/<team>/<channel>/
   memory/
     scopes/
-      channel/<agent>/<provider>/<team>/<channel>/MEMORY.md
+      channel/<agent>/<provider>/<team>/<channel>/memory.md
   skills/
     scopes/
       channel/<agent>/<provider>/<team>/<channel>/<skill>/SKILL.md

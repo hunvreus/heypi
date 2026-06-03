@@ -424,13 +424,9 @@ function jobRoute(row: Pick<Job, "scope" | "target">): string | undefined {
 }
 
 function routeText(input: JobTargets | JobScope, kind: "targets" | "scope"): string {
-	const entries = Object.entries(input) as Array<
-		[string, { teams?: string[]; channels?: string[]; users?: string[] }]
-	>;
+	const entries = Object.entries(input) as Array<[string, { channels?: string[]; users?: string[] }]>;
 	const rows = entries.flatMap(([adapter, route]) => {
-		const parts = [ids("team", route.teams), ids("channel", route.channels), ids("user", route.users)].filter(
-			Boolean,
-		);
+		const parts = [ids("channel", route.channels), ids("user", route.users)].filter(Boolean);
 		return parts.length ? parts.map((part) => `${adapter} ${part}`) : [`${adapter} all known threads`];
 	});
 	return rows.length ? `${kind}: ${rows.join(", ")}` : `${kind}: none`;

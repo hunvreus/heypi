@@ -77,9 +77,9 @@ const app = createHeypi({
 			mode: "socket",
 			appToken: required("SLACK_APP_TOKEN"),
 			allow: {
-				teams: list("HEYPI_SLACK_TEAMS"),
 				channels: list("HEYPI_SLACK_CHANNELS"),
 				users: list("HEYPI_SLACK_USERS"),
+				groups: list("HEYPI_SLACK_GROUPS"),
 			},
 			trigger: "mention",
 			reply: "thread",
@@ -91,9 +91,9 @@ const app = createHeypi({
 		// 	signingSecret: required("SLACK_SIGNING_SECRET"),
 		// 	mode: "http",
 		// 	allow: {
-		// 		teams: list("HEYPI_SLACK_TEAMS"),
 		// 		channels: list("HEYPI_SLACK_CHANNELS"),
 		// 		users: list("HEYPI_SLACK_USERS"),
+		// 		groups: list("HEYPI_SLACK_GROUPS"),
 		// 	},
 		// 	trigger: "mention",
 		// 	reply: "thread",
@@ -107,7 +107,7 @@ const app = createHeypi({
 		tools: [...coreTools({ bash: true }), ...runbookTools, ...hostTools],
 	}),
 	approval: {
-		approvers: list("HEYPI_APPROVERS"),
+		approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
 		expiresInMs: 10 * 60 * 1000,
 	},
 	jobs: jobChannel

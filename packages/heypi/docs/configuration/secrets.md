@@ -1,6 +1,8 @@
 # Secrets
 
-Secret requests let the agent ask for credentials without putting plaintext secrets in chat or model context. They are off by default.
+Secret requests let the agent ask for credentials without putting plaintext secrets in chat or model context.
+
+## Config
 
 ```ts
 createHeypi({
@@ -9,6 +11,16 @@ createHeypi({
 	secrets: true,
 });
 ```
+
+## Options
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | No | `false` | Enables the `secret_request` managed tool. |
+| `url` | No | `https://heypi.dev/secret` | Public page URL sent to users. |
+| `serve` | No | `false` | Serves the static secret page from this heypi app. |
+| `expiresInMs` | No | `600_000` | Pending request lifetime. |
+| `maxFields` | No | `8` | Maximum fields per request. |
 
 When enabled, heypi exposes `secret_request`. The agent passes a reason and one or more fields:
 
@@ -31,7 +43,7 @@ heypi returns a browser link. The user opens it, enters the values, encrypts the
 
 The encrypted blob is intercepted before the normal model turn, so it is not stored as chat history and is not sent to the model.
 
-## Self Hosting
+## Self hosting
 
 The default page URL is:
 
@@ -55,14 +67,14 @@ createHeypi({
 });
 ```
 
-`secrets.url` is the public URL placed in chat. With `serve: true`, heypi serves the static page at that URL's path and the companion stylesheet at the same path with `.css` appended. Use HTTPS for real secrets.
+`secrets.url` is the public URL placed in chat. With `serve: true`, heypi serves the static page at that URL's path. It also serves the stylesheet at `<path>.css`. Use HTTPS for real secrets.
 
-## Security Model
+## Security model
 
 - The private key stays in the heypi process memory and expires with the request.
-- Pending secret requests are lost on process restart.
 - Secret values are stored as scoped runtime files, not memory.
-- Field `name` is the stable file/env-style key; `label` is optional display text.
 - Anyone who can read the scoped runtime workspace can read saved secrets.
+- Pending secret requests are lost on process restart.
+- Field `name` is the stable file/env-style key; `label` is optional display text.
 
 Use narrow runtime scope and runtime isolation for sensitive credentials.

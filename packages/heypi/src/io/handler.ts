@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalConfig, ChatConfig, ModelConfig, Scope } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
+import { actorAllowed, hasActorPolicy } from "../core/approvers.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
@@ -31,6 +32,7 @@ export type Inbound = {
 	channelName?: string;
 	actor: string;
 	actorName?: string;
+	actorGroups?: string[];
 	thread: string;
 	threadName?: string;
 	text: string;
@@ -91,6 +93,7 @@ export type AdapterStart = {
 	attachments?: AttachmentStore;
 	http?: HttpRegistrar;
 	store?: Store;
+	approval?: ApprovalConfig;
 	memory?: MemoryStore;
 	app?: {
 		agent: string;
@@ -147,6 +150,7 @@ type HandlerBase = {
 	turn: string;
 	message: string;
 	actor: string;
+	actorGroups?: string[];
 	runtimeScope?: string;
 };
 
@@ -259,11 +263,11 @@ export function createHandler(input: {
 			const target = active.info(intent.id);
 			// Do not reveal whether a run id exists in another thread.
 			if (!target || target.threadId !== thread.id) return cancelReply("not_found", messages);
-			if (!canCancelRun(input.approval, msg.actor, target.actor)) return cancelReply("unauthorized", messages);
+			if (!canCancelRun(input.approval, msg, target.actor)) return cancelReply("unauthorized", messages);
 			return cancelReply(active.cancel(intent.id), messages);
 		}
 		if (intent.kind === "approvals") {
-			if (!canListApprovals(input.approval, msg.actor)) {
+			if (!canListApprovals(input.approval, msg)) {
 				return { text: messages.approvalsUnauthorized, private: true };
 			}
 			const all = await input.store.approvals.listPending({ agent: agentId, limit: 25 });
@@ -396,6 +400,7 @@ export function createHandler(input: {
 				turn: turn.id,
 				message: inbound.row.id,
 				actor: msg.actor,
+				actorGroups: msg.actorGroups,
 				runtimeScope: turnScope.workspace.path,
 			};
 
@@ -420,6 +425,7 @@ export function createHandler(input: {
 								threadName: msg.threadName,
 								actor: intent.actor,
 								actorName: msg.actorName,
+								actorGroups: msg.actorGroups,
 								trace,
 								text: messageText,
 								model: msg.model,
@@ -684,13 +690,20 @@ function scopeKey(msg: Pick<Inbound, "provider" | "team" | "channel">): string {
 	return `${msg.provider}:${msg.team ?? ""}:${msg.channel}`;
 }
 
-function canListApprovals(config: ApprovalConfig | undefined, actor: string): boolean {
-	const approvers = config?.approvers ?? [];
-	return approvers.length === 0 || approvers.includes(actor);
+function canListApprovals(config: ApprovalConfig | undefined, actor: Pick<Inbound, "actor" | "actorGroups">): boolean {
+	return actorAllowed(config?.approvers, { actor: actor.actor, groups: actor.actorGroups });
 }
 
-function canCancelRun(config: ApprovalConfig | undefined, actor: string, initiator?: string): boolean {
-	return actor === initiator || (config?.approvers ?? []).includes(actor);
+function canCancelRun(
+	config: ApprovalConfig | undefined,
+	actor: Pick<Inbound, "actor" | "actorGroups">,
+	initiator?: string,
+): boolean {
+	return (
+		actor.actor === initiator ||
+		(hasActorPolicy(config?.approvers) &&
+			actorAllowed(config?.approvers, { actor: actor.actor, groups: actor.actorGroups }))
+	);
 }
 
 function approvalVisible(
@@ -699,8 +712,7 @@ function approvalVisible(
 	msg: Pick<Inbound, "provider" | "team">,
 	threadId: string,
 ): boolean {
-	const approvers = config?.approvers ?? [];
-	if (!approvers.length) return row.threadId === threadId;
+	if (!hasActorPolicy(config?.approvers)) return row.threadId === threadId;
 	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
 }
 

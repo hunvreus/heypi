@@ -2,6 +2,8 @@
 
 Memory is small durable background context, not a transcript database or trusted config. It is off by default.
 
+## Config
+
 ```ts
 createHeypi({
 	state: { root: "./state" },
@@ -16,7 +18,16 @@ createHeypi({
 });
 ```
 
-`memory.scope` defaults to the top-level `scope`. See [`SCOPE.md`](SCOPE.md) for scope levels and filesystem layout.
+`memory.scope` defaults to the top-level [`scope`](scope.md).
+
+## Options
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | No | `false` | Enables memory tools and context injection. |
+| `scope` | No | Top-level [`scope`](scope.md) | Memory sharing boundary. |
+| `writePolicy` | No | See [Write policy](#write-policy) | Who can mutate memory. |
+| `maxChars` | No | `4000` | Maximum memory file size. |
 
 ## Behavior
 
@@ -45,7 +56,7 @@ Bad memory:
 - Untrusted instructions copied from random users.
 ```
 
-Validation is a hygiene check, not a security boundary. Do not store secrets, credentials, private data, or policy rules that must be trusted.
+Write validation is a hygiene check, not a security boundary. Do not store secrets, credentials, private data, or policy rules that must be trusted.
 
 ## Scope
 
@@ -58,12 +69,12 @@ Memory scopes:
 
 DMs use the same rules as other chats: `channel` memory follows the provider chat/channel id, while `user` memory follows the actor id.
 
-## Write Policy
+## Write policy
 
 `writePolicy` controls mutation:
 
 - `auto`: the agent can write, replace, and delete memory.
-- `approvers`: only turns initiated by `approval.approvers` can mutate memory.
+- `approvers`: only turns initiated by configured approver users or groups can mutate memory.
 - `off`: memory can be read and injected, but cannot be changed.
 
 Defaults:
@@ -76,4 +87,4 @@ When memory is enabled, heypi logs the memory scope and write policy at startup.
 
 Approvals do not elevate actor identity. If a non-approver starts a turn and an approver later approves one of its tool calls, the continued turn still belongs to the original requester for `memory.writePolicy` checks.
 
-Concurrent writes use the filesystem as the source of truth. If two writes race in the same scope, the later write can win.
+Concurrent writes use the filesystem as the source of truth. Avoid concurrent writes to the same scope; no merge is attempted.

@@ -89,6 +89,39 @@ test("authorized approval executes the pending command", async () => {
 	);
 });
 
+test("group approver executes the pending command", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{
+			approvers: { groups: ["S_ALLOWED"] },
+		},
+		undefined,
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const approved = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "C1",
+			actor: "U_ALLOWED",
+		},
+		{ actorGroups: ["S_ALLOWED"] },
+	);
+
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(approvals.rows[0].state, "approved");
+	assert.equal(approvals.rows[0].resolvedBy, "U_ALLOWED");
+	assert.equal(calls.rows[0].state, "done");
+});
+
 test("bash runtime startup failures are failed calls", async () => {
 	const calls = new FakeCalls();
 	const callRunner = new CallRunner(

@@ -14,6 +14,7 @@ import {
 	type TextBasedChannel,
 } from "discord.js";
 import { approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { ScopedKey } from "../core/scope.js";
 import type { ApprovalResolution } from "../core/types.js";
@@ -47,9 +48,9 @@ export type DiscordConfig = {
 export type DiscordTrigger = "mention" | "message";
 
 export type DiscordAllow = {
-	guilds?: string[];
 	channels?: string[];
 	users?: string[];
+	groups?: string[];
 	dms?: boolean;
 };
 
@@ -80,12 +81,16 @@ export function discord(input: DiscordConfig): Adapter {
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
+			const groups = new DiscordGroupResolver(
+				[...(input.allow?.groups ?? []), ...configuredGroups(start.approval?.approvers)],
+				start.logger,
+			);
 			start.logger.info("adapter.start", { adapter: name, kind });
 			client.on(Events.MessageCreate, (msg) => {
-				void handleMessage({ client, start, config: input, delivery, provider: name, kind, msg });
+				void handleMessage({ client, start, config: input, delivery, provider: name, kind, groups, msg });
 			});
 			client.on(Events.InteractionCreate, (interaction) => {
-				void handleInteraction({ start, delivery, provider: name, kind, interaction });
+				void handleInteraction({ start, delivery, provider: name, kind, groups, interaction });
 			});
 			await client.login(input.token);
 		},
@@ -123,6 +128,7 @@ async function handleMessage(input: {
 	delivery: DeliveryQueue;
 	provider: string;
 	kind: string;
+	groups: DiscordGroupResolver;
 	msg: Message;
 }): Promise<void> {
 	const msg = input.msg;
@@ -134,7 +140,8 @@ async function handleMessage(input: {
 	const dm = isDm(msg);
 	const context = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
-	const allow = discordAllowed(input.config.allow, { guild: team, channel, user: actor, isDm: dm });
+	const actorGroups = await input.groups.forMessage(msg);
+	const allow = discordAllowed(input.config.allow, { channel, user: actor, groups: actorGroups, isDm: dm });
 	if (!allow.ok) {
 		input.start.logger.debug(
 			"adapter.drop",
@@ -204,6 +211,7 @@ async function handleMessage(input: {
 			channel,
 			channelName: discordChannelName(msg.channel),
 			actor,
+			actorGroups,
 			actorName: msg.author.username,
 			thread: threadKey(msg),
 			threadName: discordThreadName(msg.channel),
@@ -275,6 +283,7 @@ async function handleInteraction(input: {
 	delivery: DeliveryQueue;
 	provider: string;
 	kind: string;
+	groups: DiscordGroupResolver;
 	interaction: Interaction;
 }): Promise<void> {
 	if (!input.interaction.isButton()) return;
@@ -285,6 +294,7 @@ async function handleInteraction(input: {
 	const channel = interaction.channelId ?? "unknown";
 	const team = interaction.guildId ?? undefined;
 	const actor = interaction.user.id;
+	const actorGroups = await input.groups.forInteraction(interaction);
 	const context = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
 	let acknowledged = false;
@@ -322,6 +332,7 @@ async function handleInteraction(input: {
 			team,
 			channel,
 			actor,
+			actorGroups,
 			thread: channel,
 			text: `${action.kind} ${action.id}`,
 			data: { customId: interaction.customId, messageId: interaction.message.id },
@@ -805,18 +816,95 @@ function discordProgress(input: DiscordConfig["progress"], streaming: boolean): 
 
 export function discordAllowed(
 	input: DiscordAllow | undefined,
-	event: { guild?: string; channel: string; user: string; isDm: boolean },
+	event: { channel: string; user: string; groups?: string[]; isDm: boolean },
 ): { ok: true } | { ok: false; reason: string } {
 	return allowByDimensions({
 		dms: input?.dms,
 		isDm: event.isDm,
 		dmReason: "dm disabled",
 		dimensions: [
-			{ allowlist: input?.guilds, value: event.guild, reason: "guild not allowed" },
-			{ allowlist: input?.channels, value: event.channel, reason: "channel not allowed" },
-			{ allowlist: input?.users, value: event.user, reason: "user not allowed" },
+			{ allowlist: input?.channels, value: event.channel, reason: "channel not allowed", skip: event.isDm },
+			{ allowlist: actorAllowlist(input), value: actorValue(input, event), reason: "actor not allowed" },
 		],
 	});
+}
+
+function actorAllowlist(allow: DiscordAllow | undefined): string[] | undefined {
+	if (!allow?.users?.length && !allow?.groups?.length) return undefined;
+	return ["allowed"];
+}
+
+function actorValue(allow: DiscordAllow | undefined, event: { user?: string; groups?: string[] }): string | undefined {
+	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
+	if (event.user && allow.users?.includes(event.user)) return "allowed";
+	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
+	return undefined;
+}
+
+const DISCORD_GROUP_CACHE_MS = 60_000;
+
+class DiscordGroupResolver {
+	private readonly groups: string[];
+	private readonly cache = new Map<string, { groups: string[]; expiresAt: number }>();
+
+	constructor(
+		groups: string[],
+		private readonly logger: Logger,
+	) {
+		this.groups = [...new Set(groups)];
+	}
+
+	async forMessage(message: Message): Promise<string[]> {
+		if (this.groups.length === 0 || !message.guild) return [];
+		return await this.forMember({
+			guild: message.guild,
+			user: message.author.id,
+			roles: rolesFromMember(message.member),
+		});
+	}
+
+	async forInteraction(interaction: Interaction): Promise<string[]> {
+		if (this.groups.length === 0 || !interaction.guild || !interaction.isRepliable()) return [];
+		return await this.forMember({
+			guild: interaction.guild,
+			user: interaction.user.id,
+			roles: rolesFromMember(interaction.member),
+		});
+	}
+
+	private async forMember(input: {
+		guild: NonNullable<Message["guild"]>;
+		user: string;
+		roles: string[];
+	}): Promise<string[]> {
+		const key = `${input.guild.id}:${input.user}`;
+		const cached = this.cache.get(key);
+		if (cached && cached.expiresAt > Date.now()) return cached.groups;
+		let roles = input.roles;
+		if (roles.length === 0) {
+			try {
+				const member = await input.guild.members.fetch(input.user);
+				roles = rolesFromMember(member);
+			} catch (error) {
+				this.logger.warn("discord.role_lookup_failed", {
+					guild: input.guild.id,
+					user: input.user,
+					error: errorMessage(error),
+				});
+			}
+		}
+		const groups = this.groups.filter((group) => roles.includes(group));
+		this.cache.set(key, { groups, expiresAt: Date.now() + DISCORD_GROUP_CACHE_MS });
+		return groups;
+	}
+}
+
+function rolesFromMember(member: unknown): string[] {
+	if (!member || typeof member !== "object") return [];
+	const roles = (member as { roles?: unknown }).roles;
+	if (Array.isArray(roles)) return roles.filter((role): role is string => typeof role === "string");
+	const cache = (roles as { cache?: Map<string, unknown> } | undefined)?.cache;
+	return cache instanceof Map ? [...cache.keys()] : [];
 }
 
 export function discordTriggered(
