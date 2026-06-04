@@ -21,6 +21,12 @@
 					"slug": "quickstart",
 					"file": "quickstart/index.md",
 					"icon": "zap"
+				},
+				{
+					"title": "Manual setup",
+					"slug": "quickstart/manual",
+					"file": "quickstart/manual.md",
+					"icon": "wrench"
 				}
 			]
 		},

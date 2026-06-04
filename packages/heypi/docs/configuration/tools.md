@@ -18,7 +18,7 @@ Configure core tools with `coreTools()`:
 import { commandConfirm, coreTools } from "@hunvreus/heypi";
 
 agentFrom("./agent", {
-	model: "openai/gpt-5-mini",
+	model: "openai/gpt-5.4-mini",
 	tools: [
 		...coreTools({
 			bash: { confirm: commandConfirm() },

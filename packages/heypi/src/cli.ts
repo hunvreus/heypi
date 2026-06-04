@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { isAbsolute, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { cac } from "cac";
+import pc from "picocolors";
 import {
 	type AdminServerDescriptor,
 	adminLoginUrl,
@@ -43,6 +44,7 @@ function buildCli() {
 	cli.help();
 	cli.command("help", "Show help").action(() => line(helpText()));
 	cli.command("version", "Show version").action(() => line(VERSION));
+	cli.command("init", "Create a new heypi app").action(init);
 	cli.command("check", "Run local setup checks")
 		.option("--env <path>", "Load env file")
 		.option("--db <path>", "SQLite database path")
@@ -165,6 +167,15 @@ async function check(flags: Flags): Promise<void> {
 	line(rows.join("\n"));
 }
 
+function init(): void {
+	line("Create a new heypi app with:");
+	line("");
+	line("  npm create heypi@latest");
+	line("");
+	line("For non-interactive setup:");
+	line("  npm create heypi@latest my-agent -- --yes");
+}
+
 async function dbCheck(flags: Flags): Promise<void> {
 	line(await checkDb(requiredFlag(flags, "db")));
 }
@@ -235,11 +246,17 @@ async function slackChannelsList(flags: Flags): Promise<void> {
 	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
 	const channels = await slackChannels(token, { includePrivate: booleanFlag(flags, "private") });
 	if (!channels.length) return line("No Slack channels visible to the bot.");
-	for (const channel of channels) {
-		const row = [channel.id, `#${channel.name}`, `targets: { slack: { channels: ["${channel.id}"] } }`];
-		if (channel.private) row.splice(2, 0, "private");
-		line(row.join("\t"));
-	}
+	line(
+		table(
+			["id", "channel", "access", "target"],
+			channels.map((channel) => [
+				channel.id,
+				`#${channel.name}`,
+				channel.private ? "private" : "public",
+				`targets: { slack: { channels: ["${channel.id}"] } }`,
+			]),
+		),
+	);
 }
 
 async function telegramCheck(flags: Flags): Promise<void> {
@@ -297,9 +314,17 @@ async function discordChannelsList(flags: Flags): Promise<void> {
 	const token = secret(flags, "token", "DISCORD_BOT_TOKEN");
 	const channels = await discordChannels(token);
 	if (!channels.length) return line("No Discord text channels visible to the bot.");
-	for (const channel of channels) {
-		line(`${channel.guild}\t${channel.channel}\t${channel.guildName} #${channel.channelName}`);
-	}
+	line(
+		table(
+			["guild", "channel", "name", "target"],
+			channels.map((channel) => [
+				channel.guild,
+				channel.channel,
+				`${channel.guildName} #${channel.channelName}`,
+				`targets: { discord: { channels: ["${channel.channel}"] } }`,
+			]),
+		),
+	);
 }
 
 function discordInvite(flags: Flags): void {
@@ -342,20 +367,20 @@ async function jobsList(flags: Flags): Promise<void> {
 		return line(JSON.stringify(rows, null, 2));
 	}
 	if (!jobs.length) return line("No jobs found.");
+	const tableRows = [];
 	for (const job of jobs) {
 		const last = await repos.runs.lastForJob({ agent: job.agent, id: job.id });
-		line(
-			[
-				job.agent,
-				job.id,
-				job.kind,
-				job.state,
-				`next=${fmtTime(job.nextAt)}`,
-				`last=${fmtTime(job.lastAt)}`,
-				last ? `last_run=${last.state}/${last.deliveryState}` : "last_run=-",
-			].join("\t"),
-		);
+		tableRows.push([
+			job.agent,
+			job.id,
+			job.kind,
+			job.state,
+			fmtTime(job.nextAt),
+			fmtTime(job.lastAt),
+			last ? `${last.state}/${last.deliveryState}` : "-",
+		]);
 	}
+	line(table(["agent", "id", "kind", "state", "next", "last", "last_run"], tableRows));
 }
 
 async function jobsState(flags: Flags, id: string, state: "active" | "paused"): Promise<void> {
@@ -403,19 +428,20 @@ async function approvalsList(flags: Flags): Promise<void> {
 	const rows = await approvals.listPending({ limit: numberFlag(flags, "limit", 25) });
 	if (booleanFlag(flags, "json")) return line(JSON.stringify(rows, null, 2));
 	if (!rows.length) return line("No pending approvals.");
-	for (const row of rows) {
-		line(
-			[
+	line(
+		table(
+			["id", "channel", "runtime", "command", "reason", "requested", "expires"],
+			rows.map((row) => [
 				row.id,
 				row.channel,
 				row.runtime,
 				row.command,
 				row.reason,
-				`requested=${fmtTime(row.requestedAt)}`,
-				`expires=${fmtTime(row.expiresAt)}`,
-			].join("\t"),
-		);
-	}
+				fmtTime(row.requestedAt),
+				fmtTime(row.expiresAt),
+			]),
+		),
+	);
 }
 
 async function approvalsShow(flags: Flags, id: string): Promise<void> {
@@ -513,6 +539,7 @@ function helpText(): string {
 	return `heypi ${VERSION}
 
 Usage:
+  heypi init
   heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
   heypi db check --db ./state/heypi.db
   heypi db migrate --db ./state/heypi.db
@@ -738,19 +765,36 @@ function chatName(chat: TelegramChat): string {
 }
 
 function ok(text: string): string {
-	return `ok: ${text}`;
+	return `${pc.green("ok")}: ${text}`;
 }
 
 function warn(text: string): string {
-	return `warn: ${text}`;
+	return `${pc.yellow("warn")}: ${text}`;
 }
 
 function fail(text: string): string {
-	return `fail: ${text}`;
+	return `${pc.red("fail")}: ${text}`;
 }
 
 function line(text: string): void {
 	process.stdout.write(`${text}\n`);
+}
+
+function table(headers: string[], rows: string[][]): string {
+	const widths = headers.map((header, index) =>
+		Math.max(stripAnsi(header).length, ...rows.map((row) => stripAnsi(row[index] ?? "").length)),
+	);
+	const format = (row: string[]) =>
+		row
+			.map((cell, index) => cell.padEnd(widths[index]))
+			.join("  ")
+			.trimEnd();
+	const divider = widths.map((width) => "-".repeat(width));
+	return [format(headers.map((header) => pc.bold(header))), format(divider), ...rows.map(format)].join("\n");
+}
+
+function stripAnsi(value: string): string {
+	return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function message(error: unknown): string {

@@ -12,11 +12,12 @@ Chat agents for your team, with approvals, durable state, and sandboxed tools. S
 
 This repo contains the core heypi package, optional runtime providers, and runnable examples.
 
-[Start here: `packages/heypi`](packages/heypi/README.md#quickstart)
+[Start here: `packages/heypi`](packages/heypi/README.md#minimal-app)
 
 ## Packages
 
 - [`packages/heypi`](packages/heypi): Core framework: adapters, tools, approvals, state, admin, scheduler, CLI.
+- [`packages/create-heypi`](packages/create-heypi): App scaffolder for `npm create heypi@latest`.
 - [`packages/heypi-runtime-docker`](packages/heypi-runtime-docker): Docker runtime provider with one warm container per runtime scope.
 - [`packages/heypi-runtime-gondolin`](packages/heypi-runtime-gondolin): Gondolin runtime provider with one warm VM per runtime scope.
 

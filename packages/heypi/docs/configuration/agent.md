@@ -9,7 +9,7 @@ Use `agentFrom()` for folder-based agents:
 ```ts
 createHeypi({
 	agent: agentFrom("./agent", {
-		model: "openai/gpt-5-mini",
+		model: "openai/gpt-5.4-mini",
 		tools: [...coreTools()],
 	}),
 	// ...state, adapters, runtime
@@ -23,7 +23,7 @@ createHeypi({
 	agent: {
 		id: "ops",
 		directory: process.cwd(),
-		model: { provider: "openai", name: "gpt-5-mini" },
+		model: { provider: "openai", name: "gpt-5.4-mini" },
 		prompt: "You are a concise operations assistant.",
 		soul: "Answer directly. Ask when blocked.",
 		tools: [...coreTools()],
@@ -36,7 +36,7 @@ createHeypi({
 
 | Option | Required | Applies to | Description |
 | --- | --- | --- | --- |
-| `model` | Yes, unless `HEYPI_MODEL` is set | `agentFrom`, manual | Model id. `agentFrom()` accepts Pi's `provider/name` string, such as `openai/gpt-5-mini`. Manual config uses Pi's lower-level model shape. |
+| `model` | Yes, unless `HEYPI_MODEL` is set | `agentFrom`, manual | Model id. `agentFrom()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
 | `tools` | No | `agentFrom`, manual | Core tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
 | `context` | No | `agentFrom`, manual | Per-turn context blocks added before the model chooses tools. |
 | `systemPrompt` | No | `agentFrom` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |
@@ -91,14 +91,14 @@ OPENAI_API_KEY=sk-... npx tsx index.ts
 ```
 
 ```ts
-agent: agentFrom("./agent", { model: "openai/gpt-5-mini" });
+agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" });
 ```
 
 Common provider env vars:
 
 | Provider | Example model | Env var |
 | --- | --- | --- |
-| OpenAI | `openai/gpt-5-mini` | `OPENAI_API_KEY` |
+| OpenAI | `openai/gpt-5.4-mini` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic/claude-sonnet-4-5` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `google/gemini-2.5-pro` | `GEMINI_API_KEY` |
 | OpenRouter | `openrouter/...` | `OPENROUTER_API_KEY` |
@@ -114,7 +114,7 @@ Use `context` for compact facts that change per turn: current deployment, tenant
 
 ```ts
 agentFrom("./agent", {
-	model: "openai/gpt-5-mini",
+	model: "openai/gpt-5.4-mini",
 	context: [
 		async ({ channel, actor }) => ({
 			title: "Request context",

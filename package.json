@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"build": "pnpm --filter @hunvreus/heypi run build",
-		"build:all": "pnpm --filter @hunvreus/heypi run build && pnpm --filter \"./packages/heypi-runtime-*\" run build:package",
+		"build:all": "pnpm --filter @hunvreus/heypi run build && pnpm --filter \"./packages/heypi-runtime-*\" run build:package && pnpm --filter create-heypi run build",
 		"build:admin-css": "pnpm --filter @hunvreus/heypi run build:admin-css",
 		"dev:admin-css": "pnpm --filter @hunvreus/heypi run dev:admin-css",
 		"prepack": "pnpm run build:all",
@@ -24,9 +24,9 @@
 		"start:webhook": "cd examples/webhook-github-docker && tsx --conditions development index.ts",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "pnpm --filter @hunvreus/heypi run typecheck && tsc --noEmit -p tsconfig.json && pnpm --filter \"./packages/heypi-runtime-*\" run check",
+		"typecheck": "pnpm --filter @hunvreus/heypi run typecheck && tsc --noEmit -p tsconfig.json && pnpm --filter \"./packages/heypi-runtime-*\" run check && pnpm --filter create-heypi run check",
 		"db:generate": "pnpm --filter @hunvreus/heypi run db:generate",
-		"test": "pnpm --filter @hunvreus/heypi run test && pnpm --filter \"./packages/heypi-runtime-*\" run test"
+		"test": "pnpm --filter @hunvreus/heypi run test && pnpm --filter \"./packages/heypi-runtime-*\" run test && pnpm --filter create-heypi run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

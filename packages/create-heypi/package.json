@@ -1,18 +1,16 @@
 {
-	"name": "@hunvreus/heypi-runtime-docker",
+	"name": "create-heypi",
 	"version": "0.1.3",
-	"description": "Docker runtime provider for heypi.",
+	"description": "Create a heypi app.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		}
+	"bin": {
+		"create-heypi": "bin/create-heypi"
 	},
 	"files": [
+		"bin/create-heypi",
 		"dist",
 		"README.md",
 		"LICENSE"
@@ -24,27 +22,28 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/hunvreus/heypi.git",
-		"directory": "packages/heypi-runtime-docker"
+		"directory": "packages/create-heypi"
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"scripts": {
-		"build": "pnpm --filter @hunvreus/heypi run build && pnpm run build:package",
-		"build:package": "rm -rf dist && tsc -p tsconfig.build.json",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
 		"check": "biome check . && tsc --noEmit",
-		"test": "node --import tsx --test tests/*.test.ts",
+		"test": "pnpm run build && node --import tsx --test tests/*.test.ts",
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
 		"prepack": "pnpm run build"
 	},
-	"peerDependencies": {
-		"@hunvreus/heypi": "0.1.3"
+	"dependencies": {
+		"@clack/prompts": "^1.2.0",
+		"picocolors": "^1.1.1"
 	},
 	"devDependencies": {
-		"@hunvreus/heypi": "workspace:*",
+		"@biomejs/biome": "^2.4.15",
 		"@types/node": "^25.9.1",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
-	}
+	},
+	"packageManager": "pnpm@10.17.1"
 }

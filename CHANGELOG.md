@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-04
+
+### Added
+- Added the `create-heypi` scaffolder package for `npm create heypi@latest`, including guided adapter/runtime/model prompts, default agent folders, and safe `.env` handling.
+- Added a broader curated model picker for `create-heypi` with current OpenAI, Anthropic, Google, xAI, and custom model choices.
+- Added `heypi init` guidance for creating new apps.
+
+### Changed
+- Improved human CLI output with colored status labels and tables while keeping JSON and raw URL outputs machine-readable.
+- Reworked the CLI reference into a command-indexed layout with per-command syntax, options, examples, and behavior notes.
+- Reworked quickstart docs around `npm create heypi@latest` and split manual setup into a separate quickstart page.
+- Framed Slack approval messages with a left status bar, compact metadata rows, and bottom-aligned approval buttons.
+
 ## [0.1.2] - 2026-06-04
 
 ### Changed

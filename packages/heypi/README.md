@@ -19,11 +19,19 @@ Requirements:
 - Node.js 22 or newer.
 - Optional for document conversion: Python 3 plus `uv`, or Python 3 with [Microsoft MarkItDown](https://github.com/microsoft/markitdown) already installed.
 
+Create a new app:
+
+```bash
+npm create heypi@latest
+```
+
+For an existing TypeScript app:
+
 ```bash
 npm install @hunvreus/heypi
 ```
 
-## Quickstart
+## Minimal app
 
 ```ts
 import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
@@ -36,7 +44,7 @@ const app = createHeypi({
 			appToken: process.env.SLACK_APP_TOKEN!,
 		}),
 	],
-	agent: agentFrom("./agent", { model: "openai/gpt-5-mini" }),
+	agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
 	runtime: { root: workspace("./workspace") },
 });
 

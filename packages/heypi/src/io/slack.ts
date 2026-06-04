@@ -21,6 +21,10 @@ const CANCEL = "heypi_cancel";
 const STATUS = "heypi_status";
 const SLACK_TEXT_LIMIT = 4000;
 const SLACK_BLOCK_TEXT_LIMIT = 3000;
+const APPROVAL_PENDING_COLOR = "#f2c744";
+const APPROVAL_APPROVED_COLOR = "#2eb67d";
+const APPROVAL_REJECTED_COLOR = "#e01e5a";
+const APPROVAL_EXPIRED_COLOR = "#868686";
 
 export type SlackConfig = {
 	name?: string;
@@ -577,12 +581,18 @@ async function postEphemeralChunks(input: {
 	const chunks = slackChunks(input.text, Boolean(input.approval));
 	for (let index = 0; index < chunks.length; index++) {
 		const blocks = index === 0 ? approvalBlocks(input.approval) : undefined;
+		const approvalPayload =
+			blocks && input.approval
+				? approvalAttachmentPayload(blocks, approvalFallbackText(input.text, input.approval), undefined, [
+						approvalActionsBlock(input.approval),
+					])
+				: undefined;
 		const message = {
 			channel: input.channel,
 			user: input.user,
-			text: chunks[index],
+			text: approvalPayload ? "" : chunks[index],
 			thread_ts: input.thread,
-			...(blocks ? { blocks } : {}),
+			...(approvalPayload ?? {}),
 		};
 		await input.delivery.run(() => input.client.chat.postEphemeral(message), {
 			adapter: "slack",
@@ -771,11 +781,17 @@ function startProgress(input: {
 				const chunks = slackChunks(text, Boolean(approval));
 				const first = chunks[0] ?? "";
 				const blocks = approvalBlocks(approval);
+				const approvalPayload =
+					blocks && approval
+						? approvalAttachmentPayload(blocks, approvalFallbackText(text, approval), undefined, [
+								approvalActionsBlock(approval),
+							])
+						: undefined;
 				await input.delivery.run(
 					() =>
 						input.client.chat.update(
-							blocks
-								? { channel: input.channel, ts, text: first, blocks }
+							approvalPayload
+								? { channel: input.channel, ts, text: "", ...approvalPayload }
 								: { channel: input.channel, ts, text: first },
 						),
 					{ ...input.context, delivery: "progress_update" },
@@ -916,7 +932,8 @@ export function slackTriggered(
 type SlackClient = AllMiddlewareArgs["client"];
 type SlackMessage = Parameters<SlackClient["chat"]["postMessage"]>[0];
 type SlackBlock = types.Block | types.KnownBlock;
-type SlackUpdate = { text: string; blocks?: SlackBlock[] };
+type SlackAttachment = { color: string; fallback: string; blocks: SlackBlock[] };
+type SlackUpdate = { text: string; blocks?: SlackBlock[]; attachments?: SlackAttachment[] };
 
 const SLACK_GROUP_CACHE_MS = 60_000;
 
@@ -1058,7 +1075,7 @@ async function handleAction(input: {
 		const actionMessage = context.message;
 		if (!actionMessage) return;
 		const update = slackApprovalUpdate(out, "approved", actionActor, input.body);
-		if (!update.blocks) throw new Error("Slack approval acknowledgement missing approval blocks");
+		if (!hasApprovalPayload(update)) throw new Error("Slack approval acknowledgement missing approval blocks");
 		await input.delivery.run(
 			() =>
 				input.client.chat.update({
@@ -1089,7 +1106,7 @@ async function handleAction(input: {
 		const state = out.approvalResolution;
 		if (!state) throw new Error("Slack approval replacement missing resolution");
 		const update = slackApprovalUpdate(out, state, actionActor, input.body);
-		if (!update.blocks) throw new Error("Slack approval action missing approval blocks");
+		if (!hasApprovalPayload(update)) throw new Error("Slack approval action missing approval blocks");
 		await input.delivery.run(
 			() =>
 				input.client.chat.update({
@@ -1137,7 +1154,7 @@ async function handleAction(input: {
 			const actor = context.actor;
 			if (out.replaceOriginal && context.message) {
 				const update = slackApprovalUpdate(out, out.approvalResolution, actor, input.body);
-				if (update.blocks) {
+				if (hasApprovalPayload(update)) {
 					try {
 						await input.delivery.run(
 							() =>
@@ -1297,7 +1314,7 @@ function slackApprovalUpdate(
 ): SlackUpdate {
 	const text = slackApprovalFallbackText(out, state, actor);
 	const blocks = slackResolvedApprovalBlocks(out, state, actor, body);
-	return blocks ? { text, blocks } : { text };
+	return blocks ? { text: "", blocks: [], ...approvalAttachmentPayload(blocks, text, state) } : { text };
 }
 
 function slackResolvedApprovalBlocks(
@@ -1364,8 +1381,55 @@ function slackMessage(input: {
 		base.thread_ts = input.thread;
 		base.reply_broadcast = input.replyBroadcast ?? false;
 	}
-	if (blocks) base.blocks = blocks;
+	if (blocks && input.approval) {
+		base.text = "";
+		Object.assign(
+			base,
+			approvalAttachmentPayload(blocks, approvalFallbackText(input.text, input.approval), undefined, [
+				approvalActionsBlock(input.approval),
+			]),
+		);
+	}
 	return base as unknown as SlackMessage;
+}
+
+function approvalAttachmentPayload(
+	blocks: SlackBlock[],
+	fallback: string,
+	state?: Outbound["approvalResolution"],
+	actions?: SlackBlock[],
+): { attachments: SlackAttachment[]; blocks?: SlackBlock[] } {
+	return {
+		attachments: [{ color: approvalColor(state), fallback, blocks }],
+		...(actions?.length ? { blocks: actions } : {}),
+	};
+}
+
+function approvalFallbackText(text: string, approval: NonNullable<Outbound["approval"]>): string {
+	return [approvalTitleText(undefined).replaceAll("*", ""), approval.reason ?? text, `Approval ID ${approval.id}`]
+		.filter(Boolean)
+		.join("\n");
+}
+
+function approvalAttachmentBlocks(message: Record<string, unknown> | undefined): unknown {
+	const attachments = message?.attachments;
+	if (!Array.isArray(attachments)) return undefined;
+	for (const attachment of attachments) {
+		const blocks = record(attachment)?.blocks;
+		if (Array.isArray(blocks)) return blocks;
+	}
+	return undefined;
+}
+
+function approvalColor(state?: Outbound["approvalResolution"]): string {
+	if (state === "approved") return APPROVAL_APPROVED_COLOR;
+	if (state === "rejected") return APPROVAL_REJECTED_COLOR;
+	if (state === "expired") return APPROVAL_EXPIRED_COLOR;
+	return APPROVAL_PENDING_COLOR;
+}
+
+function hasApprovalPayload(update: SlackUpdate): boolean {
+	return Boolean(update.blocks?.length || update.attachments?.length);
 }
 
 export function approvalBlocks(
@@ -1380,38 +1444,36 @@ export function approvalBlocks(
 		...(approval.details ?? []).flatMap((detail) =>
 			labeledBlock(detail.label, detail.format === "code" ? codeFence(detail.value) : detail.value),
 		),
-		...contextBlock(`Approval ID \`${approval.id}\``),
-		...(approval.requestedBy ? contextBlock(`Requested by <@${approval.requestedBy}>`) : []),
-		...(state
-			? contextBlock(approvalResolutionText(state, actor))
-			: [
-					{
-						type: "actions",
-						elements: [
-							{
-								type: "button",
-								text: { type: "plain_text", text: "Approve" },
-								style: "primary",
-								action_id: APPROVE,
-								value: approval.id,
-							},
-							{
-								type: "button",
-								text: { type: "plain_text", text: "Reject" },
-								style: "danger",
-								action_id: DENY,
-								value: approval.id,
-							},
-						],
-					} satisfies SlackBlock,
-				]),
+		metadataBlock(approval, state, actor),
 	];
 	return blocks;
 }
 
+function approvalActionsBlock(approval: NonNullable<Outbound["approval"]>): SlackBlock {
+	return {
+		type: "actions",
+		elements: [
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Approve" },
+				style: "primary",
+				action_id: APPROVE,
+				value: approval.id,
+			},
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Reject" },
+				style: "danger",
+				action_id: DENY,
+				value: approval.id,
+			},
+		],
+	};
+}
+
 function approvalBlocksFromPayload(body: unknown): SlackBlock[] | undefined {
 	const message = record(record(body)?.message);
-	const blocks = message?.blocks;
+	const blocks = approvalAttachmentBlocks(message) ?? message?.blocks;
 	if (!Array.isArray(blocks)) return undefined;
 	return blocks.map((block) => stripSlackBlockId(block as SlackBlock));
 }
@@ -1420,22 +1482,18 @@ function resolveApprovalBlocks(
 	blocks: SlackBlock[],
 	resolution: { title?: string; status: string },
 ): SlackBlock[] | undefined {
-	const actions = approvalActionsIndex(blocks);
-	if (actions < 0) return undefined;
 	const next = [...blocks];
 	if (resolution.title) {
 		const title = approvalTitleIndex(next);
 		if (title >= 0) next[title] = { type: "section", text: { type: "mrkdwn", text: resolution.title } };
 	}
-	next[actions] = contextBlock(resolution.status)[0];
-	return next;
-}
-
-function approvalActionsIndex(blocks: SlackBlock[]): number {
-	for (let i = blocks.length - 1; i >= 0; i--) {
-		if (isApprovalActionsBlock(blocks[i])) return i;
+	const metadata = approvalMetadataIndex(next);
+	if (metadata >= 0) {
+		next[metadata] = appendMetadataStatus(next[metadata], resolution.status);
+	} else {
+		next.push(contextBlock(resolution.status)[0]);
 	}
-	return -1;
+	return next;
 }
 
 function approvalTitleIndex(blocks: SlackBlock[]): number {
@@ -1447,13 +1505,23 @@ function approvalTitleIndex(blocks: SlackBlock[]): number {
 	return -1;
 }
 
-function isApprovalActionsBlock(block: SlackBlock): boolean {
+function approvalMetadataIndex(blocks: SlackBlock[]): number {
+	for (const [index, block] of blocks.entries()) {
+		const value = record(block);
+		const text = stringProp(record(value?.text), "text");
+		if (text?.includes("*Approval ID*")) return index;
+	}
+	return -1;
+}
+
+function appendMetadataStatus(block: SlackBlock, status: string): SlackBlock {
 	const value = record(block);
-	if (value?.type !== "actions" || !Array.isArray(value.elements)) return false;
-	return value.elements.some((element) => {
-		const actionId = stringProp(record(element), "action_id");
-		return actionId === APPROVE || actionId === DENY;
-	});
+	const text = stringProp(record(value?.text), "text");
+	if (!text) return block;
+	return {
+		type: "section",
+		text: { type: "mrkdwn", text: `${text}\n${status}` },
+	};
 }
 
 function stripSlackBlockId(block: SlackBlock): SlackBlock {
@@ -1468,6 +1536,28 @@ function approvalTitleText(state?: Outbound["approvalResolution"]): string {
 
 function labeledBlock(label: string, value: string): SlackBlock[] {
 	return [{ type: "section", text: { type: "mrkdwn", text: `*${label}*\n${value}` } }];
+}
+
+function metadataBlock(
+	approval: NonNullable<Outbound["approval"]>,
+	state?: Outbound["approvalResolution"],
+	actor?: string,
+): SlackBlock {
+	const lines = [
+		`*Approval ID* \`${approval.id}\``,
+		approval.requestedBy ? `*Requested by* <@${approval.requestedBy}>` : undefined,
+		state ? approvalMetadataStatus(state, actor) : undefined,
+	].filter((line): line is string => Boolean(line));
+	return {
+		type: "section",
+		text: { type: "mrkdwn", text: lines.join("\n") },
+	};
+}
+
+function approvalMetadataStatus(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
+	if (state === "approved") return `*Approved by* ${actor ? `<@${actor}>` : "Approved"}`;
+	if (state === "rejected") return `*Rejected by* ${actor ? `<@${actor}>` : "Rejected"}`;
+	return "*Status* Expired";
 }
 
 function contextBlock(text: string): SlackBlock[] {

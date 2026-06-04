@@ -86,7 +86,7 @@ test("Slack HTTP mode requires a signing secret at runtime", () => {
 	assert.equal(slack({ botToken: "bot-token", mode: "socket", appToken: "app-token" }).name, "slack");
 });
 
-test("Slack approval resolution preserves approval blocks and replaces actions", () => {
+test("Slack approval resolution preserves approval card blocks", () => {
 	const approval = {
 		id: "approval-1",
 		callId: "call-1",
@@ -103,12 +103,11 @@ test("Slack approval resolution preserves approval blocks and replaces actions",
 	assert.ok(pending);
 	assert.ok(rejected);
 	assert.match(JSON.stringify(pending[0]), /Approval required/);
-	assert.match(JSON.stringify(pending), /Approval ID `approval-1`/);
+	assert.match(JSON.stringify(pending), /Approval ID.*approval-1/);
 	assert.match(JSON.stringify(rejected[0]), /Rejected/);
-	assert.equal(pending.at(-1)?.type, "actions");
-	assert.equal(rejected.at(-1)?.type, "context");
+	assert.equal(rejected.at(-1)?.type, "section");
 	assert.deepEqual(rejected.slice(1, -1), pending.slice(1, -1));
-	assert.match(JSON.stringify(rejected.at(-1)), /Rejected by <@U_REVIEWER>/);
+	assert.match(JSON.stringify(rejected.at(-1)), /Requested by\* <@U_REQUESTER>\\n\*Rejected by\* <@U_REVIEWER>/);
 });
 
 test("Telegram allowlists default to accepting delivered message events", () => {

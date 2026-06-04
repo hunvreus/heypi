@@ -57,8 +57,10 @@ function cliAsync(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: strin
 test("cli prints help and version", () => {
 	const help = cli(["help"]);
 	assert.match(help, new RegExp(`heypi ${escapeRegExp(PACKAGE_VERSION)}`));
+	assert.match(help, /heypi init/);
 	assert.match(help, /heypi slack channels/);
 	assert.equal(cli(["version"]).trim(), PACKAGE_VERSION);
+	assert.match(cli(["init"]), /npm create heypi@latest/);
 });
 
 test("cli check loads env file and validates runtime root", async () => {
@@ -106,7 +108,9 @@ test("cli db migrate and jobs commands operate on sqlite store", async () => {
 			nextAt: Date.now() + 60_000,
 		});
 
-		assert.match(cli(["jobs", "list", "--db", path]), /daily\theartbeat\tactive/);
+		const list = cli(["jobs", "list", "--db", path]);
+		assert.match(list, /agent\s+id\s+kind\s+state/);
+		assert.match(list, /test\s+daily\s+heartbeat\s+active/);
 		assert.match(cli(["jobs", "show", "daily", "--db", path, "--agent", "test"]), /id: daily/);
 		const json = JSON.parse(cli(["jobs", "list", "--db", path, "--json"])) as Array<{ id: string }>;
 		assert.deepEqual(

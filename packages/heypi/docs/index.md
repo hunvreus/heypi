@@ -6,13 +6,13 @@ heypi is a TypeScript framework to build AI chat agents for your team on Slack, 
 
 [OpenClaw](https://openclaw.ai/) introduced two ideas:
 
-1. **Local first**: run close to the user's machine and tools, so integrations can use existing CLIs, files, browser sessions, and local credentials instead of bespoke SaaS connectors.
-2. **Capabilities over workflows**: give the agent context, prompts, skills, and tools, then let the model decide how to compose them instead of forcing every task into a predefined workflow.
+- **Local first**: run close to the user's machine and tools, so integrations can use existing CLIs, files, browser sessions, and local credentials instead of bespoke SaaS connectors.
+- **Capabilities over workflows**: give the agent context, prompts, skills, and tools, then let the model decide how to compose them instead of forcing every task into a predefined workflow.
 
 heypi extends these ideas with two safety layers:
 
-1. **Approvals**: require specific users or groups to approve sensitive operations, with every approval logged for audit.
-2. **Sandboxing**: run commands in a separate runtime, such as just-bash, Docker, or a MicroVM.
+- **Approvals**: require specific users or groups to approve sensitive operations, with every approval logged for audit.
+- **Sandboxing**: run commands in a separate runtime, such as just-bash, Docker, or a MicroVM.
 
 For example, the [Slack DevOps agent example](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops) gives an AI agent access to servers through host tools. A safe request, such as "What is the load on db-1?", can run without approval. A risky request, such as running a database migration, will require approval from a specific user or group (someone on the DevOps team, for example).
 

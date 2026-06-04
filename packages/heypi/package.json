@@ -1,6 +1,6 @@
 {
 	"name": "@hunvreus/heypi",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "Chat agents for your team, with approvals and sandboxed tools.",
 	"license": "MIT",
 	"type": "module",
@@ -99,6 +99,7 @@
 		"discord.js": "^14.26.4",
 		"drizzle-orm": "^0.45.2",
 		"just-bash": "^3.0.1",
+		"picocolors": "^1.1.1",
 		"unbash": "3.0.0"
 	},
 	"devDependencies": {

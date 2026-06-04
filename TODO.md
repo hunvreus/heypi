@@ -33,6 +33,9 @@
 - Add guided setup CLI.
 	- `heypi init` should scaffold local app files, `.env.example`, agent folder, workspace folder, and provider snippets.
 	- Keep provider-specific helpers such as Slack manifest generation separate from local app scaffolding.
+- Extend approval policy controls.
+	- Add a setting to skip approval flow when the requester is also an approver.
+	- Add temporary approval windows, for example accepting similar requests for the next 5 minutes.
 - Add more adapters.
   - Teams.
   - Email.
