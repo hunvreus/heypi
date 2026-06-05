@@ -12,6 +12,7 @@ export type {
 	Locks,
 	Message,
 	Messages,
+	Sessions,
 	Store,
 	StoredMessage,
 	Thread,
