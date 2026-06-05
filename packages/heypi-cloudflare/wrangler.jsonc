@@ -1,0 +1,13 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "heypi",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-01-01",
+	// Pi (and the heypi runtime) import node builtins; nodejs_compat lets them load in workerd.
+	"compatibility_flags": ["nodejs_compat"],
+	"durable_objects": {
+		"bindings": [{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" }]
+	},
+	// ThreadAgent stores session transcripts in its embedded SQLite, so it must be an SQLite-backed class.
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] }]
+}
