@@ -21,10 +21,11 @@ import type { ApprovalPrompt, ReplyAttachment, ToolContinuation } from "../core/
 import { splitTools } from "../core-tools.js";
 import { type AttachmentProcessingConfig, attachmentInput } from "../io/attachments.js";
 import type { ReplyStream } from "../io/reply-stream.js";
-import type { Messages, StoredMessage } from "../store/types.js";
+import type { Messages, Sessions, StoredMessage } from "../store/types.js";
 import type { Agent, AgentReq, AgentRes } from "./agent.js";
 import { runtimeWithEvents } from "./events.js";
 import { memoryTools, secretTools, skillTools } from "./managed-tools.js";
+import { captureSession, openSessionFromEntries } from "./session-rehydrate.js";
 import { tools } from "./tools.js";
 import type { Runtime, RuntimeEventHandler } from "./types.js";
 
@@ -39,6 +40,8 @@ export type PiAgentInput = {
 	runtime: Runtime | ((scope?: string) => Runtime);
 	sessionRuntime?: Runtime;
 	attachmentRuntime?: Runtime;
+	/** When set, transcripts load/save through this store (in-memory Pi sessions, no JSONL file). */
+	sessions?: Sessions;
 	messages: Messages;
 	attachments?: AttachmentProcessingConfig;
 	memory?: MemoryStore;
@@ -54,58 +57,70 @@ export class PiAgent implements Agent {
 
 	async ask(req: AgentReq): Promise<AgentRes> {
 		const attachments: ReplyAttachment[] = [];
-		const session = await this.create(
-			req.channel,
-			req.actor,
-			req,
-			{
-				trace: req.trace,
-				agent: this.input.agent.id,
-				provider: req.provider,
-				channelName: req.channelName,
-				thread: req.threadId,
-				providerThread: req.thread,
-				threadName: req.threadName,
-				turn: req.turnId,
-				message: req.inputMessageId,
-				actorName: req.actorName,
-				model: req.model,
-			},
-			attachments,
-		);
-		return await this.run({ mode: "prompt", session, generatedAt: session.messages.length + 1, req, attachments });
+		const sessionManager = await this.acquireSession(req);
+		try {
+			const session = await this.create(
+				req.channel,
+				req.actor,
+				req,
+				{
+					trace: req.trace,
+					agent: this.input.agent.id,
+					provider: req.provider,
+					channelName: req.channelName,
+					thread: req.threadId,
+					providerThread: req.thread,
+					threadName: req.threadName,
+					turn: req.turnId,
+					message: req.inputMessageId,
+					actorName: req.actorName,
+					model: req.model,
+				},
+				attachments,
+				sessionManager,
+			);
+			return await this.run({ mode: "prompt", session, generatedAt: session.messages.length + 1, req, attachments });
+		} finally {
+			await this.persistSession(req, sessionManager);
+		}
 	}
 
 	async continue(
 		req: Omit<AgentReq, "text" | "inputMessageId"> & { continuation?: ToolContinuation },
 	): Promise<AgentRes> {
-		if (req.continuation) appendToolResult(this.sessionManager(req), req.continuation);
+		const sessionManager = await this.acquireSession(req);
+		if (req.continuation) appendToolResult(sessionManager, req.continuation);
 		const attachments: ReplyAttachment[] = [];
-		const session = await this.create(
-			req.channel,
-			req.actor,
-			req,
-			{
-				trace: req.trace,
-				agent: this.input.agent.id,
-				provider: req.provider,
-				channelName: req.channelName,
-				thread: req.threadId,
-				providerThread: req.thread,
-				threadName: req.threadName,
-				turn: req.turnId,
-				actorName: req.actorName,
-				model: req.model,
-			},
-			attachments,
-		);
-		return await this.run({
-			mode: "continue",
-			session,
-			generatedAt: session.messages.length,
-			req: { ...req, text: "" },
-			attachments,
-		});
+		try {
+			const session = await this.create(
+				req.channel,
+				req.actor,
+				req,
+				{
+					trace: req.trace,
+					agent: this.input.agent.id,
+					provider: req.provider,
+					channelName: req.channelName,
+					thread: req.threadId,
+					providerThread: req.thread,
+					threadName: req.threadName,
+					turn: req.turnId,
+					actorName: req.actorName,
+					model: req.model,
+				},
+				attachments,
+				sessionManager,
+			);
+			return await this.run({
+				mode: "continue",
+				session,
+				generatedAt: session.messages.length,
+				req: { ...req, text: "" },
+				attachments,
+			});
+		} finally {
+			await this.persistSession(req, sessionManager);
+		}
 	}
 
 	private async run(input: {
@@ -292,6 +307,7 @@ export class PiAgent implements Agent {
 			model?: AgentReq["model"];
 		},
 		attachments: ReplyAttachment[],
+		sessionManager: SessionManager,
 	): Promise<AgentSession> {
 		const agent = this.input.agent;
 		const modelConfig = context.model ?? agent.model;
@@ -373,7 +389,7 @@ export class PiAgent implements Agent {
 			modelRegistry: models,
 			model,
 			tools: activeTools,
-			sessionManager: this.sessionManager(req),
+			sessionManager,
 			customTools,
 		});
 		if (modelFallbackMessage) throw new Error(modelFallbackMessage);
@@ -382,7 +398,26 @@ export class PiAgent implements Agent {
 		return session;
 	}
 
-	private sessionManager(input: Pick<AgentReq, "sessionPath">): SessionManager {
+	/**
+	 * Acquires the Pi session for a turn. With a session store configured, the transcript is
+	 * loaded from durable storage and rehydrated entirely in memory (no JSONL file). Without one,
+	 * it falls back to the file-backed session — unchanged behavior.
+	 */
+	private async acquireSession(input: Pick<AgentReq, "sessionId" | "sessionPath">): Promise<SessionManager> {
+		if (this.input.sessions) {
+			const entries = (await this.input.sessions.load(input.sessionId)) ?? [];
+			return openSessionFromEntries({ sessionId: input.sessionId, cwd: this.input.agent.directory, entries });
+		}
+		return this.openSessionFile(input);
+	}
+
+	/** Persists the session after a turn when a store is configured; a no-op in file mode (Pi already wrote it). */
+	private async persistSession(input: Pick<AgentReq, "sessionId">, session: SessionManager): Promise<void> {
+		if (!this.input.sessions) return;
+		await this.input.sessions.save(input.sessionId, captureSession(session).entries);
+	}
+
+	private openSessionFile(input: Pick<AgentReq, "sessionPath">): SessionManager {
 		const path = sessionPath((this.input.sessionRuntime ?? this.runtimeFor()).root, input.sessionPath);
 		return SessionManager.open(path, dirname(path), this.input.agent.directory);
 	}
