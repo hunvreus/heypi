@@ -8,7 +8,15 @@
 # Run with no TUNNEL_URL to just print the current webhook info.
 set -euo pipefail
 
-: "${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}"
+# Load TELEGRAM_BOT_TOKEN / TELEGRAM_WEBHOOK_SECRET from .dev.vars if present.
+if [[ -f .dev.vars ]]; then
+	set -a
+	# shellcheck disable=SC1091
+	. ./.dev.vars
+	set +a
+fi
+
+: "${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN (in .dev.vars or env)}"
 api="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 
 if [[ -z "${TUNNEL_URL:-}" ]]; then
