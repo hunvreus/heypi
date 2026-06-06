@@ -6,9 +6,17 @@
 	// The Worker/DO bundle is Pi-free (Pi runs in the runner service). nodejs_compat is kept as a
 	// safety net for incidental node: imports and is harmless if unused.
 	"compatibility_flags": ["nodejs_compat"],
+	// The Pi runner runs as a Cloudflare Container built from the repo-root Dockerfile.
+	"containers": [{ "class_name": "PiRunner", "image": "../../Dockerfile", "max_instances": 1 }],
 	"durable_objects": {
-		"bindings": [{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" }]
+		"bindings": [
+			{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" },
+			{ "name": "PI_RUNNER", "class_name": "PiRunner" }
+		]
 	},
-	// ThreadAgent stores session transcripts in its embedded SQLite, so it must be an SQLite-backed class.
-	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] }]
+	// Both classes are SQLite-backed Durable Objects (ThreadAgent stores transcripts; PiRunner is the container DO).
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] },
+		{ "tag": "v2", "new_sqlite_classes": ["PiRunner"] }
+	]
 }

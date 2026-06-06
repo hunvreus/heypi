@@ -1,16 +1,23 @@
+import { PiRunner } from "./pi-runner-container.js";
 import { parseTelegramUpdate, sendTelegramMessage } from "./telegram.js";
 import { ThreadAgent } from "./thread-agent.js";
 
-export { ThreadAgent };
+export { PiRunner, ThreadAgent };
 
 export type Env = {
 	THREAD_AGENT: DurableObjectNamespace<ThreadAgent>;
-	/** Base URL of the Pi runner service; forwarded to the DO so real agent turns run there. */
+	/** Cloudflare Container binding for the Pi runner (preferred path). */
+	PI_RUNNER?: DurableObjectNamespace<PiRunner>;
+	/** Base URL of an external Pi runner service (fallback when there is no container binding). */
 	RUNNER_URL?: string;
 	/** Telegram bot token, used to send replies. Required for the /telegram webhook. */
 	TELEGRAM_BOT_TOKEN?: string;
 	/** Optional shared secret; if set, /telegram requires Telegram's matching secret-token header. */
 	TELEGRAM_WEBHOOK_SECRET?: string;
+	// Consumed by the PiRunner container class (injected into the container as env):
+	HEYPI_MODEL?: string;
+	ANTHROPIC_API_KEY?: string;
+	OPENAI_API_KEY?: string;
 };
 
 type TurnRequest = { threadKey?: string; sessionId?: string; text?: string };

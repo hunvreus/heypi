@@ -8,10 +8,19 @@
 	"main": "../../packages/heypi-cloudflare/src/index.ts",
 	"compatibility_date": "2025-01-01",
 	"compatibility_flags": ["nodejs_compat"],
+	// The Pi agent runs as a Cloudflare Container (built from the repo-root Dockerfile), reached by
+	// the Durable Object through the PI_RUNNER binding — so the whole stack is on Cloudflare.
+	"containers": [{ "class_name": "PiRunner", "image": "../../Dockerfile", "max_instances": 1 }],
 	"durable_objects": {
-		"bindings": [{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" }]
+		"bindings": [
+			{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" },
+			{ "name": "PI_RUNNER", "class_name": "PiRunner" }
+		]
 	},
-	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] }]
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] },
+		{ "tag": "v2", "new_sqlite_classes": ["PiRunner"] }
+	]
 	// RUNNER_URL, TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET come from .dev.vars locally
 	// (see .dev.vars.example), or `wrangler secret put` / dashboard vars when deployed.
 }

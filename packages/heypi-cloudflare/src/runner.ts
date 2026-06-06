@@ -60,6 +60,33 @@ export class ContainerRunner implements SessionRunner {
 	}
 }
 
+/** A binding to a Cloudflare Container namespace — just the part ContainerBindingRunner needs. */
+export type ContainerBinding = { getByName(name: string): { fetch(request: Request): Promise<Response> } };
+
+/**
+ * Runs the turn on a Cloudflare Container (the PI_RUNNER binding) — same contract as
+ * ContainerRunner, but addressed by binding instead of URL. Keeps the whole stack on Cloudflare.
+ */
+export class ContainerBindingRunner implements SessionRunner {
+	constructor(
+		private readonly binding: ContainerBinding,
+		private readonly instance = "pi-runner",
+	) {}
+
+	async run(input: RunnerInput): Promise<RunnerOutput> {
+		const res = await this.binding.getByName(this.instance).fetch(
+			new Request("http://pi-runner/run", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ sessionId: input.sessionId, entries: input.entries, text: input.text }),
+			}),
+		);
+		if (!res.ok) throw new Error(`runner container responded ${res.status}: ${await res.text()}`);
+		const data = (await res.json()) as RunnerOutput;
+		return { entries: data.entries, reply: data.reply };
+	}
+}
+
 function lastEntryId(entries: SessionEntry[]): string | null {
 	return entries.length ? entries[entries.length - 1].id : null;
 }
