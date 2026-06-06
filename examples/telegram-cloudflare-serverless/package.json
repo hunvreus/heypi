@@ -1,0 +1,17 @@
+{
+	"name": "telegram-cloudflare-serverless",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "heypi on Telegram, fully serverless on Cloudflare (Worker + Durable Object + Pi runner).",
+	"scripts": {
+		"dev": "wrangler dev --port 8799",
+		"deploy": "wrangler deploy",
+		"runner": "RUNNER_ENV=.dev.vars node --import tsx --conditions development ../../packages/heypi-cloudflare/src/container/runner-server.ts",
+		"webhook": "./set-webhook.sh"
+	},
+	"devDependencies": {
+		"tsx": "^4.22.3",
+		"wrangler": "^3.99.0"
+	}
+}
