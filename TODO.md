@@ -41,6 +41,7 @@
 	- `heypi init` should scaffold local app files, `.env.example`, agent folder, workspace folder, and provider snippets.
 	- Keep provider-specific helpers such as Slack manifest generation separate from local app scaffolding.
 - Extend approval policy controls.
+	- Move toward a canonical permission config such as `permissions.approvers` and `permissions.admins` with adapter-qualified actor ids like `slack:U123` and `discord:456`.
 	- Add a setting to skip approval flow when the requester is also an approver.
 	- Support approval decisions such as allow once, always allow, and deny.
 	- Persist always-allow decisions as durable policy entries with a way to list and revoke them.

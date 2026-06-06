@@ -20,13 +20,13 @@ export function helpReply(): Reply {
 	return {
 		text: [
 			"Commands:",
-			"- bash <shell command>",
-			"- approvals: list pending approvals",
-			"- approve <approval-id>",
-			"- deny <approval-id>",
-			"- cancel <turn-id>",
-			"- status: show this thread status",
-			"- status <call-id>: show one call status",
+			"- /bash <shell command>",
+			"- /approvals: list pending approvals",
+			"- /approve <approval-id>",
+			"- /deny <approval-id>",
+			"- /cancel <turn-id>",
+			"- /status: show this thread status",
+			"- /status <call-id>: show one call status",
 			"- any other text: handled by the assistant",
 		].join("\n"),
 	};
@@ -50,7 +50,7 @@ export function renderApprovals(rows: ApprovalSummary[]): Reply {
 				.join(" — "),
 		);
 	}
-	lines.push("", "Use `approve <approval-id>` or `deny <approval-id>`.");
+	lines.push("", "Use `/approve <approval-id>` or `/deny <approval-id>`.");
 	return { text: lines.join("\n"), private: true };
 }
 

@@ -107,7 +107,9 @@ export type AttachmentConfig = {
 
 export type ApprovalConfig = {
 	approvers?: ActorPolicy;
+	admins?: ActorPolicy;
 	expiresInMs?: number;
+	allowSelfApproval?: boolean;
 };
 
 export type BusyBehavior = "reject" | "followUp" | "steer";

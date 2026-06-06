@@ -937,8 +937,8 @@ function stripTelegramMention(text: string, username?: string): string {
 }
 
 function actionText(action: TelegramAction): string {
-	if (action.kind === STATUS) return "status";
-	return `${action.kind} ${action.id}`;
+	if (action.kind === STATUS) return "/status";
+	return `/${action.kind} ${action.id}`;
 }
 
 function telegramResolvedApprovalText(

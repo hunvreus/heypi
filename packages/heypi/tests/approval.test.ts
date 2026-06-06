@@ -89,6 +89,97 @@ test("authorized approval executes the pending command", async () => {
 	);
 });
 
+test("approval admins inherit approver permissions", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{
+			admins: ["U_ADMIN"],
+			approvers: ["U_APPROVER"],
+		},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const approved = await callRunner.handle({
+		kind: "approve",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_ADMIN",
+	});
+
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(approvals.rows[0].state, "approved");
+	assert.equal(approvals.rows[0].resolvedBy, "U_ADMIN");
+	assert.equal(calls.rows[0].state, "done");
+});
+
+test("approval requester can approve when self approval is enabled by default", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{
+			approvers: ["U_REQUESTER"],
+		},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const approved = await callRunner.handle({
+		kind: "approve",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_REQUESTER",
+	});
+
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(approvals.rows[0].state, "approved");
+	assert.equal(approvals.rows[0].resolvedBy, "U_REQUESTER");
+});
+
+test("approval requester cannot approve when self approval is disabled", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{
+			approvers: ["U_REQUESTER"],
+			allowSelfApproval: false,
+		},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const denied = await callRunner.handle({
+		kind: "approve",
+		approvalId: approvals.rows[0].id,
+		channel: "C1",
+		actor: "U_REQUESTER",
+	});
+
+	assert.equal(denied.private, true);
+	assert.match(denied.text, /not allowed/i);
+	assert.equal(approvals.rows[0].state, "pending");
+	assert.equal(calls.rows[0].state, "pending_approval");
+});
+
 test("group approver executes the pending command", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();

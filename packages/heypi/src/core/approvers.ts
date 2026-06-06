@@ -34,3 +34,15 @@ export function actorAllowed(policy: ActorPolicy | undefined, identity: ActorIde
 	if (users.includes(identity.actor)) return true;
 	return groups.some((group) => identity.groups?.includes(group));
 }
+
+export function actorMatches(policy: ActorPolicy | undefined, identity: ActorIdentity): boolean {
+	if (!hasActorPolicy(policy)) return false;
+	return actorAllowed(policy, identity);
+}
+
+export function mergeActorPolicies(...policies: Array<ActorPolicy | undefined>): ActorPolicy | undefined {
+	const users = [...new Set(policies.flatMap((policy) => actorUsers(policy)))];
+	const groups = [...new Set(policies.flatMap((policy) => actorGroups(policy)))];
+	if (users.length === 0 && groups.length === 0) return undefined;
+	return { users, groups };
+}

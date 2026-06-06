@@ -23,7 +23,7 @@ export type AppMessagesConfig = Partial<AppMessages>;
 
 export const DEFAULT_APP_MESSAGES: AppMessages = {
 	error: "Something went wrong. Ask an admin to check the server logs.",
-	busyReject: "I'm still working on the previous message. Send this again after I reply, or use `cancel`.",
+	busyReject: "I'm still working on the previous message. Send this again after I reply, or use `/cancel`.",
 	busyFollowUp: "Got it. I'll handle that next.",
 	busySteer: "Got it. I'll include that.",
 	pendingApprovalReject: "I'm waiting for the pending approval first.",

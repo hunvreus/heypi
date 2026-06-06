@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalConfig, ChatConfig, ModelConfig, Scope } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
-import { actorAllowed, hasActorPolicy } from "../core/approvers.js";
+import { actorAllowed, actorMatches, hasActorPolicy } from "../core/approvers.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
@@ -691,7 +691,7 @@ function scopeKey(msg: Pick<Inbound, "provider" | "team" | "channel">): string {
 }
 
 function canListApprovals(config: ApprovalConfig | undefined, actor: Pick<Inbound, "actor" | "actorGroups">): boolean {
-	return actorAllowed(config?.approvers, { actor: actor.actor, groups: actor.actorGroups });
+	return actorAllowedForApproval(config, actor);
 }
 
 function canCancelRun(
@@ -701,9 +701,21 @@ function canCancelRun(
 ): boolean {
 	return (
 		actor.actor === initiator ||
-		(hasActorPolicy(config?.approvers) &&
-			actorAllowed(config?.approvers, { actor: actor.actor, groups: actor.actorGroups }))
+		(hasActorPolicy(config?.approvers) || hasActorPolicy(config?.admins)
+			? actorAllowedForApproval(config, actor)
+			: false)
 	);
+}
+
+function actorAllowedForApproval(
+	config: ApprovalConfig | undefined,
+	actor: Pick<Inbound, "actor" | "actorGroups">,
+): boolean {
+	const identity = { actor: actor.actor, groups: actor.actorGroups };
+	if (actorMatches(config?.admins, identity)) return true;
+	if (actorMatches(config?.approvers, identity)) return true;
+	if (!hasActorPolicy(config?.admins) && !hasActorPolicy(config?.approvers)) return actorAllowed(undefined, identity);
+	return false;
 }
 
 function approvalVisible(
@@ -712,7 +724,7 @@ function approvalVisible(
 	msg: Pick<Inbound, "provider" | "team">,
 	threadId: string,
 ): boolean {
-	if (!hasActorPolicy(config?.approvers)) return row.threadId === threadId;
+	if (!hasActorPolicy(config?.approvers) && !hasActorPolicy(config?.admins)) return row.threadId === threadId;
 	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
 }
 

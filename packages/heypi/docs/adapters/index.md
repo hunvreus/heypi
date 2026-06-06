@@ -28,12 +28,12 @@ After that, adapter config decides which events become turns:
 Shared control commands:
 
 ```text
-approvals
-approve <approval-id>
-deny <approval-id>
-status
-status <call-id>
-cancel <turn-id-or-trace>
+/approvals
+/approve <approval-id>
+/deny <approval-id>
+/status
+/status <call-id>
+/cancel <turn-id-or-trace>
 ```
 
 For shared workspaces, configure `allow`. Without it, any delivered DM can trigger the agent, and any delivered channel or group message can trigger it by mention or control command. heypi logs a startup warning when a built-in chat adapter starts without an allow filter.

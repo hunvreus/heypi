@@ -7,8 +7,8 @@ function arg(prefix: string, text: string): string | undefined {
 }
 
 function bashArg(text: string): { cmd: string } | undefined {
-	if (!text.startsWith("bash ")) return undefined;
-	const raw = text.slice(5).trim();
+	if (!text.startsWith("/bash ")) return undefined;
+	const raw = text.slice(6).trim();
 	if (!raw) return undefined;
 	return { cmd: raw };
 }
@@ -16,28 +16,28 @@ function bashArg(text: string): { cmd: string } | undefined {
 export function parseIntent(input: { text: string; channel: string; actor: string }): Intent {
 	const text = input.text.trim();
 	if (!text) return { kind: "help" };
-	if (text === "help") return { kind: "help" };
-	if (text === "approvals") return { kind: "approvals", channel: input.channel, actor: input.actor };
+	if (text === "/help") return { kind: "help" };
+	if (text === "/approvals") return { kind: "approvals", channel: input.channel, actor: input.actor };
 
 	const bash = bashArg(text);
 	if (bash) return { kind: "bash", ...bash, channel: input.channel, actor: input.actor };
-	if (text === "bash") return { kind: "help" };
+	if (text === "/bash") return { kind: "help" };
 
-	const approve = arg("approve", text);
+	const approve = arg("/approve", text);
 	if (approve) return { kind: "approve", approvalId: approve, channel: input.channel, actor: input.actor };
-	if (text === "approve") return { kind: "help" };
+	if (text === "/approve") return { kind: "help" };
 
-	const deny = arg("deny", text);
+	const deny = arg("/deny", text);
 	if (deny) return { kind: "deny", approvalId: deny, channel: input.channel, actor: input.actor };
-	if (text === "deny") return { kind: "help" };
+	if (text === "/deny") return { kind: "help" };
 
-	const cancel = arg("cancel", text);
+	const cancel = arg("/cancel", text);
 	if (cancel) return { kind: "cancel", id: cancel, channel: input.channel, actor: input.actor };
-	if (text === "cancel") return { kind: "help" };
+	if (text === "/cancel") return { kind: "help" };
 
-	if (text === "status") return { kind: "thread_status", channel: input.channel, actor: input.actor };
+	if (text === "/status") return { kind: "thread_status", channel: input.channel, actor: input.actor };
 
-	const status = arg("status", text);
+	const status = arg("/status", text);
 	if (status) return { kind: "status", callId: status, channel: input.channel };
 
 	return { kind: "ask", text, channel: input.channel, actor: input.actor };

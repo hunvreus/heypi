@@ -6,7 +6,7 @@ import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import type { Approval, Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
-import { actorAllowed, actorLabels } from "./approvers.js";
+import { actorAllowed, actorLabels, actorMatches, hasActorPolicy } from "./approvers.js";
 import { renderCall } from "./format.js";
 import { type Logger, logger } from "./log.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES, renderMessage } from "./messages.js";
@@ -319,7 +319,7 @@ export class CallRunner {
 		const pending = await this.pendingApproval(intent, this.contextAgent(context));
 		if (!pending.ok) return pending.reply;
 		const { approval } = pending;
-		if (!this.canApprove(intent.actor, context.actorGroups)) {
+		if (!this.canApprove(intent.actor, context.actorGroups, approval.requestedBy ?? undefined)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
 				call: approval.callId,
@@ -512,16 +512,22 @@ export class CallRunner {
 		});
 	}
 
-	private canApprove(actor: string, groups?: string[]): boolean {
-		return actorAllowed(this.approval.approvers, { actor, groups });
+	private canApprove(actor: string, groups?: string[], requestedBy?: string): boolean {
+		if (this.approval.allowSelfApproval === false && requestedBy && actor === requestedBy) return false;
+		const identity = { actor, groups };
+		if (actorMatches(this.approval.admins, identity)) return true;
+		if (actorMatches(this.approval.approvers, identity)) return true;
+		if (!hasActorPolicy(this.approval.admins) && !hasActorPolicy(this.approval.approvers))
+			return actorAllowed(undefined, identity);
+		return false;
 	}
 
 	private canDeny(actor: string, groups: string[] | undefined, requestedBy?: string): boolean {
-		return this.canApprove(actor, groups) || actor === requestedBy;
+		return this.canApprove(actor, groups, requestedBy) || actor === requestedBy;
 	}
 
 	private approvers(): string[] {
-		return actorLabels(this.approval.approvers);
+		return [...new Set([...actorLabels(this.approval.approvers), ...actorLabels(this.approval.admins)])];
 	}
 
 	private expiresAt(): number | undefined {

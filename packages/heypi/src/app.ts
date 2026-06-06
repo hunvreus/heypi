@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createAdminAdapter } from "./admin/index.js";
 import type { AppLockConfig, HeypiConfig, HttpConfig } from "./config.js";
 import { ActiveRuns } from "./core/active.js";
-import { actorLabels, hasActorPolicy } from "./core/approvers.js";
+import { actorLabels, hasActorPolicy, mergeActorPolicies } from "./core/approvers.js";
 import { CallRunner } from "./core/calls.js";
 import { type Logger, logger, message } from "./core/log.js";
 import { MemoryStore, normalizeMemoryConfig } from "./core/memory.js";
@@ -73,14 +73,15 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	});
 	const runtimes = new ScopedRuntimeRegistry(config.runtime, { app: cwd, agent: config.agent.directory });
 	const runtime = (scope?: string) => runtimes.getPath(scope);
+	const approvalActors = mergeActorPolicies(config.approval?.approvers, config.approval?.admins);
 	const memoryConfig = normalizeMemoryConfig(config.memory, {
 		scope: config.scope,
-		approvers: hasActorPolicy(config.approval?.approvers) ? actorLabels(config.approval?.approvers) : [],
+		approvers: hasActorPolicy(approvalActors) ? actorLabels(approvalActors) : [],
 	});
 	const memory = new MemoryStore(config.runtime.root, memoryConfig);
 	const skillsConfig = normalizeSkillsConfig(config.skills, {
 		scope: config.scope,
-		approvers: hasActorPolicy(config.approval?.approvers) ? actorLabels(config.approval?.approvers) : [],
+		approvers: hasActorPolicy(approvalActors) ? actorLabels(approvalActors) : [],
 	});
 	const skills = new SkillStore(config.runtime.root, skillsConfig);
 	const secretsConfig = normalizeSecretsConfig(config.secrets);
@@ -128,7 +129,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		memory,
 		skills,
 		secrets,
-		approvalApprovers: config.approval?.approvers,
+		approvalApprovers: approvalActors,
 		logger: log,
 		appMessages: messages,
 	});
@@ -402,12 +403,14 @@ function warnSecurityPosture(input: {
 			reason: "non-loopback HTTP listeners should be behind TLS, authentication, and rate limits",
 		});
 	}
-	if (!hasActorPolicy(input.approval?.approvers) && (input.bashEnabled || input.confirmedCustomTools.length > 0)) {
+	const approvalActors = mergeActorPolicies(input.approval?.approvers, input.approval?.admins);
+	if (!hasActorPolicy(approvalActors) && (input.bashEnabled || input.confirmedCustomTools.length > 0)) {
 		input.logger.warn("security.approvers_missing", {
 			agent: input.agent,
 			bash: input.bashEnabled,
 			tools: input.confirmedCustomTools.join(","),
-			reason: "without approval.approvers, approval visibility controls who can approve risky calls",
+			reason:
+				"without approval.approvers or approval.admins, approval visibility controls who can approve risky calls",
 		});
 	}
 }

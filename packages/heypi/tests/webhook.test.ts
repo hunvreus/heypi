@@ -82,12 +82,12 @@ test("webhook creates server-side threads and exposes async run status", async (
 
 		const second = await post(port, `/hook/threads/${first.body.threadId}/messages`, secret, {
 			user: "alice",
-			text: "status",
+			text: "/status",
 			sync: true,
 		});
 		assert.equal(second.status, 200);
 		assert.equal(second.body.threadId, first.body.threadId);
-		assert.equal(seen[1].text, "status");
+		assert.equal(seen[1].text, "/status");
 	} finally {
 		await adapter.stop?.();
 	}

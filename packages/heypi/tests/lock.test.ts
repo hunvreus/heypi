@@ -278,7 +278,7 @@ test("handler lets only the run initiator cancel when no approvers are configure
 			channel: "C1",
 			actor: "U_OTHER",
 			thread: "C1:T1",
-			text: "cancel trace-1",
+			text: "/cancel trace-1",
 		});
 		assert.equal(rejected?.private, true);
 		assert.match(rejected?.text ?? "", /not allowed/i);
@@ -291,7 +291,7 @@ test("handler lets only the run initiator cancel when no approvers are configure
 			channel: "C1",
 			actor: "U_REQUESTER",
 			thread: "C1:T1",
-			text: "cancel trace-1",
+			text: "/cancel trace-1",
 		});
 		const firstOut = await first;
 
@@ -348,7 +348,7 @@ test("handler lets configured approvers cancel another actor's run", async () =>
 			channel: "C1",
 			actor: "U_APPROVER",
 			thread: "C1:T1",
-			text: "cancel trace-approver-run",
+			text: "/cancel trace-approver-run",
 		});
 		const firstOut = await first;
 
@@ -430,7 +430,7 @@ test("handler returns private thread status", async () => {
 			channel: "C1",
 			actor: "U1",
 			thread: "C1:T1",
-			text: "status",
+			text: "/status",
 		});
 
 		assert.equal(out?.private, true);
@@ -492,7 +492,7 @@ test("thread status explains an active turn without claiming nothing needs actio
 			channel: "C1",
 			actor: "U1",
 			thread: "C1:T1",
-			text: "status",
+			text: "/status",
 		});
 
 		assert.match(out?.text ?? "", /Active: `running`/);
@@ -563,7 +563,7 @@ test("thread status does not list stale blocked calls as needing attention", asy
 			channel: "C1",
 			actor: "U1",
 			thread: "C1:T1",
-			text: "status",
+			text: "/status",
 		});
 
 		assert.doesNotMatch(out?.text ?? "", /Calls needing attention/);

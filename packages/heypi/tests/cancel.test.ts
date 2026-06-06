@@ -5,7 +5,7 @@ import { parseIntent } from "../src/core/intent.js";
 import { Queue } from "../src/runtime/queue.js";
 
 test("parseIntent recognizes cancel commands", () => {
-	assert.deepEqual(parseIntent({ text: "cancel trace-1", channel: "C1", actor: "U1" }), {
+	assert.deepEqual(parseIntent({ text: "/cancel trace-1", channel: "C1", actor: "U1" }), {
 		kind: "cancel",
 		id: "trace-1",
 		channel: "C1",
@@ -14,9 +14,18 @@ test("parseIntent recognizes cancel commands", () => {
 });
 
 test("parseIntent treats incomplete control commands as help", () => {
-	for (const text of ["approve", "deny", "cancel", "bash"]) {
+	for (const text of ["/approve", "/deny", "/cancel", "/bash"]) {
 		assert.deepEqual(parseIntent({ text, channel: "C1", actor: "U1" }), { kind: "help" });
 	}
+});
+
+test("parseIntent treats bare control words as agent prompts", () => {
+	assert.deepEqual(parseIntent({ text: "approve appr_123", channel: "C1", actor: "U1" }), {
+		kind: "ask",
+		text: "approve appr_123",
+		channel: "C1",
+		actor: "U1",
+	});
 });
 
 test("ActiveRuns cancels all aliases for a run", () => {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Added approval admins with inherited approver permissions and configurable self-approval blocking.
+
+### Changed
+- Changed chat control commands to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash`.
+
 ## [0.1.3] - 2026-06-04
 
 ### Added

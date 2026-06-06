@@ -439,7 +439,7 @@ test("handler scopes approvals by provider team and channel", async () => {
 			channel: "C1",
 			actor: "U_REQUESTER",
 			thread: "C1:1",
-			text: "bash curl https://example.com",
+			text: "/bash curl https://example.com",
 		});
 		const approvalId = requested?.approval?.id;
 		assert.ok(approvalId);
@@ -453,7 +453,7 @@ test("handler scopes approvals by provider team and channel", async () => {
 			channel: "C1",
 			actor: "U_ALLOWED",
 			thread: "C1:1",
-			text: `approve ${approvalId}`,
+			text: `/approve ${approvalId}`,
 		});
 		assert.equal(wrongTeam?.private, true);
 		assert.equal(wrongTeam?.replaceOriginal, true);
@@ -467,7 +467,7 @@ test("handler scopes approvals by provider team and channel", async () => {
 			channel: "C1",
 			actor: "U_ALLOWED",
 			thread: "C1:1",
-			text: `approve ${approvalId}`,
+			text: `/approve ${approvalId}`,
 		});
 		assert.match(approved?.text ?? "", /Result: `done`/);
 	} finally {
@@ -511,7 +511,7 @@ test("handler lets expired denials replace the original approval surface", async
 			channel: "C1",
 			actor: "U_REQUESTER",
 			thread: "C1:1",
-			text: "bash curl https://example.com",
+			text: "/bash curl https://example.com",
 		});
 		const approvalId = requested?.approval?.id;
 		assert.ok(approvalId);
@@ -526,7 +526,7 @@ test("handler lets expired denials replace the original approval surface", async
 			channel: "C1",
 			actor: "U_ALLOWED",
 			thread: "C1:1",
-			text: `deny ${approvalId}`,
+			text: `/deny ${approvalId}`,
 			replace: async (out) => {
 				replacement = out.text;
 				resolution = out.approvalResolution;
@@ -580,7 +580,7 @@ test("approvals command lists pending approvals for approvers only", async () =>
 			channel: "C1",
 			actor: "U_REQUESTER",
 			thread: "C1:1",
-			text: "bash curl https://example.com",
+			text: "/bash curl https://example.com",
 		});
 		const approvalId = requested?.approval?.id;
 		assert.ok(approvalId);
@@ -593,7 +593,7 @@ test("approvals command lists pending approvals for approvers only", async () =>
 			channel: "C1",
 			actor: "U_OTHER",
 			thread: "D1:D1",
-			text: "approvals",
+			text: "/approvals",
 		});
 		assert.equal(denied?.private, true);
 		assert.match(denied?.text ?? "", /not allowed/);
@@ -606,7 +606,7 @@ test("approvals command lists pending approvals for approvers only", async () =>
 			channel: "D1",
 			actor: "U_ALLOWED",
 			thread: "D1:D1",
-			text: "approvals",
+			text: "/approvals",
 		});
 		assert.equal(listed?.private, true);
 		assert.match(listed?.text ?? "", new RegExp(approvalId));

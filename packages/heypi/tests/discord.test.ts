@@ -49,7 +49,7 @@ test("Discord trigger defaults to mention for channels and message for DMs", () 
 		reason: "mention required",
 	});
 	assert.deepEqual(discordTriggered(undefined, { text: "hello", isDm: false, mentioned: true }), { ok: true });
-	assert.deepEqual(discordTriggered(undefined, { text: "approve A1", isDm: false, mentioned: false }), { ok: true });
+	assert.deepEqual(discordTriggered(undefined, { text: "/approve A1", isDm: false, mentioned: false }), { ok: true });
 	assert.deepEqual(discordTriggered(undefined, { text: "hello", isDm: true, mentioned: false }), { ok: true });
 	assert.deepEqual(discordTriggered("message", { text: "hello", isDm: false, mentioned: false }), { ok: true });
 });

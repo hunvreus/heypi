@@ -134,6 +134,31 @@ test("createHeypi warns about risky startup security posture", async () => {
 	}
 });
 
+test("createHeypi treats approval admins as configured approval actors", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-security-admins-"));
+	try {
+		const warnings: Record<string, unknown>[] = [];
+		createHeypi({
+			state: { root: join(root, "state") },
+			logger: fakeLogger(warnings),
+			approval: { admins: ["U_ADMIN"] },
+			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
+			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		assert.equal(
+			warnings.some((row) => row.event === "security.approvers_missing"),
+			false,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("createHeypi passes injected attachment store to adapters", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-attachments-"));
 	try {

@@ -1141,7 +1141,7 @@ async function handleAction(input: {
 			actor: context.actor,
 			actorGroups,
 			thread: context.thread,
-			text: input.kind === "status" ? "status" : `${input.kind} ${value}`,
+			text: input.kind === "status" ? "/status" : `/${input.kind} ${value}`,
 			data: input.body,
 			stream,
 			ack: input.kind === "approve" ? (out) => acknowledge(out) : undefined,
