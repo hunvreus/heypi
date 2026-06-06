@@ -1,19 +1,18 @@
-# Copy to .dev.vars (gitignored). wrangler dev auto-loads it for the Worker; the values are also
-# injected into the Pi runner container by the PiRunner class.
+# Copy to .dev.vars (gitignored). wrangler dev auto-loads it for the Worker.
 
 # --- Worker ---
 TELEGRAM_BOT_TOKEN=
 # Optional: set the same value when registering the webhook (setWebhook secret_token) to reject
 # forged requests. Leave blank to skip verification.
 TELEGRAM_WEBHOOK_SECRET=
+# Where the Worker's Durable Object reaches the Pi runner.
+#   local dev:  http://127.0.0.1:8788  (run `pnpm runner` in another terminal)
+#   deployed:   your Modal URL, e.g. https://<you>--heypi-runner-runner.modal.run
+RUNNER_URL=http://127.0.0.1:8788
 
-# --- Pi runner (injected into the container) ---
+# --- Pi runner (used by `pnpm runner` for local dev; on Modal these live in the `heypi` secret) ---
 HEYPI_MODEL=anthropic/claude-sonnet-4-6
 ANTHROPIC_API_KEY=
 # Or use OpenAI instead:
 # HEYPI_MODEL=openai/gpt-5-mini
 # OPENAI_API_KEY=
-
-# Fallback only: if you run the runner as a plain process instead of the container
-# (no PI_RUNNER binding), point the Worker at it. Not needed for the container path.
-# RUNNER_URL=http://127.0.0.1:8788

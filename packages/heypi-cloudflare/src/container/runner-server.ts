@@ -70,4 +70,5 @@ const server = createServer((req, res) => {
 	});
 });
 
-server.listen(port, () => console.log(`[runner] listening on http://127.0.0.1:${port} (model=${model})`));
+// Bind 0.0.0.0 so the service is reachable from outside the container (required by Modal/Containers).
+server.listen(port, "0.0.0.0", () => console.log(`[runner] listening on http://0.0.0.0:${port} (model=${model})`));

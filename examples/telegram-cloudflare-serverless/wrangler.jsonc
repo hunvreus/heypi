@@ -2,25 +2,21 @@
 	// Telegram on Cloudflare, fully serverless: Telegram delivers updates over an HTTP webhook
 	// straight to this Worker — no always-on gateway/bridge. The Worker routes each chat to its
 	// Durable Object (per-chat lock + DO-SQLite transcript) and delegates the agent turn to the Pi
-	// runner service. The Worker bundle itself is Pi-free, so `main` can point straight at the
-	// reusable host in the heypi-cloudflare package with no build step.
+	// runner over HTTP (RUNNER_URL). The Worker bundle itself is Pi-free, so `main` can point
+	// straight at the reusable host in the heypi-cloudflare package with no build step.
+	//
+	// The runner is hosted on Modal (see modal_runner.py) — a free alternative to Cloudflare
+	// Containers. Worker + Durable Object run on Cloudflare's free plan (SQLite-backed DOs); set
+	// RUNNER_URL to the Modal endpoint. (To run the agent on Cloudflare Containers instead, add the
+	// `containers` + PI_RUNNER binding from packages/heypi-cloudflare/wrangler.jsonc — needs Workers Paid.)
 	"name": "heypi-telegram",
 	"main": "../../packages/heypi-cloudflare/src/index.ts",
 	"compatibility_date": "2025-01-01",
 	"compatibility_flags": ["nodejs_compat"],
-	// The Pi agent runs as a Cloudflare Container (built from the repo-root Dockerfile), reached by
-	// the Durable Object through the PI_RUNNER binding — so the whole stack is on Cloudflare.
-	"containers": [{ "class_name": "PiRunner", "image": "../../Dockerfile", "max_instances": 1 }],
 	"durable_objects": {
-		"bindings": [
-			{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" },
-			{ "name": "PI_RUNNER", "class_name": "PiRunner" }
-		]
+		"bindings": [{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" }]
 	},
-	"migrations": [
-		{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] },
-		{ "tag": "v2", "new_sqlite_classes": ["PiRunner"] }
-	]
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ThreadAgent"] }]
 	// RUNNER_URL, TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET come from .dev.vars locally
-	// (see .dev.vars.example), or `wrangler secret put` / dashboard vars when deployed.
+	// (see .dev.vars.example), or `wrangler secret put` when deployed.
 }
