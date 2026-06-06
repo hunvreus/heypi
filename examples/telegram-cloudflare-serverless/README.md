@@ -62,7 +62,8 @@ wrangler login
 pnpm exec wrangler secret put TELEGRAM_BOT_TOKEN
 pnpm exec wrangler secret put RUNNER_URL          # value = the Modal URL above
 # optional: pnpm exec wrangler secret put TELEGRAM_WEBHOOK_SECRET
-pnpm deploy                                       # -> https://<your-worker>.workers.dev
+pnpm run deploy                                   # `pnpm deploy` is a reserved pnpm command — use `run`
+                                                  # -> https://<your-worker>.workers.dev
 ```
 
 **3. Point Telegram at the deployed Worker:**
