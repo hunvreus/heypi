@@ -4,6 +4,8 @@ export { ThreadAgent };
 
 export type Env = {
 	THREAD_AGENT: DurableObjectNamespace<ThreadAgent>;
+	/** Base URL of the Pi runner service; forwarded to the DO so real agent turns run there. */
+	RUNNER_URL?: string;
 };
 
 type TurnRequest = { threadKey?: string; sessionId?: string; text?: string };

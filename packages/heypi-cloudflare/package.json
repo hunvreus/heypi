@@ -9,7 +9,8 @@
 		"test:unit": "node --import tsx --conditions development --test tests/*.test.ts",
 		"test:workers": "vitest run",
 		"typegen": "wrangler types",
-		"dev": "wrangler dev"
+		"dev": "wrangler dev",
+		"runner": "node --import tsx --conditions development src/container/runner-server.ts"
 	},
 	"dependencies": {
 		"@hunvreus/heypi": "workspace:*"
