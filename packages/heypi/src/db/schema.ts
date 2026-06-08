@@ -135,6 +135,12 @@ export const lock = sqliteTable(
 	(table) => [index("lock_expires_idx").on(table.expiresAt)],
 );
 
+export const sessionBlob = sqliteTable("session_blob", {
+	sessionId: text("session_id").primaryKey(),
+	entries: text("entries").notNull(),
+	updatedAt: integer("updated_at").notNull(),
+});
+
 export const job = sqliteTable(
 	"job",
 	{

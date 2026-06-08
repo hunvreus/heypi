@@ -1,4 +1,4 @@
-import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { CallErrorKind, CallState, TurnState } from "../core/types.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
@@ -302,6 +302,21 @@ export interface Locks {
 	clear?(input?: { key?: string; prefix?: string }): Promise<number>;
 }
 
+/**
+ * Durable storage for Pi session transcripts as captured entry trees.
+ *
+ * This is the seam that lets the agent run without a writable filesystem: instead of Pi
+ * reading and writing a JSONL file, a turn loads the entry list, rehydrates an in-memory
+ * session, runs, and saves the resulting entries. Implementations can live in libSQL/Turso
+ * (small/active sessions) or an object store like R2 (large/archived blobs).
+ */
+export interface Sessions {
+	/** Returns the captured entry tree for a session, or null when it has never been saved. */
+	load(sessionId: string): Promise<SessionEntry[] | null>;
+	/** Persists the full entry tree for a session, replacing any previous snapshot. */
+	save(sessionId: string, entries: SessionEntry[]): Promise<void>;
+}
+
 export type SchedulerStore = Store & {
 	jobs: Jobs;
 	jobRuns: JobRuns;
@@ -359,6 +374,8 @@ export interface Store {
 	jobRuns?: JobRuns;
 	/** Required for thread locking and scheduled job claims. */
 	locks?: Locks;
+	/** Durable Pi session transcripts. Required when running without a writable filesystem. */
+	sessions?: Sessions;
 	/** Runs related store writes atomically. Nested transactions are not supported. */
 	transaction?<T>(fn: (store: Store) => Promise<T>): Promise<T>;
 	setup(): Promise<void>;

@@ -6,6 +6,7 @@ import { CallRepo } from "./repo-call.js";
 import { JobRepo, JobRunRepo } from "./repo-job.js";
 import { LockRepo } from "./repo-lock.js";
 import { MessageRepo } from "./repo-message.js";
+import { SessionRepo } from "./repo-session.js";
 import { ThreadRepo } from "./repo-thread.js";
 import { TurnRepo } from "./repo-turn.js";
 import type { Store } from "./types.js";
@@ -27,6 +28,7 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 		jobs: new JobRepo(db),
 		jobRuns: new JobRunRepo(db),
 		locks: new LockRepo(db),
+		sessions: new SessionRepo(db),
 		setup: () => migrate(db),
 		transaction: (fn) => {
 			if (nested) throw new Error("nested store transactions are not supported");
