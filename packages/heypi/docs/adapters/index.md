@@ -20,6 +20,7 @@ After that, adapter config decides which events become turns:
 - `allow.users` and `allow.groups` match actor access where the provider supports groups.
 - `allow.channels`, `allow.chats`, or webhook channel values match the conversation.
 - `allow.dms` controls direct messages separately from channel/chat allowlists.
+- `allow.bots` lets selected bot actors send messages where supported. Avoid bot-to-bot chains that auto-reply to each other; heypi drops only its own bot identity, not every peer bot.
 - Channels and groups default to `trigger: "mention"`; DMs run accepted messages directly.
 - Threads, topics, and replies default to `threadTrigger: "message"` once a turn has been created in that thread.
 - `streaming: true` enables draft edits where supported.

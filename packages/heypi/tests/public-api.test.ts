@@ -158,6 +158,30 @@ test("createHeypi treats adapter approval admins as configured approval actors",
 	}
 });
 
+test("createHeypi warns when bot input is enabled without approval actors", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-bot-approver-warning-"));
+	try {
+		const warnings: Record<string, unknown>[] = [];
+		createHeypi({
+			state: { root: join(root, "state") },
+			logger: fakeLogger(warnings),
+			adapters: [{ name: "test", kind: "test", acceptsBots: true, start: async () => undefined }],
+			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		assert.equal(
+			warnings.some((row) => row.event === "security.bot_approvers_missing"),
+			true,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("createHeypi passes adapter approval permissions to the adapter handler", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-adapter-permissions-"));
 	try {
@@ -833,6 +857,64 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 		assert.equal(other?.state, "running");
 		assert.equal((await store.calls.get(otherCall.id))?.state, "running");
 		assert.equal((await store.locks?.get(`thread:${otherThread.id}`))?.owner, "other-process");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi warns when store recovery capabilities are unsupported", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-recovery-unsupported-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const thread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "slack",
+			channel: "C1",
+			actor: "U1",
+			key: "C1:T1",
+		});
+		const message = await store.messages.create({
+			threadId: thread.id,
+			provider: "slack",
+			role: "user",
+			actor: "U1",
+			text: "deploy",
+		});
+		await store.turns.create({
+			threadId: thread.id,
+			inputMessageId: message.id,
+			agent: "default",
+			provider: "slack",
+			channel: "C1",
+			actor: "U1",
+			trace: "trace-stale",
+		});
+		await store.locks?.acquire({ key: `thread:${thread.id}`, owner: "dead-process" });
+		store.locks!.clear = undefined;
+		store.calls.failRunning = undefined;
+		store.jobRuns!.failRunning = undefined;
+		const warnings: Record<string, unknown>[] = [];
+		const adapter: Adapter = { name: "test", kind: "test", start: async () => undefined };
+		const app = createHeypi({
+			store,
+			state: { root: join(root, "state") },
+			logger: fakeLogger(warnings),
+			adapters: [adapter],
+			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		assert.deepEqual(
+			warnings.map((row) => row.event).filter((event) => String(event).startsWith("app.recovery_")),
+			["app.recovery_locks_unsupported", "app.recovery_calls_unsupported", "app.recovery_job_runs_unsupported"],
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

@@ -3,8 +3,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { TurnState } from "../core/types.js";
 import { turn } from "../db/schema.js";
 import type { Db } from "./db.js";
-
-export type TurnRow = typeof turn.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { Turn } from "./types.js";
 
 export class TurnRepo {
 	constructor(private readonly db: Db) {}
@@ -19,7 +19,7 @@ export class TurnRepo {
 		actor?: string;
 		trace?: string;
 		state?: TurnState;
-	}): Promise<TurnRow> {
+	}): Promise<Turn> {
 		const id = randomUUID();
 		const now = Date.now();
 		await this.db.insert(turn).values({
@@ -48,16 +48,16 @@ export class TurnRepo {
 			.where(eq(turn.id, id));
 	}
 
-	async listForThread(threadId: string, input: { limit?: number } = {}): Promise<TurnRow[]> {
+	async listForThread(threadId: string, input: { limit?: number } = {}): Promise<Turn[]> {
 		return await this.db
 			.select()
 			.from(turn)
 			.where(eq(turn.threadId, threadId))
 			.orderBy(desc(turn.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
+			.limit(clampLimit(input.limit, 5, 25));
 	}
 
-	async listRunning(input: { agent?: string; limit?: number } = {}): Promise<TurnRow[]> {
+	async listRunning(input: { agent?: string; limit?: number } = {}): Promise<Turn[]> {
 		const filters = [eq(turn.state, "running")];
 		if (input.agent) filters.push(eq(turn.agent, input.agent));
 		return await this.db
@@ -65,12 +65,12 @@ export class TurnRepo {
 			.from(turn)
 			.where(and(...filters))
 			.orderBy(desc(turn.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500));
+			.limit(clampLimit(input.limit, 100, 500));
 	}
 
 	async listRecent(
 		input: { agent?: string; states?: TurnState[]; limit?: number; offset?: number } = {},
-	): Promise<TurnRow[]> {
+	): Promise<Turn[]> {
 		const filters = [];
 		if (input.agent) filters.push(eq(turn.agent, input.agent));
 		if (input.states?.length) filters.push(inArray(turn.state, input.states));
@@ -78,11 +78,11 @@ export class TurnRepo {
 		const withFilter = filters.length ? query.where(and(...filters)) : query;
 		return await withFilter
 			.orderBy(desc(turn.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 100, 500))
+			.offset(clampOffset(input.offset));
 	}
 
-	async getByTrace(threadId: string, trace: string): Promise<TurnRow | undefined> {
+	async getByTrace(threadId: string, trace: string): Promise<Turn | undefined> {
 		const rows = await this.db
 			.select()
 			.from(turn)
@@ -91,7 +91,7 @@ export class TurnRepo {
 		return rows[0];
 	}
 
-	private async get(id: string): Promise<TurnRow | undefined> {
+	private async get(id: string): Promise<Turn | undefined> {
 		const rows = await this.db.select().from(turn).where(eq(turn.id, id)).limit(1);
 		return rows[0];
 	}

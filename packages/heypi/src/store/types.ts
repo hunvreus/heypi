@@ -1,38 +1,14 @@
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { ApprovalBypassScope } from "../config.js";
 import type { CallErrorKind, CallState, TurnState } from "../core/types.js";
+import type { approval, approvalBypass, call, job, jobRun, lock, message, thread, turn } from "../db/schema.js";
+import type { JobState } from "../job.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
 
-export type Thread = {
-	id: string;
-	agent: string;
-	provider: string;
-	kind: string;
-	team: string | null;
-	channel: string;
-	actor: string | null;
-	key: string;
-	sessionId: string;
-	sessionPath: string;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Thread = typeof thread.$inferSelect;
 
-export type Message = {
-	id: string;
-	threadId: string;
-	provider: string;
-	kind: string;
-	providerEventId: string | null;
-	role: string;
-	actor: string | null;
-	text: string;
-	data: string | null;
-	state: string;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Message = typeof message.$inferSelect;
 
 export type MessageWithThread = Message & {
 	agent: string;
@@ -42,124 +18,22 @@ export type MessageWithThread = Message & {
 
 export type HistoryMessage = Pick<Message, "id" | "role" | "actor" | "text" | "createdAt">;
 
-export type Turn = {
-	id: string;
-	threadId: string;
-	inputMessageId: string;
-	resultMessageId: string | null;
-	agent: string;
-	provider: string;
-	kind: string;
-	channel: string;
-	actor: string | null;
-	trace: string | null;
-	state: string;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Turn = typeof turn.$inferSelect;
 
-export type Call = {
-	id: string;
-	agent: string;
-	turnId: string | null;
-	threadId: string | null;
-	messageId: string | null;
-	channel: string;
-	actor: string | null;
-	tool: string;
-	toolCallId: string | null;
-	command: string | null;
-	args: string | null;
-	runtime: string | null;
-	policyReason: string | null;
-	state: string;
-	code: number | null;
-	out: string | null;
-	err: string | null;
-	errKind: CallErrorKind | null;
-	ms: number | null;
-	queueWaitMs: number | null;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Call = typeof call.$inferSelect;
 
-export type Approval = {
-	id: string;
-	agent: string;
-	callId: string;
-	channel: string;
-	threadId: string | null;
-	turnId: string | null;
-	requestMessageId: string | null;
-	command: string;
-	runtime: string;
-	reason: string;
-	details: string | null;
-	state: string;
-	requestedBy: string | null;
-	requestedAt: number;
-	expiresAt: number | null;
-	resolvedAt: number | null;
-	resolvedBy: string | null;
-};
+export type Approval = typeof approval.$inferSelect;
 
-export type ApprovalBypass = {
-	id: string;
-	agent: string;
-	scope: string;
-	channel: string;
-	threadId: string | null;
-	actor: string | null;
-	createdBy: string;
-	reason: string | null;
-	approvalId: string | null;
-	createdAt: number;
-	expiresAt: number;
-	revokedAt: number | null;
-	revokedBy: string | null;
-};
+export type ApprovalBypass = typeof approvalBypass.$inferSelect;
 
-export type Lock = {
-	key: string;
-	owner: string;
-	expiresAt: number;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Lock = typeof lock.$inferSelect;
 
-export type JobState = "active" | "paused";
 export type JobRunState = "running" | "done" | "failed" | "skipped";
 export type DeliveryState = "pending" | "delivered" | "failed" | "none";
 
-export type Job = {
-	id: string;
-	agent: string;
-	kind: string;
-	schedule: string;
-	scope: string | null;
-	target: string | null;
-	prompt: string;
-	state: string;
-	nextAt: number | null;
-	lastAt: number | null;
-	idleMs: number | null;
-	createdAt: number;
-	updatedAt: number;
-};
+export type Job = typeof job.$inferSelect;
 
-export type JobRun = {
-	id: string;
-	jobAgent: string;
-	jobId: string;
-	threadId: string | null;
-	trace: string;
-	state: string;
-	output: string | null;
-	error: string | null;
-	deliveryState: string;
-	startedAt: number;
-	endedAt: number | null;
-};
+export type JobRun = typeof jobRun.$inferSelect;
 
 /** Thread identity store. Creates stable provider/thread mappings to Pi session files. */
 export interface Threads {
@@ -308,7 +182,12 @@ export interface Approvals {
 		limit?: number;
 		offset?: number;
 	}): Promise<Approval[]>;
-	resolve(id: string, state: "approved" | "denied", actor: string, input?: { agent?: string }): Promise<boolean>;
+	resolve(
+		id: string,
+		state: "approved" | "denied" | "expired",
+		actor: string,
+		input?: { agent?: string },
+	): Promise<boolean>;
 }
 
 /** Temporary approval bypasses created by human approvers. */

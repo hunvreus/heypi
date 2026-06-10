@@ -42,6 +42,7 @@ https://<host>/slack/ops/events
 | `allow.channels` | No | Channel IDs where the bot may respond. Applies to non-DM channels. |
 | `allow.users` | No | Slack user IDs allowed to talk to the bot. |
 | `allow.groups` | No | Slack user group IDs allowed to talk to the bot. Requires `usergroups:read`. |
+| `allow.bots` | No | `true` to accept messages from all other Slack bots/apps, or a list of Slack bot IDs, app IDs, or bot user IDs. Defaults to rejecting bot messages. |
 | `allow.dms` | No | Whether DMs are accepted. |
 | `permissions.approvers` | No | Slack user IDs or user group IDs allowed to list and resolve approvals for this adapter. |
 | `permissions.admins` | No | Slack user IDs or user group IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
@@ -61,6 +62,16 @@ allow: { channels: ["C1"], users: ["U1"], groups: ["S1"] }
 
 `U1` or members of `S1` can use the bot in `C1`. DMs require `allow.dms`.
 
+Bot messages are rejected by default. To accept fixture or integration messages from another Slack app, configure `allow.bots`:
+
+```ts
+allow: { channels: ["C1"], bots: ["B_TEST"] }
+```
+
+Use `bots: true` to accept messages from all other Slack bots/apps. This adapter's own Slack bot/app messages are always dropped, even when `allow.bots` is `true` or includes its own IDs. Allowed bot messages still have to pass the channel, DM, and trigger rules.
+
+`allow.bots` only grants input access. Bot actors cannot list, approve, deny, or revoke approvals through the zero-config fallback. To let a trusted bot resolve approvals, list its bot user ID in `permissions.approvers` or `permissions.admins`.
+
 ## Setup
 
 ### Manifest setup
@@ -68,10 +79,16 @@ allow: { channels: ["C1"], users: ["U1"], groups: ["S1"] }
 Generate a starter Slack manifest for HTTP mode:
 
 ```bash
-npx @hunvreus/heypi slack manifest --url https://<host>/slack/slack/events
+heypi slack manifest --mode http --url https://<host>/slack/slack/events
 ```
 
-Import the manifest into Slack, then review scopes, events, and interactivity for your workspace. Socket mode still needs an app-level token with `connections:write`.
+For Socket Mode, generate the Socket Mode manifest:
+
+```bash
+heypi slack manifest --mode socket
+```
+
+Import the manifest into Slack, then review scopes, events, and interactivity for your workspace. Socket Mode still needs an app-level token with `connections:write`.
 
 ### Manual setup
 
@@ -121,7 +138,7 @@ createHeypi({
 			mode: "socket",
 			botToken: process.env.SLACK_BOT_TOKEN!,
 			appToken: process.env.SLACK_APP_TOKEN!,
-			allow: { channels: ["C123"], dms: true },
+			allow: { channels: ["C123"], bots: ["B_TEST"], dms: true },
 			trigger: "mention",
 			threadTrigger: "message",
 		}),
@@ -162,7 +179,8 @@ For app-wide config such as `http`, `state`, `runtime`, and `agent`, see [Config
 
 | Command | Purpose |
 | --- | --- |
-| `npx @hunvreus/heypi slack check [--env .env]` | Verify Slack auth and report which Socket/HTTP secrets are present. |
-| `npx @hunvreus/heypi slack manifest [--url https://host/slack/slack/events]` | Print a starter Slack manifest for HTTP mode. |
-| `npx @hunvreus/heypi slack channels [--env .env] [--private]` | List channels visible to the bot and print target snippets. |
-| `npx @hunvreus/heypi slack env` | Print expected Slack environment variable names. |
+| `heypi slack check [--env .env] [--mode socket\|http]` | Verify Slack auth and report the selected transport secrets. |
+| `heypi slack manifest --mode socket` | Print a starter Socket Mode Slack manifest. |
+| `heypi slack manifest --mode http --url https://host/slack/slack/events` | Print a starter HTTP-mode Slack manifest. |
+| `heypi slack channels [--env .env] [--private]` | List channels visible to the bot and print target snippets. |
+| `heypi slack env` | Print expected Slack environment variable names. |

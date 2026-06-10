@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { approval } from "../db/schema.js";
 import type { Db } from "./db.js";
-
-export type ApprovalRow = typeof approval.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { Approval } from "./types.js";
 
 export class ApprovalRepo {
 	constructor(private readonly db: Db) {}
@@ -21,7 +21,7 @@ export class ApprovalRepo {
 		runtime: string;
 		reason: string;
 		details?: string;
-	}): Promise<ApprovalRow> {
+	}): Promise<Approval> {
 		const id = randomUUID();
 		await this.db.insert(approval).values({
 			id,
@@ -45,7 +45,7 @@ export class ApprovalRepo {
 		return row;
 	}
 
-	async get(id: string, input: { agent?: string } = {}): Promise<ApprovalRow | undefined> {
+	async get(id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
 		const filters = [eq(approval.id, id)];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
 		const rows = await this.db
@@ -56,7 +56,7 @@ export class ApprovalRepo {
 		return rows[0];
 	}
 
-	async getPending(channel: string, id: string, input: { agent?: string } = {}): Promise<ApprovalRow | undefined> {
+	async getPending(channel: string, id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
 		const filters = [eq(approval.channel, channel), eq(approval.id, id), eq(approval.state, "pending")];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
 		const rows = await this.db
@@ -67,7 +67,7 @@ export class ApprovalRepo {
 		return rows[0];
 	}
 
-	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<ApprovalRow | undefined> {
+	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<Approval | undefined> {
 		const filters = [eq(approval.channel, channel), eq(approval.id, id)];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
 		const rows = await this.db
@@ -81,7 +81,7 @@ export class ApprovalRepo {
 	async listForThread(
 		threadId: string,
 		input: { agent?: string; limit?: number; offset?: number } = {},
-	): Promise<ApprovalRow[]> {
+	): Promise<Approval[]> {
 		const filters = [eq(approval.threadId, threadId)];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
 		return await this.db
@@ -89,13 +89,13 @@ export class ApprovalRepo {
 			.from(approval)
 			.where(and(...filters))
 			.orderBy(desc(approval.requestedAt))
-			.limit(Math.min(Math.max(input.limit ?? 50, 1), 500))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 50, 500))
+			.offset(clampOffset(input.offset));
 	}
 
 	async listPending(
 		input: { agent?: string; threadId?: string; turnId?: string; limit?: number; offset?: number } = {},
-	): Promise<ApprovalRow[]> {
+	): Promise<Approval[]> {
 		const filters = [eq(approval.state, "pending")];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
 		if (input.threadId) filters.push(eq(approval.threadId, input.threadId));
@@ -105,13 +105,13 @@ export class ApprovalRepo {
 			.from(approval)
 			.where(and(...filters))
 			.orderBy(desc(approval.requestedAt))
-			.limit(Math.min(Math.max(input.limit ?? 5, 1), 500))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 5, 500))
+			.offset(clampOffset(input.offset));
 	}
 
 	async resolve(
 		id: string,
-		state: "approved" | "denied",
+		state: "approved" | "denied" | "expired",
 		actor: string,
 		input: { agent?: string } = {},
 	): Promise<boolean> {

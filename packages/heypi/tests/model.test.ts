@@ -616,6 +616,64 @@ test("approvals command lists pending approvals for approvers only", async () =>
 	}
 });
 
+test("bot actors cannot list approvals through zero-config fallback", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(
+				store.calls,
+				store.approvals,
+				new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+				{
+					name: "just-bash",
+					root: ".",
+					bash: async () => ({ code: 0, out: "ok", err: "", ms: 1 }),
+				},
+				{},
+				undefined,
+				store.transaction,
+				commandConfirm(),
+			),
+			agent: {
+				ask: async () => ({ text: "ok" }),
+				continue: async () => ({ text: "ok" }),
+			},
+		});
+
+		await handler({
+			trace: "trace-bot-approval-request",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bot-approval-request",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:1",
+			text: "/bash curl https://example.com",
+		});
+
+		const listed = await handler({
+			trace: "trace-bot-approvals",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bot-approvals",
+			channel: "C1",
+			actor: "B_DEPLOY",
+			actorBot: true,
+			thread: "C1:1",
+			text: "/approvals",
+		});
+
+		assert.equal(listed?.private, true);
+		assert.match(listed?.text ?? "", /not allowed/);
+	} finally {
+		await db.cleanup();
+	}
+});
+
 test("status only reports pending approvals for the requested run", async () => {
 	const db = await tempDb();
 	try {

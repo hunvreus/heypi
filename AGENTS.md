@@ -17,10 +17,12 @@
 - Prefer function-first modules and small files over class-heavy designs.
 - Keep module responsibilities narrow: orchestration in one place, side effects in clear adapters.
 - Define explicit boundary contracts (typed inputs/outputs, error shape, side effects) and keep interface surfaces small and stable.
+- Do not extract shared helpers just because code looks similar; share only stable contracts used across a real category, or behavior that must stay identical.
 - When changing adapter/channel behavior, align Slack, Telegram, Discord, and webhook where the behavior is shared. If a change is intentionally channel-specific, state why and keep the exception documented in code or docs.
 
 ## Code style
 - Keep control flow explicit. Favor readable loops and state transitions over clever abstractions.
+- Inline single-use helpers when the inline code is clearer.
 - Prefer simple data structures (`Map`, arrays, plain objects) and deterministic behavior.
 - Use practical error handling and logs with clear failure paths.
 - Prefer small, single-purpose composable helpers over large multi-responsibility utilities.

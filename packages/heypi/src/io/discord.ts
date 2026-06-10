@@ -53,6 +53,7 @@ export type DiscordAllow = {
 	channels?: string[];
 	users?: string[];
 	groups?: string[];
+	bots?: true | string[];
 	dms?: boolean;
 };
 
@@ -81,6 +82,7 @@ export function discord(input: DiscordConfig): Adapter {
 		name,
 		kind,
 		permissions: input.permissions,
+		acceptsBots: botsConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
@@ -146,7 +148,8 @@ async function handleMessage(input: {
 	msg: Message;
 }): Promise<void> {
 	const msg = input.msg;
-	if (msg.author.bot || !msg.channel) return;
+	if (!msg.channel) return;
+	const bot = msg.author.bot ? msg.author.id : undefined;
 	const channel = msg.channelId;
 	const actor = msg.author.id;
 	const team = msg.guildId ?? undefined;
@@ -154,8 +157,19 @@ async function handleMessage(input: {
 	const dm = isDm(msg);
 	const context = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
-	const actorGroups = await input.groups.forMessage(msg);
-	const allow = discordAllowed(input.config.allow, { channel, user: actor, groups: actorGroups, isDm: dm });
+	if (bot && !discordBotAllowed(input.config.allow?.bots, bot, input.client.user?.id)) {
+		input.start.logger.debug("adapter.drop", context({ actor, reason: "bot_not_allowed" }));
+		return;
+	}
+	const actorGroups = bot ? [] : await input.groups.forMessage(msg);
+	const allow = discordAllowed(input.config.allow, {
+		channel,
+		user: actor,
+		groups: actorGroups,
+		bot,
+		botSelf: input.client.user?.id,
+		isDm: dm,
+	});
 	if (!allow.ok) {
 		input.start.logger.debug(
 			"adapter.drop",
@@ -226,6 +240,7 @@ async function handleMessage(input: {
 			channelName: discordChannelName(msg.channel),
 			actor,
 			actorGroups,
+			actorBot: Boolean(bot),
 			actorName: msg.author.username,
 			thread: threadKey(msg),
 			threadName: discordThreadName(msg.channel),
@@ -816,7 +831,13 @@ function isDm(msg: Message): boolean {
 }
 
 function discordAllowConfigured(allow: DiscordAllow | undefined): boolean {
-	return Boolean(allow?.channels?.length || allow?.users?.length || allow?.groups?.length || allow?.dms === false);
+	return Boolean(
+		allow?.channels?.length ||
+			allow?.users?.length ||
+			allow?.groups?.length ||
+			botsConfigured(allow?.bots) ||
+			allow?.dms === false,
+	);
 }
 
 function discordThread(msg: Message): boolean {
@@ -835,7 +856,7 @@ function discordProgress(input: DiscordConfig["progress"], streaming: boolean): 
 
 export function discordAllowed(
 	input: DiscordAllow | undefined,
-	event: { channel: string; user: string; groups?: string[]; isDm: boolean },
+	event: { channel: string; user: string; groups?: string[]; bot?: string; botSelf?: string; isDm: boolean },
 ): { ok: true } | { ok: false; reason: string } {
 	return allowByDimensions({
 		dms: input?.dms,
@@ -849,15 +870,35 @@ export function discordAllowed(
 }
 
 function actorAllowlist(allow: DiscordAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length) return undefined;
+	if (!allow?.users?.length && !allow?.groups?.length && !botsConfigured(allow?.bots)) return undefined;
 	return ["allowed"];
 }
 
-function actorValue(allow: DiscordAllow | undefined, event: { user?: string; groups?: string[] }): string | undefined {
+function actorValue(
+	allow: DiscordAllow | undefined,
+	event: { user?: string; groups?: string[]; bot?: string; botSelf?: string },
+): string | undefined {
+	if (event.bot) return discordBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
 	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
 	if (event.user && allow.users?.includes(event.user)) return "allowed";
 	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
 	return undefined;
+}
+
+export function discordBotAllowed(
+	allow: DiscordAllow["bots"] | undefined,
+	bot: string,
+	self: string | undefined,
+): boolean {
+	if (!self) return false;
+	if (bot === self) return false;
+	if (allow === true) return true;
+	if (!Array.isArray(allow) || allow.length === 0) return false;
+	return allow.includes(bot);
+}
+
+function botsConfigured(bots: DiscordAllow["bots"] | undefined): boolean {
+	return bots === true || (Array.isArray(bots) && bots.length > 0);
 }
 
 const DISCORD_GROUP_CACHE_MS = 60_000;

@@ -40,6 +40,7 @@ export type TelegramTrigger = "mention" | "message";
 export type TelegramAllow = {
 	chats?: Array<string | number>;
 	users?: Array<string | number>;
+	bots?: true | Array<string | number>;
 	dms?: boolean;
 };
 
@@ -62,6 +63,7 @@ export function telegram(input: TelegramConfig): Adapter {
 		name,
 		kind,
 		permissions: input.permissions,
+		acceptsBots: botsConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
@@ -124,7 +126,7 @@ function telegramTargetChat(target: AdapterTarget): number {
 }
 
 function telegramAllowConfigured(allow: TelegramAllow | undefined): boolean {
-	return Boolean(allow?.chats?.length || allow?.users?.length || allow?.dms === false);
+	return Boolean(allow?.chats?.length || allow?.users?.length || botsConfigured(allow?.bots) || allow?.dms === false);
 }
 
 function numberOrUndefined(input?: string): number | undefined {
@@ -158,7 +160,7 @@ async function poll(input: {
 			const updates = await input.client.getUpdates({ offset, timeout });
 			for (const update of updates) {
 				offset = Math.max(offset, update.update_id + 1);
-				await handleUpdate({ ...input, update, botUsername: bot?.username });
+				await handleUpdate({ ...input, update, botUsername: bot?.username, botId: bot?.id });
 			}
 			backoffMs = 1000;
 		} catch (error) {
@@ -184,6 +186,7 @@ async function handleUpdate(input: {
 	update: TelegramUpdate;
 	stopped: () => boolean;
 	botUsername?: string;
+	botId?: number;
 }): Promise<void> {
 	const callback = input.update.callback_query;
 	if (callback) {
@@ -201,14 +204,25 @@ async function handleUpdate(input: {
 		return;
 	}
 	const msg = input.update.message;
-	if (!msg?.chat || msg.from?.is_bot) return;
+	if (!msg?.chat) return;
+	const bot = msg.from?.is_bot ? String(msg.from.id) : undefined;
 	const channel = String(msg.chat.id);
 	const actor = String(msg.from?.id ?? "unknown");
 	const thread = threadKey(msg);
 	const trace = `telegram:${msg.message_id}`;
 	const context = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.kind, channel, thread }, extra);
-	const allow = telegramAllowed(input.config.allow, { chat: channel, user: actor, isDm: telegramDm(msg) });
+	if (bot && !telegramBotAllowed(input.config.allow?.bots, bot, input.botId)) {
+		input.start.logger.debug("adapter.drop", context({ actor, reason: "bot_not_allowed" }));
+		return;
+	}
+	const allow = telegramAllowed(input.config.allow, {
+		chat: channel,
+		user: actor,
+		bot,
+		botSelf: input.botId,
+		isDm: telegramDm(msg),
+	});
 	if (!allow.ok) {
 		input.start.logger.debug(
 			"adapter.drop",
@@ -285,6 +299,7 @@ async function handleUpdate(input: {
 			channel,
 			channelName: telegramChatName(msg.chat),
 			actor,
+			actorBot: Boolean(bot),
 			actorName: telegramUserName(msg.from),
 			thread,
 			threadName: msg.message_thread_id ? `topic ${msg.message_thread_id}` : undefined,
@@ -898,7 +913,7 @@ function telegramDm(msg: TelegramMessage): boolean {
 
 export function telegramAllowed(
 	allow: TelegramAllow | undefined,
-	event: { chat: string; user: string; isDm: boolean },
+	event: { chat: string; user: string; bot?: string; botSelf?: number | string; isDm: boolean },
 ): { ok: true } | { ok: false; reason: string } {
 	return allowByDimensions({
 		dms: allow?.dms,
@@ -906,9 +921,45 @@ export function telegramAllowed(
 		dmReason: "dm_not_allowed",
 		dimensions: [
 			{ allowlist: allow?.chats?.map(String), value: event.chat, reason: "chat_not_allowed", skip: event.isDm },
-			{ allowlist: allow?.users?.map(String), value: event.user, reason: "user_not_allowed" },
+			{
+				allowlist: telegramActorAllowlist(allow),
+				value: telegramActorValue(allow, event),
+				reason: "user_not_allowed",
+			},
 		],
 	});
+}
+
+function telegramActorAllowlist(allow: TelegramAllow | undefined): string[] | undefined {
+	if (!allow?.users?.length && !botsConfigured(allow?.bots)) return undefined;
+	return ["allowed"];
+}
+
+function telegramActorValue(
+	allow: TelegramAllow | undefined,
+	event: { user: string; bot?: string; botSelf?: number | string },
+): string | undefined {
+	if (event.bot) return telegramBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
+	if (!allow?.users?.length) return "allowed";
+	if (allow.users.map(String).includes(event.user)) return "allowed";
+	return undefined;
+}
+
+export function telegramBotAllowed(
+	allow: TelegramAllow["bots"] | undefined,
+	bot: string | number,
+	self: string | number | undefined,
+): boolean {
+	if (self === undefined) return false;
+	const id = String(bot);
+	if (id === String(self)) return false;
+	if (allow === true) return true;
+	if (!Array.isArray(allow) || allow.length === 0) return false;
+	return allow.map(String).includes(id);
+}
+
+function botsConfigured(bots: TelegramAllow["bots"] | undefined): boolean {
+	return bots === true || (Array.isArray(bots) && bots.length > 0);
 }
 
 export function telegramTriggered(

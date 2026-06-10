@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { thread } from "../db/schema.js";
 import type { Db } from "./db.js";
-
-export type ThreadRow = typeof thread.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { Thread } from "./types.js";
 
 export class ThreadRepo {
 	constructor(private readonly db: Db) {}
@@ -16,7 +16,7 @@ export class ThreadRepo {
 		channel: string;
 		actor?: string;
 		key: string;
-	}): Promise<ThreadRow> {
+	}): Promise<Thread> {
 		const team = input.team ?? "";
 		const found = await this.getByKey(input.agent, input.provider, team, input.key);
 		if (found) return found;
@@ -56,7 +56,7 @@ export class ThreadRepo {
 			limit?: number;
 			offset?: number;
 		} = {},
-	): Promise<ThreadRow[]> {
+	): Promise<Thread[]> {
 		const filters = [];
 		if (input.agent) filters.push(eq(thread.agent, input.agent));
 		if (input.providers?.length) filters.push(inArray(thread.provider, input.providers));
@@ -67,16 +67,11 @@ export class ThreadRepo {
 		const withFilter = filters.length ? query.where(and(...filters)) : query;
 		return await withFilter
 			.orderBy(desc(thread.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 100, 1), 1000))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 100, 1000))
+			.offset(clampOffset(input.offset));
 	}
 
-	async getByKey(
-		agent: string,
-		provider: string,
-		team: string | undefined,
-		key: string,
-	): Promise<ThreadRow | undefined> {
+	async getByKey(agent: string, provider: string, team: string | undefined, key: string): Promise<Thread | undefined> {
 		const rows = await this.db
 			.select()
 			.from(thread)
@@ -92,7 +87,7 @@ export class ThreadRepo {
 		return rows[0];
 	}
 
-	async get(id: string): Promise<ThreadRow | undefined> {
+	async get(id: string): Promise<Thread | undefined> {
 		const rows = await this.db.select().from(thread).where(eq(thread.id, id)).limit(1);
 		return rows[0];
 	}

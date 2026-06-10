@@ -147,17 +147,9 @@ If the app itself uses the Docker runtime provider, mount the Docker socket or u
 
 ## Cloudflare Containers
 
-Cloudflare Containers are a planned deployment target, not a supported target yet. They are closer to Docker mode than pure Workers mode: heypi can keep its Node process architecture, but the process must tolerate sleep, restart, rolling deploys, and fresh container disks.
+Cloudflare Containers can run heypi's Node.js process model, with R2 mounted through FUSE for durable runtime workspace files. This is still an advanced deployment path: container disk is ephemeral, and the default SQLite state database must not be placed on an R2 FUSE mount.
 
-heypi expects its configured state and workspace paths to be durable. On Cloudflare Containers, provide that durability through platform storage rather than heypi-managed file synchronization. For workspace files, use Cloudflare's FUSE support with R2 or another S3-compatible backend. For operational state, use a durable `Store` backend or a platform-supported persistent filesystem with the required SQLite locking and fsync semantics.
-
-- Pi sessions, memory, skills, runtime secret files, attachments, and generated files must live on a durable workspace mount.
-- SQLite state must move to a durable SQL backend or an explicitly supported persistent layer.
-- Pending secret requests must either remain restart-invalidated or use an explicit encrypted key-wrapping/KMS design.
-- HTTP adapters can use a Worker front door, but Slack Socket Mode, Discord gateway, and Telegram polling still belong in the container process.
-- Startup recovery, scheduler recovery, app locks, and runtime provider cleanup must be tested against container sleep and restart.
-
-See Cloudflare's [Containers lifecycle](https://developers.cloudflare.com/containers/platform-details/architecture/) docs for the disk and sleep model.
+Use [Deploy on Cloudflare](cloudflare.md) for the Worker, container, R2 mount, and state-store shape.
 
 ## Runtime providers
 

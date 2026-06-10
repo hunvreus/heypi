@@ -18,6 +18,7 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 | `pollTimeoutSeconds` | No | Long-poll timeout. Defaults to `25`. |
 | `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, channels, and forum topics. |
 | `allow.users` | No | Telegram user IDs allowed to talk to the bot. |
+| `allow.bots` | No | `true` to accept messages from all other Telegram bots, or a list of Telegram bot user IDs. Defaults to rejecting bot messages. |
 | `allow.dms` | No | Whether DMs are accepted. |
 | `permissions.approvers` | No | Telegram user IDs allowed to list and resolve approvals for this adapter. Groups are not supported. |
 | `permissions.admins` | No | Telegram user IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
@@ -34,6 +35,16 @@ allow: { chats: ["CHAT1"], users: ["U1"] }
 ```
 
 `U1` can use the bot in `CHAT1`. DMs require `allow.dms`.
+
+Bot messages are rejected by default. To accept fixture or integration messages from another Telegram bot, configure `allow.bots`:
+
+```ts
+allow: { chats: ["CHAT1"], bots: ["123456789"] }
+```
+
+Use `bots: true` to accept messages from all other Telegram bots. This adapter's own Telegram bot messages are always dropped, even when `allow.bots` is `true` or includes its own bot user ID. Allowed bot messages still have to pass the chat, DM, and trigger rules.
+
+`allow.bots` only grants input access. Bot actors cannot list, approve, deny, or revoke approvals through the zero-config fallback. To let a trusted bot resolve approvals, list its bot user ID in `permissions.approvers` or `permissions.admins`.
 
 ## Setup
 
@@ -52,8 +63,8 @@ Group privacy mode can limit what the bot receives. Use BotFather's `/setprivacy
 Verify the token and observe delivered updates:
 
 ```bash
-npx @hunvreus/heypi telegram check --env .env
-npx @hunvreus/heypi telegram observe --env .env
+heypi telegram check --env .env
+heypi telegram observe --env .env
 ```
 
 Telegram cannot enumerate chats. `telegram observe` waits for a delivered DM, group, channel, or forum message and prints IDs for config and job targets.
@@ -71,6 +82,7 @@ createHeypi({
 			allow: {
 				chats: ["-1001234567890"],
 				users: ["8734062810"],
+				bots: ["123456789"],
 				dms: true,
 			},
 			trigger: "mention",
@@ -92,5 +104,5 @@ For app-wide config such as `state`, `runtime`, and `agent`, see [Configuration]
 
 | Command | Purpose |
 | --- | --- |
-| `npx @hunvreus/heypi telegram check [--env .env]` | Verify Telegram bot credentials. |
-| `npx @hunvreus/heypi telegram observe [--env .env] [--timeout 60]` | Wait for a delivered Telegram update and print IDs/target snippets. |
+| `heypi telegram check [--env .env]` | Verify Telegram bot credentials. |
+| `heypi telegram observe [--env .env] [--timeout 60]` | Wait for a delivered Telegram update and print IDs/target snippets. |

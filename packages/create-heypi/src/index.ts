@@ -11,6 +11,7 @@ import { customModel, defaultModel, type ModelChoice, modelChoices } from "./mod
 type Adapter = "slack" | "discord" | "telegram" | "webhook";
 type Runtime = "just-bash" | "guarded-bash" | "docker" | "gondolin";
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+type SlackMode = "socket" | "http";
 
 type Flags = {
 	adapter?: Adapter;
@@ -21,6 +22,7 @@ type Flags = {
 	pm?: PackageManager;
 	runtime?: Runtime;
 	samples?: boolean;
+	slackMode?: SlackMode;
 	yes: boolean;
 };
 
@@ -33,11 +35,13 @@ type Options = {
 	pm: PackageManager;
 	runtime: Runtime;
 	samples: boolean;
+	slackMode?: SlackMode;
 };
 
 const adapters = ["slack", "discord", "telegram", "webhook"] as const;
 const runtimes = ["just-bash", "guarded-bash", "docker", "gondolin"] as const;
 const packageManagers = ["npm", "pnpm", "yarn", "bun"] as const;
+const slackModes = ["socket", "http"] as const;
 
 async function main(): Promise<void> {
 	const flags = parseArgs(process.argv.slice(2));
@@ -52,6 +56,9 @@ async function main(): Promise<void> {
 
 async function resolveOptions(flags: Flags): Promise<Options> {
 	const defaultDir = flags.dir ?? (await nextAvailableDir("heypi-app"));
+	if (flags.slackMode && flags.adapter && flags.adapter !== "slack") {
+		throw new Error("--slack-mode only applies when --adapter is slack");
+	}
 	if (flags.yes) {
 		return {
 			adapter: flags.adapter ?? "slack",
@@ -62,6 +69,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 			pm: flags.pm ?? inferPackageManager(),
 			runtime: flags.runtime ?? "just-bash",
 			samples: flags.samples ?? false,
+			slackMode: flags.adapter === "slack" || !flags.adapter ? (flags.slackMode ?? "socket") : undefined,
 		};
 	}
 
@@ -79,6 +87,11 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 		"Folder to create. Must be empty unless --force is used.",
 	);
 	const adapter = flags.adapter ?? (await promptSelect("Adapter", adapterOptions(), "slack"));
+	if (flags.slackMode && adapter !== "slack") throw new Error("--slack-mode only applies to Slack apps");
+	const slackMode =
+		adapter === "slack"
+			? (flags.slackMode ?? (await promptSelect("Slack transport", slackModeOptions(), "socket")))
+			: undefined;
 	const runtime = flags.runtime ?? (await promptSelect("Runtime", runtimeOptions(), "just-bash"));
 	const model = flags.model ?? (await promptModel());
 	const admin = await promptConfirm(
@@ -109,6 +122,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 		pm,
 		runtime,
 		samples: sampleChoices.length > 0,
+		slackMode,
 	};
 }
 
@@ -145,7 +159,9 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await write(root, "agent/SOUL.md", soul());
 	await write(root, "agent/skills/README.md", skillsReadme());
 	await write(root, "tools/README.md", toolsReadme());
-	if (options.adapter === "slack") await write(root, "setup/slack.manifest.json", slackManifest());
+	if (options.adapter === "slack") {
+		await write(root, "setup/slack.manifest.json", slackManifest(options.slackMode ?? "socket"));
+	}
 	if (options.samples) {
 		await mkdir(join(root, "agent", "skills", "example"), { recursive: true });
 		await write(root, "agent/skills/example/SKILL.md", sampleSkill());
@@ -222,8 +238,9 @@ function indexTs(options: Options): string {
 ${runtimeImport}
 const app = createHeypi({
 	state: { root: "./state" },
+${httpConfig(options)}
 	adapters: [
-${adapterConfig(options.adapter)}
+${adapterConfig(options)}
 	],
 	agent: agentFrom("./agent", { model: "${options.model}" }),
 ${options.admin ? "\tadmin: true,\n" : ""}\truntime: ${runtimeConfig(options.runtime)},
@@ -238,19 +255,34 @@ function adapterImport(adapter: Adapter): string {
 	return adapter;
 }
 
-function adapterConfig(adapter: Adapter): string {
-	if (adapter === "slack") {
+function httpConfig(options: Options): string {
+	if (options.adapter === "slack" && options.slackMode === "http") {
+		return "\thttp: { port: Number(process.env.PORT ?? 3000) },\n";
+	}
+	return "";
+}
+
+function adapterConfig(options: Options): string {
+	if (options.adapter === "slack" && options.slackMode === "http") {
 		return `\t\tslack({
+\t\t\tmode: "http",
+\t\t\tbotToken: process.env.SLACK_BOT_TOKEN!,
+\t\t\tsigningSecret: process.env.SLACK_SIGNING_SECRET!,
+\t\t}),`;
+	}
+	if (options.adapter === "slack") {
+		return `\t\tslack({
+\t\t\tmode: "socket",
 \t\t\tbotToken: process.env.SLACK_BOT_TOKEN!,
 \t\t\tappToken: process.env.SLACK_APP_TOKEN!,
 \t\t}),`;
 	}
-	if (adapter === "discord") {
+	if (options.adapter === "discord") {
 		return `\t\tdiscord({
 \t\t\ttoken: process.env.DISCORD_BOT_TOKEN!,
 \t\t}),`;
 	}
-	if (adapter === "telegram") {
+	if (options.adapter === "telegram") {
 		return `\t\ttelegram({
 \t\t\ttoken: process.env.TELEGRAM_BOT_TOKEN!,
 \t\t}),`;
@@ -271,7 +303,7 @@ function runtimeConfig(runtime: Runtime): string {
 function envExample(options: Options): string {
 	const rows = ["# Model provider credentials", ...modelEnvVars(options.model).map((name) => `${name}=`)];
 	rows.push("", "# Adapter credentials");
-	rows.push(...adapterEnvVars(options.adapter).map((name) => `${name}=`));
+	rows.push(...adapterEnvVars(options).map((name) => `${name}=`));
 	return `${rows.join("\n")}\n`;
 }
 
@@ -313,7 +345,7 @@ ${options.pm} run dev
 
 Adapter: \`${options.adapter}\`
 
-${adapterNotes(options.adapter)}
+${adapterNotes(options)}
 
 ## Runtime
 
@@ -330,14 +362,17 @@ ${runtimeNotes(options.runtime)}
 `;
 }
 
-function adapterNotes(adapter: Adapter): string {
-	if (adapter === "slack") {
+function adapterNotes(options: Options): string {
+	if (options.adapter === "slack" && options.slackMode === "http") {
+		return "Create a Slack app with the generated HTTP manifest, install it to your workspace, and set `SLACK_BOT_TOKEN` plus `SLACK_SIGNING_SECRET`.";
+	}
+	if (options.adapter === "slack") {
 		return "Create a Slack app, enable Socket Mode, install it to your workspace, and set `SLACK_BOT_TOKEN` plus `SLACK_APP_TOKEN`.";
 	}
-	if (adapter === "discord") {
+	if (options.adapter === "discord") {
 		return "Create a Discord application with a bot, invite it to your server, and set `DISCORD_BOT_TOKEN`.";
 	}
-	if (adapter === "telegram") {
+	if (options.adapter === "telegram") {
 		return "Create a Telegram bot with BotFather and set `TELEGRAM_BOT_TOKEN`.";
 	}
 	return "Configure your webhook sender with `WEBHOOK_SECRET` and route events to the heypi webhook endpoint.";
@@ -372,7 +407,43 @@ Add TypeScript helper modules here and import them from \`index.ts\` when you wa
 `;
 }
 
-function slackManifest(): string {
+const slackBotScopes = [
+	"app_mentions:read",
+	"channels:history",
+	"channels:read",
+	"chat:write",
+	"chat:write.public",
+	"files:read",
+	"files:write",
+	"im:history",
+	"reactions:write",
+	"usergroups:read",
+] as const;
+
+const slackBotEvents = ["app_mention", "message.channels", "message.im"] as const;
+
+function slackManifest(mode: SlackMode): string {
+	const settings: Record<string, unknown> = {
+		event_subscriptions: {
+			bot_events: slackBotEvents,
+		},
+		interactivity: {
+			is_enabled: true,
+		},
+		org_deploy_enabled: false,
+		socket_mode_enabled: mode === "socket",
+		token_rotation_enabled: false,
+	};
+	if (mode === "http") {
+		settings.event_subscriptions = {
+			request_url: "https://example.com/slack/slack/events",
+			bot_events: slackBotEvents,
+		};
+		settings.interactivity = {
+			is_enabled: true,
+			request_url: "https://example.com/slack/slack/events",
+		};
+	}
 	return json({
 		display_information: {
 			name: "heypi",
@@ -386,27 +457,10 @@ function slackManifest(): string {
 		},
 		oauth_config: {
 			scopes: {
-				bot: [
-					"app_mentions:read",
-					"channels:history",
-					"chat:write",
-					"groups:history",
-					"im:history",
-					"mpim:history",
-				],
+				bot: slackBotScopes,
 			},
 		},
-		settings: {
-			event_subscriptions: {
-				bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim"],
-			},
-			interactivity: {
-				is_enabled: true,
-			},
-			org_deploy_enabled: false,
-			socket_mode_enabled: true,
-			token_rotation_enabled: false,
-		},
+		settings,
 	});
 }
 
@@ -431,7 +485,7 @@ function printNextSteps(root: string, options: Options): void {
 	const run = options.pm === "npm" ? "npm run dev" : `${options.pm} run dev`;
 	const install = options.pm === "yarn" ? "yarn" : `${options.pm} install`;
 	const envVars = requiredEnvVars(options);
-	const setup = adapterSetup(options.adapter);
+	const setup = adapterSetup(options);
 	outro(pc.green("heypi app created"));
 	process.stdout.write(`
 ${pc.green("Created project")}
@@ -450,7 +504,7 @@ ${pc.bold(setup.title)}
 }
 
 function requiredEnvVars(options: Options): string[] {
-	return [...modelEnvVars(options.model), ...adapterEnvVars(options.adapter)];
+	return [...modelEnvVars(options.model), ...adapterEnvVars(options)];
 }
 
 function modelEnvVars(model: string): string[] {
@@ -465,29 +519,39 @@ function modelEnvVars(model: string): string[] {
 	return ["OPENAI_API_KEY"];
 }
 
-function adapterEnvVars(adapter: Adapter): string[] {
-	if (adapter === "slack") return ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"];
-	if (adapter === "discord") return ["DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID"];
-	if (adapter === "telegram") return ["TELEGRAM_BOT_TOKEN"];
+function adapterEnvVars(options: Options): string[] {
+	if (options.adapter === "slack" && options.slackMode === "http") {
+		return ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"];
+	}
+	if (options.adapter === "slack") return ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"];
+	if (options.adapter === "discord") return ["DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID"];
+	if (options.adapter === "telegram") return ["TELEGRAM_BOT_TOKEN"];
 	return ["WEBHOOK_SECRET"];
 }
 
-function adapterSetup(adapter: Adapter): { title: string; body: string; url: string } {
-	if (adapter === "slack") {
+function adapterSetup(options: Options): { title: string; body: string; url: string } {
+	if (options.adapter === "slack" && options.slackMode === "http") {
 		return {
 			title: "Slack setup",
-			body: "Use setup/slack.manifest.json to create and install your Slack app.",
+			body: "Use setup/slack.manifest.json to create your HTTP-mode Slack app, then replace the example request URL with your public app URL.",
 			url: "https://heypi.dev/docs/adapters/slack",
 		};
 	}
-	if (adapter === "discord") {
+	if (options.adapter === "slack") {
+		return {
+			title: "Slack setup",
+			body: "Use setup/slack.manifest.json to create and install your Socket Mode Slack app.",
+			url: "https://heypi.dev/docs/adapters/slack",
+		};
+	}
+	if (options.adapter === "discord") {
 		return {
 			title: "Discord setup",
 			body: "Create a Discord app, add a bot, invite it to your server, then fill in .env.",
 			url: "https://heypi.dev/docs/adapters/discord",
 		};
 	}
-	if (adapter === "telegram") {
+	if (options.adapter === "telegram") {
 		return {
 			title: "Telegram setup",
 			body: "Create a bot with BotFather, then fill in .env with the bot token.",
@@ -514,6 +578,8 @@ function parseArgs(args: string[]): Flags {
 		else if (arg === "--dir") flags.dir = requireValue(args, ++i, arg);
 		else if (arg === "--adapter") flags.adapter = parseChoice(requireValue(args, ++i, arg), adapters, "adapter");
 		else if (arg === "--runtime") flags.runtime = parseChoice(requireValue(args, ++i, arg), runtimes, "runtime");
+		else if (arg === "--slack-mode")
+			flags.slackMode = parseChoice(requireValue(args, ++i, arg), slackModes, "slack-mode");
 		else if (arg === "--model") flags.model = requireValue(args, ++i, arg);
 		else if (arg === "--pm") flags.pm = parseChoice(requireValue(args, ++i, arg), packageManagers, "pm");
 		else if (arg === "--help" || arg === "-h") {
@@ -538,6 +604,7 @@ Usage:
 
 Options:
   --adapter slack|discord|telegram|webhook
+  --slack-mode socket|http
   --runtime just-bash|guarded-bash|docker|gondolin
   --model <model>
   --pm npm|pnpm|yarn|bun
@@ -604,6 +671,13 @@ function adapterOptions(): Array<{ label: string; value: Adapter; hint?: string 
 		{ label: "Discord", value: "discord" },
 		{ label: "Telegram", value: "telegram" },
 		{ label: "Webhook", value: "webhook" },
+	];
+}
+
+function slackModeOptions(): Array<{ label: string; value: SlackMode; hint?: string }> {
+	return [
+		{ label: "Socket Mode", value: "socket", hint: "works locally without a public URL" },
+		{ label: "HTTP webhook", value: "http", hint: "requires a public Slack request URL" },
 	];
 }
 

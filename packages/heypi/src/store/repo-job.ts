@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, lte, notInArray, type SQL } from "drizzle-orm";
 import { job, jobRun } from "../db/schema.js";
+import type { JobState } from "../job.js";
 import type { Db } from "./db.js";
-import type { DeliveryState, JobRunState, JobState } from "./types.js";
-
-export type JobRow = typeof job.$inferSelect;
-export type JobRunRow = typeof jobRun.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { DeliveryState, Job, JobRun, JobRunState } from "./types.js";
 
 export class JobRepo {
 	constructor(private readonly db: Db) {}
@@ -21,7 +20,7 @@ export class JobRepo {
 		state?: JobState;
 		nextAt?: number | null;
 		idleMs?: number | null;
-	}): Promise<JobRow> {
+	}): Promise<Job> {
 		const now = Date.now();
 		const values = {
 			id: input.id,
@@ -60,29 +59,29 @@ export class JobRepo {
 		return row;
 	}
 
-	async due(input: { agent: string; now: number; limit?: number }): Promise<JobRow[]> {
+	async due(input: { agent: string; now: number; limit?: number }): Promise<Job[]> {
 		return await this.db
 			.select()
 			.from(job)
 			.where(and(eq(job.agent, input.agent), eq(job.state, "active"), lte(job.nextAt, input.now)))
 			.orderBy(asc(job.nextAt))
-			.limit(Math.min(Math.max(input.limit ?? 25, 1), 100));
+			.limit(clampLimit(input.limit, 25, 100));
 	}
 
-	async get(input: { agent?: string; id: string }): Promise<JobRow | undefined> {
+	async get(input: { agent?: string; id: string }): Promise<Job | undefined> {
 		const rows = await this.db.select().from(job).where(jobWhere(input)).orderBy(asc(job.agent)).limit(2);
 		if (rows.length > 1) throw new Error(`job id is ambiguous; pass agent: ${input.id}`);
 		return rows[0];
 	}
 
-	async list(input: { agent?: string; limit?: number; offset?: number } = {}): Promise<JobRow[]> {
+	async list(input: { agent?: string; limit?: number; offset?: number } = {}): Promise<Job[]> {
 		return await this.db
 			.select()
 			.from(job)
 			.where(input.agent ? eq(job.agent, input.agent) : undefined)
 			.orderBy(asc(job.agent), asc(job.id))
-			.limit(Math.min(Math.max(input.limit ?? 100, 1), 1000))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 100, 1000))
+			.offset(clampOffset(input.offset));
 	}
 
 	async setState(input: { agent?: string; id: string }, state: JobState): Promise<void> {
@@ -129,7 +128,7 @@ export class JobRunRepo {
 		jobId: string;
 		threadId?: string;
 		trace: string;
-	}): Promise<{ row: JobRunRow; inserted: boolean }> {
+	}): Promise<{ row: JobRun; inserted: boolean }> {
 		const id = randomUUID();
 		const now = Date.now();
 		await this.db
@@ -167,7 +166,7 @@ export class JobRunRepo {
 			.where(eq(jobRun.id, id));
 	}
 
-	async lastForJob(input: { agent: string; id: string }): Promise<JobRunRow | undefined> {
+	async lastForJob(input: { agent: string; id: string }): Promise<JobRun | undefined> {
 		const rows = await this.db
 			.select()
 			.from(jobRun)

@@ -12,6 +12,7 @@ The wizard asks for:
 
 - project directory
 - adapter: Slack, Discord, Telegram, or webhook
+- Slack transport: Socket Mode or HTTP webhook
 - runtime: `just-bash`, Docker, Gondolin, or guarded bash
 - model: curated defaults plus a custom `provider/model` input
 - admin UI, sample skill/tool files, and dependency install

@@ -75,9 +75,10 @@ See [Agent tools: Confirmation](tools.md#confirmation) for the `confirm` return 
 ## Notes
 
 - Approval decisions are logged with the requester, approver, call, tool, and result.
-- Without configured adapter approvers or admins, approvals are limited by thread visibility, not by a central allowlist. Configure explicit adapter permissions for shared or team-facing bots.
+- Without configured adapter approvers or admins, human approvals are limited by thread visibility, not by a central allowlist. Configure explicit adapter permissions for shared or team-facing bots.
+- `allow.bots` lets bots send messages to the agent. It does not let bots list, approve, deny, or revoke approvals unless the bot actor is explicitly listed in adapter `permissions.approvers` or `permissions.admins`.
 - Users can deny their own requested approval.
-- Requesters can approve their own pending request only if they are also an approver/admin and `allowSelfApproval` is not disabled.
+- Human requesters can approve their own pending request when they are authorized by the zero-config fallback or by adapter permissions, unless `allowSelfApproval` is disabled.
 - Pending approvals are persisted. On startup, heypi fails stale running calls and job runs from a previous process so they do not stay stuck in `running`.
 
 heypi logs a startup warning when bash or confirmed custom tools are enabled without explicit adapter approvers or admins.

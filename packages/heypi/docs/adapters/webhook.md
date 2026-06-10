@@ -118,6 +118,6 @@ There is no adapter-specific webhook CLI. Use shared commands:
 
 | Command | Purpose |
 | --- | --- |
-| `npx @hunvreus/heypi check [--env .env] [--db ./state/heypi.db]` | Validate app config and state access. |
-| `npx @hunvreus/heypi approvals list --db ./state/heypi.db` | Inspect pending approvals. |
-| `npx @hunvreus/heypi jobs list --db ./state/heypi.db` | Inspect configured jobs. |
+| `heypi check [--env .env] [--db ./state/heypi.db]` | Validate app config and state access. |
+| `heypi approvals list --db ./state/heypi.db` | Inspect pending approvals. |
+| `heypi jobs list --db ./state/heypi.db` | Inspect configured jobs. |

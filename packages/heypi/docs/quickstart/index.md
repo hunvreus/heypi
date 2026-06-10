@@ -17,11 +17,11 @@ yarn create heypi my-agent
 bun create heypi my-agent
 ```
 
-The scaffolder asks for adapter, runtime, model, admin UI, and optional samples.
+The scaffolder asks for adapter, Slack transport when Slack is selected, runtime, model, admin UI, and optional samples.
 
 ## Step 2: fill in `.env`
 
-For the default Slack + OpenAI starter:
+For the default Slack Socket Mode + OpenAI starter:
 
 ```bash
 OPENAI_API_KEY=
@@ -29,7 +29,7 @@ SLACK_BOT_TOKEN=
 SLACK_APP_TOKEN=
 ```
 
-For Slack, use `setup/slack.manifest.json` with the [Slack setup guide](../adapters/slack.md#setup) to create and install the app.
+For Slack, use `setup/slack.manifest.json` with the [Slack setup guide](../adapters/slack.md#setup) to create and install the app. If you selected HTTP mode, fill in `SLACK_SIGNING_SECRET` instead of `SLACK_APP_TOKEN`.
 
 Other adapters:
 

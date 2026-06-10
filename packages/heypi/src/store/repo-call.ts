@@ -3,8 +3,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { CallErrorKind, CallState } from "../core/types.js";
 import { call } from "../db/schema.js";
 import type { Db } from "./db.js";
-
-export type CallRow = typeof call.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { Call } from "./types.js";
 
 export class CallRepo {
 	constructor(private readonly db: Db) {}
@@ -23,7 +23,7 @@ export class CallRepo {
 		runtime?: string;
 		state: CallState;
 		policyReason?: string;
-	}): Promise<CallRow> {
+	}): Promise<Call> {
 		const id = randomUUID();
 		const now = Date.now();
 		await this.db.insert(call).values({
@@ -44,10 +44,10 @@ export class CallRepo {
 			createdAt: now,
 			updatedAt: now,
 		});
-		return (await this.get(id)) as CallRow;
+		return (await this.get(id)) as Call;
 	}
 
-	async get(id: string, input: { agent?: string } = {}): Promise<CallRow | undefined> {
+	async get(id: string, input: { agent?: string } = {}): Promise<Call | undefined> {
 		const filters = [eq(call.id, id)];
 		if (input.agent) filters.push(eq(call.agent, input.agent));
 		const rows = await this.db
@@ -58,7 +58,7 @@ export class CallRepo {
 		return rows[0];
 	}
 
-	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<CallRow | undefined> {
+	async getByChannel(channel: string, id: string, input: { agent?: string } = {}): Promise<Call | undefined> {
 		const filters = [eq(call.channel, channel), eq(call.id, id)];
 		if (input.agent) filters.push(eq(call.agent, input.agent));
 		const rows = await this.db
@@ -72,7 +72,7 @@ export class CallRepo {
 	async listForThread(
 		threadId: string,
 		input: { agent?: string; states?: CallState[]; limit?: number } = {},
-	): Promise<CallRow[]> {
+	): Promise<Call[]> {
 		const filters = [eq(call.threadId, threadId)];
 		if (input.agent) filters.push(eq(call.agent, input.agent));
 		if (input.states?.length) filters.push(inArray(call.state, input.states));
@@ -81,12 +81,12 @@ export class CallRepo {
 			.from(call)
 			.where(and(...filters))
 			.orderBy(desc(call.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 5, 1), 25));
+			.limit(clampLimit(input.limit, 5, 25));
 	}
 
 	async listRecent(
 		input: { agent?: string; states?: CallState[]; limit?: number; offset?: number } = {},
-	): Promise<CallRow[]> {
+	): Promise<Call[]> {
 		const filters = [];
 		if (input.agent) filters.push(eq(call.agent, input.agent));
 		if (input.states?.length) filters.push(inArray(call.state, input.states));
@@ -94,8 +94,8 @@ export class CallRepo {
 		const withFilter = filters.length ? query.where(and(...filters)) : query;
 		return await withFilter
 			.orderBy(desc(call.updatedAt))
-			.limit(Math.min(Math.max(input.limit ?? 100, 1), 500))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 100, 500))
+			.offset(clampOffset(input.offset));
 	}
 
 	async failRunning(input: { agent: string; error: string }): Promise<number> {

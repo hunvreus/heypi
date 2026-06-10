@@ -37,20 +37,31 @@
   ```
 
 ### Added
+- Added an experimental Cloudflare deployment guide using Containers and R2 FUSE for durable runtime workspaces.
 - Added approval admins with inherited approver permissions and configurable self-approval blocking.
 - Added adapter-scoped approval permissions with per-adapter approvers and admins.
+- Added `allow.bots` to Slack, Discord, and Telegram for explicitly accepting messages from selected bots/apps or all other bots/apps.
+- Added Slack Socket Mode and HTTP mode manifest generation to `create-heypi` and `heypi slack manifest`.
 - Added `task.cancel` with `admin`, `approver`, `initiator`, and `allowed` cancellation policy levels.
 - Added temporary approval bypasses through `/approve <approval-id> bypass` and `/revoke <bypass-id>`.
 - Added durable approval bypass storage.
 - Added admin configuration visibility for task behavior and adapter approval permissions.
 
 ### Changed
+- Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.
+- Changed expired approvals to persist as `expired` instead of `denied` for clearer audit history.
 - Changed chat control commands to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash`.
 - Changed cancellation output to a single terminal task message that includes the cancelling actor when known.
 - Changed same-thread busy behavior configuration from `chat.busy` to `task.busy`.
 - Changed startup recovery to fail stale running calls and job runs after a process restart.
+- Changed CLI docs to use `heypi` consistently while documenting package-manager invocation separately.
+- Derived store row types from the Drizzle schema and centralized store pagination clamps.
+- Split core call execution and handler turn/control helpers into narrower internal modules.
 
 ### Fixed
+- Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
+- Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
+- Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.
 - Fixed Slack user group and Discord role resolution for approval admins.
 

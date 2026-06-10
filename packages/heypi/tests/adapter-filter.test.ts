@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { discordAllowed, discordTriggered } from "../src/io/discord.js";
-import { approvalBlocks, slack, slackAllowed, slackMessageSubtypeAllowed, slackTriggered } from "../src/io/slack.js";
-import { telegramAllowed, telegramTriggered } from "../src/io/telegram.js";
+import { discordAllowed, discordBotAllowed, discordTriggered } from "../src/io/discord.js";
+import {
+	approvalBlocks,
+	slack,
+	slackAllowed,
+	slackBotAllowed,
+	slackMessageSubtypeAllowed,
+	slackTriggered,
+} from "../src/io/slack.js";
+import { telegramAllowed, telegramBotAllowed, telegramTriggered } from "../src/io/telegram.js";
 
 test("Slack allowlists default to accepting delivered message events", () => {
 	assert.deepEqual(slackAllowed(undefined, { channel: "C1", user: "U1", isDm: false }), { ok: true });
@@ -70,7 +77,64 @@ test("Slack allows normal messages and file shares", () => {
 	assert.equal(slackMessageSubtypeAllowed(undefined), true);
 	assert.equal(slackMessageSubtypeAllowed("file_share"), true);
 	assert.equal(slackMessageSubtypeAllowed("message_changed"), false);
+	assert.equal(slackMessageSubtypeAllowed("message_changed", true), false);
 	assert.equal(slackMessageSubtypeAllowed("bot_message"), false);
+	assert.equal(slackMessageSubtypeAllowed("bot_message", true), true);
+});
+
+test("Slack bot allowlist defaults closed and supports explicit all bots", () => {
+	const self = { botId: "B_SELF" };
+	assert.equal(slackBotAllowed(undefined, { botId: "B_TEST" }, self), false);
+	assert.equal(slackBotAllowed([], { botId: "B_TEST" }, self), false);
+	assert.equal(slackBotAllowed(true, { botId: "B_TEST" }, self), true);
+	assert.equal(slackBotAllowed(["B_OTHER"], { botId: "B_TEST" }, self), false);
+	assert.equal(slackBotAllowed(["B_TEST"], { botId: "B_TEST" }, self), true);
+	assert.equal(slackBotAllowed(["A_TEST"], { appId: "A_TEST" }, self), true);
+	assert.equal(slackBotAllowed(["U_TEST"], { userId: "U_TEST" }, self), true);
+});
+
+test("Slack bot allowlist fails closed when the current Slack bot identity is unavailable", () => {
+	assert.equal(slackBotAllowed(true, { botId: "B_TEST" }, {}), false);
+	assert.equal(slackBotAllowed(["B_TEST"], { botId: "B_TEST" }, undefined), false);
+});
+
+test("Slack bot allowlist always rejects the current Slack bot identity", () => {
+	const self = { botId: "B_SELF", appId: "A_SELF", userId: "U_SELF" };
+	assert.equal(slackBotAllowed(true, { botId: "B_SELF" }, self), false);
+	assert.equal(slackBotAllowed(["A_SELF"], { appId: "A_SELF" }, self), false);
+	assert.equal(slackBotAllowed(["U_SELF"], { userId: "U_SELF" }, self), false);
+});
+
+test("Slack bot actor allow is separate from human users and groups", () => {
+	assert.deepEqual(
+		slackAllowed(
+			{ channels: ["C1"], users: ["U_HUMAN"], bots: true },
+			{
+				channel: "C1",
+				user: "U_BOT",
+				bot: { botId: "B_TEST", userId: "U_BOT" },
+				botSelf: { botId: "B_SELF" },
+				isDm: false,
+			},
+		),
+		{ ok: true },
+	);
+	assert.deepEqual(
+		slackAllowed(
+			{ channels: ["C1"], users: ["U_HUMAN"] },
+			{
+				channel: "C1",
+				user: "U_BOT",
+				bot: { botId: "B_TEST", userId: "U_BOT" },
+				botSelf: { botId: "B_SELF" },
+				isDm: false,
+			},
+		),
+		{ ok: false, reason: "actor_not_allowed" },
+	);
+	assert.deepEqual(slackAllowed({ channels: ["C1"], bots: true }, { channel: "C1", user: "U_HUMAN", isDm: false }), {
+		ok: true,
+	});
 });
 
 test("Slack HTTP mode requires a signing secret at runtime", () => {
@@ -129,6 +193,36 @@ test("Telegram allowlists reject mismatched dimensions and disabled DMs", () => 
 		reason: "dm_not_allowed",
 	});
 	assert.deepEqual(telegramAllowed({ chats: [-1001], dms: true }, { chat: "42", user: "42", isDm: true }), {
+		ok: true,
+	});
+});
+
+test("Telegram bot allowlist defaults closed, supports explicit bots, and rejects self", () => {
+	assert.equal(telegramBotAllowed(undefined, 43, 42), false);
+	assert.equal(telegramBotAllowed([], 43, 42), false);
+	assert.equal(telegramBotAllowed(true, 43, 42), true);
+	assert.equal(telegramBotAllowed([44], 43, 42), false);
+	assert.equal(telegramBotAllowed([43], 43, 42), true);
+	assert.equal(telegramBotAllowed(true, 42, 42), false);
+	assert.equal(telegramBotAllowed(true, 43, undefined), false);
+});
+
+test("Telegram bot actor allow is separate from users", () => {
+	assert.deepEqual(
+		telegramAllowed(
+			{ chats: [-1001], users: [42], bots: true },
+			{ chat: "-1001", user: "43", bot: "43", botSelf: 42, isDm: false },
+		),
+		{ ok: true },
+	);
+	assert.deepEqual(
+		telegramAllowed(
+			{ chats: [-1001], users: [42] },
+			{ chat: "-1001", user: "43", bot: "43", botSelf: 42, isDm: false },
+		),
+		{ ok: false, reason: "user_not_allowed" },
+	);
+	assert.deepEqual(telegramAllowed({ chats: [-1001], bots: true }, { chat: "-1001", user: "43", isDm: false }), {
 		ok: true,
 	});
 });
@@ -195,6 +289,36 @@ test("Discord allowlists reject mismatched dimensions and disabled DMs", () => {
 		reason: "dm disabled",
 	});
 	assert.deepEqual(discordAllowed({ channels: ["C1"], dms: true }, { channel: "D1", user: "U1", isDm: true }), {
+		ok: true,
+	});
+});
+
+test("Discord bot allowlist defaults closed, supports explicit bots, and rejects self", () => {
+	assert.equal(discordBotAllowed(undefined, "B_TEST", "B_SELF"), false);
+	assert.equal(discordBotAllowed([], "B_TEST", "B_SELF"), false);
+	assert.equal(discordBotAllowed(true, "B_TEST", "B_SELF"), true);
+	assert.equal(discordBotAllowed(["B_OTHER"], "B_TEST", "B_SELF"), false);
+	assert.equal(discordBotAllowed(["B_TEST"], "B_TEST", "B_SELF"), true);
+	assert.equal(discordBotAllowed(true, "B_SELF", "B_SELF"), false);
+	assert.equal(discordBotAllowed(true, "B_TEST", undefined), false);
+});
+
+test("Discord bot actor allow is separate from users and groups", () => {
+	assert.deepEqual(
+		discordAllowed(
+			{ channels: ["C1"], users: ["U_HUMAN"], bots: true },
+			{ channel: "C1", user: "B_TEST", bot: "B_TEST", botSelf: "B_SELF", isDm: false },
+		),
+		{ ok: true },
+	);
+	assert.deepEqual(
+		discordAllowed(
+			{ channels: ["C1"], users: ["U_HUMAN"] },
+			{ channel: "C1", user: "B_TEST", bot: "B_TEST", botSelf: "B_SELF", isDm: false },
+		),
+		{ ok: false, reason: "actor not allowed" },
+	);
+	assert.deepEqual(discordAllowed({ channels: ["C1"], bots: true }, { channel: "C1", user: "U_HUMAN", isDm: false }), {
 		ok: true,
 	});
 });

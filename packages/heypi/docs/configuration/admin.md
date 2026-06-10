@@ -69,7 +69,7 @@ Notes:
 Mint a fresh one-time admin login link:
 
 ```bash
-npx @hunvreus/heypi admin link
+heypi admin link
 ```
 
 When `@hunvreus/heypi` is installed locally in the app, you can also use:

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { PermissionsConfig, TaskConfig } from "../config.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
+import { clampLimit, clampOffset } from "../store/paging.js";
 import type { Approval, Call, Job, JobRun, Message, MessageWithThread, Thread, Turn } from "../store/types.js";
 
 type AdminPageInput = {
@@ -603,8 +604,8 @@ function compactDetails(input: Array<AdminActivityDetail | undefined>): AdminAct
 function pageInput(input: AdminPageInput): Pick<AdminPage<never>, "limit" | "offset"> {
 	const rawLimit = finitePageNumber(input.limit, DEFAULT_LIMIT);
 	const rawOffset = finitePageNumber(input.offset, 0);
-	const limit = Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_LIMIT);
-	const offset = Math.max(Math.trunc(rawOffset), 0);
+	const limit = clampLimit(Math.trunc(rawLimit), DEFAULT_LIMIT, MAX_LIMIT);
+	const offset = clampOffset(Math.trunc(rawOffset));
 	return { limit, offset };
 }
 

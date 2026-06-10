@@ -89,6 +89,67 @@ test("authorized approval executes the pending command", async () => {
 	);
 });
 
+test("bot actors cannot approve through zero-config fallback", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const denied = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "C1",
+			actor: "B_DEPLOY",
+		},
+		{ actorBot: true },
+	);
+
+	assert.equal(denied.private, true);
+	assert.match(denied.text, /not allowed/i);
+	assert.equal(approvals.rows[0].state, "pending");
+	assert.equal(calls.rows[0].state, "pending_approval");
+});
+
+test("explicit bot approvers can approve", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{ approvers: ["B_DEPLOY"] },
+		noLogger(),
+		undefined,
+		commandConfirm(),
+	);
+
+	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
+	const approved = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "C1",
+			actor: "B_DEPLOY",
+		},
+		{ actorBot: true },
+	);
+
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(approvals.rows[0].state, "approved");
+	assert.equal(approvals.rows[0].resolvedBy, "B_DEPLOY");
+});
+
 test("approval bypass skips confirmation in matching thread until revoked", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
@@ -589,7 +650,7 @@ test("expired approval logs approval.expired", async () => {
 
 	assert.equal(expired.private, true);
 	assert.match(expired.text, /expired/);
-	assert.equal(approvals.rows[0].state, "denied");
+	assert.equal(approvals.rows[0].state, "expired");
 	assert.equal(
 		events.some((event) => event.event === "approval.expired"),
 		true,
@@ -631,7 +692,7 @@ test("expired approval can replace the original approval surface", async () => {
 	assert.match(replacement, /Approval expired/);
 	assert.match(replacement, /curl https:\/\/example.com/);
 	assert.doesNotMatch(replacement, /Use the buttons below/);
-	assert.equal(approvals.rows[0].state, "denied");
+	assert.equal(approvals.rows[0].state, "expired");
 	assert.equal(calls.rows[0].state, "blocked");
 });
 
@@ -670,7 +731,7 @@ test("expired denial can replace the original approval surface", async () => {
 	assert.match(replacement, /Approval expired/);
 	assert.match(replacement, /curl https:\/\/example.com/);
 	assert.doesNotMatch(replacement, /Use the buttons below/);
-	assert.equal(approvals.rows[0].state, "denied");
+	assert.equal(approvals.rows[0].state, "expired");
 	assert.equal(calls.rows[0].state, "blocked");
 });
 
@@ -1018,7 +1079,7 @@ class FakeApprovals implements Approvals {
 
 	async resolve(
 		id: string,
-		state: "approved" | "denied",
+		state: "approved" | "denied" | "expired",
 		actor: string,
 		input: { agent?: string } = {},
 	): Promise<boolean> {

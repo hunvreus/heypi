@@ -27,6 +27,22 @@ import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 const VERSION = packageVersion();
 
 type Flags = Record<string, string | number | boolean>;
+type SlackMode = "socket" | "http";
+
+const slackModes = ["socket", "http"] as const;
+const slackBotScopes = [
+	"app_mentions:read",
+	"channels:history",
+	"channels:read",
+	"chat:write",
+	"chat:write.public",
+	"files:read",
+	"files:write",
+	"im:history",
+	"reactions:write",
+	"usergroups:read",
+] as const;
+const slackBotEvents = ["app_mention", "message.channels", "message.im"] as const;
 
 async function main(): Promise<void> {
 	const cli = buildCli();
@@ -64,6 +80,7 @@ function buildCli() {
 		.option("--bot-token <token>", "Slack bot token")
 		.option("--app-token <token>", "Slack app token")
 		.option("--signing-secret <secret>", "Slack signing secret")
+		.option("--mode <mode>", "Slack transport: socket or http")
 		.option("--url <url>", "Slack events URL")
 		.option("--private", "Include private channels visible to the bot")
 		.action((action: string, flags: Flags) =>
@@ -190,23 +207,70 @@ async function slackCheck(flags: Flags): Promise<void> {
 	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
 	const appToken = optionalSecret(flags, "app-token", "SLACK_APP_TOKEN");
 	const signingSecret = optionalSecret(flags, "signing-secret", "SLACK_SIGNING_SECRET");
+	const mode = optionalSlackMode(flags);
 	const auth = await slackCall<{ ok: boolean; team?: string; user?: string; bot_id?: string }>(token, "auth.test", {});
 	line(ok(`Slack auth ok: team=${auth.team ?? "?"} user=${auth.user ?? "?"} bot=${auth.bot_id ?? "?"}`));
-	line(
-		signingSecret
-			? ok("SLACK_SIGNING_SECRET present")
-			: warn("SLACK_SIGNING_SECRET missing; required only for HTTP mode"),
-	);
-	line(
-		appToken
-			? ok("SLACK_APP_TOKEN present for Socket Mode")
-			: warn("SLACK_APP_TOKEN missing; needed only for Socket Mode"),
-	);
+	if (mode === "http" || mode === undefined) {
+		line(
+			signingSecret
+				? ok("SLACK_SIGNING_SECRET present")
+				: warn(
+						mode === "http"
+							? "SLACK_SIGNING_SECRET missing"
+							: "SLACK_SIGNING_SECRET missing; required only for HTTP mode",
+					),
+		);
+	}
+	if (mode === "socket" || mode === undefined) {
+		line(
+			appToken
+				? ok("SLACK_APP_TOKEN present for Socket Mode")
+				: warn(
+						mode === "socket"
+							? "SLACK_APP_TOKEN missing"
+							: "SLACK_APP_TOKEN missing; needed only for Socket Mode",
+					),
+		);
+	}
 }
 
 function slackManifest(flags: Flags): void {
+	const mode = requiredSlackMode(flags);
 	const url = stringFlag(flags, "url") ?? "https://example.com/slack/slack/events";
-	line(`display_information:
+	line(slackManifestYaml(mode, url));
+}
+
+function optionalSlackMode(flags: Flags): SlackMode | undefined {
+	const mode = stringFlag(flags, "mode");
+	if (!mode) return undefined;
+	if ((slackModes as readonly string[]).includes(mode)) return mode as SlackMode;
+	throw new Error(`Invalid --mode: ${mode}. Expected one of: ${slackModes.join(", ")}`);
+}
+
+function requiredSlackMode(flags: Flags): SlackMode {
+	const mode = optionalSlackMode(flags);
+	if (!mode) throw new Error("Missing --mode. Use --mode socket or --mode http.");
+	return mode;
+}
+
+function slackManifestYaml(mode: SlackMode, url: string): string {
+	const settings =
+		mode === "socket"
+			? `  event_subscriptions:
+    bot_events:
+${yamlList(slackBotEvents, 6)}
+  interactivity:
+    is_enabled: true
+  socket_mode_enabled: true`
+			: `  event_subscriptions:
+    request_url: ${url}
+    bot_events:
+${yamlList(slackBotEvents, 6)}
+  interactivity:
+    is_enabled: true
+    request_url: ${url}
+  socket_mode_enabled: false`;
+	return `display_information:
   name: heypi
 features:
   bot_user:
@@ -215,31 +279,22 @@ features:
 oauth_config:
   scopes:
     bot:
-      - app_mentions:read
-      - channels:history
-      - channels:read
-      - chat:write
-      - chat:write.public
-      - files:read
-      - files:write
-      - im:history
-      - reactions:write
+${yamlList(slackBotScopes, 6)}
 settings:
-  event_subscriptions:
-    request_url: ${url}
-    bot_events:
-      - app_mention
-      - message.channels
-      - message.im
-  interactivity:
-    is_enabled: true
-    request_url: ${url}
-  socket_mode_enabled: false`);
+${settings}
+  org_deploy_enabled: false
+  token_rotation_enabled: false`;
+}
+
+function yamlList(values: readonly string[], spaces: number): string {
+	const indent = " ".repeat(spaces);
+	return values.map((value) => `${indent}- ${value}`).join("\n");
 }
 
 function slackEnv(): void {
 	line(`SLACK_BOT_TOKEN=<slack-bot-token>
-SLACK_APP_TOKEN=<slack-app-token> # Socket Mode only`);
+SLACK_APP_TOKEN=<slack-app-token> # Socket Mode only
+SLACK_SIGNING_SECRET=<slack-signing-secret> # HTTP mode only`);
 }
 
 async function slackChannelsList(flags: Flags): Promise<void> {
@@ -543,8 +598,9 @@ Usage:
   heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
   heypi db check --db ./state/heypi.db
   heypi db migrate --db ./state/heypi.db
-  heypi slack check [--env .env]
-  heypi slack manifest [--url https://host/slack/slack/events]
+  heypi slack check [--env .env] [--mode socket|http]
+  heypi slack manifest --mode socket
+  heypi slack manifest --mode http --url https://host/slack/slack/events
   heypi slack channels [--env .env] [--private]
   heypi slack env
   heypi telegram check [--env .env]

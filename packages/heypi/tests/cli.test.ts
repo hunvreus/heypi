@@ -89,6 +89,26 @@ test("cli check loads .env by default", async () => {
 	}
 });
 
+test("cli prints Slack manifests by explicit mode", () => {
+	const socket = cli(["slack", "manifest", "--mode", "socket"]);
+	assert.match(socket, /socket_mode_enabled: true/);
+	assert.doesNotMatch(socket, /request_url:/);
+	assert.match(socket, /channels:read/);
+	assert.match(socket, /usergroups:read/);
+	assert.doesNotMatch(socket, /groups:history/);
+
+	const http = cli(["slack", "manifest", "--mode", "http", "--url", "https://agent.example.com/slack/slack/events"]);
+	assert.match(http, /socket_mode_enabled: false/);
+	assert.match(http, /request_url: https:\/\/agent\.example\.com\/slack\/slack\/events/);
+	assert.match(http, /channels:read/);
+	assert.match(http, /usergroups:read/);
+	assert.doesNotMatch(http, /groups:history/);
+});
+
+test("cli requires Slack manifest mode", () => {
+	assert.throws(() => cli(["slack", "manifest"]), /Missing --mode/);
+});
+
 test("cli db migrate and jobs commands operate on sqlite store", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-jobs-"));
 	try {

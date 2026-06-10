@@ -158,6 +158,7 @@ test("handler returns public busy reply when a thread lock is held without an ac
 		assert.equal(out?.private, undefined);
 		assert.equal(out?.finalPlacement, "thread");
 		assert.equal(out?.text, "Thread is busy.");
+		assert.deepEqual(await store.messages.listForThread(thread.id), []);
 	} finally {
 		await db.cleanup();
 	}

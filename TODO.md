@@ -56,11 +56,19 @@
 - Add guided setup CLI.
 	- `heypi init` should scaffold local app files, `.env.example`, agent folder, workspace folder, and provider snippets.
 	- Keep provider-specific helpers such as Slack manifest generation separate from local app scaffolding.
+- Review cleanup candidates before implementation.
+	- Add shared test helpers for repeated temp roots, temp SQLite stores, cleanup, fake agents, fake runtimes, fake delivery queues, and common adapter assertions.
+	- Add focused runtime file-tool tests before changing runtime behavior: read offsets, write limits, edit uniqueness, grep scan/file limits, find patterns, symlink/path escape behavior, aborts, and binary/large-file failures.
+	- Add focused adapter tests before changing adapter behavior: progress update/stop behavior, skipped first chunks after streaming/progress, private replies, stale approvals, approval replacement, attachments, and provider-specific mention handling.
+	- Split `create-heypi/src/index.ts` only when touching scaffolder generation or when file size blocks maintenance.
 - Extend approval policy controls.
 	- Add chat/admin listing for active approval bypasses.
 	- Add durable exact allow rules for known-safe tool calls, with a way to list and revoke them.
 	- Show effective approval policy in admin/CLI, including adapter-scoped approvers, admins, expiry, active bypasses, durable allow entries, and command/tool confirmation rules.
 	- Bind approvals to the exact tool call input before execution; include tool name, params hash, runtime scope, and bash cwd/env where applicable.
+- Review bot-to-bot loop controls.
+	- `allow.bots` permits peer bot messages; heypi drops its own bot identity but does not prevent chains where another bot auto-replies to heypi output.
+	- Consider provider-specific loop metadata, hop/depth limits, or cooldowns only if real integrations show loops.
 - Add more adapters.
   - Teams.
   - Email.

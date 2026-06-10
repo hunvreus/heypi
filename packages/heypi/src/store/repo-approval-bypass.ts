@@ -3,8 +3,8 @@ import { and, desc, eq, gt, isNull, like, or, type SQL } from "drizzle-orm";
 import type { ApprovalBypassScope } from "../config.js";
 import { approvalBypass } from "../db/schema.js";
 import type { Db } from "./db.js";
-
-export type ApprovalBypassRow = typeof approvalBypass.$inferSelect;
+import { clampLimit, clampOffset } from "./paging.js";
+import type { ApprovalBypass } from "./types.js";
 
 export class ApprovalBypassRepo {
 	constructor(private readonly db: Db) {}
@@ -19,7 +19,7 @@ export class ApprovalBypassRepo {
 		reason?: string;
 		approvalId?: string;
 		expiresAt: number;
-	}): Promise<ApprovalBypassRow> {
+	}): Promise<ApprovalBypass> {
 		const id = randomUUID();
 		const now = Date.now();
 		await this.db.insert(approvalBypass).values({
@@ -46,7 +46,7 @@ export class ApprovalBypassRepo {
 		threadId?: string;
 		actor?: string;
 		now?: number;
-	}): Promise<ApprovalBypassRow | undefined> {
+	}): Promise<ApprovalBypass | undefined> {
 		const now = input.now ?? Date.now();
 		const adapter = input.channel.split(":")[0] ?? input.channel;
 		const filters: SQL[] = [
@@ -71,7 +71,7 @@ export class ApprovalBypassRepo {
 
 	async listActive(
 		input: { agent?: string; limit?: number; offset?: number; now?: number } = {},
-	): Promise<ApprovalBypassRow[]> {
+	): Promise<ApprovalBypass[]> {
 		const filters: SQL[] = [gt(approvalBypass.expiresAt, input.now ?? Date.now()), isNull(approvalBypass.revokedAt)];
 		if (input.agent) filters.push(eq(approvalBypass.agent, input.agent));
 		return await this.db
@@ -79,8 +79,8 @@ export class ApprovalBypassRepo {
 			.from(approvalBypass)
 			.where(and(...filters))
 			.orderBy(desc(approvalBypass.expiresAt))
-			.limit(Math.min(Math.max(input.limit ?? 50, 1), 500))
-			.offset(Math.max(input.offset ?? 0, 0));
+			.limit(clampLimit(input.limit, 50, 500))
+			.offset(clampOffset(input.offset));
 	}
 
 	async revoke(id: string, actor: string, input: { agent?: string } = {}): Promise<boolean> {
@@ -94,7 +94,7 @@ export class ApprovalBypassRepo {
 		return rows.length === 1;
 	}
 
-	private async get(id: string): Promise<ApprovalBypassRow | undefined> {
+	private async get(id: string): Promise<ApprovalBypass | undefined> {
 		const rows = await this.db.select().from(approvalBypass).where(eq(approvalBypass.id, id)).limit(1);
 		return rows[0];
 	}

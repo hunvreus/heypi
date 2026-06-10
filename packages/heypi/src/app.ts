@@ -100,6 +100,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		http: httpConfig,
 		approval: config.approval,
 		approvalActorsConfigured: hasActorPolicy(approvalActors),
+		botInputAdapters: config.adapters.filter((adapter) => adapter.acceptsBots).map((adapter) => adapter.name),
 		bashEnabled: agentTools.core.some((tool) => tool.name === "bash"),
 		confirmedCustomTools: agentTools.custom.filter((tool) => toolConfirm(tool)).map((tool) => tool.name),
 	});
@@ -415,6 +416,7 @@ function warnSecurityPosture(input: {
 	http: Required<HttpConfig>;
 	approval: HeypiConfig["approval"];
 	approvalActorsConfigured: boolean;
+	botInputAdapters: string[];
 	bashEnabled: boolean;
 	confirmedCustomTools: string[];
 }): void {
@@ -440,6 +442,18 @@ function warnSecurityPosture(input: {
 			tools: input.confirmedCustomTools.join(","),
 			reason:
 				"without adapter permissions approvers or admins, approval visibility controls who can approve risky calls",
+		});
+	}
+	if (
+		input.botInputAdapters.length > 0 &&
+		!input.approvalActorsConfigured &&
+		(input.bashEnabled || input.confirmedCustomTools.length > 0)
+	) {
+		input.logger.warn("security.bot_approvers_missing", {
+			agent: input.agent,
+			adapters: input.botInputAdapters.join(","),
+			reason:
+				"allow.bots accepts bot messages, but bots cannot resolve approvals unless explicitly listed in adapter permissions",
 		});
 	}
 }
@@ -620,11 +634,28 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 	}
 	let locks = 0;
 	for (const threadId of recoveredThreads) {
-		locks += (await input.store.locks?.clear?.({ key: `thread:${threadId}` })) ?? 0;
+		if (!input.store.locks?.clear) {
+			input.logger.warn("app.recovery_locks_unsupported", {
+				agent: input.agent,
+				threads: recoveredThreads.size,
+			});
+			break;
+		}
+		locks += await input.store.locks.clear({ key: `thread:${threadId}` });
 	}
 	if (locks) input.logger.warn("app.recovered_locks", { agent: input.agent, locks });
-	const calls = await input.store.calls.failRunning?.({ agent: input.agent, error: restartMessage });
-	if (calls) input.logger.warn("app.recovered_calls", { agent: input.agent, calls });
-	const jobRuns = await input.store.jobRuns?.failRunning?.({ agent: input.agent, error: restartMessage });
-	if (jobRuns) input.logger.warn("app.recovered_job_runs", { agent: input.agent, jobRuns });
+	if (input.store.calls.failRunning) {
+		const calls = await input.store.calls.failRunning({ agent: input.agent, error: restartMessage });
+		if (calls) input.logger.warn("app.recovered_calls", { agent: input.agent, calls });
+	} else {
+		input.logger.warn("app.recovery_calls_unsupported", { agent: input.agent });
+	}
+	if (input.store.jobRuns) {
+		if (input.store.jobRuns.failRunning) {
+			const jobRuns = await input.store.jobRuns.failRunning({ agent: input.agent, error: restartMessage });
+			if (jobRuns) input.logger.warn("app.recovered_job_runs", { agent: input.agent, jobRuns });
+		} else {
+			input.logger.warn("app.recovery_job_runs_unsupported", { agent: input.agent });
+		}
+	}
 }

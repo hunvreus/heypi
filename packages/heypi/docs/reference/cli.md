@@ -4,6 +4,8 @@ The `heypi` CLI ships with `@hunvreus/heypi`. Use it to check local setup, disco
 
 ## Entrypoint
 
+Examples use `heypi`. If it is not on `PATH`, run it through your package manager:
+
 ```bash
 pnpm exec heypi <command>
 npm exec heypi -- <command>
@@ -66,7 +68,7 @@ Runs local setup checks. Without optional flags, it checks Node and `OPENAI_API_
 Example:
 
 ```bash
-npx @hunvreus/heypi check --env .env --db ./state/heypi.db --runtime-root ./workspace
+heypi check --env .env --db ./state/heypi.db --runtime-root ./workspace
 ```
 
 ## heypi db
@@ -88,22 +90,23 @@ heypi db migrate --db ./state/heypi.db
 Run migrations during deploy before starting the app:
 
 ```bash
-npx @hunvreus/heypi db migrate --db ./state/heypi.db
+heypi db migrate --db ./state/heypi.db
 ```
 
 ## heypi slack
 
 ```bash
-heypi slack check [--env .env] [--bot-token <token>] [--app-token <token>] [--signing-secret <secret>]
-heypi slack manifest [--url https://host/slack/slack/events]
+heypi slack check [--env .env] [--mode socket|http] [--bot-token <token>] [--app-token <token>] [--signing-secret <secret>]
+heypi slack manifest --mode socket
+heypi slack manifest --mode http --url https://host/slack/slack/events
 heypi slack channels [--env .env] [--bot-token <token>] [--private]
 heypi slack env
 ```
 
 | Subcommand | Description |
 | --- | --- |
-| `check` | Verifies Slack bot auth and reports Socket Mode and HTTP secret presence. |
-| `manifest` | Prints a starter HTTP-mode Slack app manifest. |
+| `check` | Verifies Slack bot auth and reports Socket Mode or HTTP secret presence. |
+| `manifest` | Prints a starter Slack app manifest for Socket Mode or HTTP mode. |
 | `channels` | Lists visible Slack channel IDs and prints `targets` snippets. |
 | `env` | Prints expected Slack environment variables. |
 
@@ -113,14 +116,16 @@ heypi slack env
 | `--bot-token <token>` | `check`, `channels` | Use instead of `SLACK_BOT_TOKEN`. |
 | `--app-token <token>` | `check` | Use instead of `SLACK_APP_TOKEN`. Needed only for Socket Mode. |
 | `--signing-secret <secret>` | `check` | Use instead of `SLACK_SIGNING_SECRET`. Needed only for HTTP mode. |
-| `--url <url>` | `manifest` | Event and interactivity request URL. |
+| `--mode socket\|http` | `check`, `manifest` | Select Slack transport mode. Required for `manifest`; optional for `check`. |
+| `--url <url>` | `manifest` | Event and interactivity request URL for HTTP mode. |
 | `--private` | `channels` | Include private channels visible to the bot. |
 
 Examples:
 
 ```bash
-npx @hunvreus/heypi slack manifest --url https://agent.example.com/slack/slack/events
-npx @hunvreus/heypi slack channels --env .env --private
+heypi slack manifest --mode socket
+heypi slack manifest --mode http --url https://agent.example.com/slack/slack/events
+heypi slack channels --env .env --private
 ```
 
 ## heypi telegram
@@ -144,7 +149,7 @@ heypi telegram observe [--env .env] [--token <token>] [--timeout 60]
 Telegram cannot enumerate chats. Send `/start` to the bot, or post in the target group/channel, then run:
 
 ```bash
-npx @hunvreus/heypi telegram observe --env .env
+heypi telegram observe --env .env
 ```
 
 `observe` deletes any active webhook for the token before polling. Do not run it next to another long-polling process for the same bot.
@@ -177,8 +182,8 @@ heypi discord env
 Examples:
 
 ```bash
-npx @hunvreus/heypi discord invite --client-id <application-id>
-npx @hunvreus/heypi discord observe --env .env
+heypi discord invite --client-id <application-id>
+heypi discord observe --env .env
 ```
 
 ## heypi admin
@@ -202,7 +207,7 @@ Mints a short-lived one-time admin login URL from local admin state.
 Example:
 
 ```bash
-npx @hunvreus/heypi admin link --state ./state --url https://agent.example.com
+heypi admin link --state ./state --url https://agent.example.com
 ```
 
 ## heypi approvals
@@ -255,7 +260,7 @@ heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
 Example:
 
 ```bash
-npx @hunvreus/heypi jobs run daily-report --db ./state/heypi.db --agent ops
+heypi jobs run daily-report --db ./state/heypi.db --agent ops
 ```
 
 ## Help and version

@@ -62,6 +62,7 @@ export type SlackAllow = {
 	channels?: string[];
 	users?: string[];
 	groups?: string[];
+	bots?: true | string[];
 	dms?: boolean;
 };
 
@@ -81,11 +82,13 @@ export function slack(input: SlackConfig): Adapter {
 	let activeLogger: Logger | undefined;
 	let delivery = new DeliveryQueue(input.delivery);
 	let botUserId: string | undefined;
+	let botIdentity: SlackBotIdentity = {};
 
 	return {
 		name,
 		kind,
 		permissions: input.permissions,
+		acceptsBots: botsConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			const { handler, logger: log } = start;
 			activeLogger = log;
@@ -109,7 +112,8 @@ export function slack(input: SlackConfig): Adapter {
 				log,
 			);
 			app = bolt;
-			botUserId = await slackBotUserId(bolt.client, log);
+			botIdentity = await slackBotIdentity(bolt.client, log);
+			botUserId = botIdentity.userId;
 			bolt.action(APPROVE, async ({ ack, body, action, client }) => {
 				await ack();
 				await handleAction({
@@ -185,24 +189,42 @@ export function slack(input: SlackConfig): Adapter {
 					channel?: string;
 					channel_type?: string;
 					user?: string;
+					app_id?: string;
 					text?: string;
 					client_msg_id?: string;
 					ts?: string;
 					thread_ts?: string;
 					files?: SlackFile[];
 				};
-				if (!slackMessageSubtypeAllowed(msg.subtype) || msg.bot_id) return;
+				const bot = slackBotSender(msg, botIdentity);
 				const channel = msg.channel ?? "unknown";
 				const team = slackTeam(body) ?? msg.team;
 				const mode = input.reply ?? "thread";
 				const reply = target(mode, msg);
 				const trace = msg.client_msg_id ?? msg.ts;
 				const context = (extra?: Record<string, unknown>) => logCtx({ trace, adapter: name, kind, channel }, extra);
-				const actorGroups = await groups.forUser(client, msg.user);
+				if (!slackMessageSubtypeAllowed(msg.subtype, Boolean(bot))) {
+					log.debug(
+						"adapter.drop",
+						context({ actor: msg.user, reason: "subtype_not_allowed", subtype: msg.subtype }),
+					);
+					return;
+				}
+				if (bot && !slackBotAllowed(input.allow?.bots, bot, botIdentity)) {
+					log.debug(
+						"adapter.drop",
+						context({ actor: msg.user ?? bot.botId ?? bot.appId, reason: "bot_not_allowed" }),
+					);
+					return;
+				}
+				const actor = slackActor(msg, bot);
+				const actorGroups = bot ? [] : await groups.forUser(client, msg.user);
 				const allow = slackAllowed(input.allow, {
 					channel,
 					user: msg.user,
 					groups: actorGroups,
+					bot,
+					botSelf: botIdentity,
 					isDm: slackDm(msg),
 				});
 				if (!allow.ok) {
@@ -237,7 +259,7 @@ export function slack(input: SlackConfig): Adapter {
 					"adapter.receive",
 					context({
 						thread: msg.thread_ts,
-						actor: msg.user,
+						actor,
 						actorGroups,
 						event: msg.client_msg_id ?? msg.ts,
 					}),
@@ -289,8 +311,9 @@ export function slack(input: SlackConfig): Adapter {
 						eventId: msg.client_msg_id ?? msg.ts,
 						team,
 						channel,
-						actor: msg.user ?? "unknown",
+						actor,
 						actorGroups,
+						actorBot: Boolean(bot),
 						thread: threadKey(input.reply ?? "thread", msg),
 						text: msg.text ?? "",
 						data: { channel: msg.channel, ts: msg.ts, thread_ts: msg.thread_ts, files: msg.files },
@@ -864,17 +887,23 @@ function shouldReact(mode: SlackReply, msg: { channel?: string; ts?: string; thr
 	return mode === "thread" && !msg.channel?.startsWith("D") && !msg.thread_ts && !!msg.ts;
 }
 
-export function slackMessageSubtypeAllowed(subtype: string | undefined): boolean {
-	return subtype === undefined || subtype === "file_share";
+export function slackMessageSubtypeAllowed(subtype: string | undefined, bot = false): boolean {
+	return subtype === undefined || subtype === "file_share" || (bot && subtype === "bot_message");
 }
 
-async function slackBotUserId(client: SlackClient, logger: Logger): Promise<string | undefined> {
+export type SlackBotIdentity = {
+	botId?: string;
+	appId?: string;
+	userId?: string;
+};
+
+async function slackBotIdentity(client: SlackClient, logger: Logger): Promise<SlackBotIdentity> {
 	try {
-		const out = (await client.auth.test()) as { user_id?: string };
-		return out.user_id;
+		const out = (await client.auth.test()) as { bot_id?: string; app_id?: string; user_id?: string };
+		return { botId: out.bot_id, appId: out.app_id, userId: out.user_id };
 	} catch (error) {
 		logger.warn("slack.auth_test_failed", { adapter: "slack", error: errorMessage(error) });
-		return undefined;
+		return {};
 	}
 }
 
@@ -883,12 +912,25 @@ function slackDm(msg: { channel?: string; channel_type?: string }): boolean {
 }
 
 function slackAllowConfigured(allow: SlackAllow | undefined): boolean {
-	return Boolean(allow?.channels?.length || allow?.users?.length || allow?.groups?.length || allow?.dms === false);
+	return Boolean(
+		allow?.channels?.length ||
+			allow?.users?.length ||
+			allow?.groups?.length ||
+			botsConfigured(allow?.bots) ||
+			allow?.dms === false,
+	);
 }
 
 export function slackAllowed(
 	allow: SlackAllow | undefined,
-	event: { channel?: string; user?: string; groups?: string[]; isDm: boolean },
+	event: {
+		channel?: string;
+		user?: string;
+		groups?: string[];
+		bot?: SlackBotIdentity;
+		botSelf?: SlackBotIdentity;
+		isDm: boolean;
+	},
 ): { ok: true } | { ok: false; reason: string } {
 	return allowByDimensions({
 		dms: allow?.dms,
@@ -902,15 +944,65 @@ export function slackAllowed(
 }
 
 function actorAllowlist(allow: SlackAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length) return undefined;
+	if (!allow?.users?.length && !allow?.groups?.length && !botsConfigured(allow?.bots)) return undefined;
 	return ["allowed"];
 }
 
-function actorValue(allow: SlackAllow | undefined, event: { user?: string; groups?: string[] }): string | undefined {
+function actorValue(
+	allow: SlackAllow | undefined,
+	event: { user?: string; groups?: string[]; bot?: SlackBotIdentity; botSelf?: SlackBotIdentity },
+): string | undefined {
+	if (event.bot) return slackBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
 	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
 	if (event.user && allow.users?.includes(event.user)) return "allowed";
 	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
 	return undefined;
+}
+
+export function slackBotAllowed(
+	allow: SlackAllow["bots"] | undefined,
+	bot: SlackBotIdentity,
+	self: SlackBotIdentity | undefined,
+): boolean {
+	if (!slackBotSelfKnown(self)) return false;
+	if (slackSameBot(bot, self)) return false;
+	if (allow === true) return true;
+	if (!Array.isArray(allow) || allow.length === 0) return false;
+	const ids = [bot.botId, bot.appId, bot.userId].filter((id): id is string => Boolean(id));
+	return ids.some((id) => allow.includes(id));
+}
+
+function botsConfigured(bots: SlackAllow["bots"] | undefined): boolean {
+	return bots === true || (Array.isArray(bots) && bots.length > 0);
+}
+
+function slackBotSelfKnown(self: SlackBotIdentity | undefined): self is SlackBotIdentity {
+	return Boolean(self?.botId || self?.appId || self?.userId);
+}
+
+function slackBotSender(
+	msg: {
+		subtype?: string;
+		bot_id?: string;
+		app_id?: string;
+		user?: string;
+	},
+	self: SlackBotIdentity = {},
+): SlackBotIdentity | undefined {
+	if (msg.subtype !== "bot_message" && !msg.bot_id && !msg.app_id && msg.user !== self.userId) return undefined;
+	return { botId: msg.bot_id, appId: msg.app_id, userId: msg.user };
+}
+
+function slackSameBot(input: SlackBotIdentity, other: SlackBotIdentity): boolean {
+	return Boolean(
+		(input.botId && input.botId === other.botId) ||
+			(input.appId && input.appId === other.appId) ||
+			(input.userId && input.userId === other.userId),
+	);
+}
+
+function slackActor(msg: { user?: string }, bot?: SlackBotIdentity): string {
+	return msg.user ?? bot?.botId ?? bot?.appId ?? "unknown";
 }
 
 export function slackTriggered(

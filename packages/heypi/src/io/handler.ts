@@ -1,25 +1,38 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ApprovalPolicy, CancelPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
+import type { ApprovalPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
-import { actorAllowed, actorMatches, hasActorPolicy } from "../core/approvers.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
 import { type Logger, logError, logger, message, redact, userError } from "../core/log.js";
 import type { Memory, NormalizedMemoryConfig } from "../core/memory.js";
-import { type AppMessages, DEFAULT_APP_MESSAGES, renderMessage } from "../core/messages.js";
-import type { ScopedKey, TurnScope } from "../core/scope.js";
-import { resolveScope, selectScope } from "../core/scope.js";
+import { type AppMessages, DEFAULT_APP_MESSAGES } from "../core/messages.js";
+import type { ScopedKey } from "../core/scope.js";
 import { isSecretReply, type Secrets } from "../core/secrets.js";
 import type { NormalizedSkillsConfig } from "../core/skills.js";
-import type { ApprovalPrompt, ApprovalResolution, Intent, ReplyAttachment } from "../core/types.js";
+import type { ApprovalPrompt, ApprovalResolution, ReplyAttachment } from "../core/types.js";
 import type { Agent } from "../runtime/agent.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import { transaction } from "../store/transaction.js";
-import { continueTool, saveReply } from "../store/transcript.js";
+import { continueTool } from "../store/transcript.js";
 import type { Store } from "../store/types.js";
 import { type Attachment, type AttachmentStore, attachmentPrompt } from "./attachments.js";
+import {
+	actorMention,
+	approvalVisible,
+	attributedMessage,
+	type CallIntent,
+	canCancelRun,
+	cancelText,
+	canListApprovals,
+	normalizeTask,
+	requiresThreadLock,
+	scopedIntent,
+} from "./handler-control.js";
+import { resolveTurnScope, channelKey as scopedChannelKey } from "./handler-scope.js";
+import { completeSecretReply } from "./handler-secret.js";
+import { finishReplyTurn, finishSilentTurn, finishSystemTurn, type TurnContext } from "./handler-turn.js";
 import type { ReplyStream } from "./reply-stream.js";
 
 export type Inbound = {
@@ -33,6 +46,7 @@ export type Inbound = {
 	actor: string;
 	actorName?: string;
 	actorGroups?: string[];
+	actorBot?: boolean;
 	thread: string;
 	threadName?: string;
 	text: string;
@@ -114,6 +128,7 @@ export interface Adapter {
 	name: string;
 	kind: string;
 	permissions?: PermissionsConfig;
+	acceptsBots?: boolean;
 	start(input: AdapterStart): Promise<void>;
 	ready?(input: AdapterStart): Promise<void>;
 	send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
@@ -143,20 +158,6 @@ export type AdapterTarget = {
 	mode?: "channel" | "thread" | "dm";
 };
 
-type HandlerBase = {
-	trace: string;
-	agent: string;
-	provider: string;
-	channel: string;
-	thread: string;
-	turn: string;
-	message: string;
-	actor: string;
-	actorGroups?: string[];
-	runtimeScope?: string;
-	approval?: ApprovalPolicy;
-};
-
 /** Creates the provider-neutral handler shared by Slack, Telegram, and future adapters. */
 export function createHandler(input: {
 	agentId?: string;
@@ -181,22 +182,19 @@ export function createHandler(input: {
 	const active = input.active ?? new ActiveRuns();
 	const task = normalizeTask(input.task);
 	const messages = input.messages ?? DEFAULT_APP_MESSAGES;
-	const scopeFor = (msg: Pick<Inbound, "provider" | "kind" | "team" | "channel" | "actor">): TurnScope => {
-		const keys = resolveScope({
+	const scopeFor = (msg: Pick<Inbound, "provider" | "kind" | "team" | "channel" | "actor">) =>
+		resolveTurnScope({
 			agent: agentId,
 			provider: msg.provider,
 			kind: msg.kind ?? msg.provider,
 			team: msg.team,
 			channel: msg.channel,
 			actor: msg.actor,
+			scope: input.scope,
+			runtimeScope: input.runtimeScope,
+			memoryScope: input.memoryScope,
+			skillsScope: input.skillsScope,
 		});
-		return {
-			workspace: selectScope(keys, input.runtimeScope ?? input.scope),
-			memory: selectScope(keys, input.memoryScope ?? input.scope),
-			skills: selectScope(keys, input.skillsScope ?? input.scope),
-			keys,
-		};
-	};
 	const handle: Handler = async (msg) => {
 		const trace = msg.trace ?? randomUUID();
 		const rawText = normalizeText(msg.text);
@@ -230,35 +228,19 @@ export function createHandler(input: {
 		});
 		const turnScope = scopeFor(msg);
 		if (isSecretReply(rawText)) {
-			try {
-				const secrets = input.secrets;
-				if (!secrets) return { text: "Secret request expired, invalid, or for another scope.", private: true };
-				const completed = secrets.complete(rawText, turnScope.workspace);
-				if (!completed) return { text: "Secret request expired, invalid, or for another scope.", private: true };
-				const runtime = input.runtime?.(turnScope.workspace.path);
-				const paths = await secrets.save(completed, runtime);
-				log.info("secret.saved", {
-					trace,
-					agent: agentId,
-					provider: msg.provider,
-					channel: msg.channel,
-					thread: thread.id,
-					actor: msg.actor,
-					fields: completed.files.map((file) => file.name).join(","),
-				});
-				return { text: `Secret saved: ${paths.join(", ")}`, private: true };
-			} catch (error) {
-				logError(log, "handler", {
-					trace,
-					agent: agentId,
-					provider: msg.provider,
-					channel: msg.channel,
-					thread: thread.id,
-					actor: msg.actor,
-					error: message(error),
-				});
-				return { text: "Secret could not be saved. Request a fresh secret link and try again.", private: true };
-			}
+			return completeSecretReply({
+				rawText,
+				secrets: input.secrets,
+				runtime: input.runtime,
+				scope: turnScope.workspace,
+				trace,
+				agent: agentId,
+				provider: msg.provider,
+				channel: msg.channel,
+				thread,
+				actor: msg.actor,
+				log,
+			});
 		}
 		const lockKey = `thread:${thread.id}`;
 		const lockOwner = `${trace}:${randomUUID()}`;
@@ -268,7 +250,7 @@ export function createHandler(input: {
 			if (!target || target.threadId !== thread.id) return cancelReply("not_found", messages);
 			if (!canCancelRun(task.cancel, input.approval, msg, target.actor))
 				return cancelReply("unauthorized", messages);
-			return cancelReply(active.cancel(intent.id, actorLabel(msg)), messages);
+			return cancelReply(active.cancel(intent.id, actorMention(msg)), messages);
 		}
 		if (intent.kind === "approvals") {
 			if (!canListApprovals(input.approval, msg)) {
@@ -298,7 +280,7 @@ export function createHandler(input: {
 			});
 		}
 		const shouldLock = requiresThreadLock(intent.kind) && input.store.locks !== undefined;
-		const lock = shouldLock
+		let lock = shouldLock
 			? await input.store.locks?.acquire({ key: lockKey, owner: lockOwner, ttlMs: input.lockMs })
 			: undefined;
 		if (shouldLock && !lock) {
@@ -310,19 +292,7 @@ export function createHandler(input: {
 				thread: msg.thread,
 				event: msg.eventId,
 			});
-			if (intent.kind === "ask" && task.busy !== "reject" && active.has(lockKey)) {
-				const created = await input.store.messages.createOnce({
-					threadId: thread.id,
-					provider: msg.provider,
-					kind: msg.kind ?? msg.provider,
-					providerEventId: msg.eventId,
-					role: "user",
-					actor: msg.actor,
-					text: messageText,
-					data: JSON.stringify(data(msg.data, trace, msg.attachments, msg.model)),
-					state: "done",
-				});
-				if (!created.inserted) return undefined;
+			if (intent.kind === "ask" && task.busy !== "reject") {
 				const queued = await active.enqueue(
 					lockKey,
 					task.busy,
@@ -330,15 +300,39 @@ export function createHandler(input: {
 					msg.attachments,
 				);
 				if (queued === "queued") {
+					const created = await input.store.messages.createOnce({
+						threadId: thread.id,
+						provider: msg.provider,
+						kind: msg.kind ?? msg.provider,
+						providerEventId: msg.eventId,
+						role: "user",
+						actor: msg.actor,
+						text: messageText,
+						data: JSON.stringify(messageData(msg.data, trace, msg.attachments, msg.model)),
+						state: "done",
+					});
+					if (!created.inserted) return undefined;
 					const text = task.busy === "steer" ? messages.busySteer : messages.busyFollowUp;
 					return { text, finalPlacement: "thread" };
 				}
+				lock = await input.store.locks?.acquire({ key: lockKey, owner: lockOwner, ttlMs: input.lockMs });
+				if (lock) {
+					log.debug("handler.lock_reacquired", {
+						trace,
+						agent: agentId,
+						provider: msg.provider,
+						channel: msg.channel,
+						thread: msg.thread,
+						event: msg.eventId,
+					});
+				}
 			}
-			return { text: messages.busyReject, finalPlacement: "thread" };
+			if (!lock) return { text: messages.busyReject, finalPlacement: "thread" };
+			// The active run ended between lock rejection and enqueue; handle this message as a fresh turn.
 		}
 		let turn: Awaited<ReturnType<Store["turns"]["create"]>> | undefined;
 		let run: ReturnType<ActiveRuns["start"]> | undefined;
-		let base: HandlerBase | undefined;
+		let base: TurnContext | undefined;
 		try {
 			if (intent.kind === "ask") {
 				const pending = (
@@ -365,7 +359,7 @@ export function createHandler(input: {
 					role: "user",
 					actor: msg.actor,
 					text: messageText,
-					data: JSON.stringify(data(msg.data, trace, msg.attachments, msg.model)),
+					data: JSON.stringify(messageData(msg.data, trace, msg.attachments, msg.model)),
 					state: "done",
 				});
 				if (!inbound.inserted) return { inbound };
@@ -395,21 +389,24 @@ export function createHandler(input: {
 			}
 			turn = created.turn;
 			if (!turn) throw new Error("turn insert failed");
+			const channelKey = scopedChannelKey(msg);
 			base = {
 				trace,
 				agent: agentId,
 				provider: msg.provider,
-				channel: scopeKey(msg),
+				channel: channelKey,
 				thread: thread.id,
 				turn: turn.id,
 				message: inbound.row.id,
 				actor: msg.actor,
 				actorGroups: msg.actorGroups,
+				actorBot: msg.actorBot,
 				runtimeScope: turnScope.workspace.path,
 				approval: input.approval,
 			};
 
 			log.debug("handler.intent", { ...base, kind: intent.kind });
+			const currentBase = base;
 			const currentTurn = turn;
 			run = active.start([trace, currentTurn.id, lockKey], { actor: msg.actor, threadId: thread.id });
 			const currentRun = run;
@@ -424,7 +421,7 @@ export function createHandler(input: {
 								inputMessageId: inbound.row.id,
 								turnId: currentTurn.id,
 								provider: msg.provider,
-								channel: scopeKey(msg),
+								channel: channelKey,
 								channelName: msg.channelName,
 								thread: msg.thread,
 								threadName: msg.threadName,
@@ -447,7 +444,7 @@ export function createHandler(input: {
 							})
 						: await input.callRunner.handle(
 								scopedIntent(intent as CallIntent, msg),
-								base,
+								currentBase,
 								currentRun.signal,
 								intent.kind === "approve" ? msg.ack : undefined,
 								intent.kind === "approve" || intent.kind === "deny" ? msg.replace : undefined,
@@ -459,7 +456,7 @@ export function createHandler(input: {
 				reply = await continueTool({
 					store: input.store,
 					agent: input.agent,
-					channel: scopeKey(msg),
+					channel: channelKey,
 					provider: msg.provider,
 					actor: msg.actor,
 					trace,
@@ -478,7 +475,7 @@ export function createHandler(input: {
 					aborted: currentRun.signal.aborted,
 					stream,
 					scheduled,
-					base,
+					base: currentBase,
 					logger: log,
 				});
 			}
@@ -493,7 +490,7 @@ export function createHandler(input: {
 				aborted: currentRun.signal.aborted,
 				stream,
 				finalPlacement,
-				base,
+				base: currentBase,
 				attachmentScope: turnScope.workspace,
 				logger: log,
 			});
@@ -574,179 +571,6 @@ export function createStatus(input: { agentId?: string; store: Store }): Status 
 	};
 }
 
-async function finishSilentTurn(input: {
-	store: Store;
-	turn: string;
-	aborted: boolean;
-	stream?: ReplyStream;
-	scheduled: boolean;
-	base: HandlerBase;
-	logger: Logger;
-}): Promise<Outbound | undefined> {
-	await input.stream?.stop();
-	// Silent replies intentionally finish the turn without adding a transcript message.
-	await transaction(input.store, async (store) => {
-		await store.turns.finish(input.turn, {
-			state: input.aborted ? "cancelled" : "done",
-		});
-	});
-	input.logger.debug("handler.reply", {
-		...input.base,
-		actor: "heypi",
-		chars: 0,
-		silent: true,
-	});
-	return input.scheduled ? { text: "", silent: true } : undefined;
-}
-
-async function finishReplyTurn(input: {
-	store: Store;
-	turn: string;
-	threadId: string;
-	provider: string;
-	kind: string;
-	reply: {
-		text: string;
-		private?: boolean;
-		silent?: boolean;
-		approval?: ApprovalPrompt;
-		approvalResolution?: ApprovalResolution;
-		replaceOriginal?: boolean;
-		attachments?: ReplyAttachment[];
-	};
-	aborted: boolean;
-	stream?: ReplyStream;
-	finalPlacement: NonNullable<Outbound["finalPlacement"]>;
-	attachmentScope: ScopedKey;
-	base: HandlerBase;
-	logger: Logger;
-}): Promise<Outbound> {
-	if (input.reply.approval || input.finalPlacement === "thread") await input.stream?.stop();
-	else await input.stream?.finalize(redact(input.reply.text));
-	await transaction(input.store, async (store) => {
-		const result = await saveReply({
-			store,
-			threadId: input.threadId,
-			provider: input.provider,
-			kind: input.kind,
-			reply: input.reply,
-		});
-		await store.turns.finish(input.turn, {
-			state: input.aborted ? "cancelled" : "done",
-			resultMessageId: result.id,
-		});
-	});
-	input.logger.debug("handler.reply", {
-		...input.base,
-		actor: "heypi",
-		chars: input.reply.text.length,
-	});
-	return {
-		text: redact(input.reply.text),
-		private: input.reply.private,
-		silent: input.reply.silent,
-		approval: input.reply.approval,
-		approvalResolution: input.reply.approvalResolution,
-		replaceOriginal: input.reply.replaceOriginal,
-		attachments: input.reply.attachments,
-		attachmentScope: input.attachmentScope,
-		finalPlacement: input.finalPlacement,
-	};
-}
-
-async function finishSystemTurn(input: {
-	store: Store;
-	turn?: string;
-	threadId: string;
-	provider: string;
-	kind: string;
-	text: string;
-	state: "cancelled" | "failed";
-}): Promise<Outbound> {
-	await transaction(input.store, async (store) => {
-		const result = await store.messages.create({
-			threadId: input.threadId,
-			provider: input.provider,
-			kind: input.kind,
-			role: "system",
-			actor: "heypi",
-			text: input.text,
-			state: input.state,
-		});
-		if (input.turn) await store.turns.finish(input.turn, { state: input.state, resultMessageId: result.id });
-	});
-	return { text: redact(input.text) };
-}
-
-function requiresThreadLock(kind: string): boolean {
-	return kind !== "help" && kind !== "status" && kind !== "approvals" && kind !== "revoke";
-}
-
-type CallIntent = Exclude<Intent, { kind: "ask" | "help" | "cancel" | "approvals" | "thread_status" }>;
-
-function scopedIntent(intent: CallIntent, msg: Inbound): CallIntent {
-	const channel = scopeKey(msg);
-	if (intent.kind === "bash") return { ...intent, channel };
-	if (intent.kind === "approve") return { ...intent, channel };
-	if (intent.kind === "deny") return { ...intent, channel };
-	if (intent.kind === "revoke") return { ...intent, channel };
-	if (intent.kind === "status") return { ...intent, channel };
-	return intent;
-}
-
-function scopeKey(msg: Pick<Inbound, "provider" | "team" | "channel">): string {
-	return `${msg.provider}:${msg.team ?? ""}:${msg.channel}`;
-}
-
-function canListApprovals(config: ApprovalPolicy | undefined, actor: Pick<Inbound, "actor" | "actorGroups">): boolean {
-	return actorAllowedForApproval(config, actor);
-}
-
-function canCancelRun(
-	policy: CancelPolicy,
-	config: ApprovalPolicy | undefined,
-	actor: Pick<Inbound, "actor" | "actorGroups">,
-	initiator?: string,
-): boolean {
-	const identity = { actor: actor.actor, groups: actor.actorGroups };
-	if (actorMatches(config?.admins, identity)) return true;
-	if (policy === "allowed") return true;
-	if (policy === "admin") return false;
-	if (actorMatches(config?.approvers, identity)) return true;
-	if (policy === "approver") return false;
-	return actor.actor === initiator;
-}
-
-function actorAllowedForApproval(
-	config: ApprovalPolicy | undefined,
-	actor: Pick<Inbound, "actor" | "actorGroups">,
-): boolean {
-	const identity = { actor: actor.actor, groups: actor.actorGroups };
-	if (actorMatches(config?.admins, identity)) return true;
-	if (actorMatches(config?.approvers, identity)) return true;
-	if (!hasActorPolicy(config?.admins) && !hasActorPolicy(config?.approvers)) return actorAllowed(undefined, identity);
-	return false;
-}
-
-function approvalVisible(
-	row: { channel: string; threadId: string | null },
-	config: ApprovalPolicy | undefined,
-	msg: Pick<Inbound, "provider" | "team">,
-	threadId: string,
-): boolean {
-	if (!hasActorPolicy(config?.approvers) && !hasActorPolicy(config?.admins)) return row.threadId === threadId;
-	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
-}
-
-type NormalizedTask = Required<TaskConfig>;
-
-function normalizeTask(input: TaskConfig | undefined): NormalizedTask {
-	return {
-		busy: input?.busy ?? "steer",
-		cancel: input?.cancel ?? "initiator",
-	};
-}
-
 function runtimeProgressEvents(progress: RuntimeProgress, text: string): RuntimeEventHandler {
 	let last = "";
 	return (event) => {
@@ -757,22 +581,12 @@ function runtimeProgressEvents(progress: RuntimeProgress, text: string): Runtime
 	};
 }
 
-function attributedMessage(msg: Pick<Inbound, "actor" | "actorName">, text: string): string {
-	const actor = msg.actorName && msg.actorName !== msg.actor ? `${msg.actorName} (${msg.actor})` : msg.actor;
-	return `[Message from ${actor}]\n${text}`;
-}
-
-function cancelText(messages: AppMessages, actor: string | undefined): string {
-	return renderMessage(messages.cancelled, { actor });
-}
-
-function actorLabel(msg: Pick<Inbound, "provider" | "actor" | "actorName">): string {
-	if (msg.actorName && msg.actorName !== msg.actor) return msg.actorName;
-	if (msg.provider === "slack" || msg.provider === "discord") return `<@${msg.actor}>`;
-	return msg.actor;
-}
-
-function data(input: unknown, trace: string, attachments?: Attachment[], model?: ModelConfig): Record<string, unknown> {
+function messageData(
+	input: unknown,
+	trace: string,
+	attachments?: Attachment[],
+	model?: ModelConfig,
+): Record<string, unknown> {
 	const files = attachments?.length ? { attachments } : {};
 	const override = model ? { model } : {};
 	if (input && typeof input === "object" && !Array.isArray(input)) {

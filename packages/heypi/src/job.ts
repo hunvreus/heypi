@@ -11,14 +11,11 @@ export type JobRoute = {
 	users?: string[];
 };
 
+export type JobTarget = JobRoute;
+
 export type JobScope = Record<string, JobRoute>;
 
-export type JobTarget = {
-	channels?: string[];
-	users?: string[];
-};
-
-export type JobTargets = Record<string, JobTarget>;
+export type JobTargets = JobScope;
 
 export type JobConfig = {
 	id: string;

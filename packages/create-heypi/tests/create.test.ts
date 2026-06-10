@@ -25,15 +25,42 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(out, /Created /);
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi"/);
 		assert.match(read(app, "index.ts"), /slack\(\{/);
+		assert.match(read(app, "index.ts"), /mode: "socket"/);
 		assert.match(read(app, "index.ts"), /name: "just-bash"/);
 		assert.match(read(app, "index.ts"), /openai\/gpt-5\.4-mini/);
 		assert.match(read(app, ".env"), /OPENAI_API_KEY=/);
 		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
+		assert.match(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
+		assert.doesNotMatch(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
 		assert.match(read(app, "agent/AGENTS.md"), /concise team assistant/);
 		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
 		assert.match(read(app, "tools/README.md"), /# Tools/);
 		assert.match(read(app, "setup/slack.manifest.json"), /socket_mode_enabled/);
+		assert.match(read(app, "setup/slack.manifest.json"), /channels:read/);
+		assert.doesNotMatch(read(app, "setup/slack.manifest.json"), /groups:history/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("creates an HTTP-mode Slack app", async () => {
+	const root = await mkdtemp(join(tmpdir(), "create-heypi-slack-http-"));
+	try {
+		const app = join(root, "http-agent");
+		run([app, "--yes", "--adapter", "slack", "--slack-mode", "http", "--no-install"]);
+		assert.match(read(app, "index.ts"), /mode: "http"/);
+		assert.match(read(app, "index.ts"), /SLACK_SIGNING_SECRET/);
+		assert.match(read(app, "index.ts"), /http: \{ port: Number\(process\.env\.PORT \?\? 3000\) \}/);
+		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
+		assert.match(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
+		assert.doesNotMatch(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
+		assert.match(read(app, "setup/slack.manifest.json"), /"socket_mode_enabled": false/);
+		assert.match(
+			read(app, "setup/slack.manifest.json"),
+			/"request_url": "https:\/\/example\.com\/slack\/slack\/events"/,
+		);
+		assert.match(read(app, "setup/slack.manifest.json"), /channels:read/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
