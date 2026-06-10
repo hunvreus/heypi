@@ -3,9 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { MemoryStore, memoryContext, normalizeMemoryConfig } from "../src/core/memory.js";
+import { Memory, memoryContext, normalizeMemoryConfig } from "../src/core/memory.js";
 import { resolveScope, ScopedRuntimeRegistry, selectScope } from "../src/core/scope.js";
-import { normalizeSkillsConfig, SkillStore, skillsContext } from "../src/core/skills.js";
+import { normalizeSkillsConfig, Skills, skillsContext } from "../src/core/skills.js";
 import type { RuntimeProvider, RuntimeScope } from "../src/runtime/types.js";
 
 async function temp(): Promise<string> {
@@ -115,7 +115,7 @@ test("scoped runtime registry delegates scoped roots to runtime providers", asyn
 	}
 });
 
-test("memory store is opt-in, scoped, bounded, and sanitized", async () => {
+test("memory is opt-in, scoped, bounded, and sanitized", async () => {
 	const root = await temp();
 	try {
 		const keys = resolveScope({
@@ -125,10 +125,10 @@ test("memory store is opt-in, scoped, bounded, and sanitized", async () => {
 			channel: "-100123",
 			actor: "42",
 		});
-		const disabled = new MemoryStore(root, normalizeMemoryConfig(undefined));
+		const disabled = new Memory(root, normalizeMemoryConfig(undefined));
 		assert.equal(await disabled.read(keys.channel), "");
 
-		const memory = new MemoryStore(root, normalizeMemoryConfig({ enabled: true, maxChars: 80 }));
+		const memory = new Memory(root, normalizeMemoryConfig({ enabled: true, maxChars: 80 }));
 		await memory.append(keys.channel, "This chat tracks production incidents.");
 		await memory.append(keys.agent, "Global fact.");
 
@@ -174,7 +174,7 @@ test("memory config defaults write policy by scope", () => {
 	assert.equal(normalizeMemoryConfig({ enabled: true, scope: "agent", writePolicy: "auto" }).writePolicy, "auto");
 });
 
-test("skill store is opt-in, scoped, bounded, and sanitized", async () => {
+test("skills are opt-in, scoped, bounded, and sanitized", async () => {
 	const root = await temp();
 	try {
 		const keys = resolveScope({
@@ -185,10 +185,10 @@ test("skill store is opt-in, scoped, bounded, and sanitized", async () => {
 			channel: "C1",
 			actor: "U1",
 		});
-		const disabled = new SkillStore(root, normalizeSkillsConfig(undefined));
+		const disabled = new Skills(root, normalizeSkillsConfig(undefined));
 		assert.deepEqual(await disabled.list(keys.channel), []);
 
-		const skills = new SkillStore(root, normalizeSkillsConfig({ enabled: true, writePolicy: "auto", maxSkills: 1 }));
+		const skills = new Skills(root, normalizeSkillsConfig({ enabled: true, writePolicy: "auto", maxSkills: 1 }));
 		await skills.write(keys.channel, {
 			name: "deploy-check",
 			description: "Check deployment health.",

@@ -1,4 +1,5 @@
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
+import type { ApprovalBypassScope } from "../config.js";
 import type { CallErrorKind, CallState, TurnState } from "../core/types.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
@@ -100,6 +101,22 @@ export type Approval = {
 	expiresAt: number | null;
 	resolvedAt: number | null;
 	resolvedBy: string | null;
+};
+
+export type ApprovalBypass = {
+	id: string;
+	agent: string;
+	scope: string;
+	channel: string;
+	threadId: string | null;
+	actor: string | null;
+	createdBy: string;
+	reason: string | null;
+	approvalId: string | null;
+	createdAt: number;
+	expiresAt: number;
+	revokedAt: number | null;
+	revokedBy: string | null;
 };
 
 export type Lock = {
@@ -248,6 +265,7 @@ export interface Calls {
 	getByChannel(channel: string, id: string, input?: { agent?: string }): Promise<Call | undefined>;
 	listForThread(threadId: string, input?: { agent?: string; states?: CallState[]; limit?: number }): Promise<Call[]>;
 	listRecent?(input?: { agent?: string; states?: CallState[]; limit?: number; offset?: number }): Promise<Call[]>;
+	failRunning?(input: { agent: string; error: string }): Promise<number>;
 	setState(id: string, state: CallState, input?: { agent?: string }): Promise<void>;
 	finish(
 		id: string,
@@ -291,6 +309,30 @@ export interface Approvals {
 		offset?: number;
 	}): Promise<Approval[]>;
 	resolve(id: string, state: "approved" | "denied", actor: string, input?: { agent?: string }): Promise<boolean>;
+}
+
+/** Temporary approval bypasses created by human approvers. */
+export interface ApprovalBypasses {
+	create(input: {
+		agent: string;
+		scope: ApprovalBypassScope;
+		channel: string;
+		threadId?: string;
+		actor?: string;
+		createdBy: string;
+		reason?: string;
+		approvalId?: string;
+		expiresAt: number;
+	}): Promise<ApprovalBypass>;
+	active(input: {
+		agent: string;
+		channel: string;
+		threadId?: string;
+		actor?: string;
+		now?: number;
+	}): Promise<ApprovalBypass | undefined>;
+	listActive(input?: { agent?: string; limit?: number; offset?: number; now?: number }): Promise<ApprovalBypass[]>;
+	revoke(id: string, actor: string, input?: { agent?: string }): Promise<boolean>;
 }
 
 /** Durable concurrency guard for logical conversation processing across processes. */
@@ -344,6 +386,7 @@ export interface JobRuns {
 		input: { state: JobRunState; output?: string; error?: string; deliveryState?: DeliveryState },
 	): Promise<void>;
 	lastForJob(input: { agent: string; id: string }): Promise<JobRun | undefined>;
+	failRunning?(input: { agent: string; error: string }): Promise<number>;
 }
 
 /** Complete persistence boundary used by heypi core. Implementations may use SQLite, libSQL, or other stores. */
@@ -353,6 +396,7 @@ export interface Store {
 	turns: Turns;
 	calls: Calls;
 	approvals: Approvals;
+	approvalBypasses?: ApprovalBypasses;
 	/** Required when scheduled jobs are enabled. */
 	jobs?: Jobs;
 	/** Required when scheduled jobs are enabled. */

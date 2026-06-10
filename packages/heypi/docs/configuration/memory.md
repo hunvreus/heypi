@@ -79,7 +79,7 @@ DMs use the same rules as other chats: `channel` memory follows the provider cha
 
 Defaults:
 
-- when `approval.approvers` is configured: `approvers`.
+- when adapter approvers or admins are configured: `approvers`.
 - without approvers, `channel` and `user`: `auto`.
 - without approvers, `adapter` and `agent`: `off`.
 

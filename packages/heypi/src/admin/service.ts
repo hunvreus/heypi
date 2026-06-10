@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { PermissionsConfig, TaskConfig } from "../config.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
 import type { Approval, Call, Job, JobRun, Message, MessageWithThread, Thread, Turn } from "../store/types.js";
@@ -45,8 +46,9 @@ export type AdminService = {
 export type AdminOverview = {
 	agent: { id: string; directory?: string; model?: string };
 	runtime: { name: string; root: string };
+	task: Required<TaskConfig>;
 	startedAt: number;
-	adapters: Array<{ name: string; kind: string }>;
+	adapters: Array<{ name: string; kind: string; permissions?: PermissionsConfig }>;
 	memory: AdminMemory;
 	threads: number;
 	live: AdminLiveSummary;
@@ -160,6 +162,7 @@ export function createAdminService(start: AdapterStart): AdminService {
 					model: app.agentModel ? `${app.agentModel.provider}/${app.agentModel.name}` : undefined,
 				},
 				runtime: app.runtime,
+				task: app.task ?? { busy: "steer", cancel: "initiator" },
 				startedAt: app.startedAt,
 				adapters: app.adapters,
 				memory,

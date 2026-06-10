@@ -106,16 +106,32 @@ export type AttachmentConfig = {
 };
 
 export type ApprovalConfig = {
-	approvers?: ActorPolicy;
-	admins?: ActorPolicy;
 	expiresInMs?: number;
 	allowSelfApproval?: boolean;
+	bypass?: false | ApprovalBypassConfig;
 };
 
-export type BusyBehavior = "reject" | "followUp" | "steer";
+export type ApprovalBypassScope = "thread" | "channel" | "user" | "adapter";
 
-export type ChatConfig = {
+export type ApprovalBypassConfig = {
+	durationMs?: number;
+	maxDurationMs?: number;
+	scope?: ApprovalBypassScope;
+};
+
+export type PermissionsConfig = {
+	approvers?: ActorPolicy;
+	admins?: ActorPolicy;
+};
+
+export type ApprovalPolicy = ApprovalConfig & PermissionsConfig;
+
+export type BusyBehavior = "reject" | "followUp" | "steer";
+export type CancelPolicy = "admin" | "approver" | "initiator" | "allowed";
+
+export type TaskConfig = {
 	busy?: BusyBehavior;
+	cancel?: CancelPolicy;
 };
 
 export type Scope = "channel" | "user" | "adapter" | "agent";
@@ -173,7 +189,7 @@ export type HeypiConfig = {
 	admin?: boolean | AdminConfig;
 	attachments?: AttachmentConfig;
 	approval?: ApprovalConfig;
-	chat?: ChatConfig;
+	task?: TaskConfig;
 	scope?: Scope;
 	memory?: MemoryConfig;
 	skills?: SkillsConfig;

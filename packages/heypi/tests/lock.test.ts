@@ -295,9 +295,9 @@ test("handler lets only the run initiator cancel when no approvers are configure
 		});
 		const firstOut = await first;
 
-		assert.equal(cancelled?.text, "Cancelled.");
+		assert.equal(cancelled?.silent, true);
 		assert.equal(signal?.aborted, true);
-		assert.match(firstOut?.text ?? "", /cancelled/i);
+		assert.equal(firstOut?.text, "Task cancelled by <@U_REQUESTER>.");
 	} finally {
 		await db.cleanup();
 	}
@@ -352,8 +352,133 @@ test("handler lets configured approvers cancel another actor's run", async () =>
 		});
 		const firstOut = await first;
 
-		assert.equal(cancelled?.text, "Cancelled.");
-		assert.match(firstOut?.text ?? "", /cancelled/i);
+		assert.equal(cancelled?.silent, true);
+		assert.equal(firstOut?.text, "Task cancelled by <@U_APPROVER>.");
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler cancel policy can restrict cancellation to admins", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		let ready!: () => void;
+		const started = new Promise<void>((resolve) => {
+			ready = resolve;
+		});
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			task: { cancel: "admin" },
+			approval: { approvers: ["U_APPROVER"], admins: ["U_ADMIN"] },
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					ready();
+					await aborted(req.signal);
+					return { text: "done" };
+				},
+				continue: async () => ({ text: "should not run" }),
+			},
+		});
+
+		const first = handler({
+			trace: "trace-admin-policy",
+			provider: "slack",
+			eventId: "event-admin-policy",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:T1",
+			text: "deploy",
+		});
+		await started;
+
+		const rejected = await handler({
+			trace: "trace-cancel-approver-denied",
+			provider: "slack",
+			eventId: "event-cancel-approver-denied",
+			channel: "C1",
+			actor: "U_APPROVER",
+			thread: "C1:T1",
+			text: "/cancel trace-admin-policy",
+		});
+		assert.equal(rejected?.private, true);
+		assert.match(rejected?.text ?? "", /not allowed/i);
+
+		const cancelled = await handler({
+			trace: "trace-cancel-admin",
+			provider: "slack",
+			eventId: "event-cancel-admin",
+			channel: "C1",
+			actor: "U_ADMIN",
+			thread: "C1:T1",
+			text: "/cancel trace-admin-policy",
+		});
+		const firstOut = await first;
+
+		assert.equal(cancelled?.silent, true);
+		assert.equal(firstOut?.text, "Task cancelled by <@U_ADMIN>.");
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler cancel policy can allow any accepted actor", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		let ready!: () => void;
+		const started = new Promise<void>((resolve) => {
+			ready = resolve;
+		});
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			task: { cancel: "allowed" },
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					ready();
+					await aborted(req.signal);
+					return { text: "done" };
+				},
+				continue: async () => ({ text: "should not run" }),
+			},
+		});
+
+		const first = handler({
+			trace: "trace-allowed-policy",
+			provider: "slack",
+			eventId: "event-allowed-policy",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:T1",
+			text: "deploy",
+		});
+		await started;
+
+		const cancelled = await handler({
+			trace: "trace-cancel-allowed",
+			provider: "slack",
+			eventId: "event-cancel-allowed",
+			channel: "C1",
+			actor: "U_OTHER",
+			thread: "C1:T1",
+			text: "/cancel trace-allowed-policy",
+		});
+		const firstOut = await first;
+
+		assert.equal(cancelled?.silent, true);
+		assert.equal(firstOut?.text, "Task cancelled by <@U_OTHER>.");
 	} finally {
 		await db.cleanup();
 	}

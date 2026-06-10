@@ -176,6 +176,20 @@ export class JobRunRepo {
 			.limit(1);
 		return rows[0];
 	}
+
+	async failRunning(input: { agent: string; error: string }): Promise<number> {
+		const rows = await this.db
+			.update(jobRun)
+			.set({
+				state: "failed",
+				error: input.error,
+				deliveryState: "failed",
+				endedAt: Date.now(),
+			})
+			.where(and(eq(jobRun.jobAgent, input.agent), eq(jobRun.state, "running")))
+			.returning({ id: jobRun.id });
+		return rows.length;
+	}
 }
 
 function jobWhere(input: { agent?: string; id: string }): SQL {

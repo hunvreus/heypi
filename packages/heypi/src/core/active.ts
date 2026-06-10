@@ -6,6 +6,7 @@ export type CancelResult = "cancelled" | "not_found" | "unauthorized";
 export type ActiveRunInfo = {
 	actor?: string;
 	threadId?: string;
+	cancelledBy?: string;
 };
 
 type LiveSession = {
@@ -44,6 +45,7 @@ export class ActiveRuns {
 		attach: (session: LiveSession) => void;
 		detach: () => void;
 		additions: () => number;
+		cancelledBy: () => string | undefined;
 	} {
 		const controller = new AbortController();
 		const unique = [...new Set(aliases.filter(Boolean))];
@@ -77,6 +79,7 @@ export class ActiveRuns {
 				run.pending = [];
 			},
 			additions: () => run.additions,
+			cancelledBy: () => run.info.cancelledBy,
 		};
 	}
 
@@ -95,9 +98,10 @@ export class ActiveRuns {
 		return "queued";
 	}
 
-	cancel(id: string): CancelResult {
+	cancel(id: string, actor?: string): CancelResult {
 		const run = this.runs.get(id);
 		if (!run) return "not_found";
+		run.info.cancelledBy = actor;
 		run.controller.abort();
 		this.stop(run);
 		return "cancelled";
@@ -155,8 +159,11 @@ export class ActiveRuns {
 	}
 }
 
-export function cancelReply(result: CancelResult, messages: AppMessages): { text: string; private: true } {
-	if (result === "cancelled") return { text: messages.cancelled, private: true };
+export function cancelReply(
+	result: CancelResult,
+	messages: AppMessages,
+): { text: string; private: true; silent?: true } {
+	if (result === "cancelled") return { text: "", private: true, silent: true };
 	if (result === "unauthorized") return { text: messages.cancelUnauthorized, private: true };
 	return { text: messages.cancelNotFound, private: true };
 }

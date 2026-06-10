@@ -119,7 +119,9 @@ export function createScheduler(input: {
 				});
 				return;
 			}
-			const out = await input.handler({
+			const adapter = adapters.get(resolved.adapter);
+			const handler = adapter ? (input.starts.get(adapter)?.handler ?? input.handler) : input.handler;
+			const out = await handler({
 				trace,
 				provider: resolved.adapter,
 				eventId: trace,

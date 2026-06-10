@@ -43,6 +43,10 @@ heypi returns a browser link. The user opens it, enters the values, encrypts the
 
 The encrypted blob is intercepted before the normal model turn, so it is not stored as chat history and is not sent to the model.
 
+Pending requests are process-local. If the heypi process restarts before the user replies, the link is invalid and the agent must request a fresh secret link.
+
+Saved values are runtime files, not database rows, memory entries, or workspace records. Their durability follows the configured runtime workspace and deployment backup strategy.
+
 ## Self-hosting
 
 The default page URL is:

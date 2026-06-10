@@ -11,8 +11,9 @@ export type Intent =
 	| { kind: "help" }
 	| { kind: "ask"; text: string; channel: string; actor: string }
 	| { kind: "bash"; cmd: string; channel: string; actor: string }
-	| { kind: "approve"; approvalId: string; channel: string; actor: string }
+	| { kind: "approve"; approvalId: string; channel: string; actor: string; bypass?: boolean }
 	| { kind: "deny"; approvalId: string; channel: string; actor: string }
+	| { kind: "revoke"; bypassId: string; channel: string; actor: string }
 	| { kind: "cancel"; id: string; channel: string; actor: string }
 	| { kind: "approvals"; channel: string; actor: string }
 	| { kind: "thread_status"; channel: string; actor: string }

@@ -1,3 +1,4 @@
+import type { ApprovalConfig } from "../config.js";
 import type { TurnScope } from "../core/scope.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
 import type { ReplyStream } from "../io/reply-stream.js";
@@ -17,6 +18,7 @@ export type ContinueInput = {
 	scope?: TurnScope;
 	stream?: ReplyStream;
 	runtimeEvents?: RuntimeEventHandler;
+	approval?: ApprovalConfig;
 };
 
 export type SaveInput = {
@@ -43,6 +45,7 @@ export async function continueTool(input: ContinueInput): Promise<AgentRes> {
 		scope: input.scope,
 		stream: input.stream,
 		runtimeEvents: input.runtimeEvents,
+		approval: input.approval,
 		continuation: input.continuation,
 	});
 }

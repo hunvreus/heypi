@@ -1,10 +1,10 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type ActorPolicy, actorAllowed, hasActorPolicy } from "../core/approvers.js";
-import type { MemoryStore } from "../core/memory.js";
+import type { Memory } from "../core/memory.js";
 import type { ScopedKey } from "../core/scope.js";
-import type { SecretStore } from "../core/secrets.js";
-import type { SkillStore } from "../core/skills.js";
+import type { Secrets } from "../core/secrets.js";
+import type { Skills } from "../core/skills.js";
 import { stringParam } from "./tool-util.js";
 
 type WritePolicy = {
@@ -14,7 +14,7 @@ type WritePolicy = {
 };
 
 export function memoryTools(
-	memory: MemoryStore | undefined,
+	memory: Memory | undefined,
 	scope: ScopedKey | undefined,
 	policy: WritePolicy,
 ): ToolDefinition[] {
@@ -76,7 +76,7 @@ export function memoryTools(
 }
 
 export function skillTools(
-	skills: SkillStore | undefined,
+	skills: Skills | undefined,
 	scope: ScopedKey | undefined,
 	policy: WritePolicy,
 ): ToolDefinition[] {
@@ -175,7 +175,7 @@ export function skillTools(
 	];
 }
 
-export function secretTools(secrets: SecretStore | undefined, scope: ScopedKey | undefined): ToolDefinition[] {
+export function secretTools(secrets: Secrets | undefined, scope: ScopedKey | undefined): ToolDefinition[] {
 	if (!secrets?.enabled() || !scope) return [];
 	return [
 		{

@@ -123,6 +123,29 @@ export const approval = sqliteTable(
 	],
 );
 
+export const approvalBypass = sqliteTable(
+	"approval_bypass",
+	{
+		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
+		scope: text("scope").notNull(),
+		channel: text("channel").notNull(),
+		threadId: text("thread_id"),
+		actor: text("actor"),
+		createdBy: text("created_by").notNull(),
+		reason: text("reason"),
+		approvalId: text("approval_id"),
+		createdAt: integer("created_at").notNull(),
+		expiresAt: integer("expires_at").notNull(),
+		revokedAt: integer("revoked_at"),
+		revokedBy: text("revoked_by"),
+	},
+	(table) => [
+		index("approval_bypass_agent_active_idx").on(table.agent, table.expiresAt, table.revokedAt),
+		index("approval_bypass_agent_channel_idx").on(table.agent, table.channel),
+	],
+);
+
 export const lock = sqliteTable(
 	"lock",
 	{

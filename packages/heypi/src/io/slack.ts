@@ -1,4 +1,5 @@
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
+import type { PermissionsConfig } from "../config.js";
 import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -30,6 +31,7 @@ export type SlackConfig = {
 	name?: string;
 	botToken: string;
 	allow?: SlackAllow;
+	permissions?: PermissionsConfig;
 	trigger?: SlackTrigger;
 	threadTrigger?: SlackTrigger | false;
 	reply?: SlackReply;
@@ -83,6 +85,7 @@ export function slack(input: SlackConfig): Adapter {
 	return {
 		name,
 		kind,
+		permissions: input.permissions,
 		async start(start: AdapterStart): Promise<void> {
 			const { handler, logger: log } = start;
 			activeLogger = log;
@@ -98,7 +101,11 @@ export function slack(input: SlackConfig): Adapter {
 			const receiver = setup.mode === "http" ? createSlackReceiver(input, setup, start) : undefined;
 			const bolt = createSlackApp(input, setup, receiver);
 			const groups = new SlackGroupResolver(
-				[...(input.allow?.groups ?? []), ...configuredGroups(start.approval?.approvers)],
+				[
+					...(input.allow?.groups ?? []),
+					...configuredGroups(start.approval?.approvers),
+					...configuredGroups(start.approval?.admins),
+				],
 				log,
 			);
 			app = bolt;
@@ -1148,6 +1155,10 @@ async function handleAction(input: {
 			replace: input.kind === "approve" || input.kind === "deny" ? replace : undefined,
 		});
 		if (!out) return;
+		if (out.silent) {
+			await stream?.clear?.();
+			return;
+		}
 		if (out.private || !context.message) {
 			await stream?.clear?.();
 			const channel = context.channel;

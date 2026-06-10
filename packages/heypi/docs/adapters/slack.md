@@ -43,6 +43,8 @@ https://<host>/slack/ops/events
 | `allow.users` | No | Slack user IDs allowed to talk to the bot. |
 | `allow.groups` | No | Slack user group IDs allowed to talk to the bot. Requires `usergroups:read`. |
 | `allow.dms` | No | Whether DMs are accepted. |
+| `permissions.approvers` | No | Slack user IDs or user group IDs allowed to list and resolve approvals for this adapter. |
+| `permissions.admins` | No | Slack user IDs or user group IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level channel messages. Defaults to `"mention"` in channels. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for thread replies. Defaults to `"message"` in active threads. |
 | `reply` | No | `"thread"`, `"same"`, or `"channel"`. Controls where normal replies go. |
@@ -95,7 +97,7 @@ Typical bot scopes:
 | `files:write` | Upload generated files. |
 | `im:history` | Receive DMs. |
 | `reactions:write` | Add progress reactions. |
-| `usergroups:read` | Resolve `allow.groups` and group approvers. Only needed when using Slack user groups. |
+| `usergroups:read` | Resolve `allow.groups`, `permissions.approvers.groups`, and `permissions.admins.groups`. Only needed when using Slack user groups. |
 
 Add private-channel scopes only if the bot must read private channels.
 

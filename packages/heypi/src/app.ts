@@ -3,24 +3,24 @@ import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { createAdminAdapter } from "./admin/index.js";
-import type { AppLockConfig, HeypiConfig, HttpConfig } from "./config.js";
+import type { AppLockConfig, ApprovalPolicy, HeypiConfig, HttpConfig } from "./config.js";
 import { ActiveRuns } from "./core/active.js";
 import { actorLabels, hasActorPolicy, mergeActorPolicies } from "./core/approvers.js";
 import { CallRunner } from "./core/calls.js";
 import { type Logger, logger, message } from "./core/log.js";
-import { MemoryStore, normalizeMemoryConfig } from "./core/memory.js";
+import { Memory, normalizeMemoryConfig } from "./core/memory.js";
 import { normalizeMessages } from "./core/messages.js";
 import { createScheduler } from "./core/scheduler.js";
 import { ScopedRuntimeRegistry } from "./core/scope.js";
 import {
 	normalizeSecretsConfig,
-	SecretStore,
+	Secrets,
 	secretCss,
 	secretPage,
 	secretRoute,
 	secretStyleRoute,
 } from "./core/secrets.js";
-import { normalizeSkillsConfig, SkillStore } from "./core/skills.js";
+import { normalizeSkillsConfig, Skills } from "./core/skills.js";
 import { splitTools } from "./core-tools.js";
 import { runtimeAttachments } from "./io/attachments.js";
 import { type Adapter, type AdapterStart, createHandler, createStatus } from "./io/handler.js";
@@ -73,19 +73,19 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	});
 	const runtimes = new ScopedRuntimeRegistry(config.runtime, { app: cwd, agent: config.agent.directory });
 	const runtime = (scope?: string) => runtimes.getPath(scope);
-	const approvalActors = mergeActorPolicies(config.approval?.approvers, config.approval?.admins);
+	const approvalActors = collectApprovalActors(config);
 	const memoryConfig = normalizeMemoryConfig(config.memory, {
 		scope: config.scope,
 		approvers: hasActorPolicy(approvalActors) ? actorLabels(approvalActors) : [],
 	});
-	const memory = new MemoryStore(config.runtime.root, memoryConfig);
+	const memory = new Memory(config.runtime.root, memoryConfig);
 	const skillsConfig = normalizeSkillsConfig(config.skills, {
 		scope: config.scope,
 		approvers: hasActorPolicy(approvalActors) ? actorLabels(approvalActors) : [],
 	});
-	const skills = new SkillStore(config.runtime.root, skillsConfig);
+	const skills = new Skills(config.runtime.root, skillsConfig);
 	const secretsConfig = normalizeSecretsConfig(config.secrets);
-	const secrets = new SecretStore(secretsConfig);
+	const secrets = new Secrets(secretsConfig);
 	const attachments = config.attachments?.store ?? runtimeAttachments(appRuntime, config.attachments);
 	const queue = new Queue({
 		maxConcurrent: config.runtime.maxConcurrent ?? 12,
@@ -99,6 +99,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		runtime: appRuntime.name,
 		http: httpConfig,
 		approval: config.approval,
+		approvalActorsConfigured: hasActorPolicy(approvalActors),
 		bashEnabled: agentTools.core.some((tool) => tool.name === "bash"),
 		confirmedCustomTools: agentTools.custom.filter((tool) => toolConfirm(tool)).map((tool) => tool.name),
 	});
@@ -113,6 +114,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		bashConfirm,
 		messages,
 		config.agent.id,
+		store.approvalBypasses,
 	);
 	for (const tool of agentTools.custom) {
 		const execute = toolRunner(tool);
@@ -139,7 +141,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		callRunner,
 		agent,
 		approval: config.approval,
-		chat: config.chat,
+		task: config.task,
 		scope: config.scope,
 		runtimeScope: config.runtime.scope,
 		memoryScope: memoryConfig.scope,
@@ -242,15 +244,37 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 				});
 			}
 			for (const adapter of lifecycleAdapters) {
+				const adapterApproval = approvalForAdapter(config.approval, adapter);
+				const adapterHandler =
+					adapter === adminAdapter
+						? handler
+						: createHandler({
+								agentId: config.agent.id,
+								store,
+								callRunner,
+								agent,
+								approval: adapterApproval,
+								task: config.task,
+								scope: config.scope,
+								runtimeScope: config.runtime.scope,
+								memoryScope: memoryConfig.scope,
+								skillsScope: skillsConfig.scope,
+								secrets,
+								runtime,
+								messages,
+								active,
+								lockMs: config.runtime.timeoutMs,
+								logger: log,
+							});
 				const start = {
-					handler,
+					handler: adapterHandler,
 					status,
 					logger: log,
 					messages,
 					attachments,
 					http,
 					store,
-					approval: config.approval,
+					approval: adapterApproval,
 					memory,
 					app: {
 						agent: config.agent.id,
@@ -258,9 +282,14 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 						agentModel: config.agent.model,
 						runtime: { name: appRuntime.name, root: config.runtime.root },
 						state: { root: stateRoot },
+						task: normalizeTaskConfig(config.task),
 						memory: memoryConfig,
 						skills: skillsConfig,
-						adapters: config.adapters.map((item) => ({ name: item.name, kind: item.kind })),
+						adapters: config.adapters.map((item) => ({
+							name: item.name,
+							kind: item.kind,
+							permissions: item.permissions,
+						})),
 						startedAt: appStartedAt,
 					},
 				} satisfies AdapterStart;
@@ -385,6 +414,7 @@ function warnSecurityPosture(input: {
 	runtime: string;
 	http: Required<HttpConfig>;
 	approval: HeypiConfig["approval"];
+	approvalActorsConfigured: boolean;
 	bashEnabled: boolean;
 	confirmedCustomTools: string[];
 }): void {
@@ -403,16 +433,36 @@ function warnSecurityPosture(input: {
 			reason: "non-loopback HTTP listeners should be behind TLS, authentication, and rate limits",
 		});
 	}
-	const approvalActors = mergeActorPolicies(input.approval?.approvers, input.approval?.admins);
-	if (!hasActorPolicy(approvalActors) && (input.bashEnabled || input.confirmedCustomTools.length > 0)) {
+	if (!input.approvalActorsConfigured && (input.bashEnabled || input.confirmedCustomTools.length > 0)) {
 		input.logger.warn("security.approvers_missing", {
 			agent: input.agent,
 			bash: input.bashEnabled,
 			tools: input.confirmedCustomTools.join(","),
 			reason:
-				"without approval.approvers or approval.admins, approval visibility controls who can approve risky calls",
+				"without adapter permissions approvers or admins, approval visibility controls who can approve risky calls",
 		});
 	}
+}
+
+function approvalForAdapter(base: HeypiConfig["approval"], adapter: Adapter): ApprovalPolicy {
+	return {
+		...base,
+		approvers: adapter.permissions?.approvers,
+		admins: adapter.permissions?.admins,
+	};
+}
+
+function collectApprovalActors(config: HeypiConfig) {
+	return mergeActorPolicies(
+		...config.adapters.flatMap((adapter) => [adapter.permissions?.approvers, adapter.permissions?.admins]),
+	);
+}
+
+function normalizeTaskConfig(input: HeypiConfig["task"]): Required<NonNullable<HeypiConfig["task"]>> {
+	return {
+		busy: input?.busy ?? "steer",
+		cancel: input?.cancel ?? "initiator",
+	};
 }
 
 function loopbackHost(host: string): boolean {
@@ -542,6 +592,7 @@ async function releaseAppLock(input: { lock: AppLockState; store: Store }): Prom
 }
 
 async function recoverStartup(input: { store: Store; agent: string; logger: Logger }): Promise<void> {
+	const restartMessage = "Process restarted while this work was running.";
 	const turns = await input.store.turns.listRunning?.({ agent: input.agent, limit: 500 });
 	const recoveredThreads = new Set<string>();
 	if (turns?.length) {
@@ -552,7 +603,7 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 					provider: turn.provider,
 					role: "system",
 					actor: "heypi",
-					text: "Process restarted while this turn was running.",
+					text: restartMessage,
 					state: "failed",
 				});
 				await input.store.turns.finish(turn.id, { state: "failed", resultMessageId: result.id });
@@ -572,4 +623,8 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 		locks += (await input.store.locks?.clear?.({ key: `thread:${threadId}` })) ?? 0;
 	}
 	if (locks) input.logger.warn("app.recovered_locks", { agent: input.agent, locks });
+	const calls = await input.store.calls.failRunning?.({ agent: input.agent, error: restartMessage });
+	if (calls) input.logger.warn("app.recovered_calls", { agent: input.agent, calls });
+	const jobRuns = await input.store.jobRuns?.failRunning?.({ agent: input.agent, error: restartMessage });
+	if (jobRuns) input.logger.warn("app.recovered_job_runs", { agent: input.agent, jobRuns });
 }

@@ -7,10 +7,11 @@ export {
 	type AgentContextProvider,
 	type AppLockConfig,
 	type ApprovalConfig,
+	type ApprovalPolicy,
 	type AttachmentConfig,
 	agentFrom,
 	type BusyBehavior,
-	type ChatConfig,
+	type CancelPolicy,
 	type HeypiConfig,
 	type HttpConfig,
 	type JustBashConfig,
@@ -25,6 +26,7 @@ export {
 	type SkillsConfig,
 	type SkillWritePolicy,
 	type StateConfig,
+	type TaskConfig,
 } from "./config.js";
 export { consoleLogger, type Format, type Level, type Logger } from "./core/log.js";
 export type { AppMessages, AppMessagesConfig } from "./core/messages.js";

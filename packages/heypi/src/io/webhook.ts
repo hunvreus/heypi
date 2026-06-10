@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { PermissionsConfig } from "../config.js";
 import { message } from "../core/log.js";
 import type { Adapter, AdapterStart, Outbound, StatusResult } from "./handler.js";
 import { assertRouteName } from "./name.js";
@@ -16,6 +17,7 @@ export type WebhookConfig = {
 	maxBodyBytes?: number;
 	maxInFlight?: number;
 	replyHosts?: string[];
+	permissions?: PermissionsConfig;
 };
 
 export type WebhookMessage = {
@@ -48,6 +50,7 @@ export function webhook(config: WebhookConfig): Adapter {
 	return {
 		name,
 		kind,
+		permissions: config.permissions,
 		async start(input) {
 			start = input;
 			const handler = (req: IncomingMessage, res: ServerResponse) =>

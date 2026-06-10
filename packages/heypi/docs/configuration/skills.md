@@ -12,7 +12,12 @@ Managed skills are off by default.
 createHeypi({
 	state: { root: "./state" },
 	// ...adapters, agent, runtime
-	approval: { approvers: { users: ["U123456"], groups: ["S123456"] } },
+	adapters: [
+		slack({
+			// ...Slack auth and delivery config
+			permissions: { approvers: { users: ["U123456"], groups: ["S123456"] } },
+		}),
+	],
 	skills: {
 		enabled: true,
 		scope: "channel",
@@ -74,7 +79,7 @@ Use `skill_patch` for exact replacements inside an existing skill. Ambiguous rep
 
 Defaults:
 
-- when `approval.approvers` is configured: `approvers` for `channel` and `user`.
+- when adapter approvers or admins are configured: `approvers` for `channel` and `user`.
 - without approvers: `off`.
 - `adapter` and `agent`: `off` unless explicitly overridden.
 

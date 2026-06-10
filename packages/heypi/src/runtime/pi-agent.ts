@@ -9,14 +9,14 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentConfig, AgentContextBlock, AgentContextInput, ApprovalConfig, ModelConfig } from "../config.js";
+import type { AgentConfig, AgentContextBlock, AgentContextInput, ApprovalPolicy, ModelConfig } from "../config.js";
 import { normalizeApprovalDetails } from "../core/approval-view.js";
 import { type CallRunner, RUNTIME_EVENTS } from "../core/calls.js";
 import { type Logger, logError, logger, redact, userError } from "../core/log.js";
-import { type MemoryStore, memoryContext } from "../core/memory.js";
+import { type Memory, memoryContext } from "../core/memory.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES } from "../core/messages.js";
-import type { SecretStore } from "../core/secrets.js";
-import { type SkillStore, skillsContext } from "../core/skills.js";
+import type { Secrets } from "../core/secrets.js";
+import { type Skills, skillsContext } from "../core/skills.js";
 import type { ApprovalPrompt, ReplyAttachment, ToolContinuation } from "../core/types.js";
 import { splitTools } from "../core-tools.js";
 import { type AttachmentProcessingConfig, attachmentInput } from "../io/attachments.js";
@@ -41,10 +41,10 @@ export type PiAgentInput = {
 	attachmentRuntime?: Runtime;
 	messages: Messages;
 	attachments?: AttachmentProcessingConfig;
-	memory?: MemoryStore;
-	skills?: SkillStore;
-	secrets?: SecretStore;
-	approvalApprovers?: ApprovalConfig["approvers"];
+	memory?: Memory;
+	skills?: Skills;
+	secrets?: Secrets;
+	approvalApprovers?: ApprovalPolicy["approvers"];
 	logger?: Logger;
 	appMessages?: AppMessages;
 };
@@ -277,7 +277,7 @@ export class PiAgent implements Agent {
 	private async create(
 		channel: string,
 		actor: string,
-		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope" | "runtimeEvents" | "actorGroups">,
+		req: Pick<AgentReq, "sessionId" | "sessionPath" | "scope" | "runtimeEvents" | "actorGroups" | "approval">,
 		context: {
 			trace?: string;
 			agent: string;
@@ -333,6 +333,7 @@ export class PiAgent implements Agent {
 		const toolContext = {
 			...context,
 			runtimeScope: req.scope?.workspace.path,
+			approval: req.approval,
 			...(req.runtimeEvents ? { [RUNTIME_EVENTS]: req.runtimeEvents } : {}),
 		};
 		const customTools = tools({

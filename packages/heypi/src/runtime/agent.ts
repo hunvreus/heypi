@@ -1,4 +1,4 @@
-import type { ModelConfig } from "../config.js";
+import type { ApprovalPolicy, ModelConfig } from "../config.js";
 import type { TurnScope } from "../core/scope.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
 import type { Attachment } from "../io/attachments.js";
@@ -32,6 +32,7 @@ export type AgentReq = {
 	signal?: AbortSignal;
 	stream?: ReplyStream;
 	runtimeEvents?: RuntimeEventHandler;
+	approval?: ApprovalPolicy;
 	onLiveSession?: (session: AgentLiveSession | undefined) => void;
 };
 

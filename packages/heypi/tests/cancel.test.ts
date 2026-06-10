@@ -14,9 +14,25 @@ test("parseIntent recognizes cancel commands", () => {
 });
 
 test("parseIntent treats incomplete control commands as help", () => {
-	for (const text of ["/approve", "/deny", "/cancel", "/bash"]) {
+	for (const text of ["/approve", "/deny", "/cancel", "/revoke", "/bash"]) {
 		assert.deepEqual(parseIntent({ text, channel: "C1", actor: "U1" }), { kind: "help" });
 	}
+});
+
+test("parseIntent recognizes approval bypass and revoke commands", () => {
+	assert.deepEqual(parseIntent({ text: "/approve approval-1 bypass", channel: "C1", actor: "U1" }), {
+		kind: "approve",
+		approvalId: "approval-1",
+		channel: "C1",
+		actor: "U1",
+		bypass: true,
+	});
+	assert.deepEqual(parseIntent({ text: "/revoke bypass-1", channel: "C1", actor: "U1" }), {
+		kind: "revoke",
+		bypassId: "bypass-1",
+		channel: "C1",
+		actor: "U1",
+	});
 });
 
 test("parseIntent treats bare control words as agent prompts", () => {

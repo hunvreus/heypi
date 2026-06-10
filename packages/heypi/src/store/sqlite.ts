@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { openDb } from "./db.js";
 import { migrate } from "./migrate.js";
 import { ApprovalRepo } from "./repo-approval.js";
+import { ApprovalBypassRepo } from "./repo-approval-bypass.js";
 import { CallRepo } from "./repo-call.js";
 import { JobRepo, JobRunRepo } from "./repo-job.js";
 import { LockRepo } from "./repo-lock.js";
@@ -24,6 +25,7 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 		turns: new TurnRepo(db),
 		calls: new CallRepo(db),
 		approvals: new ApprovalRepo(db),
+		approvalBypasses: new ApprovalBypassRepo(db),
 		jobs: new JobRepo(db),
 		jobRuns: new JobRunRepo(db),
 		locks: new LockRepo(db),

@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ApprovalConfig, ChatConfig, ModelConfig, Scope } from "../config.js";
+import type { ApprovalPolicy, CancelPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
 import { actorAllowed, actorMatches, hasActorPolicy } from "../core/approvers.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
 import { type Logger, logError, logger, message, redact, userError } from "../core/log.js";
-import type { MemoryStore, NormalizedMemoryConfig } from "../core/memory.js";
-import { type AppMessages, DEFAULT_APP_MESSAGES } from "../core/messages.js";
+import type { Memory, NormalizedMemoryConfig } from "../core/memory.js";
+import { type AppMessages, DEFAULT_APP_MESSAGES, renderMessage } from "../core/messages.js";
 import type { ScopedKey, TurnScope } from "../core/scope.js";
 import { resolveScope, selectScope } from "../core/scope.js";
-import { isSecretReply, type SecretStore } from "../core/secrets.js";
+import { isSecretReply, type Secrets } from "../core/secrets.js";
 import type { NormalizedSkillsConfig } from "../core/skills.js";
 import type { ApprovalPrompt, ApprovalResolution, Intent, ReplyAttachment } from "../core/types.js";
 import type { Agent } from "../runtime/agent.js";
@@ -93,17 +93,18 @@ export type AdapterStart = {
 	attachments?: AttachmentStore;
 	http?: HttpRegistrar;
 	store?: Store;
-	approval?: ApprovalConfig;
-	memory?: MemoryStore;
+	approval?: ApprovalPolicy;
+	memory?: Memory;
 	app?: {
 		agent: string;
 		agentDirectory?: string;
 		agentModel?: ModelConfig;
 		runtime: { name: string; root: string };
 		state: { root: string };
+		task?: Required<TaskConfig>;
 		memory: NormalizedMemoryConfig;
 		skills?: NormalizedSkillsConfig;
-		adapters: Array<{ name: string; kind: string }>;
+		adapters: Array<{ name: string; kind: string; permissions?: PermissionsConfig }>;
 		startedAt: number;
 	};
 };
@@ -112,6 +113,7 @@ export type AdapterStart = {
 export interface Adapter {
 	name: string;
 	kind: string;
+	permissions?: PermissionsConfig;
 	start(input: AdapterStart): Promise<void>;
 	ready?(input: AdapterStart): Promise<void>;
 	send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
@@ -152,6 +154,7 @@ type HandlerBase = {
 	actor: string;
 	actorGroups?: string[];
 	runtimeScope?: string;
+	approval?: ApprovalPolicy;
 };
 
 /** Creates the provider-neutral handler shared by Slack, Telegram, and future adapters. */
@@ -160,13 +163,13 @@ export function createHandler(input: {
 	store: Store;
 	callRunner: CallRunner;
 	agent: Agent;
-	approval?: ApprovalConfig;
-	chat?: ChatConfig;
+	approval?: ApprovalPolicy;
+	task?: TaskConfig;
 	scope?: Scope;
 	runtimeScope?: Scope;
 	memoryScope?: Scope;
 	skillsScope?: Scope;
-	secrets?: SecretStore;
+	secrets?: Secrets;
 	runtime?: (scope?: string) => Runtime;
 	messages?: AppMessages;
 	active?: ActiveRuns;
@@ -176,7 +179,7 @@ export function createHandler(input: {
 	const agentId = input.agentId ?? "default";
 	const log = input.logger ?? logger;
 	const active = input.active ?? new ActiveRuns();
-	const chat = normalizeChat(input.chat);
+	const task = normalizeTask(input.task);
 	const messages = input.messages ?? DEFAULT_APP_MESSAGES;
 	const scopeFor = (msg: Pick<Inbound, "provider" | "kind" | "team" | "channel" | "actor">): TurnScope => {
 		const keys = resolveScope({
@@ -228,12 +231,12 @@ export function createHandler(input: {
 		const turnScope = scopeFor(msg);
 		if (isSecretReply(rawText)) {
 			try {
-				const completed = input.secrets?.complete(rawText, turnScope.workspace);
+				const secrets = input.secrets;
+				if (!secrets) return { text: "Secret request expired, invalid, or for another scope.", private: true };
+				const completed = secrets.complete(rawText, turnScope.workspace);
 				if (!completed) return { text: "Secret request expired, invalid, or for another scope.", private: true };
 				const runtime = input.runtime?.(turnScope.workspace.path);
-				const write = runtime?.write?.bind(runtime);
-				if (!write) throw new Error("selected runtime does not support writing secret files");
-				await Promise.all(completed.files.map((file) => write({ path: file.path, content: file.value })));
+				const paths = await secrets.save(completed, runtime);
 				log.info("secret.saved", {
 					trace,
 					agent: agentId,
@@ -243,7 +246,7 @@ export function createHandler(input: {
 					actor: msg.actor,
 					fields: completed.files.map((file) => file.name).join(","),
 				});
-				return { text: `Secret saved: ${completed.files.map((file) => file.path).join(", ")}`, private: true };
+				return { text: `Secret saved: ${paths.join(", ")}`, private: true };
 			} catch (error) {
 				logError(log, "handler", {
 					trace,
@@ -263,8 +266,9 @@ export function createHandler(input: {
 			const target = active.info(intent.id);
 			// Do not reveal whether a run id exists in another thread.
 			if (!target || target.threadId !== thread.id) return cancelReply("not_found", messages);
-			if (!canCancelRun(input.approval, msg, target.actor)) return cancelReply("unauthorized", messages);
-			return cancelReply(active.cancel(intent.id), messages);
+			if (!canCancelRun(task.cancel, input.approval, msg, target.actor))
+				return cancelReply("unauthorized", messages);
+			return cancelReply(active.cancel(intent.id, actorLabel(msg)), messages);
 		}
 		if (intent.kind === "approvals") {
 			if (!canListApprovals(input.approval, msg)) {
@@ -306,7 +310,7 @@ export function createHandler(input: {
 				thread: msg.thread,
 				event: msg.eventId,
 			});
-			if (intent.kind === "ask" && chat.busy !== "reject" && active.has(lockKey)) {
+			if (intent.kind === "ask" && task.busy !== "reject" && active.has(lockKey)) {
 				const created = await input.store.messages.createOnce({
 					threadId: thread.id,
 					provider: msg.provider,
@@ -321,12 +325,12 @@ export function createHandler(input: {
 				if (!created.inserted) return undefined;
 				const queued = await active.enqueue(
 					lockKey,
-					chat.busy,
+					task.busy,
 					attributedMessage(msg, messageText),
 					msg.attachments,
 				);
 				if (queued === "queued") {
-					const text = chat.busy === "steer" ? messages.busySteer : messages.busyFollowUp;
+					const text = task.busy === "steer" ? messages.busySteer : messages.busyFollowUp;
 					return { text, finalPlacement: "thread" };
 				}
 			}
@@ -402,6 +406,7 @@ export function createHandler(input: {
 				actor: msg.actor,
 				actorGroups: msg.actorGroups,
 				runtimeScope: turnScope.workspace.path,
+				approval: input.approval,
 			};
 
 			log.debug("handler.intent", { ...base, kind: intent.kind });
@@ -434,6 +439,7 @@ export function createHandler(input: {
 								signal: currentRun.signal,
 								stream,
 								runtimeEvents,
+								approval: input.approval,
 								onLiveSession: (session) => {
 									if (session) currentRun.attach(session);
 									else currentRun.detach();
@@ -447,7 +453,7 @@ export function createHandler(input: {
 								intent.kind === "approve" || intent.kind === "deny" ? msg.replace : undefined,
 								runtimeEvents,
 							);
-			if (currentRun.signal.aborted) reply = { text: "cancelled" };
+			if (currentRun.signal.aborted) reply = { text: cancelText(messages, currentRun.cancelledBy()) };
 			const targetThreadId = reply.continuation?.threadId;
 			if (reply.continuation) {
 				reply = await continueTool({
@@ -462,6 +468,7 @@ export function createHandler(input: {
 					scope: turnScope,
 					stream,
 					runtimeEvents,
+					approval: input.approval,
 				});
 			}
 			if (reply.silent) {
@@ -499,7 +506,7 @@ export function createHandler(input: {
 					threadId: thread.id,
 					provider: msg.provider,
 					kind: msg.kind ?? msg.provider,
-					text: "cancelled",
+					text: cancelText(messages, run?.cancelledBy()),
 					state: "cancelled",
 				});
 			}
@@ -672,7 +679,7 @@ async function finishSystemTurn(input: {
 }
 
 function requiresThreadLock(kind: string): boolean {
-	return kind !== "help" && kind !== "status" && kind !== "approvals";
+	return kind !== "help" && kind !== "status" && kind !== "approvals" && kind !== "revoke";
 }
 
 type CallIntent = Exclude<Intent, { kind: "ask" | "help" | "cancel" | "approvals" | "thread_status" }>;
@@ -682,6 +689,7 @@ function scopedIntent(intent: CallIntent, msg: Inbound): CallIntent {
 	if (intent.kind === "bash") return { ...intent, channel };
 	if (intent.kind === "approve") return { ...intent, channel };
 	if (intent.kind === "deny") return { ...intent, channel };
+	if (intent.kind === "revoke") return { ...intent, channel };
 	if (intent.kind === "status") return { ...intent, channel };
 	return intent;
 }
@@ -690,25 +698,27 @@ function scopeKey(msg: Pick<Inbound, "provider" | "team" | "channel">): string {
 	return `${msg.provider}:${msg.team ?? ""}:${msg.channel}`;
 }
 
-function canListApprovals(config: ApprovalConfig | undefined, actor: Pick<Inbound, "actor" | "actorGroups">): boolean {
+function canListApprovals(config: ApprovalPolicy | undefined, actor: Pick<Inbound, "actor" | "actorGroups">): boolean {
 	return actorAllowedForApproval(config, actor);
 }
 
 function canCancelRun(
-	config: ApprovalConfig | undefined,
+	policy: CancelPolicy,
+	config: ApprovalPolicy | undefined,
 	actor: Pick<Inbound, "actor" | "actorGroups">,
 	initiator?: string,
 ): boolean {
-	return (
-		actor.actor === initiator ||
-		(hasActorPolicy(config?.approvers) || hasActorPolicy(config?.admins)
-			? actorAllowedForApproval(config, actor)
-			: false)
-	);
+	const identity = { actor: actor.actor, groups: actor.actorGroups };
+	if (actorMatches(config?.admins, identity)) return true;
+	if (policy === "allowed") return true;
+	if (policy === "admin") return false;
+	if (actorMatches(config?.approvers, identity)) return true;
+	if (policy === "approver") return false;
+	return actor.actor === initiator;
 }
 
 function actorAllowedForApproval(
-	config: ApprovalConfig | undefined,
+	config: ApprovalPolicy | undefined,
 	actor: Pick<Inbound, "actor" | "actorGroups">,
 ): boolean {
 	const identity = { actor: actor.actor, groups: actor.actorGroups };
@@ -720,7 +730,7 @@ function actorAllowedForApproval(
 
 function approvalVisible(
 	row: { channel: string; threadId: string | null },
-	config: ApprovalConfig | undefined,
+	config: ApprovalPolicy | undefined,
 	msg: Pick<Inbound, "provider" | "team">,
 	threadId: string,
 ): boolean {
@@ -728,11 +738,12 @@ function approvalVisible(
 	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
 }
 
-type NormalizedChat = Required<ChatConfig>;
+type NormalizedTask = Required<TaskConfig>;
 
-function normalizeChat(input: ChatConfig | undefined): NormalizedChat {
+function normalizeTask(input: TaskConfig | undefined): NormalizedTask {
 	return {
 		busy: input?.busy ?? "steer",
+		cancel: input?.cancel ?? "initiator",
 	};
 }
 
@@ -749,6 +760,16 @@ function runtimeProgressEvents(progress: RuntimeProgress, text: string): Runtime
 function attributedMessage(msg: Pick<Inbound, "actor" | "actorName">, text: string): string {
 	const actor = msg.actorName && msg.actorName !== msg.actor ? `${msg.actorName} (${msg.actor})` : msg.actor;
 	return `[Message from ${actor}]\n${text}`;
+}
+
+function cancelText(messages: AppMessages, actor: string | undefined): string {
+	return renderMessage(messages.cancelled, { actor });
+}
+
+function actorLabel(msg: Pick<Inbound, "provider" | "actor" | "actorName">): string {
+	if (msg.actorName && msg.actorName !== msg.actor) return msg.actorName;
+	if (msg.provider === "slack" || msg.provider === "discord") return `<@${msg.actor}>`;
+	return msg.actor;
 }
 
 function data(input: unknown, trace: string, attachments?: Attachment[], model?: ModelConfig): Record<string, unknown> {

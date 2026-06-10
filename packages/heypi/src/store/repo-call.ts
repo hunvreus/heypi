@@ -98,6 +98,24 @@ export class CallRepo {
 			.offset(Math.max(input.offset ?? 0, 0));
 	}
 
+	async failRunning(input: { agent: string; error: string }): Promise<number> {
+		const now = Date.now();
+		const rows = await this.db
+			.update(call)
+			.set({
+				state: "failed",
+				code: 1,
+				out: "",
+				err: input.error,
+				ms: 0,
+				queueWaitMs: 0,
+				updatedAt: now,
+			})
+			.where(and(eq(call.agent, input.agent), eq(call.state, "running")))
+			.returning({ id: call.id });
+		return rows.length;
+	}
+
 	async setState(id: string, state: CallState, input: { agent?: string } = {}): Promise<void> {
 		const filters = [eq(call.id, id)];
 		if (input.agent) filters.push(eq(call.agent, input.agent));

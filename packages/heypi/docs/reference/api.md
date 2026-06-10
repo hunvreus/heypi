@@ -7,7 +7,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | Import | Use |
 | --- | --- |
 | `@hunvreus/heypi` | Main app API: app lifecycle, adapters, config helpers, tools, runtime workspace helper, SQLite store. See [top-level config types](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/config.ts). |
-| `@hunvreus/heypi/adapter` | Types for custom chat or HTTP adapters. See [Custom integrations](../guides/integrations.md) and [adapter contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/io/handler.ts). |
+| `@hunvreus/heypi/adapter` | Types for custom chat or HTTP adapters, including adapter-local `permissions`. See [Custom integrations](../guides/integrations.md) and [adapter contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/io/handler.ts). |
 | `@hunvreus/heypi/attachments` | Attachment store and processing types. See [Attachments](../configuration/attachments.md) and [attachment contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/io/attachments.ts). |
 | `@hunvreus/heypi/runtime` | Runtime and runtime provider types for custom sandbox providers. See [Runtime](../configuration/runtime.md) and [runtime contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/runtime/types.ts). |
 | `@hunvreus/heypi/store` | Store types for custom durable state backends. See [store contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/store/types.ts). |
@@ -20,6 +20,11 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `runHeypi(app)` | Starts an app and installs `SIGINT`/`SIGTERM` shutdown handlers. |
 | `HeypiApp` | App instance with `start()` and `stop()`. |
 | `HeypiConfig` | Top-level config object. See [Configuration](../configuration/index.md) and [source](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/config.ts). |
+| `ApprovalConfig` | Approval policy config: expiry, self-approval, and bypass behavior. Approver/admin identities live on adapter `permissions`. |
+| `ApprovalPolicy` | Effective per-adapter approval policy passed to adapters and handlers. |
+| `TaskConfig` | Task interaction config, including busy behavior and cancellation policy. See [Task](../configuration/task.md). |
+| `CancelPolicy` | Cancellation permission level: `admin`, `approver`, `initiator`, or `allowed`. Admins are always included. |
+| `BusyBehavior` | Same-thread busy behavior: `steer`, `followUp`, or `reject`. |
 
 ## Agent
 
@@ -38,6 +43,8 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `discord(config)` | Discord adapter. See [Discord](../adapters/discord.md). |
 | `telegram(config)` | Telegram adapter. See [Telegram](../adapters/telegram.md). |
 | `webhook(config)` | JSON HTTP webhook adapter. See [Webhook](../adapters/webhook.md). |
+
+Adapter configs own channel-specific approval identity through `permissions.approvers` and `permissions.admins`.
 
 ## Tools
 

@@ -38,6 +38,9 @@ const app = createHeypi({
 				users: list("HEYPI_DISCORD_USERS"),
 				groups: list("HEYPI_DISCORD_GROUPS"),
 			},
+			permissions: {
+				approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
+			},
 			trigger: "mention",
 			streaming: true,
 		}),
@@ -47,7 +50,6 @@ const app = createHeypi({
 		tools: coreTools({ bash: true }),
 	}),
 	approval: {
-		approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
 		expiresInMs: 10 * 60 * 1000,
 	},
 	runtime: {

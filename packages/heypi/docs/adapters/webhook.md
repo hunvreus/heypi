@@ -23,6 +23,8 @@ For a runnable advanced example, see [`examples/webhook-github-docker`](https://
 | `maxBodyBytes` | No | Maximum request body size. Defaults to `1_000_000`. |
 | `maxInFlight` | No | Maximum concurrent webhook runs. Defaults to `32`. |
 | `replyHosts` | No | Allowed callback hosts for async `replyUrl` delivery. Required when using `replyUrl`. |
+| `permissions.approvers` | No | Caller-provided `user` values allowed to list and resolve approvals for this adapter. Groups are not supported. |
+| `permissions.admins` | No | Caller-provided `user` values allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 
 Webhook callers provide the actor with the request `user` field. They can also provide `threadId` and `data` depending on the route and integration. Body-supplied `threadId` values must not start with `whth_`; that prefix is reserved for server-generated webhook threads.
 

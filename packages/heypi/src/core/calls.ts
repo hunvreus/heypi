@@ -1,9 +1,9 @@
-import type { ApprovalConfig } from "../config.js";
+import type { ApprovalBypassConfig, ApprovalBypassScope, ApprovalPolicy } from "../config.js";
 import { isRuntimeStartupError, RUNTIME_STARTUP_ERROR_KIND } from "../runtime/errors.js";
 import { runtimeWithEvents } from "../runtime/events.js";
 import type { Queue } from "../runtime/queue.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
-import type { Approval, Approvals, Calls, Store } from "../store/types.js";
+import type { Approval, ApprovalBypasses, Approvals, Calls, Store } from "../store/types.js";
 import { isAbortError } from "./active.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
 import { actorAllowed, actorLabels, actorMatches, hasActorPolicy } from "./approvers.js";
@@ -14,6 +14,9 @@ import { assertTransition, parseCallState } from "./state.js";
 import type { ApprovalDetail, ApprovalResolution, Confirm, Intent, Reply, ToolExecute } from "./types.js";
 
 export const RUNTIME_EVENTS = Symbol("runtime-events");
+const DEFAULT_BYPASS_DURATION_MS = 5 * 60_000;
+const DEFAULT_BYPASS_MAX_DURATION_MS = 15 * 60_000;
+const DEFAULT_BYPASS_SCOPE: ApprovalBypassScope = "thread";
 
 export type CallContext = {
 	trace?: string;
@@ -24,6 +27,7 @@ export type CallContext = {
 	toolCall?: string;
 	actorGroups?: string[];
 	runtimeScope?: string;
+	approval?: ApprovalPolicy;
 	[RUNTIME_EVENTS]?: RuntimeEventHandler;
 };
 
@@ -50,12 +54,13 @@ export class CallRunner {
 		private readonly approvals: Approvals,
 		private readonly queue: Queue,
 		private readonly runtime: Runtime | ((scope?: string) => Runtime),
-		private readonly approval: ApprovalConfig = {},
+		private readonly approval: ApprovalPolicy = {},
 		private readonly log: Logger = logger,
 		private readonly transaction?: Store["transaction"],
 		private readonly bashConfirm?: Confirm,
 		private readonly messages: AppMessages = DEFAULT_APP_MESSAGES,
 		private readonly agent = "default",
+		private readonly approvalBypasses?: ApprovalBypasses,
 	) {}
 
 	register(tool: string, execute: ToolExecute): void {
@@ -74,6 +79,7 @@ export class CallRunner {
 		if (intent.kind === "bash") return this.bash(intent.channel, intent.actor, intent.cmd, eventContext, signal);
 		if (intent.kind === "approve") return this.handleApprove(intent, eventContext, signal, onApproved, onExpired);
 		if (intent.kind === "deny") return this.handleDeny(intent, eventContext, onExpired);
+		if (intent.kind === "revoke") return this.handleRevoke(intent, eventContext);
 		return this.handleStatus(intent, eventContext);
 	}
 
@@ -100,7 +106,7 @@ export class CallRunner {
 			context,
 		};
 		if (confirmation?.block) return this.block(base, confirmation.block);
-		if (confirmation) return this.requestApproval(base, confirmation.reason);
+		if (confirmation && !(await this.bypassActive(base))) return this.requestApproval(base, confirmation.reason);
 		const row = await this.createCall(base, "running");
 		return this.executeBash(row.id, channel, actor, command, context, signal);
 	}
@@ -127,7 +133,7 @@ export class CallRunner {
 			context: input.context,
 		};
 		if (confirmation?.block) return this.block(base, confirmation.block);
-		if (confirmation) return this.requestApproval(base, confirmation.reason);
+		if (confirmation && !(await this.bypassActive(base))) return this.requestApproval(base, confirmation.reason);
 		const row = await this.createCall(base, "running");
 		return this.executeTool(
 			row.id,
@@ -319,7 +325,8 @@ export class CallRunner {
 		const pending = await this.pendingApproval(intent, this.contextAgent(context));
 		if (!pending.ok) return pending.reply;
 		const { approval } = pending;
-		if (!this.canApprove(intent.actor, context.actorGroups, approval.requestedBy ?? undefined)) {
+		const policy = this.policy(context);
+		if (!this.canApprove(intent.actor, context.actorGroups, approval.requestedBy ?? undefined, policy)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
 				call: approval.callId,
@@ -330,7 +337,7 @@ export class CallRunner {
 			return renderCall({
 				callId: approval.callId,
 				state: "unauthorized",
-				approvers: this.approvers(),
+				approvers: this.approvers(policy),
 				messages: this.messages,
 			});
 		}
@@ -338,6 +345,10 @@ export class CallRunner {
 		const current = await this.calls.get(approval.callId, { agent: approval.agent });
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "running");
+		if (intent.bypass) {
+			if (!this.approvalBypasses) return { text: "Approval bypasses are not configured.", private: true };
+			if (!this.bypassConfig(policy)) return { text: "Approval bypasses are disabled.", private: true };
+		}
 		if (
 			!(await this.updateApprovalCall(
 				approval.id,
@@ -357,6 +368,20 @@ export class CallRunner {
 			});
 			return staleApproval(this.messages.approvalResolved);
 		}
+		let bypass: Awaited<ReturnType<ApprovalBypasses["create"]>> | undefined;
+		if (intent.bypass) {
+			try {
+				bypass = await this.createBypass(approval, current, intent.actor, context);
+			} catch (error) {
+				this.log.warn("approval_bypass.create_failed", {
+					approval: approval.id,
+					call: approval.callId,
+					channel: approval.channel,
+					actor: intent.actor,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
 		this.log.info("approval.approved", {
 			approval: approval.id,
 			call: approval.callId,
@@ -365,10 +390,11 @@ export class CallRunner {
 			tool: current.tool,
 			thread: current.threadId ?? undefined,
 			turn: current.turnId ?? undefined,
+			bypass: bypass?.id,
 		});
 		if (onApproved) {
 			try {
-				await onApproved(this.approvalSummary(approval, current, "approved"));
+				await onApproved(this.approvalSummary(approval, current, "approved", policy));
 			} catch (error) {
 				this.log.warn("approval.ack_failed", {
 					approval: approval.id,
@@ -406,6 +432,34 @@ export class CallRunner {
 		);
 	}
 
+	private async handleRevoke(intent: Extract<Intent, { kind: "revoke" }>, context: CallContext): Promise<Reply> {
+		if (!this.approvalBypasses) return { text: "Approval bypasses are not configured.", private: true };
+		const policy = this.policy(context);
+		if (!this.canApprove(intent.actor, context.actorGroups, undefined, policy)) {
+			this.log.warn("approval_bypass.unauthorized_revoke", {
+				bypass: intent.bypassId,
+				channel: intent.channel,
+				actor: intent.actor,
+			});
+			return renderCall({
+				callId: intent.bypassId,
+				state: "unauthorized",
+				approvers: this.approvers(policy),
+				messages: this.messages,
+			});
+		}
+		const revoked = await this.approvalBypasses.revoke(intent.bypassId, intent.actor, {
+			agent: this.contextAgent(context),
+		});
+		if (!revoked) return { text: "Approval bypass not found or already revoked.", private: true };
+		this.log.info("approval_bypass.revoked", {
+			bypass: intent.bypassId,
+			channel: intent.channel,
+			actor: intent.actor,
+		});
+		return { text: `Approval bypass revoked: ${intent.bypassId}`, private: true };
+	}
+
 	private async handleDeny(
 		intent: Extract<Intent, { kind: "deny" }>,
 		context: CallContext,
@@ -414,7 +468,8 @@ export class CallRunner {
 		const pending = await this.pendingApproval(intent, this.contextAgent(context));
 		if (!pending.ok) return pending.reply;
 		const { approval } = pending;
-		if (!this.canDeny(intent.actor, context.actorGroups, approval.requestedBy ?? undefined)) {
+		const policy = this.policy(context);
+		if (!this.canDeny(intent.actor, context.actorGroups, approval.requestedBy ?? undefined, policy)) {
 			this.log.warn("approval.unauthorized", {
 				approval: approval.id,
 				call: approval.callId,
@@ -425,7 +480,7 @@ export class CallRunner {
 			return renderCall({
 				callId: approval.callId,
 				state: "unauthorized",
-				approvers: this.approvers(),
+				approvers: this.approvers(policy),
 				messages: this.messages,
 			});
 		}
@@ -461,7 +516,7 @@ export class CallRunner {
 			thread: current.threadId ?? undefined,
 			turn: current.turnId ?? undefined,
 		});
-		return this.approvalSummary(approval, current, "rejected");
+		return this.approvalSummary(approval, current, "rejected", policy);
 	}
 
 	private async pendingApproval(
@@ -512,22 +567,100 @@ export class CallRunner {
 		});
 	}
 
-	private canApprove(actor: string, groups?: string[], requestedBy?: string): boolean {
-		if (this.approval.allowSelfApproval === false && requestedBy && actor === requestedBy) return false;
+	private canApprove(
+		actor: string,
+		groups: string[] | undefined,
+		requestedBy: string | undefined,
+		policy: ApprovalPolicy,
+	): boolean {
+		if (policy.allowSelfApproval === false && requestedBy && actor === requestedBy) return false;
 		const identity = { actor, groups };
-		if (actorMatches(this.approval.admins, identity)) return true;
-		if (actorMatches(this.approval.approvers, identity)) return true;
-		if (!hasActorPolicy(this.approval.admins) && !hasActorPolicy(this.approval.approvers))
-			return actorAllowed(undefined, identity);
+		if (actorMatches(policy.admins, identity)) return true;
+		if (actorMatches(policy.approvers, identity)) return true;
+		if (!hasActorPolicy(policy.admins) && !hasActorPolicy(policy.approvers)) return actorAllowed(undefined, identity);
 		return false;
 	}
 
-	private canDeny(actor: string, groups: string[] | undefined, requestedBy?: string): boolean {
-		return this.canApprove(actor, groups, requestedBy) || actor === requestedBy;
+	private canDeny(
+		actor: string,
+		groups: string[] | undefined,
+		requestedBy: string | undefined,
+		policy: ApprovalPolicy,
+	): boolean {
+		return this.canApprove(actor, groups, requestedBy, policy) || actor === requestedBy;
 	}
 
-	private approvers(): string[] {
-		return [...new Set([...actorLabels(this.approval.approvers), ...actorLabels(this.approval.admins)])];
+	private bypassConfig(policy = this.approval): Required<ApprovalBypassConfig> | undefined {
+		if (!policy.bypass) return undefined;
+		const durationMs = clampPositive(
+			policy.bypass.durationMs,
+			DEFAULT_BYPASS_DURATION_MS,
+			policy.bypass.maxDurationMs ?? DEFAULT_BYPASS_MAX_DURATION_MS,
+		);
+		const maxDurationMs = Math.max(durationMs, policy.bypass.maxDurationMs ?? DEFAULT_BYPASS_MAX_DURATION_MS);
+		return {
+			durationMs,
+			maxDurationMs,
+			scope: policy.bypass.scope ?? DEFAULT_BYPASS_SCOPE,
+		};
+	}
+
+	private async bypassActive(input: CallBase): Promise<boolean> {
+		if (!this.approvalBypasses) return false;
+		const config = this.bypassConfig(this.policy(input.context));
+		if (!config) return false;
+		const bypass = await this.approvalBypasses.active({
+			agent: this.contextAgent(input.context),
+			channel: input.channel,
+			threadId: input.context?.thread,
+			actor: input.actor,
+		});
+		if (!bypass) return false;
+		this.log.info("approval_bypass.used", {
+			...input.context,
+			bypass: bypass.id,
+			channel: input.channel,
+			tool: input.tool,
+			scope: bypass.scope,
+			expiresAt: bypass.expiresAt,
+		});
+		return true;
+	}
+
+	private async createBypass(
+		approval: Approval,
+		call: { threadId: string | null; actor: string | null },
+		actor: string,
+		context: CallContext,
+	): Promise<Awaited<ReturnType<ApprovalBypasses["create"]>>> {
+		const bypasses = this.approvalBypasses;
+		const config = this.bypassConfig(this.policy(context));
+		if (!bypasses || !config) throw new Error("approval bypasses are disabled");
+		const bypass = await bypasses.create({
+			agent: approval.agent,
+			scope: config.scope,
+			channel: approval.channel,
+			threadId: call.threadId ?? context.thread,
+			actor: call.actor ?? approval.requestedBy ?? undefined,
+			createdBy: actor,
+			reason: approval.reason,
+			approvalId: approval.id,
+			expiresAt: Date.now() + config.durationMs,
+		});
+		this.log.info("approval_bypass.created", {
+			bypass: bypass.id,
+			approval: approval.id,
+			call: approval.callId,
+			channel: approval.channel,
+			scope: bypass.scope,
+			createdBy: actor,
+			expiresAt: bypass.expiresAt,
+		});
+		return bypass;
+	}
+
+	private approvers(policy = this.approval): string[] {
+		return [...new Set([...actorLabels(policy.approvers), ...actorLabels(policy.admins)])];
 	}
 
 	private expiresAt(): number | undefined {
@@ -604,6 +737,7 @@ export class CallRunner {
 		},
 		call: { tool: string; command: string | null; args: string | null },
 		resolution?: ApprovalResolution,
+		policy = this.approval,
 	): Reply {
 		return {
 			...renderCall({
@@ -613,7 +747,7 @@ export class CallRunner {
 				reason: approval.reason,
 				command: call.command ?? `${call.tool} ${call.args ?? ""}`.trim(),
 				runtime: approval.runtime,
-				approvers: this.approvers(),
+				approvers: this.approvers(policy),
 				requestedBy: approval.requestedBy ?? undefined,
 				details: parseApprovalDetails(approval.details),
 			}),
@@ -643,6 +777,10 @@ export class CallRunner {
 
 	private contextAgent(context?: CallContext): string {
 		return context?.agent ?? this.agent;
+	}
+
+	private policy(context?: CallContext): ApprovalPolicy {
+		return context?.approval ?? this.approval;
 	}
 }
 
@@ -686,6 +824,11 @@ function args(input: string | null): Record<string, unknown> {
 	if (!input) return {};
 	const parsed = JSON.parse(input) as unknown;
 	return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+}
+
+function clampPositive(value: number | undefined, fallback: number, max: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return Math.max(1, Math.min(fallback, max));
+	return Math.max(1, Math.min(value, max));
 }
 
 function callContext(call: {

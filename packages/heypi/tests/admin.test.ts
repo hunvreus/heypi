@@ -388,9 +388,10 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 		{
 			agent: { id: "agent", model: "openai/gpt-5-mini" },
 			runtime: { name: "host-bash", root: "/tmp/workspace" },
+			task: { busy: "followUp", cancel: "approver" },
 			startedAt: now - 120_000,
 			adapters: [
-				{ name: "ops", kind: "slack" },
+				{ name: "ops", kind: "slack", permissions: { approvers: ["U_APPROVER"], admins: { groups: ["S_ADMIN"] } } },
 				{ name: "github", kind: "webhook" },
 			],
 			memory: {
@@ -437,9 +438,13 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 	assert.match(body, /Model/);
 	assert.match(body, /Runtime/);
 	assert.match(body, /HTTP/);
+	assert.match(body, /Task/);
+	assert.match(body, /Busy: followUp; cancel: approver/);
 	assert.match(body, /Adapters/);
-	assert.match(body, /title="slack"/);
+	assert.match(body, /title="slack, 1 approver, 1 admin"/);
 	assert.match(body, /ops/);
+	assert.match(body, /1 approver/);
+	assert.match(body, /1 admin/);
 	assert.match(body, /github/);
 	assert.doesNotMatch(body, /ops \(slack\)/);
 	assert.match(body, /Memory/);

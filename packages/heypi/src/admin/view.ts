@@ -1,3 +1,4 @@
+import { actorGroups, actorUsers } from "../core/approvers.js";
 import type { Approval } from "../store/types.js";
 import {
 	type AdminActivityDetail,
@@ -289,6 +290,7 @@ ${card(
 			["Model", mono(input.agent.model ?? "-")],
 			["Runtime", mono(input.runtime.name)],
 			["HTTP", mono(`${admin.host}:${admin.port}`)],
+			["Task", taskSummary(input.task)],
 			["Adapters", adapterList(input.adapters)],
 			["Memory", memory],
 			["Started", `${duration(uptime)} ago (${time(input.startedAt)})`],
@@ -1139,12 +1141,32 @@ function adapterList(adapters: AdminOverview["adapters"]): Cell {
 	if (!adapters.length) return mono("none");
 	return html(
 		`<span class="flex min-w-0 flex-wrap items-center gap-2">${adapters
-			.map(
-				(adapter) =>
-					`<span class="inline-flex min-w-0 items-center gap-1.5" title="${escapeHtml(adapter.kind)}">${adapterIcon(adapter.kind)}<span class="min-w-0 truncate font-mono text-[13px]">${escapeHtml(adapter.name)}</span></span>`,
-			)
+			.map((adapter) => {
+				const permission = adapterPermissionSummary(adapter.permissions);
+				const title = [adapter.kind, permission].filter(Boolean).join(", ");
+				return `<span class="inline-flex min-w-0 items-center gap-1.5" title="${escapeHtml(title)}">${adapterIcon(adapter.kind)}<span class="min-w-0 truncate font-mono text-[13px]">${escapeHtml(adapter.name)}</span>${permission ? `<span class="text-xs text-muted-foreground">${escapeHtml(permission)}</span>` : ""}</span>`;
+			})
 			.join("")}</span>`,
 	);
+}
+
+function taskSummary(task: AdminOverview["task"]): string {
+	return `Busy: ${task.busy}; cancel: ${task.cancel}`;
+}
+
+function adapterPermissionSummary(permissions: AdminOverview["adapters"][number]["permissions"]): string {
+	const approvers = actorCount(permissions?.approvers);
+	const admins = actorCount(permissions?.admins);
+	return [
+		approvers ? `${approvers} approver${approvers === 1 ? "" : "s"}` : undefined,
+		admins ? `${admins} admin${admins === 1 ? "" : "s"}` : undefined,
+	]
+		.filter(Boolean)
+		.join(", ");
+}
+
+function actorCount(policy: Parameters<typeof actorUsers>[0]): number {
+	return actorUsers(policy).length + actorGroups(policy).length;
 }
 
 function memorySummary(memory: AdminMemory): string {

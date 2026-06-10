@@ -18,6 +18,8 @@ For a runnable example, see [`examples/discord-gondolin`](https://github.com/hun
 | `allow.users` | No | Discord user IDs allowed to talk to the bot. |
 | `allow.groups` | No | Discord role IDs allowed to talk to the bot. |
 | `allow.dms` | No | Whether DMs are accepted. |
+| `permissions.approvers` | No | Discord user IDs or role IDs allowed to list and resolve approvals for this adapter. |
+| `permissions.admins` | No | Discord user IDs or role IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level channel messages. Defaults to `"mention"` in channels. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for thread replies. Defaults to `"message"` in active threads. |
 | `progress` | No | Progress message behavior, or `false`. |

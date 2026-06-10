@@ -2,11 +2,57 @@
 
 ## [Unreleased]
 
+### Breaking
+- Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
+
+  Before:
+
+  ```ts
+  createHeypi({
+  	approval: {
+  		approvers: ["U123"],
+  		admins: ["U999"],
+  	},
+  	adapters: [slack({ ... })],
+  });
+  ```
+
+  After:
+
+  ```ts
+  createHeypi({
+  	approval: {
+  		// expiry, self-approval, and bypass policy
+  	},
+  	adapters: [
+  		slack({
+  			...
+  			permissions: {
+  				approvers: ["U123"],
+  				admins: ["U999"],
+  			},
+  		}),
+  	],
+  });
+  ```
+
 ### Added
 - Added approval admins with inherited approver permissions and configurable self-approval blocking.
+- Added adapter-scoped approval permissions with per-adapter approvers and admins.
+- Added `task.cancel` with `admin`, `approver`, `initiator`, and `allowed` cancellation policy levels.
+- Added temporary approval bypasses through `/approve <approval-id> bypass` and `/revoke <bypass-id>`.
+- Added durable approval bypass storage.
+- Added admin configuration visibility for task behavior and adapter approval permissions.
 
 ### Changed
 - Changed chat control commands to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash`.
+- Changed cancellation output to a single terminal task message that includes the cancelling actor when known.
+- Changed same-thread busy behavior configuration from `chat.busy` to `task.busy`.
+- Changed startup recovery to fail stale running calls and job runs after a process restart.
+
+### Fixed
+- Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.
+- Fixed Slack user group and Discord role resolution for approval admins.
 
 ## [0.1.3] - 2026-06-04
 

@@ -8,7 +8,7 @@ import type { CallErrorKind, CallState } from "../src/core/types.js";
 import { RUNTIME_STARTUP_ERROR_KIND, RuntimeStartupError } from "../src/runtime/errors.js";
 import { Queue } from "../src/runtime/queue.js";
 import type { Runtime } from "../src/runtime/types.js";
-import type { Approval, Approvals, Call, Calls } from "../src/store/types.js";
+import type { Approval, ApprovalBypass, ApprovalBypasses, Approvals, Call, Calls } from "../src/store/types.js";
 
 function runtime(): Runtime {
 	return {
@@ -87,6 +87,59 @@ test("authorized approval executes the pending command", async () => {
 		events.some((event) => event.event === "approval.approved"),
 		true,
 	);
+});
+
+test("approval bypass skips confirmation in matching thread until revoked", async () => {
+	const calls = new FakeCalls();
+	const approvals = new FakeApprovals();
+	const bypasses = new FakeBypasses();
+	const callRunner = new CallRunner(
+		calls,
+		approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		runtime(),
+		{
+			approvers: ["U_ALLOWED"],
+			bypass: { durationMs: 60_000, maxDurationMs: 60_000, scope: "thread" },
+		},
+		noLogger(),
+		undefined,
+		commandConfirm(),
+		normalizeMessages(),
+		"default",
+		bypasses,
+	);
+
+	await callRunner.bash("slack:T1:C1", "U_REQUESTER", "curl https://example.com", { thread: "thread-1" });
+	const approved = await callRunner.handle(
+		{
+			kind: "approve",
+			approvalId: approvals.rows[0].id,
+			channel: "slack:T1:C1",
+			actor: "U_ALLOWED",
+			bypass: true,
+		},
+		{ thread: "thread-1" },
+	);
+	assert.match(approved.text, /Result: `done`/);
+	assert.equal(bypasses.rows.length, 1);
+
+	const bypassed = await callRunner.bash("slack:T1:C1", "U_REQUESTER", "curl https://example.com", {
+		thread: "thread-1",
+	});
+	assert.match(bypassed.text, /Result: `done`/);
+	assert.equal(approvals.rows.length, 1);
+
+	const revoked = await callRunner.handle(
+		{ kind: "revoke", bypassId: bypasses.rows[0].id, channel: "slack:T1:C1", actor: "U_ALLOWED" },
+		{ thread: "thread-1" },
+	);
+	assert.match(revoked.text, /revoked/i);
+
+	const requestedAgain = await callRunner.bash("slack:T1:C1", "U_REQUESTER", "curl https://example.com", {
+		thread: "thread-1",
+	});
+	assert.equal(requestedAgain.approval?.id, approvals.rows[1]?.id);
 });
 
 test("approval admins inherit approver permissions", async () => {
@@ -974,6 +1027,73 @@ class FakeApprovals implements Approvals {
 		row.state = state;
 		row.resolvedBy = actor;
 		row.resolvedAt = Date.now();
+		return true;
+	}
+}
+
+class FakeBypasses implements ApprovalBypasses {
+	readonly rows: ApprovalBypass[] = [];
+
+	async create(input: {
+		agent: string;
+		scope: "thread" | "channel" | "user" | "adapter";
+		channel: string;
+		threadId?: string;
+		actor?: string;
+		createdBy: string;
+		reason?: string;
+		approvalId?: string;
+		expiresAt: number;
+	}): Promise<ApprovalBypass> {
+		const row: ApprovalBypass = {
+			id: `bypass-${this.rows.length + 1}`,
+			agent: input.agent,
+			scope: input.scope,
+			channel: input.channel,
+			threadId: input.threadId ?? null,
+			actor: input.actor ?? null,
+			createdBy: input.createdBy,
+			reason: input.reason ?? null,
+			approvalId: input.approvalId ?? null,
+			createdAt: Date.now(),
+			expiresAt: input.expiresAt,
+			revokedAt: null,
+			revokedBy: null,
+		};
+		this.rows.push(row);
+		return row;
+	}
+
+	async active(input: {
+		agent: string;
+		channel: string;
+		threadId?: string;
+		actor?: string;
+		now?: number;
+	}): Promise<ApprovalBypass | undefined> {
+		const now = input.now ?? Date.now();
+		const adapter = input.channel.split(":")[0];
+		return this.rows.find((row) => {
+			if (row.agent !== input.agent || row.revokedAt || row.expiresAt <= now) return false;
+			if (row.scope === "adapter") return row.channel.startsWith(`${adapter}:`);
+			if (row.scope === "channel") return row.channel === input.channel;
+			if (row.scope === "thread") return row.threadId === input.threadId;
+			if (row.scope === "user") return row.actor === input.actor;
+			return false;
+		});
+	}
+
+	async listActive(): Promise<ApprovalBypass[]> {
+		return this.rows.filter((row) => !row.revokedAt && row.expiresAt > Date.now());
+	}
+
+	async revoke(id: string, actor: string, input: { agent?: string } = {}): Promise<boolean> {
+		const row = this.rows.find(
+			(item) => item.id === id && !item.revokedAt && (!input.agent || item.agent === input.agent),
+		);
+		if (!row) return false;
+		row.revokedAt = Date.now();
+		row.revokedBy = actor;
 		return true;
 	}
 }

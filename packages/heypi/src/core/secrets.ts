@@ -30,6 +30,21 @@ export type SecretField = {
 	label: string;
 };
 
+export type CompletedSecret = {
+	id: string;
+	files: SecretFile[];
+};
+
+export type SecretFile = {
+	name: string;
+	path: string;
+	value: string;
+};
+
+export type SecretWriteTarget = {
+	write?(input: { path: string; content: string }): Promise<{ path: string; bytes: number }>;
+};
+
 type PendingSecret = {
 	id: string;
 	scope: ScopedKey;
@@ -38,7 +53,11 @@ type PendingSecret = {
 	expiresAt: number;
 };
 
-export class SecretStore {
+/**
+ * Owns encrypted secret handoffs. Pending keys stay in process memory; completed values are
+ * written only through the explicit runtime target passed to `save`.
+ */
+export class Secrets {
 	private readonly pending = new Map<string, PendingSecret>();
 
 	constructor(private readonly config: NormalizedSecretsConfig) {}
@@ -79,10 +98,7 @@ export class SecretStore {
 		return { id, url: `${this.config.url}#${hash}`, fields, expiresAt };
 	}
 
-	complete(
-		text: string,
-		scope: ScopedKey,
-	): { id: string; files: Array<{ name: string; path: string; value: string }> } | undefined {
+	complete(text: string, scope: ScopedKey): CompletedSecret | undefined {
 		const match = text.match(/\bheypi-secret:([^:\s]+):([A-Za-z0-9_-]+)/);
 		if (!match) return undefined;
 		const [, id, payload] = match;
@@ -103,6 +119,13 @@ export class SecretStore {
 				value: values[field.name] ?? "",
 			})),
 		};
+	}
+
+	async save(secret: CompletedSecret, target: SecretWriteTarget | undefined): Promise<string[]> {
+		const write = target?.write?.bind(target);
+		if (!write) throw new Error("selected runtime does not support writing secret files");
+		await Promise.all(secret.files.map((file) => write({ path: file.path, content: file.value })));
+		return secret.files.map((file) => file.path);
 	}
 }
 

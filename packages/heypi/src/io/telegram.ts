@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import type { PermissionsConfig } from "../config.js";
 import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
@@ -26,6 +27,7 @@ export type TelegramConfig = {
 	apiUrl?: { override: string };
 	pollTimeoutSeconds?: number;
 	allow?: TelegramAllow;
+	permissions?: PermissionsConfig;
 	trigger?: TelegramTrigger;
 	threadTrigger?: TelegramTrigger | false;
 	progress?: TelegramProgress | false;
@@ -59,6 +61,7 @@ export function telegram(input: TelegramConfig): Adapter {
 	return {
 		name,
 		kind,
+		permissions: input.permissions,
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
@@ -429,6 +432,10 @@ async function handleCallback(input: {
 			replace: action.kind === "approve" || action.kind === "deny" ? replace : undefined,
 		});
 		if (!out) {
+			await answer();
+			return;
+		}
+		if (out.silent) {
 			await answer();
 			return;
 		}

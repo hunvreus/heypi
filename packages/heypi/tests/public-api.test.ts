@@ -134,15 +134,14 @@ test("createHeypi warns about risky startup security posture", async () => {
 	}
 });
 
-test("createHeypi treats approval admins as configured approval actors", async () => {
+test("createHeypi treats adapter approval admins as configured approval actors", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-security-admins-"));
 	try {
 		const warnings: Record<string, unknown>[] = [];
 		createHeypi({
 			state: { root: join(root, "state") },
 			logger: fakeLogger(warnings),
-			approval: { admins: ["U_ADMIN"] },
-			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
+			adapters: [{ name: "test", kind: "test", permissions: { admins: ["U_ADMIN"] }, start: async () => undefined }],
 			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
@@ -154,6 +153,43 @@ test("createHeypi treats approval admins as configured approval actors", async (
 			warnings.some((row) => row.event === "security.approvers_missing"),
 			false,
 		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi passes adapter approval permissions to the adapter handler", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-adapter-permissions-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		let approval: Parameters<Adapter["start"]>[0]["approval"];
+		const adapter: Adapter = {
+			name: "test",
+			kind: "test",
+			permissions: { approvers: ["U_ADAPTER_APPROVER"], admins: ["U_ADAPTER_ADMIN"] },
+			start: async (input) => {
+				approval = input.approval;
+			},
+		};
+		const app = createHeypi({
+			store,
+			state: { root: join(root, "state") },
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			approval: { expiresInMs: 60_000 },
+			adapters: [adapter],
+			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		assert.equal(approval?.expiresInMs, 60_000);
+		assert.deepEqual(approval?.approvers, ["U_ADAPTER_APPROVER"]);
+		assert.deepEqual(approval?.admins, ["U_ADAPTER_ADMIN"]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -711,6 +747,30 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			actor: "U1",
 			trace: "trace-stale",
 		});
+		const call = await store.calls.create({
+			agent: "default",
+			turnId: turn.id,
+			threadId: thread.id,
+			channel: "slack::C1",
+			actor: "U1",
+			tool: "bash",
+			command: "sleep 60",
+			state: "running",
+		});
+		await store.jobs?.upsert({
+			agent: "default",
+			id: "daily",
+			kind: "cron",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			prompt: "ping",
+			nextAt: Date.now(),
+		});
+		const jobRun = await store.jobRuns?.create({
+			jobAgent: "default",
+			jobId: "daily",
+			threadId: thread.id,
+			trace: "job:default:daily:stale",
+		});
 		await store.locks?.acquire({ key: `thread:${thread.id}`, owner: "dead-process" });
 		const otherThread = await store.threads.getOrCreate({
 			agent: "other",
@@ -735,6 +795,16 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			actor: "U2",
 			trace: "trace-other",
 		});
+		const otherCall = await store.calls.create({
+			agent: "other",
+			turnId: otherTurn.id,
+			threadId: otherThread.id,
+			channel: "slack::C2",
+			actor: "U2",
+			tool: "bash",
+			command: "sleep 60",
+			state: "running",
+		});
 		await store.locks?.acquire({ key: `thread:${otherThread.id}`, owner: "other-process" });
 
 		const adapter: Adapter = { name: "test", kind: "test", start: async () => undefined };
@@ -755,9 +825,13 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 
 		const recovered = (await store.turns.listForThread(thread.id)).find((row) => row.id === turn.id);
 		assert.equal(recovered?.state, "failed");
+		assert.equal((await store.calls.get(call.id))?.state, "failed");
+		assert.equal((await store.jobRuns?.lastForJob({ agent: "default", id: "daily" }))?.state, "failed");
+		assert.equal(jobRun?.inserted, true);
 		assert.equal(await store.locks?.get(`thread:${thread.id}`), undefined);
 		const other = (await store.turns.listForThread(otherThread.id)).find((row) => row.id === otherTurn.id);
 		assert.equal(other?.state, "running");
+		assert.equal((await store.calls.get(otherCall.id))?.state, "running");
 		assert.equal((await store.locks?.get(`thread:${otherThread.id}`))?.owner, "other-process");
 	} finally {
 		await rm(root, { recursive: true, force: true });

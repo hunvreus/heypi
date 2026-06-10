@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { CallRunner } from "../src/core/calls.js";
 import { resolveScope } from "../src/core/scope.js";
-import { normalizeSecretsConfig, SecretStore, secretCss, secretPage, secretStyleRoute } from "../src/core/secrets.js";
+import { normalizeSecretsConfig, Secrets, secretCss, secretPage, secretStyleRoute } from "../src/core/secrets.js";
 import { createHandler } from "../src/io/handler.js";
 import { Queue } from "../src/runtime/queue.js";
 import type { Runtime } from "../src/runtime/types.js";
@@ -62,7 +62,7 @@ test("secret config uses one public URL and optional self-host serving", () => {
 
 test("secret requests decrypt only for the matching scope", () => {
 	const config = normalizeSecretsConfig({ enabled: true, url: "https://example.com/secret" });
-	const store = new SecretStore(config);
+	const store = new Secrets(config);
 	const keys = resolveScope({
 		agent: "agent",
 		provider: "slack",
@@ -91,12 +91,42 @@ test("secret requests decrypt only for the matching scope", () => {
 	assert.match(secretCss(), /\.btn/);
 });
 
+test("secrets save completed values through an explicit write target", async () => {
+	const config = normalizeSecretsConfig({ enabled: true, url: "https://example.com/secret" });
+	const store = new Secrets(config);
+	const keys = resolveScope({
+		agent: "agent",
+		provider: "slack",
+		kind: "slack",
+		team: "T1",
+		channel: "C1",
+		actor: "U1",
+	});
+	const request = store.create(keys.channel, {
+		reason: "Need an API token.",
+		fields: [{ name: "API_TOKEN" }],
+	});
+	const completed = store.complete(secretBlob(request.url, { API_TOKEN: "secret-value" }), keys.channel);
+	assert.ok(completed);
+	const writes: Array<{ path: string; content: string }> = [];
+
+	const paths = await store.save(completed, {
+		write: async (input) => {
+			writes.push({ path: input.path, content: input.content });
+			return { path: input.path, bytes: input.content.length };
+		},
+	});
+
+	assert.deepEqual(paths, [".secrets/API_TOKEN"]);
+	assert.deepEqual(writes, [{ path: ".secrets/API_TOKEN", content: "secret-value" }]);
+});
+
 test("handler stores secret replies in the selected runtime without model exposure", async () => {
 	const db = await tempDb();
 	try {
 		const store = sqliteStore({ path: db.path });
 		await store.setup();
-		const secrets = new SecretStore(normalizeSecretsConfig(true));
+		const secrets = new Secrets(normalizeSecretsConfig(true));
 		const keys = resolveScope({
 			agent: "a",
 			provider: "slack",

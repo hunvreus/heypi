@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import type { Scope, SkillsConfig, SkillWritePolicy } from "../config.js";
+import { localWorkspace, type Workspace } from "../workspace/workspace.js";
 import type { ScopedKey } from "./scope.js";
 
 const DEFAULT_MAX_SKILLS = 20;
@@ -28,11 +28,15 @@ export type SkillEntry = {
 	truncated: boolean;
 };
 
-export class SkillStore {
+export class Skills {
+	private readonly workspace: Workspace;
+
 	constructor(
-		private readonly root: string,
+		root: string | Workspace,
 		private readonly config: NormalizedSkillsConfig,
-	) {}
+	) {
+		this.workspace = typeof root === "string" ? localWorkspace(root) : root;
+	}
 
 	enabled(): boolean {
 		return this.config.enabled;
@@ -49,17 +53,16 @@ export class SkillStore {
 	async list(scope: ScopedKey): Promise<SkillEntry[]> {
 		if (!this.config.enabled) return [];
 		const base = this.scopePath(scope);
-		const names = await readdir(base, { withFileTypes: true }).catch((error: unknown) => {
-			if (enoent(error)) return [];
-			throw error;
+		const entries = await this.workspace.list(base);
+		const names = entries.filter((entry) => {
+			if (entry.type !== "directory") return false;
+			const rel = entry.path.slice(`${base}/`.length);
+			return NAME_RE.test(rel) && !rel.includes("/");
 		});
 		const out: SkillEntry[] = [];
 		for (const entry of names) {
-			if (!entry.isDirectory() || !NAME_RE.test(entry.name)) continue;
-			const skill = await this.readEntry(scope, entry.name).catch((error: unknown) => {
-				if (enoent(error)) return undefined;
-				throw error;
-			});
+			const name = entry.path.slice(`${base}/`.length);
+			const skill = await this.readEntry(scope, name).catch(() => undefined);
 			if (skill) out.push(skill);
 		}
 		return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -82,8 +85,7 @@ export class SkillStore {
 		if (text.length > this.config.maxChars)
 			throw new Error(`skill exceeds limit: ${text.length} > ${this.config.maxChars}`);
 		const path = this.path(scope, name);
-		await mkdir(dirname(path), { recursive: true });
-		await writeFile(path, text, "utf8");
+		await this.workspace.write(path, Buffer.from(text, "utf8"));
 		return await this.readEntry(scope, name);
 	}
 
@@ -93,7 +95,9 @@ export class SkillStore {
 	): Promise<SkillEntry> {
 		const name = assertSkillName(input.name);
 		if (!input.oldText) throw new Error("oldText is required");
-		const current = await readFile(this.path(scope, name), "utf8");
+		const data = await this.workspace.read(this.path(scope, name));
+		if (!data) throw new Error("skill not found");
+		const current = Buffer.from(data).toString("utf8");
 		const count = current.split(input.oldText).length - 1;
 		if (count === 0) throw new Error("skill text not found");
 		if (!input.replaceAll && count > 1) throw new Error("skill text is not unique");
@@ -105,18 +109,20 @@ export class SkillStore {
 		if (parsed.name !== name) throw new Error("skill frontmatter name does not match path");
 		if (next.length > this.config.maxChars)
 			throw new Error(`skill exceeds limit: ${next.length} > ${this.config.maxChars}`);
-		await writeFile(this.path(scope, name), next.endsWith("\n") ? next : `${next}\n`, "utf8");
+		await this.workspace.write(this.path(scope, name), Buffer.from(next.endsWith("\n") ? next : `${next}\n`, "utf8"));
 		return await this.readEntry(scope, name);
 	}
 
 	async delete(scope: ScopedKey, name: string): Promise<void> {
 		const safe = assertSkillName(name);
-		await rm(join(this.scopePath(scope), safe), { recursive: true, force: true });
+		await this.workspace.delete([this.scopePath(scope), safe].join("/"));
 	}
 
 	private async readEntry(scope: ScopedKey, name: string): Promise<SkillEntry> {
 		const path = this.path(scope, name);
-		const [meta, raw] = await Promise.all([stat(path), readFile(path, "utf8")]);
+		const [meta, data] = await Promise.all([this.workspace.stat(path), this.workspace.read(path)]);
+		if (!meta || !data) throw new Error("skill not found");
+		const raw = Buffer.from(data).toString("utf8");
 		const parsed = parseSkill(raw);
 		if (parsed.name !== name) throw new Error("skill frontmatter name does not match path");
 		return {
@@ -124,8 +130,8 @@ export class SkillStore {
 			name,
 			description: parsed.description,
 			path,
-			size: meta.size,
-			mtimeMs: meta.mtimeMs,
+			size: meta.size ?? data.byteLength,
+			mtimeMs: meta.mtimeMs ?? 0,
 			sha256: createHash("sha256").update(raw).digest("hex"),
 			text: raw.slice(0, this.config.maxChars),
 			truncated: raw.length > this.config.maxChars,
@@ -133,11 +139,11 @@ export class SkillStore {
 	}
 
 	private path(scope: ScopedKey, name: string): string {
-		return join(this.scopePath(scope), name, "SKILL.md");
+		return [this.scopePath(scope), name, "SKILL.md"].join("/");
 	}
 
 	private scopePath(scope: ScopedKey): string {
-		return join(this.root, "skills", "scopes", scope.path);
+		return ["skills", "scopes", scope.path].join("/");
 	}
 }
 
@@ -259,8 +265,4 @@ function sanitizeRead(input: string): string {
 function defaultWritePolicy(scope: Scope, approvers: string[]): SkillWritePolicy {
 	if (scope === "adapter" || scope === "agent") return "off";
 	return approvers.length ? "approvers" : "off";
-}
-
-function enoent(error: unknown): boolean {
-	return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }

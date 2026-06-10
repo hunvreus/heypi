@@ -7,25 +7,46 @@ Approvals pause pending tool calls until an authorized actor approves or denies 
 ```ts
 createHeypi({
 	approval: {
-		approvers: { users: ["U123"], groups: ["SRE"] },
-		admins: ["U999"],
 		expiresInMs: 30 * 60_000,
 		allowSelfApproval: true,
+		bypass: {
+			durationMs: 5 * 60_000,
+			maxDurationMs: 15 * 60_000,
+			scope: "thread",
+		},
 	},
-	// ...state, adapters, agent, runtime
+	adapters: [
+		slack({
+			// ...Slack auth and delivery config
+			permissions: {
+				approvers: { users: ["U123"], groups: ["S123"] },
+				admins: { users: ["U999"] },
+			},
+		}),
+	],
+	// ...state, agent, runtime
 });
 ```
 
 ## Options
 
+`approval` controls approval behavior. Adapter `permissions` controls who can approve for that adapter.
+
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `approvers` | No | Thread/channel visibility | Users or provider groups allowed to list and resolve approvals. |
-| `admins` | No | `[]` | Users or provider groups allowed to use approval controls; admins inherit approver permissions. |
 | `expiresInMs` | No | No expiry | Milliseconds before a pending approval expires. |
 | `allowSelfApproval` | No | `true` | Whether a requester who is also an approver/admin can approve their own request. |
+| `bypass` | No | Disabled | `false` disables bypasses. An object enables temporary approval bypasses. |
 
-`approvers` and `admins` accept either an array of user IDs or `{ users, groups }`. Group support depends on the adapter: Slack uses user group IDs, Discord uses role IDs, and Telegram has no shared group concept.
+`bypass` options:
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `durationMs` | No | `300_000` | Duration granted by `/approve <approval-id> bypass`. |
+| `maxDurationMs` | No | `900_000` | Upper bound for any bypass duration. |
+| `scope` | No | `thread` | Matching scope: `thread`, `channel`, `user`, or `adapter`. |
+
+Adapter `permissions.approvers` and `permissions.admins` accept either an array of user IDs or `{ users, groups }`. Admins inherit approver permissions. Group support depends on the adapter: Slack uses user group IDs, Discord uses role IDs, Telegram has no shared group concept, and webhook permissions use caller-provided user IDs.
 
 ## Chat commands
 
@@ -34,7 +55,9 @@ Control commands use strict slash syntax:
 ```text
 /approvals
 /approve <approval-id>
+/approve <approval-id> bypass
 /deny <approval-id>
+/revoke <bypass-id>
 ```
 
 Natural language approval text is treated as a normal agent prompt, not as an approval decision.
@@ -52,8 +75,9 @@ See [Agent tools: Confirmation](tools.md#confirmation) for the `confirm` return 
 ## Notes
 
 - Approval decisions are logged with the requester, approver, call, tool, and result.
-- Without `approvers` or `admins`, approvals are limited by thread visibility, not by a central allowlist. Configure explicit approval actors for shared or team-facing bots.
+- Without configured adapter approvers or admins, approvals are limited by thread visibility, not by a central allowlist. Configure explicit adapter permissions for shared or team-facing bots.
 - Users can deny their own requested approval.
 - Requesters can approve their own pending request only if they are also an approver/admin and `allowSelfApproval` is not disabled.
+- Pending approvals are persisted. On startup, heypi fails stale running calls and job runs from a previous process so they do not stay stuck in `running`.
 
-heypi logs a startup warning when bash or confirmed custom tools are enabled without explicit `approval.approvers` or `approval.admins`.
+heypi logs a startup warning when bash or confirmed custom tools are enabled without explicit adapter approvers or admins.

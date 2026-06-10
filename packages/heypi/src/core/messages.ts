@@ -11,7 +11,7 @@ export type AppMessages = {
 	approvalResolved: string;
 	approvalExpired: string;
 	approvalUnauthorized: string;
-	cancelled: string;
+	cancelled: MessageValue<{ actor?: string }>;
 	cancelUnauthorized: string;
 	cancelNotFound: string;
 	approvalsUnauthorized: string;
@@ -32,15 +32,15 @@ export const DEFAULT_APP_MESSAGES: AppMessages = {
 	approvalResolved: "Approval already resolved.",
 	approvalExpired: "Approval expired. Ask me to try again if this is still needed.",
 	approvalUnauthorized: "You are not allowed to resolve this action.",
-	cancelled: "Cancelled.",
-	cancelUnauthorized: "You are not allowed to cancel this run.",
-	cancelNotFound: "No active run found for that id.",
+	cancelled: ({ actor }) => (actor ? `Task cancelled by ${actor}.` : "Task cancelled."),
+	cancelUnauthorized: "You are not allowed to cancel this task.",
+	cancelNotFound: "No active task found for that id.",
 	approvalsUnauthorized: "You are not allowed to view pending approvals.",
 	runtimeStarting: "Preparing runtime...",
 	runtimeFailed: "Runtime failed. Ask an admin to check the server logs.",
 };
 
-export function normalizeMessages(input: AppMessagesConfig | undefined): AppMessages {
+export function normalizeMessages(input?: AppMessagesConfig): AppMessages {
 	return { ...DEFAULT_APP_MESSAGES, ...(input ?? {}) };
 }
 

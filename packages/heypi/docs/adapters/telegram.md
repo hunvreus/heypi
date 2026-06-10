@@ -19,6 +19,8 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 | `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, channels, and forum topics. |
 | `allow.users` | No | Telegram user IDs allowed to talk to the bot. |
 | `allow.dms` | No | Whether DMs are accepted. |
+| `permissions.approvers` | No | Telegram user IDs allowed to list and resolve approvals for this adapter. Groups are not supported. |
+| `permissions.admins` | No | Telegram user IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level group/channel messages. Defaults to `"mention"` in groups and channels. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for forum topic replies. Defaults to `"message"` in active topics. |
 | `progress` | No | Progress message behavior, or `false`. |

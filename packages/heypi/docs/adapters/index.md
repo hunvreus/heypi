@@ -23,14 +23,16 @@ After that, adapter config decides which events become turns:
 - Channels and groups default to `trigger: "mention"`; DMs run accepted messages directly.
 - Threads, topics, and replies default to `threadTrigger: "message"` once a turn has been created in that thread.
 - `streaming: true` enables draft edits where supported.
-- `chat.busy` controls messages that arrive while a turn is active: `steer`, `followUp`, or `reject`.
+- `task.busy` controls messages that arrive while a turn is active: `steer`, `followUp`, or `reject`.
 
 Shared control commands:
 
 ```text
 /approvals
 /approve <approval-id>
+/approve <approval-id> bypass
 /deny <approval-id>
+/revoke <bypass-id>
 /status
 /status <call-id>
 /cancel <turn-id-or-trace>

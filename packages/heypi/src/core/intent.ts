@@ -24,7 +24,16 @@ export function parseIntent(input: { text: string; channel: string; actor: strin
 	if (text === "/bash") return { kind: "help" };
 
 	const approve = arg("/approve", text);
-	if (approve) return { kind: "approve", approvalId: approve, channel: input.channel, actor: input.actor };
+	if (approve) {
+		const parts = approve.split(/\s+/u).filter(Boolean);
+		return {
+			kind: "approve",
+			approvalId: parts[0] ?? approve,
+			channel: input.channel,
+			actor: input.actor,
+			bypass: parts.slice(1).some((part) => part.toLowerCase() === "bypass"),
+		};
+	}
 	if (text === "/approve") return { kind: "help" };
 
 	const deny = arg("/deny", text);
@@ -34,6 +43,10 @@ export function parseIntent(input: { text: string; channel: string; actor: strin
 	const cancel = arg("/cancel", text);
 	if (cancel) return { kind: "cancel", id: cancel, channel: input.channel, actor: input.actor };
 	if (text === "/cancel") return { kind: "help" };
+
+	const revoke = arg("/revoke", text);
+	if (revoke) return { kind: "revoke", bypassId: revoke, channel: input.channel, actor: input.actor };
+	if (text === "/revoke") return { kind: "help" };
 
 	if (text === "/status") return { kind: "thread_status", channel: input.channel, actor: input.actor };
 

@@ -13,6 +13,7 @@ import {
 	Partials,
 	type TextBasedChannel,
 } from "discord.js";
+import type { PermissionsConfig } from "../config.js";
 import { approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -38,6 +39,7 @@ export type DiscordConfig = {
 	name?: string;
 	token: string;
 	allow?: DiscordAllow;
+	permissions?: PermissionsConfig;
 	trigger?: DiscordTrigger;
 	threadTrigger?: DiscordTrigger | false;
 	progress?: DiscordProgress | false;
@@ -78,11 +80,16 @@ export function discord(input: DiscordConfig): Adapter {
 	return {
 		name,
 		kind,
+		permissions: input.permissions,
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
 			const groups = new DiscordGroupResolver(
-				[...(input.allow?.groups ?? []), ...configuredGroups(start.approval?.approvers)],
+				[
+					...(input.allow?.groups ?? []),
+					...configuredGroups(start.approval?.approvers),
+					...configuredGroups(start.approval?.admins),
+				],
 				start.logger,
 			);
 			start.logger.info("adapter.start", { adapter: name, kind });
@@ -347,6 +354,7 @@ async function handleInteraction(input: {
 			replace: action.kind === "approve" || action.kind === "deny" ? replace : undefined,
 		});
 		if (!out) return;
+		if (out.silent) return;
 		if (out.private) {
 			if (out.replaceOriginal) {
 				const embed = approvalEmbedForAction(out, out.approvalResolution, actor, interaction.message);

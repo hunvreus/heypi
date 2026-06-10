@@ -2,10 +2,26 @@
 
 ## Soon
 
+- Add a Cloudflare Containers deployment path.
+	- Treat Containers as restartable Node/container mode, not a pure Worker rewrite.
+	- Add a Worker front door that routes signed HTTP adapter traffic to one or more explicit container instances.
+	- Decide the durable `Store` backend for container mode; do not rely on local SQLite surviving container sleep unless it is on a platform-supported persistent filesystem with the required locking and fsync semantics.
+	- Document the required durable workspace mount for Pi sessions, attachments, memory, skills, runtime secret files, and generated artifacts.
+	- Document Cloudflare's FUSE/R2 or S3-compatible mount path as the expected workspace durability layer for Containers.
+	- Make startup, shutdown, lock recovery, scheduler recovery, and rolling deploy behavior tolerate container sleep, restart, and fresh disks.
+	- Keep Slack Socket Mode, Discord gateway, and Telegram polling in container mode; use Worker ingress only for HTTP/webhook paths.
+	- Add container health/readiness checks, status hooks, and operational docs for logs, SSH/debug access, image rollout, and instance IDs.
+- Add provider-specific deployment guides.
+	- Cloudflare Containers: Worker front door, durable `Store`, workspace mounted through FUSE/R2 or S3-compatible storage, and container lifecycle operations.
+	- Fly.io: persistent volume-backed state/workspace directories and process health checks.
+	- VPS/Docker: bind-mounted state/workspace directories, backups, and systemd/container restart behavior.
+	- Kubernetes: PVC-backed state/workspace directories, single-owner locking, probes, and rollout guidance.
 - Bring back useful experiment learnings without changing the Node/container-first architecture.
 	- Keep adapter and route handlers thin; move validation, persistence, delivery, and approval behavior behind small service boundaries.
 	- Audit HTTP adapters and extend fast acknowledgement/background processing only where Slack HTTP, Telegram webhooks, or generic webhooks still block on long work.
 	- Add blob/file spillover for large call stdout/stderr, tool logs, attachments, and generated artifacts; keep DB rows to previews, metadata, and blob refs.
+	- Design encrypted secret persistence before making pending secret requests durable; do not persist request private keys or plaintext secret values in generic stores.
+	- Decide whether custom tool `ToolContext` should expose a secret-request capability so trusted tools can ask users for credentials without importing internal `Secrets`.
 	- Add a dedicated outbound delivery-attempt ledger only if current message state and delivery queue cannot answer sent, failed, retried, ambiguous outcomes, provider message ids, and attempts.
 	- Audit existing stale turn/call/lock recovery and document gaps before adding new recovery state.
 	- Document adapter transport modes without changing the default UX: Discord gateway is the normal chat path, Slack supports socket/http, and Telegram supports webhook/polling.
@@ -41,13 +57,10 @@
 	- `heypi init` should scaffold local app files, `.env.example`, agent folder, workspace folder, and provider snippets.
 	- Keep provider-specific helpers such as Slack manifest generation separate from local app scaffolding.
 - Extend approval policy controls.
-	- Move toward a canonical permission config such as `permissions.approvers` and `permissions.admins` with adapter-qualified actor ids like `slack:U123` and `discord:456`.
-	- Add a setting to skip approval flow when the requester is also an approver.
-	- Support approval decisions such as allow once, always allow, and deny.
-	- Persist always-allow decisions as durable policy entries with a way to list and revoke them.
-	- Show effective approval policy in admin/CLI, including approvers, expiry, durable allow entries, and command/tool confirmation rules.
+	- Add chat/admin listing for active approval bypasses.
+	- Add durable exact allow rules for known-safe tool calls, with a way to list and revoke them.
+	- Show effective approval policy in admin/CLI, including adapter-scoped approvers, admins, expiry, active bypasses, durable allow entries, and command/tool confirmation rules.
 	- Bind approvals to the exact tool call input before execution; include tool name, params hash, runtime scope, and bash cwd/env where applicable.
-	- Add temporary approval windows, for example accepting similar requests for the next 5 minutes.
 - Add more adapters.
   - Teams.
   - Email.
@@ -62,6 +75,9 @@
   - Persist enough pending approval context to resume or safely mark stale approvals after process crash.
 - Distributed delivery limiter.
   - Revisit only if multi-replica deployments hit provider-wide rate limits.
+- Pure Cloudflare Worker architecture.
+  - Revisit only after Container mode is proven and Pi/session/runtime storage boundaries are stable.
+  - Worker-native mode still needs D1/DO/R2 storage, Worker-safe package exports, Queue/DO delivery retries, and no-shell or external sandbox runtime behavior.
 
 ## Won't Do For Now
 

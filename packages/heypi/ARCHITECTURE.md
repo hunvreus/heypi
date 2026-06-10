@@ -82,13 +82,13 @@ type Adapter = {
 
 `src/io/handler.ts` is the only place where provider messages become durable turns. It normalizes text and attachments, parses control commands, creates or loads threads, de-duplicates events, locks the thread, handles approvals/cancel/status, writes audit rows, and calls Pi.
 
-Same-thread messages during an active turn use `chat.busy`:
+Same-thread messages during an active turn use `task.busy`:
 
 - `steer`: inject into the active Pi session.
 - `followUp`: queue after the current assistant reply.
 - `reject`: return a public acknowledgement without calling Pi.
 
-Pending approvals reject new asks until approved or denied. Cancel requests only work for the initiating actor or configured approvers in the same thread.
+Pending approvals reject new asks until approved or denied. Cancel requests follow `task.cancel`.
 
 ### Pi Runtime
 
@@ -127,19 +127,21 @@ Core tools and custom `tool()` definitions use the same confirmation path. Text 
 
 Memory is optional durable context, not transcript storage. When enabled, heypi stores one `MEMORY.md` per memory scope and injects it before the model turn.
 
-Memory writes are controlled by `memory.writePolicy`. The default becomes `approvers` when `approval.approvers` is configured. Secret and prompt-injection checks are hygiene only; app authors should treat memory as user-influenced context.
+Memory writes are controlled by `memory.writePolicy`. The default becomes `approvers` when adapter approvers or admins are configured. Secret and prompt-injection checks are hygiene only; app authors should treat memory as user-influenced context.
 
 ### Scoped Skills
 
 Skills are optional durable procedures. When enabled, heypi stores one `SKILL.md` per skill under `skills/scopes/<scope-key>/<skill>/`, injects a compact skill catalog, and exposes `skill_list`, `skill_read`, `skill_write`, `skill_patch`, and `skill_delete`.
 
-Skill writes are controlled by `skills.writePolicy`. Defaults are conservative: writes are `approvers` only when `approval.approvers` is configured, otherwise `off`. Skills are user-authored guidance, not trusted policy. heypi does not include registry install/sync or supporting-file tools for skills yet.
+Skill writes are controlled by `skills.writePolicy`. Defaults are conservative: writes are `approvers` only when adapter approvers or admins are configured, otherwise `off`. Skills are user-authored guidance, not trusted policy. heypi does not include registry install/sync or supporting-file tools for skills yet.
 
 ### Secrets
 
 Secret requests are optional encrypted handoffs. When enabled, the agent can call `secret_request` with one or more named fields. heypi generates a request-scoped RSA keypair, sends only the public key in the browser link, decrypts the pasted encrypted blob locally, and writes values as scoped runtime files under `.secrets/`.
 
 The hosted page at `heypi.dev/secret` is static client-side code. Apps can self-host the same page with `secrets.url` and `serve: true`; heypi serves it at the URL path.
+
+Pending secret requests are process-local because they contain the request private key. Persisting them needs an explicit key-wrapping or KMS design. Decrypted values are saved through the secret boundary into the active runtime workspace; they are not written to the database or generic workspace.
 
 ### Store
 
@@ -148,6 +150,14 @@ The hosted page at `heypi.dev/secret` is static client-side code. Apps can self-
 Apps must set `state.root`. The default SQLite path is `<state.root>/heypi.db`. Admin state lives under `<state.root>/admin/`. Pi session JSONL files live under the app runtime root.
 
 SQLite supports local single-process deployments. Multi-instance deployments need a shared durable store with lock semantics. Custom stores should implement `transaction()` for atomic handler, call, and scheduler updates.
+
+### Workspace Store
+
+`src/workspace/` defines the file-shaped durability boundary for heypi-managed workspace state. The local implementation stores files under the runtime root and rejects absolute paths, parent traversal, and symlink escapes.
+
+Memory, skills, and inbound attachment files use the workspace internally. The default local store preserves existing runtime-root behavior, so memory and skills remain visible to runtime file tools.
+
+Pi session JSONL files, runtime secret files, arbitrary runtime working files, and outbound attachment upload resolution use filesystem paths under the configured runtime workspace. heypi assumes deployments provide a durable workspace filesystem when those files must survive restart, sleep, or redeploy. For platform-specific ephemeral disks, use that platform's persistent volume or filesystem mount rather than heypi-managed file synchronization. Secret request durability needs a separate encrypted pending-request design, not generic file storage.
 
 ### Scheduler
 
@@ -207,6 +217,7 @@ Supported:
 
 Not supported:
 
+- Cloudflare Containers, until durable state/workspace handling is defined for sleeping containers with fresh disks
 - Cloudflare Workers / Fetch API adapters
 - multi-replica distributed delivery limiting
 - crash-durable approval replay beyond persisted call and approval rows
