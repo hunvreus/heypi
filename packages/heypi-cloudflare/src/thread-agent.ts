@@ -1,9 +1,17 @@
 import { DurableObject } from "cloudflare:workers";
-import { ContainerRunner, EchoRunner, type SessionRunner } from "./runner.js";
+import {
+	type ContainerBinding,
+	ContainerBindingRunner,
+	ContainerRunner,
+	EchoRunner,
+	type SessionRunner,
+} from "./runner.js";
 import { DurableSessions } from "./sessions.js";
 
 export type ThreadAgentEnv = {
-	/** Pi runner service base URL. When set, real agent turns run there; otherwise EchoRunner replies. */
+	/** Cloudflare Container binding for the Pi runner. Preferred when present. */
+	PI_RUNNER?: ContainerBinding;
+	/** Pi runner service base URL (fallback when there is no container binding). */
 	RUNNER_URL?: string;
 };
 
@@ -27,7 +35,11 @@ export class ThreadAgent extends DurableObject<ThreadAgentEnv> {
 	constructor(ctx: DurableObjectState, env: ThreadAgentEnv) {
 		super(ctx, env);
 		this.sessions = new DurableSessions(ctx.storage.sql);
-		this.runner = env.RUNNER_URL ? new ContainerRunner(env.RUNNER_URL) : new EchoRunner();
+		this.runner = env.PI_RUNNER
+			? new ContainerBindingRunner(env.PI_RUNNER)
+			: env.RUNNER_URL
+				? new ContainerRunner(env.RUNNER_URL)
+				: new EchoRunner();
 	}
 
 	/** Processes one inbound message for this thread and returns the reply. Callable via DO RPC. */
