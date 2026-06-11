@@ -15,6 +15,8 @@ examples/*/memory/
 examples/*/state/
 .wrangler/
 .dev.vars
+.runner-state/
 packages/*/workspace/
 packages/*/.runner-state/
 packages/*/.local-runner-state/
+examples/*/workspace/
