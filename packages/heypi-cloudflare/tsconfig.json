@@ -1,0 +1,18 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"baseUrl": ".",
+		"ignoreDeprecations": "6.0",
+		"noEmit": true,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"types": ["node", "@cloudflare/workers-types"],
+		"paths": {
+			"@hunvreus/heypi": ["../heypi/src/index.ts"],
+			"@hunvreus/heypi/runtime": ["../heypi/src/runtime/public.ts"],
+			"@hunvreus/heypi/store": ["../heypi/src/store/index.ts"]
+		}
+	},
+	"include": ["src/**/*.ts", "tests/**/*.test.ts"],
+	"exclude": ["tests/**/*.spec.ts"]
+}

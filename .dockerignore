@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/dist
+**/.wrangler
+**/.dev.vars
+**/.runner-state
+**/.local-runner-state
+**/workspace
+.local
+docs
+**/*.log
+**/*.db
+**/*.db-*

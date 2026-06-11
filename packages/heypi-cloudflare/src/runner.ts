@@ -1,0 +1,102 @@
+import type { SessionEntry } from "@hunvreus/heypi/runtime";
+
+export type RunnerInput = { sessionId: string; entries: SessionEntry[]; text: string };
+export type RunnerOutput = { entries: SessionEntry[]; reply: string };
+
+/**
+ * Runs one agent turn given the current transcript, returning the new transcript and reply.
+ *
+ * The Durable Object depends on this seam rather than on Pi directly. That separation is not
+ * cosmetic: Pi imports Node builtins via bare specifiers (`import { homedir } from "os"`, plus
+ * `fs`/`path`/`url`) at module load, which do not resolve in the Workers isolate even with
+ * nodejs_compat. So the production runner delegates execution to a container (real Node), where
+ * heypi's in-memory session rehydration runs unchanged; the container-side implementation lives
+ * in turn.ts (`runPiTurn`) and is exercised under Node. The Worker/DO bundle stays Pi-free.
+ */
+export interface SessionRunner {
+	run(input: RunnerInput): Promise<RunnerOutput>;
+}
+
+/**
+ * A dependency-free runner used as the DO default and in tests. It appends a user/assistant
+ * message pair shaped like Pi session entries, without importing Pi — enough to exercise the DO
+ * lock, DO-SQLite persistence, and Worker routing inside workerd. Swap for a ContainerRunner to
+ * run the real agent.
+ */
+export class EchoRunner implements SessionRunner {
+	async run(input: RunnerInput): Promise<RunnerOutput> {
+		const reply = `ack: ${input.text}`;
+		let parentId = lastEntryId(input.entries);
+		const next = [...input.entries];
+		for (const [role, text] of [
+			["user", input.text],
+			["assistant", reply],
+		] as const) {
+			const entry = messageEntry(role, text, parentId);
+			next.push(entry);
+			parentId = entry.id;
+		}
+		return { entries: next, reply };
+	}
+}
+
+/**
+ * Runs the turn by calling the Pi runner service (the container) over HTTP. The DO sends the
+ * current transcript and gets back the updated transcript + reply, so session state stays in the
+ * DO while the real agent executes in Node where Pi can load its dependencies.
+ */
+export class ContainerRunner implements SessionRunner {
+	constructor(private readonly url: string) {}
+
+	async run(input: RunnerInput): Promise<RunnerOutput> {
+		const res = await fetch(new URL("/run", this.url), {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sessionId: input.sessionId, entries: input.entries, text: input.text }),
+		});
+		if (!res.ok) throw new Error(`runner responded ${res.status}: ${await res.text()}`);
+		const data = (await res.json()) as RunnerOutput;
+		return { entries: data.entries, reply: data.reply };
+	}
+}
+
+/** A binding to a Cloudflare Container namespace — just the part ContainerBindingRunner needs. */
+export type ContainerBinding = { getByName(name: string): { fetch(request: Request): Promise<Response> } };
+
+/**
+ * Runs the turn on a Cloudflare Container (the PI_RUNNER binding) — same contract as
+ * ContainerRunner, but addressed by binding instead of URL. Keeps the whole stack on Cloudflare.
+ */
+export class ContainerBindingRunner implements SessionRunner {
+	constructor(
+		private readonly binding: ContainerBinding,
+		private readonly instance = "pi-runner",
+	) {}
+
+	async run(input: RunnerInput): Promise<RunnerOutput> {
+		const res = await this.binding.getByName(this.instance).fetch(
+			new Request("http://pi-runner/run", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ sessionId: input.sessionId, entries: input.entries, text: input.text }),
+			}),
+		);
+		if (!res.ok) throw new Error(`runner container responded ${res.status}: ${await res.text()}`);
+		const data = (await res.json()) as RunnerOutput;
+		return { entries: data.entries, reply: data.reply };
+	}
+}
+
+function lastEntryId(entries: SessionEntry[]): string | null {
+	return entries.length ? entries[entries.length - 1].id : null;
+}
+
+function messageEntry(role: "user" | "assistant", text: string, parentId: string | null): SessionEntry {
+	return {
+		type: "message",
+		id: crypto.randomUUID(),
+		parentId,
+		timestamp: new Date().toISOString(),
+		message: { role, content: [{ type: "text", text }] },
+	} as SessionEntry;
+}

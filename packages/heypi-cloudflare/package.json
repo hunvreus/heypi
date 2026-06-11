@@ -1,0 +1,25 @@
+{
+	"name": "@hunvreus/heypi-cloudflare",
+	"version": "0.1.0",
+	"description": "Cloudflare Worker + Durable Object host for heypi.",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"check": "biome check . && tsc --noEmit",
+		"test": "node --import tsx --conditions development --test tests/*.test.ts",
+		"typegen": "wrangler types",
+		"dev": "wrangler dev",
+		"runner": "node --import tsx --conditions development src/container/runner-server.ts"
+	},
+	"dependencies": {
+		"@cloudflare/containers": "^0.3.7",
+		"@hunvreus/heypi": "workspace:*"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20241218.0",
+		"@types/node": "^25.9.1",
+		"tsx": "^4.22.3",
+		"typescript": "^6.0.3",
+		"wrangler": "^4.98.0"
+	}
+}
