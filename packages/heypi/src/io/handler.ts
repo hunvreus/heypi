@@ -293,6 +293,10 @@ export function createHandler(input: {
 				event: msg.eventId,
 			});
 			if (intent.kind === "ask" && task.busy !== "reject") {
+				const duplicate = msg.eventId
+					? await input.store.messages.getByProviderEvent(msg.provider, thread.id, msg.eventId)
+					: undefined;
+				if (duplicate) return undefined;
 				const queued = await active.enqueue(
 					lockKey,
 					task.busy,

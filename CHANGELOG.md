@@ -4,6 +4,7 @@
 
 ### Breaking
 - Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
+- Configs that still set root `approval.approvers` or `approval.admins` now fail at startup instead of silently falling back to zero-config approval authority.
 
   Before:
 
@@ -43,14 +44,14 @@
 - Added `allow.bots` to Slack, Discord, and Telegram for explicitly accepting messages from selected bots/apps or all other bots/apps.
 - Added Slack Socket Mode and HTTP mode manifest generation to `create-heypi` and `heypi slack manifest`.
 - Added `task.cancel` with `admin`, `approver`, `initiator`, and `allowed` cancellation policy levels.
-- Added temporary approval bypasses through `/approve <approval-id> bypass` and `/revoke <bypass-id>`.
+- Added actor-bound temporary approval bypasses through approval controls and `/revoke <bypass-id>`.
 - Added durable approval bypass storage.
 - Added admin configuration visibility for task behavior and adapter approval permissions.
 
 ### Changed
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.
 - Changed expired approvals to persist as `expired` instead of `denied` for clearer audit history.
-- Changed chat control commands to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash`.
+- Changed typed chat control parsing to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash` for adapters that deliver those messages.
 - Changed cancellation output to a single terminal task message that includes the cancelling actor when known.
 - Changed same-thread busy behavior configuration from `chat.busy` to `task.busy`.
 - Changed startup recovery to fail stale running calls and job runs after a process restart.
@@ -60,6 +61,8 @@
 
 ### Fixed
 - Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
+- Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
+- Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.
 - Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.

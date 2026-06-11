@@ -191,6 +191,11 @@ test("approval bypass skips confirmation in matching thread until revoked", asyn
 	assert.match(bypassed.text, /Result: `done`/);
 	assert.equal(approvals.rows.length, 1);
 
+	const otherActor = await callRunner.bash("slack:T1:C1", "U_OTHER", "curl https://example.com", {
+		thread: "thread-1",
+	});
+	assert.equal(otherActor.approval?.id, approvals.rows[1]?.id);
+
 	const revoked = await callRunner.handle(
 		{ kind: "revoke", bypassId: bypasses.rows[0].id, channel: "slack:T1:C1", actor: "U_ALLOWED" },
 		{ thread: "thread-1" },
@@ -200,7 +205,7 @@ test("approval bypass skips confirmation in matching thread until revoked", asyn
 	const requestedAgain = await callRunner.bash("slack:T1:C1", "U_REQUESTER", "curl https://example.com", {
 		thread: "thread-1",
 	});
-	assert.equal(requestedAgain.approval?.id, approvals.rows[1]?.id);
+	assert.equal(requestedAgain.approval?.id, approvals.rows[2]?.id);
 });
 
 test("approval admins inherit approver permissions", async () => {
@@ -1136,9 +1141,9 @@ class FakeBypasses implements ApprovalBypasses {
 		const adapter = input.channel.split(":")[0];
 		return this.rows.find((row) => {
 			if (row.agent !== input.agent || row.revokedAt || row.expiresAt <= now) return false;
-			if (row.scope === "adapter") return row.channel.startsWith(`${adapter}:`);
-			if (row.scope === "channel") return row.channel === input.channel;
-			if (row.scope === "thread") return row.threadId === input.threadId;
+			if (row.scope === "adapter") return row.actor === input.actor && row.channel.startsWith(`${adapter}:`);
+			if (row.scope === "channel") return row.actor === input.actor && row.channel === input.channel;
+			if (row.scope === "thread") return row.actor === input.actor && row.threadId === input.threadId;
 			if (row.scope === "user") return row.actor === input.actor;
 			return false;
 		});

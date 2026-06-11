@@ -399,6 +399,10 @@ class FakeMessages implements Messages {
 		throw new Error("not implemented");
 	}
 
+	async getByProviderEvent(): Promise<Message | undefined> {
+		throw new Error("not implemented");
+	}
+
 	async create(): Promise<Message> {
 		throw new Error("not implemented");
 	}

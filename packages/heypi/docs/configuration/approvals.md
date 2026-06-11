@@ -42,15 +42,19 @@ createHeypi({
 
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `durationMs` | No | `300_000` | Duration granted by `/approve <approval-id> bypass`. |
+| `durationMs` | No | `300_000` | Duration granted by an approval bypass decision. |
 | `maxDurationMs` | No | `900_000` | Upper bound for any bypass duration. |
-| `scope` | No | `thread` | Matching scope: `thread`, `channel`, `user`, or `adapter`. |
+| `scope` | No | `thread` | Where the requester actor's bypass applies: `thread`, `channel`, `user`, or `adapter`. |
+
+Bypasses are actor-bound. A `thread` bypass lets the same requester skip approval in that thread until expiry; it does not let other actors in the thread skip approval.
 
 Adapter `permissions.approvers` and `permissions.admins` accept either an array of user IDs or `{ users, groups }`. Admins inherit approver permissions. Group support depends on the adapter: Slack uses user group IDs, Discord uses role IDs, Telegram has no shared group concept, and webhook permissions use caller-provided user IDs.
 
-## Chat commands
+## Approval controls
 
-Control commands use strict slash syntax:
+Approval buttons are the primary control surface where the adapter supports them.
+
+Typed fallback commands are only available where the provider delivers them as messages, such as Telegram commands and trusted webhook/internal text:
 
 ```text
 /approvals
@@ -60,7 +64,7 @@ Control commands use strict slash syntax:
 /revoke <bypass-id>
 ```
 
-Natural language approval text is treated as a normal agent prompt, not as an approval decision.
+In Telegram groups, use bot-qualified commands such as `/approve@YourBotName <approval-id>` when needed. Slack and Discord reserve slash commands for provider-native command registration, so typed approval commands should use native command support when that adapter exposes it. Natural language approval text is treated as a normal agent prompt, not as an approval decision.
 
 ## How calls become approvals
 

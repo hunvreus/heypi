@@ -76,6 +76,65 @@ test("createHeypi requires state.root", async () => {
 	);
 });
 
+test("createHeypi rejects legacy root approval actors", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-legacy-approval-"));
+	try {
+		const adapter: Adapter = {
+			name: "test",
+			kind: "test",
+			start: async () => undefined,
+		};
+		assert.throws(
+			() =>
+				createHeypi({
+					state: { root: join(root, "state") },
+					logger: consoleLogger({ level: "error", format: "pretty" }),
+					approval: { approvers: ["U_OLD"] },
+					adapters: [adapter],
+					agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+					runtime: {
+						name: "host-bash",
+						root: workspace(join(root, "workspace")),
+					},
+				} as unknown as Parameters<typeof createHeypi>[0]),
+			/approval\.approvers\/admins moved to adapter\.permissions/,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("createHeypi warns about unknown shallow config keys", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-unknown-config-"));
+	try {
+		const warnings: Record<string, unknown>[] = [];
+		const adapter: Adapter = {
+			name: "test",
+			kind: "test",
+			start: async () => undefined,
+		};
+		createHeypi({
+			state: { root: join(root, "state") },
+			logger: fakeLogger(warnings),
+			approval: { expiresInMs: 60_000, legacy: true },
+			adapters: [adapter],
+			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: {
+				name: "host-bash",
+				root: workspace(join(root, "workspace")),
+			},
+			experimentalUnknown: true,
+		} as unknown as Parameters<typeof createHeypi>[0]);
+
+		assert.deepEqual(
+			warnings.filter((row) => row.event === "config.unknown_key").map((row) => row.path),
+			["config.experimentalUnknown", "config.approval.legacy"],
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("createHeypi uses state.root for the default SQLite store", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-public-api-default-store-"));
 	const cwd = process.cwd();

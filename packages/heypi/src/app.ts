@@ -43,11 +43,34 @@ type ShutdownSignal = "SIGINT" | "SIGTERM";
 const DEFAULT_APP_LOCK_TTL_MS = 60_000;
 const DEFAULT_DRAIN_MS = 30_000;
 const DEFAULT_HTTP: Required<HttpConfig> = { host: "127.0.0.1", port: 3000 };
+const TOP_LEVEL_CONFIG_KEYS = new Set([
+	"store",
+	"state",
+	"adapters",
+	"agent",
+	"runtime",
+	"http",
+	"admin",
+	"attachments",
+	"approval",
+	"task",
+	"scope",
+	"memory",
+	"skills",
+	"secrets",
+	"messages",
+	"appLock",
+	"scheduler",
+	"jobs",
+	"logger",
+]);
+const APPROVAL_CONFIG_KEYS = new Set(["expiresInMs", "allowSelfApproval", "bypass"]);
 
 /** Builds a heypi process from code-first config. Starts storage, runtime, handler, and adapters. */
 export function createHeypi(config: HeypiConfig): HeypiApp {
 	const cwd = process.cwd();
 	const log = config.logger ?? logger;
+	validateConfigShape(config, log);
 	config.runtime.provider?.setLogger?.(log);
 	const messages = normalizeMessages(config.messages);
 	const httpConfig = normalizeHttpConfig(config.http);
@@ -399,6 +422,25 @@ function validateAdapterNames(adapters: HeypiConfig["adapters"]): void {
 	for (const adapter of adapters) {
 		if (names.has(adapter.name)) throw new Error(`duplicate adapter name: ${adapter.name}`);
 		names.add(adapter.name);
+	}
+}
+
+function validateConfigShape(config: HeypiConfig, log: Logger): void {
+	warnUnknownKeys(log, "config", config as Record<string, unknown>, TOP_LEVEL_CONFIG_KEYS);
+	const approval = config.approval as Record<string, unknown> | undefined;
+	if (!approval) return;
+	if (typeof approval !== "object" || Array.isArray(approval)) throw new Error("approval must be an object");
+	if ("approvers" in approval || "admins" in approval) {
+		throw new Error(
+			"approval.approvers/admins moved to adapter.permissions; set permissions: { approvers, admins } on each adapter",
+		);
+	}
+	warnUnknownKeys(log, "config.approval", approval, APPROVAL_CONFIG_KEYS);
+}
+
+function warnUnknownKeys(log: Logger, path: string, input: Record<string, unknown>, allowed: Set<string>): void {
+	for (const key of Object.keys(input)) {
+		if (!allowed.has(key)) log.warn("config.unknown_key", { path: `${path}.${key}` });
 	}
 }
 

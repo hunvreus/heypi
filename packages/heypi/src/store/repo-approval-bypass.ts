@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, like, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { ApprovalBypassScope } from "../config.js";
 import { approvalBypass } from "../db/schema.js";
 import type { Db } from "./db.js";
@@ -54,9 +54,21 @@ export class ApprovalBypassRepo {
 			gt(approvalBypass.expiresAt, now),
 			isNull(approvalBypass.revokedAt),
 			or(
-				and(eq(approvalBypass.scope, "adapter"), likeChannelPrefix(adapter)),
-				and(eq(approvalBypass.scope, "channel"), eq(approvalBypass.channel, input.channel)),
-				and(eq(approvalBypass.scope, "thread"), eq(approvalBypass.threadId, input.threadId ?? "")),
+				and(
+					eq(approvalBypass.scope, "adapter"),
+					likeChannelPrefix(adapter),
+					eq(approvalBypass.actor, input.actor ?? ""),
+				),
+				and(
+					eq(approvalBypass.scope, "channel"),
+					eq(approvalBypass.channel, input.channel),
+					eq(approvalBypass.actor, input.actor ?? ""),
+				),
+				and(
+					eq(approvalBypass.scope, "thread"),
+					eq(approvalBypass.threadId, input.threadId ?? ""),
+					eq(approvalBypass.actor, input.actor ?? ""),
+				),
 				and(eq(approvalBypass.scope, "user"), eq(approvalBypass.actor, input.actor ?? "")),
 			)!,
 		];
@@ -101,9 +113,9 @@ export class ApprovalBypassRepo {
 }
 
 function likeChannelPrefix(adapter: string): SQL {
-	return like(approvalBypass.channel, `${escapeLike(adapter)}:%`);
+	return sql`${approvalBypass.channel} GLOB ${`${escapeGlob(adapter)}:*`}`;
 }
 
-function escapeLike(input: string): string {
-	return input.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+function escapeGlob(input: string): string {
+	return input.replaceAll("[", "[[]").replaceAll("*", "[*]").replaceAll("?", "[?]");
 }

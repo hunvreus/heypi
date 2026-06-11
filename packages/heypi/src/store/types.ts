@@ -62,6 +62,7 @@ export interface Threads {
 /** Message transcript store. Provides append-once semantics for provider retry dedupe. */
 export interface Messages {
 	get(id: string): Promise<Message | undefined>;
+	getByProviderEvent(provider: string, threadId: string, eventId: string): Promise<Message | undefined>;
 	create(input: {
 		threadId: string;
 		provider: string;

@@ -26,7 +26,7 @@ After that, adapter config decides which events become turns:
 - `streaming: true` enables draft edits where supported.
 - `task.busy` controls messages that arrive while a turn is active: `steer`, `followUp`, or `reject`.
 
-Shared control commands:
+Approval buttons are the primary approval controls where supported. Typed fallback commands work only where the provider delivers the text to heypi, such as Telegram commands and trusted webhook/internal text:
 
 ```text
 /approvals
@@ -38,6 +38,8 @@ Shared control commands:
 /status <call-id>
 /cancel <turn-id-or-trace>
 ```
+
+Slack and Discord reserve slash commands for provider-native command registration, so their typed command UX should use native commands rather than ordinary chat messages.
 
 For shared workspaces, configure `allow`. Without it, any delivered DM can trigger the agent, and any delivered channel or group message can trigger it by mention or control command. heypi logs a startup warning when a built-in chat adapter starts without an allow filter.
 
