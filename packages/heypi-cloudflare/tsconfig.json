@@ -8,6 +8,7 @@
 		"moduleResolution": "NodeNext",
 		"types": ["node", "@cloudflare/workers-types"],
 		"paths": {
+			"@hunvreus/heypi": ["../heypi/src/index.ts"],
 			"@hunvreus/heypi/runtime": ["../heypi/src/runtime/public.ts"],
 			"@hunvreus/heypi/store": ["../heypi/src/store/index.ts"]
 		}

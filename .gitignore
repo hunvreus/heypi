@@ -13,3 +13,8 @@ coverage/
 examples/*/workspace/
 examples/*/memory/
 examples/*/state/
+.wrangler/
+.dev.vars
+packages/*/workspace/
+packages/*/.runner-state/
+packages/*/.local-runner-state/

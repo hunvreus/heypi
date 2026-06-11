@@ -3,7 +3,8 @@
 	"name": "heypi",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-01-01",
-	// Pi (and the heypi runtime) import node builtins; nodejs_compat lets them load in workerd.
+	// The Worker/DO bundle is Pi-free (Pi runs in the runner service). nodejs_compat is kept as a
+	// safety net for incidental node: imports and is harmless if unused.
 	"compatibility_flags": ["nodejs_compat"],
 	"durable_objects": {
 		"bindings": [{ "name": "THREAD_AGENT", "class_name": "ThreadAgent" }]

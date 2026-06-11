@@ -40,6 +40,26 @@ export class EchoRunner implements SessionRunner {
 	}
 }
 
+/**
+ * Runs the turn by calling the Pi runner service (the container) over HTTP. The DO sends the
+ * current transcript and gets back the updated transcript + reply, so session state stays in the
+ * DO while the real agent executes in Node where Pi can load its dependencies.
+ */
+export class ContainerRunner implements SessionRunner {
+	constructor(private readonly url: string) {}
+
+	async run(input: RunnerInput): Promise<RunnerOutput> {
+		const res = await fetch(new URL("/run", this.url), {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sessionId: input.sessionId, entries: input.entries, text: input.text }),
+		});
+		if (!res.ok) throw new Error(`runner responded ${res.status}: ${await res.text()}`);
+		const data = (await res.json()) as RunnerOutput;
+		return { entries: data.entries, reply: data.reply };
+	}
+}
+
 function lastEntryId(entries: SessionEntry[]): string | null {
 	return entries.length ? entries[entries.length - 1].id : null;
 }

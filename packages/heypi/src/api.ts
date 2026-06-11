@@ -62,6 +62,13 @@ export {
 } from "./io/telegram.js";
 export { type WebhookConfig, type WebhookMessage, webhook } from "./io/webhook.js";
 export type { JobConfig, JobKind, JobRoute, JobSchedule, JobScope, JobState, JobTarget, JobTargets } from "./job.js";
+export {
+	type AgentRunInput,
+	type AgentRunner,
+	type AgentRunnerConfig,
+	type AgentRunResult,
+	createAgentRunner,
+} from "./runtime/agent-runner.js";
 export { workspace } from "./runtime/index.js";
 export { sqliteStore } from "./store/sqlite.js";
 export { type Tool, type ToolContext, type ToolParams, type ToolResult, tool } from "./tool.js";
