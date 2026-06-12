@@ -82,6 +82,7 @@
 - Fixed memory writes so persisted memory remains raw while prompt injection escapes memory at render time.
 - Fixed memory replace/delete matching for text containing `<` or `>`.
 - Fixed secret request completion so only the actor that requested the secret can submit the encrypted reply.
+- Fixed Docker runtime environment propagation so configured values are passed through a private env-file path instead of direct `docker run -e KEY=value` argv.
 - Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.

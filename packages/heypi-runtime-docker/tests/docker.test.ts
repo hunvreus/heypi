@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,15 +9,26 @@ import { type DockerCommandRunner, dockerRuntime } from "../src/index.js";
 
 test("dockerRuntime keeps one warm container per scope and routes bash through docker exec", async () => {
 	const calls: Array<{ command: string; args: string[] }> = [];
+	let envFile = "";
 	const runner: DockerCommandRunner = async (command, args) => {
 		calls.push({ command, args });
 		if (args[0] === "inspect") return { code: 1, out: "", err: "missing", ms: 1 };
-		if (args[0] === "run") return { code: 0, out: "container\n", err: "", ms: 1 };
+		if (args[0] === "run") {
+			const envFilePath = args[args.indexOf("--env-file") + 1];
+			envFile = await readFile(envFilePath, "utf8");
+			return { code: 0, out: "container\n", err: "", ms: 1 };
+		}
 		if (args[0] === "exec") return { code: 0, out: "ok\n", err: "", ms: 1 };
 		if (args[0] === "rm") return { code: 0, out: "", err: "", ms: 1 };
 		throw new Error(`unexpected docker command: ${args.join(" ")}`);
 	};
-	const provider = dockerRuntime({ runner, image: "test-image", network: "none", idleMs: false });
+	const provider = dockerRuntime({
+		runner,
+		image: "test-image",
+		network: "none",
+		idleMs: false,
+		env: { NODE_ENV: "production", API_TOKEN: "secret-value" },
+	});
 	const runtime = provider.get({ level: "channel", key: "channel/a", path: "channel/a", root: "/tmp/heypi-a" });
 
 	const result = await runtime.bash?.({ command: "echo ok" });
@@ -44,6 +55,10 @@ test("dockerRuntime keeps one warm container per scope and routes bash through d
 	assert.ok(calls[2].args.includes("--label"));
 	assert.ok(calls[2].args.includes("heypi.runtime=docker"));
 	assert.ok(calls[2].args.includes("heypi.scope.path=channel/a"));
+	assert.ok(calls[2].args.includes("--env-file"));
+	assert.doesNotMatch(calls[2].args.join("\n"), /secret-value/);
+	assert.match(envFile, /NODE_ENV=production/);
+	assert.match(envFile, /API_TOKEN=secret-value/);
 	assert.deepEqual(calls[2].args.slice(-3), ["test-image", "sleep", "infinity"]);
 	assert.deepEqual(calls[3].args, ["exec", "-i", container, "bash", "-lc", "echo ok"]);
 

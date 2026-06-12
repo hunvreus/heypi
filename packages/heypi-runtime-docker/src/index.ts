@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { posix } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
 import type {
 	BashInput,
 	BashResult,
@@ -275,7 +276,8 @@ class DockerScopeRuntime {
 		];
 		for (const [key, value] of Object.entries(this.labels())) args.push("--label", `${key}=${value}`);
 		if (this.config.user) args.push("--user", this.config.user);
-		for (const [key, value] of Object.entries(this.config.env ?? {})) args.push("-e", `${key}=${value}`);
+		const envFile = await dockerEnvFile(this.config.env);
+		if (envFile) args.push("--env-file", envFile.path);
 		args.push(...(this.config.extraRunArgs ?? []), this.image, "sleep", "infinity");
 
 		this.emit(runtimeEvents, {
@@ -283,7 +285,12 @@ class DockerScopeRuntime {
 			id: name,
 		});
 		this.log?.info("runtime.docker.starting", this.fields({ container: name, image: this.image }));
-		const started = await this.runner(this.docker, args, { timeoutMs: this.timeoutMs, signal });
+		let started: BashResult;
+		try {
+			started = await this.runner(this.docker, args, { timeoutMs: this.timeoutMs, signal });
+		} finally {
+			await envFile?.cleanup();
+		}
 		if (started.code !== 0) {
 			const detail = started.err.trim() || started.out.trim() || `exit ${started.code}`;
 			this.emit(runtimeEvents, { kind: "start_failed", id: name, message: detail });
@@ -588,6 +595,24 @@ function assertSize(size: number, max: number, label: string): void {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+async function dockerEnvFile(
+	env: Record<string, string> | undefined,
+): Promise<{ path: string; cleanup: () => Promise<void> } | undefined> {
+	const entries = Object.entries(env ?? {});
+	if (!entries.length) return undefined;
+	const dir = await mkdtemp(join(tmpdir(), "heypi-docker-env-"));
+	const path = join(dir, "env");
+	const lines = entries.map(([key, value]) => dockerEnvLine(key, value));
+	await writeFile(path, `${lines.join("\n")}\n`, { mode: 0o600 });
+	return { path, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+function dockerEnvLine(key: string, value: string): string {
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`invalid Docker env key: ${key}`);
+	if (/[\0\r\n]/u.test(value)) throw new Error(`Docker env value contains unsupported newline or null byte: ${key}`);
+	return `${key}=${value}`;
 }
 
 function shouldResetContainer(result: BashResult): boolean {

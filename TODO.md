@@ -25,9 +25,6 @@
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
 	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
 	- Report store access, migration version, lock health, runtime root/provider status, warm scopes, runtime queue depth, adapter connectivity, bot identity, last adapter event/error, active turns, queued follow-ups, pending approvals, due/running jobs, delivery retries/failures, and risky configuration posture.
-- Add usage and cost visibility.
-	- Track and report model/tool usage by agent, adapter, channel, job, and time range where provider metadata is available.
-	- Expose persisted usage in CLI/admin views before adding chat-side commands.
 - Add thread reset controls.
 	- Decide whether `/new` or `/reset` should start a fresh Pi conversation, archive the current thread state, or both.
 	- Keep reset controls permissioned and explicit because they affect shared team context.
@@ -58,8 +55,7 @@
 - Tighten runtime provider operations.
 	- Add CLI commands for runtime provider `status`, `stop`, and `restart` once provider management stabilizes.
 	- Add direct tests for provider-backed file/search behavior against real Docker/Gondolin when CI can run those dependencies.
-	- Review Docker container reset behavior that depends on matching output text.
-	- Review Docker environment propagation so secret values are not exposed through process argv.
+	- Replace Docker container reset detection that depends on matching stderr/stdout text with structured Docker state checks where possible.
 - Harden document conversion.
 	- Document the trust boundary for host-side document parsing.
 	- Consider sandboxed conversion for untrusted attachments if document processing becomes common in shared channels.
