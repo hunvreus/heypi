@@ -145,12 +145,6 @@ docker run -d \
 
 If the app itself uses the Docker runtime provider, mount the Docker socket or use a remote Docker daemon intentionally. That gives the heypi process control over containers.
 
-## Cloudflare Containers
-
-Cloudflare Containers can run heypi's Node.js process model, with R2 mounted through FUSE for durable runtime workspace files. This is still an advanced deployment path: container disk is ephemeral, and the default SQLite state database must not be placed on an R2 FUSE mount.
-
-Use [Deploy on Cloudflare](cloudflare.md) for the Worker, container, R2 mount, and state-store shape.
-
 ## Runtime providers
 
 Choose the runtime provider based on what the agent is allowed to touch:

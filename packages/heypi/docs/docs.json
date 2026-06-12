@@ -144,11 +144,6 @@
 					"file": "guides/deployment.md"
 				},
 				{
-					"title": "Deploy on Cloudflare",
-					"slug": "guides/cloudflare",
-					"file": "guides/cloudflare.md"
-				},
-				{
 					"title": "Custom integrations",
 					"slug": "guides/integrations",
 					"file": "guides/integrations.md"
