@@ -74,6 +74,7 @@ Native controls use flat application commands:
 
 ```text
 /approvals
+/bypasses
 /approve approval-id
 /deny approval-id
 /status run-or-call-id

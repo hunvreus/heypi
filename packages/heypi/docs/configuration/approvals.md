@@ -58,6 +58,7 @@ Typed fallback commands are provider-specific. Slack uses `/heypi` subcommands, 
 
 ```text
 /approvals
+/bypasses
 /approve <approval-id>
 /approve <approval-id> bypass
 /deny <approval-id>

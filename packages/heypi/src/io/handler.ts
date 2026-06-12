@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
 import type { CallRunner } from "../core/calls.js";
-import { helpReply, renderApprovals, renderThreadStatus } from "../core/format.js";
+import { helpReply, renderApprovalBypasses, renderApprovals, renderThreadStatus } from "../core/format.js";
 import { normalizeText, parseIntent } from "../core/intent.js";
 import { type Logger, logError, logger, message, redact, userError } from "../core/log.js";
 import type { Memory, NormalizedMemoryConfig } from "../core/memory.js";
@@ -22,6 +22,7 @@ import {
 	actorMention,
 	approvalVisible,
 	attributedMessage,
+	bypassVisible,
 	type CallIntent,
 	canCancelRun,
 	cancelText,
@@ -260,6 +261,16 @@ export function createHandler(input: {
 			const all = await input.store.approvals.listPending({ agent: agentId, limit: 25 });
 			const rows = all.filter((row) => approvalVisible(row, input.approval, msg, thread.id));
 			return renderApprovals(rows);
+		}
+		if (intent.kind === "bypasses") {
+			if (!canListApprovals(input.approval, msg)) {
+				return { text: messages.approvalsUnauthorized, private: true };
+			}
+			if (!input.store.approvalBypasses) return { text: "Approval bypasses are not configured.", private: true };
+			const channel = scopedChannelKey(msg);
+			const all = await input.store.approvalBypasses.listActive({ agent: agentId, limit: 25 });
+			const rows = all.filter((row) => bypassVisible(row, input.approval, msg, channel, thread.id));
+			return renderApprovalBypasses(rows);
 		}
 		if (intent.kind === "thread_status") {
 			const [turns, calls, approvals, currentLock] = await Promise.all([

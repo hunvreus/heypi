@@ -50,6 +50,7 @@
 - Added durable approval bypass storage.
 - Added admin configuration visibility for task behavior and adapter approval permissions.
 - Added admin approval policy visibility and admin/CLI active approval bypass listing.
+- Added typed chat listing for active approval bypasses.
 - Added `heypi status` for persisted operator diagnostics.
 
 ### Changed

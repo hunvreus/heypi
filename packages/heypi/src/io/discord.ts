@@ -552,6 +552,7 @@ function discordCommandText(interaction: ChatInputCommandInteraction): string {
 	const command = interaction.commandName;
 	if (command === "help") return "/help";
 	if (command === "approvals") return "/approvals";
+	if (command === "bypasses") return "/bypasses";
 	if (command === "approve") {
 		const id = interaction.options.getString("id", true);
 		const bypass = interaction.options.getBoolean("bypass") ? " bypass" : "";
@@ -574,12 +575,23 @@ async function registerDiscordCommands(token: string, clientId: string, log: Log
 	log.info("discord.commands_registered", { clientId });
 }
 
-const DISCORD_COMMANDS = new Set(["help", "approvals", "approve", "deny", "status", "cancel", "revoke", "bash"]);
+const DISCORD_COMMANDS = new Set([
+	"help",
+	"approvals",
+	"bypasses",
+	"approve",
+	"deny",
+	"status",
+	"cancel",
+	"revoke",
+	"bash",
+]);
 
 function discordCommands() {
 	return [
 		new SlashCommandBuilder().setName("help").setDescription("Show heypi command help"),
 		new SlashCommandBuilder().setName("approvals").setDescription("List pending approvals"),
+		new SlashCommandBuilder().setName("bypasses").setDescription("List active approval bypasses"),
 		new SlashCommandBuilder()
 			.setName("approve")
 			.setDescription("Approve a pending approval")

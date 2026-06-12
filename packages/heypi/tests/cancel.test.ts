@@ -20,6 +20,11 @@ test("parseIntent treats incomplete control commands as help", () => {
 });
 
 test("parseIntent recognizes approval bypass and revoke commands", () => {
+	assert.deepEqual(parseIntent({ text: "/bypasses", channel: "C1", actor: "U1" }), {
+		kind: "bypasses",
+		channel: "C1",
+		actor: "U1",
+	});
 	assert.deepEqual(parseIntent({ text: "/approve approval-1 bypass", channel: "C1", actor: "U1" }), {
 		kind: "approve",
 		approvalId: "approval-1",

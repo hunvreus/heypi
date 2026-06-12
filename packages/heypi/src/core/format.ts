@@ -1,4 +1,5 @@
 import { isRuntimeStartupErrorText, RUNTIME_STARTUP_ERROR_KIND } from "../runtime/errors.js";
+import type { ApprovalBypass } from "../store/types.js";
 import { codeFence } from "./approval-view.js";
 import { redact } from "./log.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES } from "./messages.js";
@@ -22,6 +23,7 @@ export function helpReply(): Reply {
 			"Commands:",
 			"- /bash <shell command>",
 			"- /approvals: list pending approvals",
+			"- /bypasses: list active approval bypasses",
 			"- /approve <approval-id>",
 			"- /deny <approval-id>",
 			"- /cancel <turn-id>",
@@ -52,6 +54,35 @@ export function renderApprovals(rows: ApprovalSummary[]): Reply {
 	}
 	lines.push("", "Use `/approve <approval-id>` or `/deny <approval-id>`.");
 	return { text: lines.join("\n"), private: true };
+}
+
+export function renderApprovalBypasses(rows: ApprovalBypass[]): Reply {
+	if (!rows.length) return { text: "No active approval bypasses.", private: true };
+	const lines = ["Active approval bypasses"];
+	for (const row of rows) {
+		const remaining = Math.max(0, row.expiresAt - Date.now());
+		lines.push(
+			[
+				`- \`${row.id}\``,
+				`scope ${row.scope}`,
+				`target ${bypassTarget(row)}`,
+				row.actor ? `actor ${row.actor}` : undefined,
+				`created by ${row.createdBy}`,
+				`expires in ${formatDuration(remaining)}`,
+			]
+				.filter((item): item is string => typeof item === "string")
+				.join(" — "),
+		);
+	}
+	lines.push("", "Use `/revoke <bypass-id>` to revoke a bypass.");
+	return { text: lines.join("\n"), private: true };
+}
+
+function bypassTarget(row: ApprovalBypass): string {
+	if (row.scope === "thread") return row.threadId ? `thread ${row.threadId}` : "thread";
+	if (row.scope === "channel") return `channel ${row.channel}`;
+	if (row.scope === "user") return row.actor ? `user ${row.actor}` : "user";
+	return `adapter ${row.channel.split(":")[0] ?? row.channel}`;
 }
 
 export function renderThreadStatus(input: {

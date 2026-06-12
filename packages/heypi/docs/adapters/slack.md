@@ -97,6 +97,7 @@ Typed controls use `/heypi` subcommands:
 
 ```text
 /heypi approvals
+/heypi bypasses
 /heypi approve <approval-id>
 /heypi deny <approval-id>
 /heypi status [run-or-call-id]

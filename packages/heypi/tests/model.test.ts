@@ -837,6 +837,99 @@ test("approvals command lists pending approvals for approvers only", async () =>
 	}
 });
 
+test("bypasses command lists active approval bypasses for approvers only", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const approval = {
+			approvers: ["U_ALLOWED"],
+			bypass: { durationMs: 60_000, scope: "thread" as const },
+		};
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			approval,
+			callRunner: new CallRunner(
+				store.calls,
+				store.approvals,
+				new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+				{
+					name: "just-bash",
+					root: ".",
+					bash: async () => ({ code: 0, out: "ok", err: "", ms: 1 }),
+				},
+				approval,
+				undefined,
+				store.transaction,
+				commandConfirm(),
+				undefined,
+				"a",
+				store.approvalBypasses,
+			),
+			agent: {
+				ask: async () => ({ text: "ok" }),
+				continue: async () => ({ text: "ok" }),
+			},
+		});
+
+		const requested = await handler({
+			trace: "trace-bypass-request",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bypass-request",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:1",
+			text: "/bash curl https://example.com",
+		});
+		const approvalId = requested?.approval?.id;
+		assert.ok(approvalId);
+
+		await handler({
+			trace: "trace-bypass-approve",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bypass-approve",
+			channel: "C1",
+			actor: "U_ALLOWED",
+			thread: "C1:1",
+			text: `/approve ${approvalId} bypass`,
+		});
+
+		const denied = await handler({
+			trace: "trace-bypasses-denied",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bypasses-denied",
+			channel: "C1",
+			actor: "U_OTHER",
+			thread: "C1:1",
+			text: "/bypasses",
+		});
+		assert.equal(denied?.private, true);
+		assert.match(denied?.text ?? "", /not allowed/);
+
+		const listed = await handler({
+			trace: "trace-bypasses",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bypasses",
+			channel: "D1",
+			actor: "U_ALLOWED",
+			thread: "D1:D1",
+			text: "/bypasses",
+		});
+		assert.equal(listed?.private, true);
+		assert.match(listed?.text ?? "", /Active approval bypasses/);
+		assert.match(listed?.text ?? "", /scope thread/);
+		assert.match(listed?.text ?? "", /created by U_ALLOWED/);
+		assert.match(listed?.text ?? "", /\/revoke <bypass-id>/);
+	} finally {
+		await db.cleanup();
+	}
+});
+
 test("bot actors cannot list approvals through zero-config fallback", async () => {
 	const db = await tempDb();
 	try {
@@ -890,6 +983,21 @@ test("bot actors cannot list approvals through zero-config fallback", async () =
 
 		assert.equal(listed?.private, true);
 		assert.match(listed?.text ?? "", /not allowed/);
+
+		const bypasses = await handler({
+			trace: "trace-bot-bypasses",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-bot-bypasses",
+			channel: "C1",
+			actor: "B_DEPLOY",
+			actorBot: true,
+			thread: "C1:1",
+			text: "/bypasses",
+		});
+
+		assert.equal(bypasses?.private, true);
+		assert.match(bypasses?.text ?? "", /not allowed/);
 	} finally {
 		await db.cleanup();
 	}

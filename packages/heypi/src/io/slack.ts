@@ -615,6 +615,7 @@ function nativeCommandText(input: string): string {
 	const args = rest.join(" ");
 	if (command === "help") return "/help";
 	if (command === "approvals") return "/approvals";
+	if (command === "bypasses") return "/bypasses";
 	if (command === "approve") return `/approve ${args}`.trim();
 	if (command === "deny") return `/deny ${args}`.trim();
 	if (command === "status") return args ? `/status ${args}` : "/status";

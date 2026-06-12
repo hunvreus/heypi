@@ -7,7 +7,6 @@
 	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
 	- Run full workspace checks before tagging.
 - Extend approval policy visibility and controls.
-	- Add chat listing for active approval bypasses.
 	- Show command/tool confirmation rules in admin once confirmation policy is centrally introspectable.
 - Add Telegram webhook mode.
 	- Keep polling as the local/dev path.

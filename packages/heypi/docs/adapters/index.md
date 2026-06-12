@@ -30,6 +30,7 @@ Approval buttons are the primary approval controls where supported. Typed comman
 
 ```text
 /approvals
+/bypasses
 /approve <approval-id>
 /approve <approval-id> bypass
 /deny <approval-id>

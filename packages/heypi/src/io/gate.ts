@@ -45,6 +45,9 @@ function included(allowlist: string[] | undefined, value: string | undefined): b
 function controlCommand(input?: string): boolean {
 	const text = input?.replace(/<@[^>]+>/g, "").trim();
 	return Boolean(
-		text && /^\/(approvals|approve\s+\S+|deny\s+\S+|cancel\s+\S+|status(?:\s+\S+)?|help|bash(?:\s+.+)?)$/i.test(text),
+		text &&
+			/^\/(approvals|bypasses|approve\s+\S+|deny\s+\S+|cancel\s+\S+|status(?:\s+\S+)?|help|bash(?:\s+.+)?)$/i.test(
+				text,
+			),
 	);
 }

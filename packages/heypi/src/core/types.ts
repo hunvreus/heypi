@@ -16,6 +16,7 @@ export type Intent =
 	| { kind: "revoke"; bypassId: string; channel: string; actor: string }
 	| { kind: "cancel"; id: string; channel: string; actor: string }
 	| { kind: "approvals"; channel: string; actor: string }
+	| { kind: "bypasses"; channel: string; actor: string }
 	| { kind: "thread_status"; channel: string; actor: string }
 	| { kind: "status"; callId: string; channel: string };
 

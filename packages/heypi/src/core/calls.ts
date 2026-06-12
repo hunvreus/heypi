@@ -67,7 +67,7 @@ export class CallRunner {
 	}
 
 	async handle(
-		intent: Exclude<Intent, { kind: "ask" | "help" | "cancel" | "approvals" | "thread_status" }>,
+		intent: Exclude<Intent, { kind: "ask" | "help" | "cancel" | "approvals" | "bypasses" | "thread_status" }>,
 		context: CallContext = {},
 		signal?: AbortSignal,
 		onApproved?: (reply: Reply) => Promise<void>,

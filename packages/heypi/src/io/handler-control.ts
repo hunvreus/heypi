@@ -2,14 +2,18 @@ import type { ApprovalPolicy, CancelPolicy, TaskConfig } from "../config.js";
 import { actorAllowed, actorMatches, hasActorPolicy } from "../core/approvers.js";
 import { type AppMessages, renderMessage } from "../core/messages.js";
 import type { Intent } from "../core/types.js";
+import type { ApprovalBypass } from "../store/types.js";
 import { channelKey as buildChannelKey } from "./handler-scope.js";
 
-export type CallIntent = Exclude<Intent, { kind: "ask" | "help" | "cancel" | "approvals" | "thread_status" }>;
+export type CallIntent = Exclude<
+	Intent,
+	{ kind: "ask" | "help" | "cancel" | "approvals" | "bypasses" | "thread_status" }
+>;
 
 export type NormalizedTask = Required<TaskConfig>;
 
 export function requiresThreadLock(kind: string): boolean {
-	return kind !== "help" && kind !== "status" && kind !== "approvals" && kind !== "revoke";
+	return kind !== "help" && kind !== "status" && kind !== "approvals" && kind !== "bypasses" && kind !== "revoke";
 }
 
 export function scopedIntent(
@@ -54,6 +58,22 @@ export function approvalVisible(
 	threadId: string,
 ): boolean {
 	if (!hasActorPolicy(config?.approvers) && !hasActorPolicy(config?.admins)) return row.threadId === threadId;
+	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
+}
+
+export function bypassVisible(
+	row: ApprovalBypass,
+	config: ApprovalPolicy | undefined,
+	msg: { provider: string; team?: string; actor: string },
+	channel: string,
+	threadId: string,
+): boolean {
+	if (hasActorPolicy(config?.approvers) || hasActorPolicy(config?.admins)) {
+		return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
+	}
+	if (row.scope === "thread") return row.threadId === threadId;
+	if (row.scope === "channel") return row.channel === channel;
+	if (row.scope === "user") return row.actor === msg.actor;
 	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
 }
 
