@@ -21,7 +21,7 @@ export async function completeSecretReply(input: {
 }): Promise<Outbound> {
 	try {
 		if (!input.secrets) return expired();
-		const completed = input.secrets.complete(input.rawText, input.scope);
+		const completed = input.secrets.complete(input.rawText, input.scope, input.actor);
 		if (!completed) return expired();
 		const runtime = input.runtime?.(input.scope.path);
 		const paths = await input.secrets.save(completed, runtime);

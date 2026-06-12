@@ -74,16 +74,22 @@ test("secret requests decrypt only for the matching scope", () => {
 	const request = store.create(keys.channel, {
 		reason: "Need an API token.",
 		fields: [{ name: "API_TOKEN", label: "API token" }],
+		actor: "U1",
 	});
 	const blob = secretBlob(request.url, { API_TOKEN: "secret-value" });
 
 	const wrongScope = store.create(keys.channel, {
 		reason: "Need another API token.",
 		fields: [{ name: "OTHER_TOKEN" }],
+		actor: "U1",
 	});
-	assert.equal(store.complete(secretBlob(wrongScope.url, { OTHER_TOKEN: "secret-value" }), keys.user), undefined);
+	assert.equal(
+		store.complete(secretBlob(wrongScope.url, { OTHER_TOKEN: "secret-value" }), keys.user, "U1"),
+		undefined,
+	);
 
-	const completed = store.complete(blob, keys.channel);
+	assert.equal(store.complete(blob, keys.channel, "U2"), undefined);
+	const completed = store.complete(blob, keys.channel, "U1");
 	assert.deepEqual(completed?.files, [{ name: "API_TOKEN", path: ".secrets/API_TOKEN", value: "secret-value" }]);
 	assert.match(secretPage(), /heypi-secret/);
 	assert.match(secretPage(), /rel="stylesheet"/);
@@ -105,8 +111,9 @@ test("secrets save completed values through an explicit write target", async () 
 	const request = store.create(keys.channel, {
 		reason: "Need an API token.",
 		fields: [{ name: "API_TOKEN" }],
+		actor: "U1",
 	});
-	const completed = store.complete(secretBlob(request.url, { API_TOKEN: "secret-value" }), keys.channel);
+	const completed = store.complete(secretBlob(request.url, { API_TOKEN: "secret-value" }), keys.channel, "U1");
 	assert.ok(completed);
 	const writes: Array<{ path: string; content: string }> = [];
 
@@ -138,6 +145,7 @@ test("handler stores secret replies in the selected runtime without model exposu
 		const request = secrets.create(keys.channel, {
 			reason: "Need a deploy token.",
 			fields: [{ name: "DEPLOY_TOKEN" }],
+			actor: "U1",
 		});
 		const writes: Array<{ path: string; content: string }> = [];
 		const runtime: Runtime = {
@@ -161,6 +169,20 @@ test("handler stores secret replies in the selected runtime without model exposu
 				continue: async () => ({ text: "unused" }),
 			},
 		});
+
+		const wrongActor = await handler({
+			trace: "trace-secret-wrong-actor",
+			provider: "slack",
+			team: "T1",
+			channel: "C1",
+			actor: "U2",
+			thread: "C1",
+			text: secretBlob(request.url, { DEPLOY_TOKEN: "poisoned" }),
+		});
+
+		assert.equal(wrongActor?.private, true);
+		assert.match(wrongActor?.text ?? "", /expired, invalid, or for another scope/);
+		assert.deepEqual(writes, []);
 
 		const out = await handler({
 			trace: "trace-secret",

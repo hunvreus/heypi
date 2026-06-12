@@ -53,7 +53,7 @@ export function renderApprovals(rows: ApprovalSummary[]): Reply {
 				.join(" — "),
 		);
 	}
-	lines.push("", "Use `/approve <approval-id>` or `/deny <approval-id>`.");
+	lines.push("", "Use `/approve <approval-id> [bypass]` or `/deny <approval-id>`.");
 	return { text: lines.join("\n"), private: true };
 }
 

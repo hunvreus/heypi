@@ -135,6 +135,12 @@ test("memory is opt-in, scoped, bounded, and sanitized", async () => {
 		assert.match(await memory.read(keys.channel), /production incidents/);
 		assert.doesNotMatch(await memory.read(keys.channel), /Global fact/);
 		assert.match(memoryContext(keys.channel, "<remember me>") ?? "", /&lt;remember me&gt;/);
+		await memory.append(keys.channel, "<alpha>");
+		assert.match(await memory.read(keys.channel), /<alpha>/);
+		await memory.replace(keys.channel, "- <alpha>", "<beta>");
+		assert.match(await memory.read(keys.channel), /<beta>/);
+		await memory.delete(keys.channel, "- <beta>");
+		assert.doesNotMatch(await memory.read(keys.channel), /<beta>/);
 		await assert.rejects(() => memory.append(keys.channel, "API_KEY=secret"), /secret/);
 		await assert.rejects(() => memory.append(keys.channel, "x".repeat(90)), /limit|too long/);
 	} finally {

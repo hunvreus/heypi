@@ -25,6 +25,15 @@
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
 	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
 	- Report store access, migration version, lock health, runtime root/provider status, warm scopes, runtime queue depth, adapter connectivity, bot identity, last adapter event/error, active turns, queued follow-ups, pending approvals, due/running jobs, delivery retries/failures, and risky configuration posture.
+- Add usage and cost visibility.
+	- Track and report model/tool usage by agent, adapter, channel, job, and time range where provider metadata is available.
+	- Expose persisted usage in CLI/admin views before adding chat-side commands.
+- Add thread reset controls.
+	- Decide whether `/new` or `/reset` should start a fresh Pi conversation, archive the current thread state, or both.
+	- Keep reset controls permissioned and explicit because they affect shared team context.
+- Clarify heartbeat scope semantics.
+	- Document how `scope.channels` and `scope.users` map to stored provider threads before redesigning targeted heartbeat routing.
+	- Decide whether user-scoped heartbeat jobs should use direct-message discovery, actor-filtered channel threads, or explicit targets.
 - Add model configuration visibility and selection.
 	- Add configured model aliases, such as `fast`, `deep`, or `ops`, that map to explicit provider/model settings.
 	- Add CLI/admin picker support for selecting from configured aliases instead of typing raw provider/model strings.
@@ -49,6 +58,11 @@
 - Tighten runtime provider operations.
 	- Add CLI commands for runtime provider `status`, `stop`, and `restart` once provider management stabilizes.
 	- Add direct tests for provider-backed file/search behavior against real Docker/Gondolin when CI can run those dependencies.
+	- Review Docker container reset behavior that depends on matching output text.
+	- Review Docker environment propagation so secret values are not exposed through process argv.
+- Harden document conversion.
+	- Document the trust boundary for host-side document parsing.
+	- Consider sandboxed conversion for untrusted attachments if document processing becomes common in shared channels.
 - Review scoped-skill resources.
 	- Decide whether scoped skills should remain single-file `SKILL.md` entries or support scoped resource files.
 	- If resource files are added, define safe paths, size limits, write/delete policy, prompt loading rules, and whether resource mutation needs separate approval.
@@ -98,6 +112,7 @@
 - Add more adapters.
 	- Teams.
 - Add voice memo media support.
+	- Acknowledge unsupported inbound audio/voice attachments before transcription support exists.
 	- Decode and transcribe inbound voice/audio attachments where adapters expose them.
 	- Support uploading generated audio or media files through the existing attachment path.
 	- Treat live calls or phone-call handling as out of scope unless explicitly designed later.

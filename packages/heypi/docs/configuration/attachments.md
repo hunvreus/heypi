@@ -47,6 +47,7 @@ createHeypi({
 ```
 
 The default converter, `heypi-convert-document`, uses [Microsoft MarkItDown](https://github.com/microsoft/markitdown) to convert supported files to Markdown.
+The built-in setup path pins MarkItDown to `0.1.6`; set `HEYPI_CONVERT_MARKITDOWN_PACKAGE` if you need to test or operate a different version.
 
 Requirements:
 
@@ -62,7 +63,7 @@ npx heypi-convert-document --setup
 Without `uv`, install MarkItDown yourself:
 
 ```bash
-python3 -m pip install "markitdown[pdf,docx,pptx,xlsx]"
+python3 -m pip install "markitdown[pdf,docx,pptx,xlsx]==0.1.6"
 ```
 
 Default converted extensions are `.pdf`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`, and `.epub`.

@@ -9,6 +9,8 @@ A scheduled job creates a normal heypi turn. It uses the same agent, runtime, to
 
 Jobs run inside the heypi Node process. Keep the process running for scheduled work to fire.
 
+If a scheduled turn returns exactly `[SILENT]`, heypi records the turn without sending a chat message. Use this when the job should only act through tools or stay quiet when there is nothing useful to report.
+
 ## Config
 
 ```ts

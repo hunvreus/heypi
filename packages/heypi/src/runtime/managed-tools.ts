@@ -175,7 +175,11 @@ export function skillTools(
 	];
 }
 
-export function secretTools(secrets: Secrets | undefined, scope: ScopedKey | undefined): ToolDefinition[] {
+export function secretTools(
+	secrets: Secrets | undefined,
+	scope: ScopedKey | undefined,
+	actor: string | undefined,
+): ToolDefinition[] {
 	if (!secrets?.enabled() || !scope) return [];
 	return [
 		{
@@ -195,6 +199,7 @@ export function secretTools(secrets: Secrets | undefined, scope: ScopedKey | und
 			}),
 			execute: async (id, params) => {
 				void id;
+				if (!actor) throw new Error("secret request actor is required");
 				const input = params as { fields?: unknown };
 				const fields = Array.isArray(input.fields)
 					? input.fields.map((field: unknown) => {
@@ -205,7 +210,7 @@ export function secretTools(secrets: Secrets | undefined, scope: ScopedKey | und
 							};
 						})
 					: [];
-				const request = secrets.create(scope, { reason: stringParam(params, "reason"), fields });
+				const request = secrets.create(scope, { reason: stringParam(params, "reason"), fields, actor });
 				return managedToolText(
 					[
 						"Secret request created.",

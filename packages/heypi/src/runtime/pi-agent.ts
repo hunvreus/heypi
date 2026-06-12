@@ -357,7 +357,7 @@ export class PiAgent implements Agent {
 					groups: req.actorGroups,
 					approvers: this.input.approvalApprovers ?? [],
 				}),
-				...secretTools(this.input.secrets, req.scope?.workspace),
+				...secretTools(this.input.secrets, req.scope?.workspace, actor),
 			],
 			logger: log,
 		});

@@ -20,7 +20,12 @@ export const COMMANDS: CommandDefinition[] = [
 	{ name: "bash", usage: "/bash <shell command>", description: "Run a shell command", args: "required" },
 	{ name: "approvals", usage: "/approvals", description: "List pending approvals", args: "none" },
 	{ name: "bypasses", usage: "/bypasses", description: "List active approval bypasses", args: "none" },
-	{ name: "approve", usage: "/approve <approval-id>", description: "Approve a pending approval", args: "required" },
+	{
+		name: "approve",
+		usage: "/approve <approval-id> [bypass]",
+		description: "Approve a pending approval",
+		args: "required",
+	},
 	{ name: "deny", usage: "/deny <approval-id>", description: "Deny a pending approval", args: "required" },
 	{ name: "cancel", usage: "/cancel <turn-id>", description: "Cancel a running turn", args: "required" },
 	{ name: "status", usage: "/status", description: "Show this thread status", args: "optional" },

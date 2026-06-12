@@ -78,6 +78,10 @@
 - Fixed Telegram webhook secret-token checks to use timing-safe comparison.
 - Fixed malformed approval command suffixes like `/approve <id> bypas` being silently ignored.
 - Fixed approval bypass creation so actor-bound bypasses are never stored without a target actor.
+- Fixed chat help to expose `/approve <id> bypass`.
+- Fixed memory writes so persisted memory remains raw while prompt injection escapes memory at render time.
+- Fixed memory replace/delete matching for text containing `<` or `>`.
+- Fixed secret request completion so only the actor that requested the secret can submit the encrypted reply.
 - Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.

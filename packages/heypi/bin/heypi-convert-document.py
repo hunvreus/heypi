@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-MARKITDOWN_PACKAGE = "markitdown[pdf,docx,pptx,xlsx]"
+MARKITDOWN_PACKAGE = "markitdown[pdf,docx,pptx,xlsx]==0.1.6"
 DEFAULT_EXTENSIONS = {
     ".doc",
     ".docx",

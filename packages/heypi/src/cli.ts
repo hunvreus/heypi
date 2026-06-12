@@ -414,7 +414,7 @@ features:
   slash_commands:
     - command: ${command}
       description: Control heypi
-      usage_hint: approve <approval-id>
+      usage_hint: approve <approval-id> [bypass]
       should_escape: false
 oauth_config:
   scopes:

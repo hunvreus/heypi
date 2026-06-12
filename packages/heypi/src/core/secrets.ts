@@ -48,6 +48,7 @@ export type SecretWriteTarget = {
 type PendingSecret = {
 	id: string;
 	scope: ScopedKey;
+	actor: string;
 	fields: SecretField[];
 	privateKeyPem: string;
 	expiresAt: number;
@@ -68,7 +69,7 @@ export class Secrets {
 
 	create(
 		scope: ScopedKey,
-		input: { reason: string; fields: Array<{ name: string; label?: string }> },
+		input: { reason: string; fields: Array<{ name: string; label?: string }>; actor: string },
 	): {
 		id: string;
 		url: string;
@@ -77,6 +78,7 @@ export class Secrets {
 	} {
 		if (!this.config.enabled) throw new Error("secret requests are disabled");
 		const reason = normalizeReason(input.reason);
+		const actor = normalizeActor(input.actor);
 		const fields = normalizeFields(input.fields, this.config.maxFields);
 		const { publicKey, privateKey } = generateKeyPairSync("rsa", {
 			modulusLength: 2048,
@@ -85,7 +87,14 @@ export class Secrets {
 		});
 		const id = `sec_${Date.now().toString(36)}_${randomBytes(8).toString("hex")}`;
 		const expiresAt = Date.now() + this.config.expiresInMs;
-		this.pending.set(id, { id, scope, fields, privateKeyPem: privateKey as string, expiresAt });
+		this.pending.set(id, {
+			id,
+			scope,
+			actor,
+			fields,
+			privateKeyPem: privateKey as string,
+			expiresAt,
+		});
 		const payload = {
 			v: 1,
 			id,
@@ -98,7 +107,7 @@ export class Secrets {
 		return { id, url: `${this.config.url}#${hash}`, fields, expiresAt };
 	}
 
-	complete(text: string, scope: ScopedKey): CompletedSecret | undefined {
+	complete(text: string, scope: ScopedKey, actor: string): CompletedSecret | undefined {
 		const match = text.match(/\bheypi-secret:([^:\s]+):([A-Za-z0-9_-]+)/);
 		if (!match) return undefined;
 		const [, id, payload] = match;
@@ -109,6 +118,8 @@ export class Secrets {
 			return undefined;
 		}
 		if (!sameScope(pending.scope, scope)) return undefined;
+		const currentActor = actor.trim();
+		if (!currentActor || !sameActor(pending.actor, currentActor)) return undefined;
 		const values = decryptValues(pending, payload);
 		this.pending.delete(id);
 		return {
@@ -191,6 +202,12 @@ function normalizeReason(input: string): string {
 	return reason;
 }
 
+function normalizeActor(input: string): string {
+	const actor = input.trim();
+	if (!actor) throw new Error("secret request actor is required");
+	return actor;
+}
+
 function decryptValues(pending: PendingSecret, payload: string): Record<string, string> {
 	const buf = Buffer.from(payload, "base64url");
 	if (buf.length < 2 + 12 + 16) throw new Error("invalid secret payload");
@@ -223,6 +240,12 @@ function decryptValues(pending: PendingSecret, payload: string): Record<string, 
 function sameScope(a: ScopedKey, b: ScopedKey): boolean {
 	const left = Buffer.from(a.path);
 	const right = Buffer.from(b.path);
+	return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function sameActor(a: string, b: string): boolean {
+	const left = Buffer.from(a);
+	const right = Buffer.from(b);
 	return left.length === right.length && timingSafeEqual(left, right);
 }
 

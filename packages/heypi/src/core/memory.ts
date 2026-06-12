@@ -46,9 +46,7 @@ export class Memory {
 
 	async read(scope: ScopedKey): Promise<string> {
 		if (!this.config.enabled) return "";
-		const data = await this.workspace.read(this.path(scope));
-		const text = data ? Buffer.from(data).toString("utf8") : "";
-		return sanitizeRead(String(text)).slice(0, this.config.maxChars);
+		return (await this.readRaw(scope)).slice(0, this.config.maxChars);
 	}
 
 	async list(input: { limit?: number; offset?: number; maxBytes?: number } = {}): Promise<MemoryEntry[]> {
@@ -91,7 +89,7 @@ export class Memory {
 		const item = normalizeItem(content);
 		if (!item) throw new Error("memory content is empty");
 		assertBasicMemoryHygiene(item);
-		const current = await this.read(scope);
+		const current = await this.readRaw(scope);
 		const next = [current.trim(), item].filter(Boolean).join("\n");
 		this.assertSize(next);
 		await this.write(scope, next);
@@ -99,7 +97,7 @@ export class Memory {
 	}
 
 	async replace(scope: ScopedKey, oldText: string, newText: string): Promise<void> {
-		const current = await this.read(scope);
+		const current = await this.readRaw(scope);
 		if (!oldText.trim()) throw new Error("oldText is required");
 		if (!current.includes(oldText)) throw new Error("memory text not found");
 		const replacement = normalizeItem(newText);
@@ -110,7 +108,7 @@ export class Memory {
 	}
 
 	async delete(scope: ScopedKey, text: string): Promise<void> {
-		const current = await this.read(scope);
+		const current = await this.readRaw(scope);
 		if (!text.trim()) throw new Error("text is required");
 		if (!current.includes(text)) throw new Error("memory text not found");
 		await this.write(
@@ -120,6 +118,12 @@ export class Memory {
 				.replace(/\n{3,}/g, "\n\n")
 				.trim(),
 		);
+	}
+
+	private async readRaw(scope: ScopedKey): Promise<string> {
+		if (!this.config.enabled) return "";
+		const data = await this.workspace.read(this.path(scope));
+		return data ? Buffer.from(data).toString("utf8") : "";
 	}
 
 	private async write(scope: ScopedKey, content: string): Promise<void> {
