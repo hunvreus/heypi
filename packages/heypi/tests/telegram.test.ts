@@ -10,7 +10,7 @@ test("telegram webhook mode registers one HTTP route and bot commands", async ()
 	const restore = mockTelegramFetch(calls);
 	try {
 		const routes: HttpRoute[] = [];
-		const adapter = telegram({ token: "token", mode: "webhook" });
+		const adapter = telegram({ token: "token", mode: "webhook", webhook: { secretToken: "secret" } });
 		await adapter.start({
 			handler: async () => undefined,
 			logger: consoleLogger({ level: "error", format: "pretty" }),
@@ -101,9 +101,20 @@ test("telegram webhook rejects bad secret token", async () => {
 	}
 });
 
+test("telegram webhook mode requires a secret token", () => {
+	assert.throws(() => telegram({ token: "token", mode: "webhook" }), /webhook.secretToken/);
+});
+
+test("telegram mode must be valid", () => {
+	assert.throws(
+		() => telegram({ token: "token", mode: "invalid" as "polling" }),
+		/Telegram mode must be "polling" or "webhook"/,
+	);
+});
+
 test("telegram webhook path overrides must be explicit", () => {
 	assert.throws(
-		() => telegram({ token: "token", mode: "webhook", webhook: { path: "/hook" } }),
+		() => telegram({ token: "token", mode: "webhook", webhook: { path: "/hook", secretToken: "secret" } }),
 		/unsafePathOverride: true/,
 	);
 });

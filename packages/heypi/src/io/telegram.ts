@@ -200,9 +200,13 @@ function telegramSetup(
 	name: string,
 ):
 	| { mode: "polling"; path?: undefined; port?: undefined; secretToken?: undefined; maxBodyBytes?: undefined }
-	| { mode: "webhook"; path: string; port?: number | string; secretToken?: string; maxBodyBytes: number } {
+	| { mode: "webhook"; path: string; port?: number | string; secretToken: string; maxBodyBytes: number } {
+	if (input.mode !== undefined && input.mode !== "polling" && input.mode !== "webhook") {
+		throw new Error('Telegram mode must be "polling" or "webhook"');
+	}
 	if (input.mode === "webhook") {
 		const webhook = input.webhook ?? {};
+		if (!webhook.secretToken) throw new Error("Telegram webhook mode requires webhook.secretToken");
 		if (webhook.path && !webhook.unsafePathOverride) {
 			throw new Error("Telegram webhook path override requires unsafePathOverride: true");
 		}
@@ -225,7 +229,7 @@ function numberOrUndefined(input?: string): number | undefined {
 
 type TelegramWebhookRoute = {
 	start: AdapterStart;
-	setup: { mode: "webhook"; path: string; port?: number | string; secretToken?: string; maxBodyBytes: number };
+	setup: { mode: "webhook"; path: string; port?: number | string; secretToken: string; maxBodyBytes: number };
 	client: TelegramClient;
 	config: TelegramConfig;
 	delivery: DeliveryQueue;

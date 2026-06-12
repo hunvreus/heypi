@@ -52,7 +52,7 @@
 - Added admin approval policy visibility and admin/CLI active approval bypass listing.
 - Added typed chat listing for active approval bypasses.
 - Added `heypi status` for persisted operator diagnostics.
-- Added Telegram webhook mode, Telegram bot command registration, and `heypi telegram set-webhook`/`delete-webhook`.
+- Added Telegram webhook mode with required secret-token validation, Telegram bot command registration, and `heypi telegram set-webhook`/`delete-webhook`.
 
 ### Changed
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.

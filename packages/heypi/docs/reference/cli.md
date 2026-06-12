@@ -149,7 +149,7 @@ heypi slack channels --env .env --private
 ```bash
 heypi telegram check [--env .env] [--token <token>]
 heypi telegram observe [--env .env] [--token <token>] [--timeout 60]
-heypi telegram set-webhook [--env .env] [--token <token>] --url <url> [--secret-token <token>]
+heypi telegram set-webhook [--env .env] [--token <token>] --url <url> --secret-token <token>
 heypi telegram delete-webhook [--env .env] [--token <token>]
 ```
 
@@ -166,7 +166,7 @@ heypi telegram delete-webhook [--env .env] [--token <token>]
 | `--token <token>` | Use instead of `TELEGRAM_BOT_TOKEN`. |
 | `--timeout <seconds>` | Wait time for `observe`. Defaults to `60`. |
 | `--url <url>` | Public HTTPS Telegram webhook URL for `set-webhook`. |
-| `--secret-token <token>` | Secret token passed to Telegram and checked by webhook mode. |
+| `--secret-token <token>` | Required for `set-webhook`. Secret token passed to Telegram and checked by webhook mode. |
 
 Telegram cannot enumerate chats. Send `/start` to the bot, or post in the target group/channel, then run:
 

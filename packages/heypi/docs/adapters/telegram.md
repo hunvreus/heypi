@@ -19,7 +19,7 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 | `pollTimeoutSeconds` | No | Long-poll timeout. Defaults to `25`. |
 | `webhook.path` | No | HTTP path for Telegram updates. Defaults to `/telegram/<adapter-name>/webhook`. |
 | `webhook.unsafePathOverride` | No | Required when overriding `webhook.path`. |
-| `webhook.secretToken` | No | Telegram webhook secret token checked against `X-Telegram-Bot-Api-Secret-Token`. Recommended in production. |
+| `webhook.secretToken` | Webhook mode | Telegram webhook secret token checked against `X-Telegram-Bot-Api-Secret-Token`. |
 | `webhook.port` | No | HTTP listener port name/number when the app exposes multiple HTTP listeners. |
 | `webhook.maxBodyBytes` | No | Maximum webhook request body size. Defaults to `1000000`. |
 | `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, channels, and forum topics. |
@@ -142,7 +142,7 @@ Common environment variables:
 | Variable | Required when | Description |
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Always | Bot token from BotFather. |
-| `TELEGRAM_WEBHOOK_SECRET` | Webhook mode, recommended | Secret token passed to `setWebhook` and checked by heypi. |
+| `TELEGRAM_WEBHOOK_SECRET` | Webhook mode | Secret token passed to `setWebhook` and checked by heypi. |
 
 For app-wide config such as `state`, `runtime`, and `agent`, see [Configuration](../configuration/index.md).
 
@@ -152,5 +152,5 @@ For app-wide config such as `state`, `runtime`, and `agent`, see [Configuration]
 | --- | --- |
 | `heypi telegram check [--env .env]` | Verify Telegram bot credentials. |
 | `heypi telegram observe [--env .env] [--timeout 60]` | Wait for a delivered Telegram update and print IDs/target snippets. |
-| `heypi telegram set-webhook [--env .env] --url <url> [--secret-token <token>]` | Register Telegram webhook delivery and bot commands. |
+| `heypi telegram set-webhook [--env .env] --url <url> --secret-token <token>` | Register Telegram webhook delivery and bot commands. |
 | `heypi telegram delete-webhook [--env .env]` | Remove Telegram webhook delivery so polling can be used again. |

@@ -489,16 +489,16 @@ async function telegramObserve(flags: Flags): Promise<void> {
 async function telegramSetWebhook(flags: Flags): Promise<void> {
 	const token = secret(flags, "token", "TELEGRAM_BOT_TOKEN");
 	const url = requiredFlag(flags, "url");
-	const secretToken = stringFlag(flags, "secret-token");
+	const secretToken = requiredFlag(flags, "secret-token");
 	await telegramCall(token, "setWebhook", {
 		url,
-		...(secretToken ? { secret_token: secretToken } : {}),
+		secret_token: secretToken,
 		allowed_updates: ["message", "callback_query"],
 		drop_pending_updates: false,
 	});
 	await telegramRegisterCommands(token);
 	line(ok(`Telegram webhook set: ${url}`));
-	if (secretToken) line('Configure telegram({ mode: "webhook", webhook: { secretToken: ... } }) with the same token.');
+	line('Configure telegram({ mode: "webhook", webhook: { secretToken: ... } }) with the same token.');
 }
 
 async function telegramDeleteWebhook(flags: Flags): Promise<void> {
@@ -804,7 +804,7 @@ Usage:
   heypi slack env
   heypi telegram check [--env .env]
   heypi telegram observe [--env .env] [--timeout 60]
-  heypi telegram set-webhook [--env .env] --url https://host/telegram/telegram/webhook [--secret-token <token>]
+  heypi telegram set-webhook [--env .env] --url https://host/telegram/telegram/webhook --secret-token <token>
   heypi telegram delete-webhook [--env .env]
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
