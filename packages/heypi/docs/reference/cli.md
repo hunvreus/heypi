@@ -149,18 +149,24 @@ heypi slack channels --env .env --private
 ```bash
 heypi telegram check [--env .env] [--token <token>]
 heypi telegram observe [--env .env] [--token <token>] [--timeout 60]
+heypi telegram set-webhook [--env .env] [--token <token>] --url <url> [--secret-token <token>]
+heypi telegram delete-webhook [--env .env] [--token <token>]
 ```
 
 | Subcommand | Description |
 | --- | --- |
 | `check` | Verifies Telegram bot credentials with `getMe`. |
 | `observe` | Waits for a delivered message and prints chat IDs plus `targets` snippets. |
+| `set-webhook` | Registers Telegram webhook delivery for `message` and `callback_query` updates, then registers heypi bot commands. |
+| `delete-webhook` | Removes Telegram webhook delivery so polling can be used again. |
 
 | Option | Description |
 | --- | --- |
 | `--env <path>` | Load env file. |
 | `--token <token>` | Use instead of `TELEGRAM_BOT_TOKEN`. |
 | `--timeout <seconds>` | Wait time for `observe`. Defaults to `60`. |
+| `--url <url>` | Public HTTPS Telegram webhook URL for `set-webhook`. |
+| `--secret-token <token>` | Secret token passed to Telegram and checked by webhook mode. |
 
 Telegram cannot enumerate chats. Send `/start` to the bot, or post in the target group/channel, then run:
 
@@ -169,6 +175,8 @@ heypi telegram observe --env .env
 ```
 
 `observe` deletes any active webhook for the token before polling. Do not run it next to another long-polling process for the same bot.
+
+Webhook mode uses the adapter path `/telegram/<adapter-name>/webhook`; the default adapter URL path is `/telegram/telegram/webhook`.
 
 ## heypi discord
 

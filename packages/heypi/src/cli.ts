@@ -12,6 +12,7 @@ import {
 	readAdminSecret,
 	readAdminServerDescriptors,
 } from "./admin/auth.js";
+import { COMMANDS } from "./core/commands.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -104,14 +105,18 @@ function buildCli() {
 				throw new Error(`Unknown command: slack ${action}`);
 			})(flags),
 		);
-	cli.command("telegram <action>", "Telegram commands: check, observe")
+	cli.command("telegram <action>", "Telegram commands: check, observe, set-webhook, delete-webhook")
 		.option("--env <path>", "Load env file")
 		.option("--token <token>", "Telegram bot token")
 		.option("--timeout <seconds>", "Timeout in seconds")
+		.option("--url <url>", "Telegram webhook URL")
+		.option("--secret-token <token>", "Telegram webhook secret token")
 		.action((action: string, flags: Flags) =>
 			withEnv((input) => {
 				if (action === "check") return telegramCheck(input);
 				if (action === "observe") return telegramObserve(input);
+				if (action === "set-webhook") return telegramSetWebhook(input);
+				if (action === "delete-webhook") return telegramDeleteWebhook(input);
 				throw new Error(`Unknown command: telegram ${action}`);
 			})(flags),
 		);
@@ -481,6 +486,27 @@ async function telegramObserve(flags: Flags): Promise<void> {
 	throw new Error("Timed out waiting for Telegram message");
 }
 
+async function telegramSetWebhook(flags: Flags): Promise<void> {
+	const token = secret(flags, "token", "TELEGRAM_BOT_TOKEN");
+	const url = requiredFlag(flags, "url");
+	const secretToken = stringFlag(flags, "secret-token");
+	await telegramCall(token, "setWebhook", {
+		url,
+		...(secretToken ? { secret_token: secretToken } : {}),
+		allowed_updates: ["message", "callback_query"],
+		drop_pending_updates: false,
+	});
+	await telegramRegisterCommands(token);
+	line(ok(`Telegram webhook set: ${url}`));
+	if (secretToken) line('Configure telegram({ mode: "webhook", webhook: { secretToken: ... } }) with the same token.');
+}
+
+async function telegramDeleteWebhook(flags: Flags): Promise<void> {
+	const token = secret(flags, "token", "TELEGRAM_BOT_TOKEN");
+	await telegramCall(token, "deleteWebhook", { drop_pending_updates: false });
+	line(ok("Telegram webhook deleted."));
+}
+
 async function discordCheck(flags: Flags): Promise<void> {
 	const token = secret(flags, "token", "DISCORD_BOT_TOKEN");
 	const identity = await checkDiscord(token);
@@ -735,6 +761,12 @@ async function telegramCall<T>(token: string, method: string, body: Record<strin
 	return parsed.result;
 }
 
+async function telegramRegisterCommands(token: string): Promise<void> {
+	await telegramCall(token, "setMyCommands", {
+		commands: COMMANDS.map((command) => ({ command: command.name, description: command.description })),
+	});
+}
+
 async function latestTelegramUpdate(token: string): Promise<number> {
 	const updates = await telegramCall<TelegramUpdate[]>(token, "getUpdates", { offset: -1, limit: 1, timeout: 0 });
 	return updates.at(-1)?.update_id ?? 0;
@@ -772,6 +804,8 @@ Usage:
   heypi slack env
   heypi telegram check [--env .env]
   heypi telegram observe [--env .env] [--timeout 60]
+  heypi telegram set-webhook [--env .env] --url https://host/telegram/telegram/webhook [--secret-token <token>]
+  heypi telegram delete-webhook [--env .env]
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
   heypi discord channels [--env .env]

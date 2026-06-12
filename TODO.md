@@ -6,12 +6,6 @@
 	- Treat the approval permission move and native command changes as the main release notes.
 	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
 	- Run full workspace checks before tagging.
-- Add Telegram webhook mode.
-	- Keep polling as the local/dev path.
-	- Register a shared HTTP route for Telegram updates and acknowledge provider requests before long agent work.
-	- Add setup docs or CLI helpers for `setWebhook` and `deleteWebhook`.
-	- Register native bot commands with `setMyCommands`.
-	- Document that one bot token cannot use polling and webhook at the same time.
 
 ## Next
 

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
@@ -13,6 +15,7 @@ import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
+import { assertRouteName } from "./name.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "approve";
@@ -25,6 +28,8 @@ const TELEGRAM_CONFIG_KEYS = new Set([
 	"name",
 	"token",
 	"apiUrl",
+	"mode",
+	"webhook",
 	"pollTimeoutSeconds",
 	"allow",
 	"permissions",
@@ -39,6 +44,8 @@ export type TelegramConfig = {
 	name?: string;
 	token: string;
 	apiUrl?: { override: string };
+	mode?: "polling" | "webhook";
+	webhook?: TelegramWebhookConfig;
 	pollTimeoutSeconds?: number;
 	allow?: TelegramAllow;
 	permissions?: PermissionsConfig;
@@ -47,6 +54,14 @@ export type TelegramConfig = {
 	progress?: TelegramProgress | false;
 	streaming?: ReplyStreamOption;
 	delivery?: DeliveryConfig | false;
+};
+
+export type TelegramWebhookConfig = {
+	path?: string;
+	unsafePathOverride?: boolean;
+	secretToken?: string;
+	port?: number | string;
+	maxBodyBytes?: number;
 };
 
 export type TelegramTrigger = "mention" | "message";
@@ -66,7 +81,9 @@ export type TelegramProgress = {
 /** Creates a Telegram long-polling adapter. */
 export function telegram(input: TelegramConfig): Adapter {
 	const name = input.name ?? "telegram";
+	assertRouteName(name);
 	const configValidation = validateAdapterConfig(name, input, TELEGRAM_CONFIG_KEYS);
+	const setup = telegramSetup(input, name);
 	const kind = "telegram";
 	const client = new TelegramClient(input.token, input.apiUrl);
 	let stopped = false;
@@ -93,7 +110,40 @@ export function telegram(input: TelegramConfig): Adapter {
 				});
 			}
 			if (input.apiUrl) start.logger.warn("telegram.api_url_override", { adapter: name, kind });
-			loop = poll({ client, start, config: input, delivery, provider: name, kind, stopped: () => stopped });
+			const identity = await client.getMe().catch((error) => {
+				start.logger.warn("telegram.get_me_failed", {
+					adapter: name,
+					kind,
+					error: errorMessage(error),
+				});
+				return undefined;
+			});
+			await registerTelegramCommands(client, start.logger, { adapter: name, kind });
+			if (setup.mode === "webhook") {
+				registerTelegramWebhookRoute({
+					start,
+					setup,
+					client,
+					config: input,
+					delivery,
+					provider: name,
+					kind,
+					botUsername: identity?.username,
+					botId: identity?.id,
+				});
+			} else {
+				loop = poll({
+					client,
+					start,
+					config: input,
+					delivery,
+					provider: name,
+					kind,
+					stopped: () => stopped,
+					botUsername: identity?.username,
+					botId: identity?.id,
+				});
+			}
 		},
 		async stop(): Promise<void> {
 			stopped = true;
@@ -145,10 +195,137 @@ function telegramAllowConfigured(allow: TelegramAllow | undefined): boolean {
 	return Boolean(allow?.chats?.length || allow?.users?.length || botsConfigured(allow?.bots) || allow?.dms === false);
 }
 
+function telegramSetup(
+	input: TelegramConfig,
+	name: string,
+):
+	| { mode: "polling"; path?: undefined; port?: undefined; secretToken?: undefined; maxBodyBytes?: undefined }
+	| { mode: "webhook"; path: string; port?: number | string; secretToken?: string; maxBodyBytes: number } {
+	if (input.mode === "webhook") {
+		const webhook = input.webhook ?? {};
+		if (webhook.path && !webhook.unsafePathOverride) {
+			throw new Error("Telegram webhook path override requires unsafePathOverride: true");
+		}
+		return {
+			mode: "webhook",
+			path: webhook.path ?? `/telegram/${name}/webhook`,
+			port: webhook.port,
+			secretToken: webhook.secretToken,
+			maxBodyBytes: webhook.maxBodyBytes ?? 1_000_000,
+		};
+	}
+	return { mode: "polling" };
+}
+
 function numberOrUndefined(input?: string): number | undefined {
 	if (!input) return undefined;
 	const parsed = Number(input);
 	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+type TelegramWebhookRoute = {
+	start: AdapterStart;
+	setup: { mode: "webhook"; path: string; port?: number | string; secretToken?: string; maxBodyBytes: number };
+	client: TelegramClient;
+	config: TelegramConfig;
+	delivery: DeliveryQueue;
+	provider: string;
+	kind: string;
+	botUsername?: string;
+	botId?: number;
+};
+
+function registerTelegramWebhookRoute(input: TelegramWebhookRoute): void {
+	if (!input.start.http) throw new Error("Telegram webhook mode requires the heypi HTTP registrar");
+	input.start.http.register({
+		method: "POST",
+		path: input.setup.path,
+		port: input.setup.port,
+		handler: (req, res) => {
+			void receiveTelegramWebhook(input, req, res);
+		},
+	});
+	input.start.logger.info("telegram.webhook.start", {
+		adapter: input.provider,
+		kind: input.kind,
+		path: input.setup.path,
+		port: input.setup.port,
+	});
+}
+
+async function receiveTelegramWebhook(
+	input: TelegramWebhookRoute,
+	req: IncomingMessage,
+	res: ServerResponse,
+): Promise<void> {
+	try {
+		if (req.method !== "POST") return json(res, 405, { ok: false, error: "method not allowed" });
+		if (input.setup.secretToken) {
+			const token = req.headers["x-telegram-bot-api-secret-token"];
+			if (token !== input.setup.secretToken) return json(res, 401, { ok: false, error: "unauthorized" });
+		}
+		const update = (await readJson(req, input.setup.maxBodyBytes)) as TelegramUpdate;
+		json(res, 200, { ok: true });
+		void handleUpdate({
+			client: input.client,
+			start: input.start,
+			config: input.config,
+			delivery: input.delivery,
+			provider: input.provider,
+			kind: input.kind,
+			update,
+			stopped: () => false,
+			botUsername: input.botUsername,
+			botId: input.botId,
+		}).catch((error) => {
+			input.start.logger.error("telegram.webhook_update_failed", {
+				adapter: input.provider,
+				kind: input.kind,
+				update: update.update_id,
+				error: errorMessage(error),
+			});
+		});
+	} catch (error) {
+		input.start.logger.warn("telegram.webhook_bad_request", {
+			adapter: input.provider,
+			kind: input.kind,
+			error: errorMessage(error),
+		});
+		json(res, 400, { ok: false, error: "bad request" });
+	}
+}
+
+async function readJson(req: IncomingMessage, maxBytes: number): Promise<unknown> {
+	const chunks: Buffer[] = [];
+	let total = 0;
+	for await (const chunk of req) {
+		const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+		total += buffer.length;
+		if (total > maxBytes) throw new Error("request body too large");
+		chunks.push(buffer);
+	}
+	const raw = Buffer.concat(chunks).toString("utf8");
+	return raw ? JSON.parse(raw) : {};
+}
+
+function json(res: ServerResponse, status: number, body: unknown): void {
+	if (res.headersSent) return;
+	res.writeHead(status, { "content-type": "application/json" });
+	res.end(JSON.stringify(body));
+}
+
+async function registerTelegramCommands(
+	client: TelegramClient,
+	logger: Logger,
+	context: { adapter: string; kind: string },
+): Promise<void> {
+	const commands = COMMANDS.map((command) => ({
+		command: command.name,
+		description: command.description,
+	}));
+	await client.setMyCommands({ commands }).catch((error) => {
+		logger.warn("telegram.commands_register_failed", { ...context, error: errorMessage(error) });
+	});
 }
 
 async function poll(input: {
@@ -159,24 +336,18 @@ async function poll(input: {
 	provider: string;
 	kind: string;
 	stopped: () => boolean;
+	botUsername?: string;
+	botId?: number;
 }): Promise<void> {
 	let offset = 0;
 	const timeout = input.config.pollTimeoutSeconds ?? 25;
 	let backoffMs = 1000;
-	const bot = await input.client.getMe().catch((error) => {
-		input.start.logger.warn("telegram.get_me_failed", {
-			adapter: input.provider,
-			kind: input.kind,
-			error: errorMessage(error),
-		});
-		return undefined;
-	});
 	while (!input.stopped()) {
 		try {
 			const updates = await input.client.getUpdates({ offset, timeout });
 			for (const update of updates) {
 				offset = Math.max(offset, update.update_id + 1);
-				await handleUpdate({ ...input, update, botUsername: bot?.username, botId: bot?.id });
+				await handleUpdate({ ...input, update });
 			}
 			backoffMs = 1000;
 		} catch (error) {
@@ -1162,6 +1333,10 @@ class TelegramClient {
 		return out.result;
 	}
 
+	async setMyCommands(input: { commands: TelegramBotCommand[] }): Promise<void> {
+		await this.call("setMyCommands", input);
+	}
+
 	async sendMessage(input: TelegramSendMessage): Promise<TelegramMessage> {
 		const out = await this.call<{ result: TelegramMessage }>("sendMessage", compact(input));
 		return out.result;
@@ -1267,6 +1442,11 @@ type TelegramUser = {
 	is_bot?: boolean;
 	username?: string;
 	first_name?: string;
+};
+
+type TelegramBotCommand = {
+	command: string;
+	description: string;
 };
 
 type TelegramMessage = {
