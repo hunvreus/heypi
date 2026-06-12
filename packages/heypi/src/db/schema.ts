@@ -131,7 +131,7 @@ export const approvalBypass = sqliteTable(
 		scope: text("scope").notNull(),
 		channel: text("channel").notNull(),
 		threadId: text("thread_id"),
-		actor: text("actor"),
+		actor: text("actor").notNull(),
 		createdBy: text("created_by").notNull(),
 		reason: text("reason"),
 		approvalId: text("approval_id"),

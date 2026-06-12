@@ -68,16 +68,26 @@ export async function create(input: {
 	policy: ApprovalPolicy;
 	approvalBypasses?: ApprovalBypasses;
 	log: Logger;
-}): Promise<Awaited<ReturnType<ApprovalBypasses["create"]>>> {
+}): Promise<Awaited<ReturnType<ApprovalBypasses["create"]>> | undefined> {
 	const { approval, call, actor, context, policy, approvalBypasses, log } = input;
 	const settings = config(policy);
 	if (!approvalBypasses || !settings) throw new Error("approval bypasses are disabled");
+	const targetActor = call.actor ?? approval.requestedBy;
+	if (!targetActor) {
+		log.warn("approval_bypass.missing_actor", {
+			approval: approval.id,
+			call: approval.callId,
+			channel: approval.channel,
+			createdBy: actor,
+		});
+		return undefined;
+	}
 	const bypass = await approvalBypasses.create({
 		agent: approval.agent,
 		scope: settings.scope,
 		channel: approval.channel,
 		threadId: call.threadId ?? context.thread,
-		actor: call.actor ?? approval.requestedBy ?? undefined,
+		actor: targetActor,
 		createdBy: actor,
 		reason: approval.reason,
 		approvalId: approval.id,

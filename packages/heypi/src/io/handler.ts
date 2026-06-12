@@ -259,7 +259,8 @@ export function createHandler(input: {
 				return { text: messages.approvalsUnauthorized, private: true };
 			}
 			const all = await input.store.approvals.listPending({ agent: agentId, limit: 25 });
-			const rows = all.filter((row) => approvalVisible(row, input.approval, msg, thread.id));
+			const channel = scopedChannelKey(msg);
+			const rows = all.filter((row) => approvalVisible(row, channel));
 			return renderApprovals(rows);
 		}
 		if (intent.kind === "bypasses") {

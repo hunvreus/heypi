@@ -60,6 +60,7 @@
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.
 - Changed expired approvals to persist as `expired` instead of `denied` for clearer audit history.
 - Changed typed chat control parsing to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash` for adapters that deliver those messages.
+- Changed chat `/approvals` listing to show only approvals actionable from the current channel; use CLI/admin for cross-channel views.
 - Changed cancellation output to a single terminal task message that includes the cancelling actor when known.
 - Changed same-thread busy behavior configuration from `chat.busy` to `task.busy`.
 - Changed startup recovery to fail stale running calls and job runs after a process restart.
@@ -77,6 +78,7 @@
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.
 - Fixed Telegram webhook secret-token checks to use timing-safe comparison.
 - Fixed malformed approval command suffixes like `/approve <id> bypas` being silently ignored.
+- Fixed approval bypass creation so actor-bound bypasses are never stored without a target actor.
 - Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.

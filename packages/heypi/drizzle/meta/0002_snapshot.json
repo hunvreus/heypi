@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d92203c8-009f-42c8-9e68-01fc4b60ced1",
+  "id": "0f3bcd70-6662-4d93-a655-a792dab8ea4e",
   "prevId": "f4e026cf-9ffe-42cf-b413-1803401a16b5",
   "tables": {
     "approval": {
@@ -200,7 +200,7 @@
           "name": "actor",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "created_by": {

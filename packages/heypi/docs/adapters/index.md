@@ -42,6 +42,8 @@ Approval buttons are the primary approval controls where supported. Typed comman
 
 Slack uses the native `/heypi` command with subcommands such as `/heypi approve <approval-id>`. Slack slash command names are workspace-global, so use a unique command name if multiple heypi apps share one workspace. Discord uses flat native application commands such as `/approve` and `/status`. Telegram keeps bot commands such as `/approve`.
 
+In chat, `/approvals` lists approvals for the current channel. Use the admin UI or CLI approvals commands for cross-channel views.
+
 For shared workspaces, configure `allow`. Without it, any delivered DM can trigger the agent, and any delivered channel or group message can trigger it by mention or control command. heypi logs a startup warning when a built-in chat adapter starts without an allow filter.
 
 ## Provider differences

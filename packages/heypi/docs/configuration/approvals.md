@@ -67,6 +67,8 @@ Typed fallback commands are provider-specific. Slack uses `/heypi` subcommands, 
 
 In Telegram groups, use bot-qualified commands such as `/approve@YourBotName <approval-id>` when needed. In Slack, use `/heypi approve <approval-id>` instead of `/approve`. Natural language approval text is treated as a normal agent prompt, not as an approval decision.
 
+In chat, `/approvals` lists pending approvals for the current channel. Use the admin UI or `heypi approvals list` for cross-channel inspection.
+
 ## How calls become approvals
 
 `approval` does not make every tool call require approval. Tool confirmation does that:

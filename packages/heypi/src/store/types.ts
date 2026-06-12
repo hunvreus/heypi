@@ -198,7 +198,7 @@ export interface ApprovalBypasses {
 		scope: ApprovalBypassScope;
 		channel: string;
 		threadId?: string;
-		actor?: string;
+		actor: string;
 		createdBy: string;
 		reason?: string;
 		approvalId?: string;

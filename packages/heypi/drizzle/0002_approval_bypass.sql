@@ -4,7 +4,7 @@ CREATE TABLE `approval_bypass` (
 	`scope` text NOT NULL,
 	`channel` text NOT NULL,
 	`thread_id` text,
-	`actor` text,
+	`actor` text NOT NULL,
 	`created_by` text NOT NULL,
 	`reason` text,
 	`approval_id` text,

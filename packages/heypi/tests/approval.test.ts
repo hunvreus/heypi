@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as approvalBypass from "../src/core/approval-bypass.js";
 import { CallRunner } from "../src/core/calls.js";
 import type { Logger } from "../src/core/log.js";
 import { normalizeMessages } from "../src/core/messages.js";
@@ -206,6 +207,45 @@ test("approval bypass skips confirmation in matching thread until revoked", asyn
 		thread: "thread-1",
 	});
 	assert.equal(requestedAgain.approval?.id, approvals.rows[2]?.id);
+});
+
+test("approval bypass creation skips rows without a target actor", async () => {
+	const bypasses = new FakeBypasses();
+	const events: LogEvent[] = [];
+	const out = await approvalBypass.create({
+		approval: {
+			id: "approval-1",
+			agent: "a",
+			callId: "call-1",
+			channel: "C1",
+			threadId: "thread-1",
+			turnId: null,
+			requestMessageId: null,
+			command: "curl https://example.com",
+			runtime: "just-bash",
+			reason: "Run bash command.",
+			details: null,
+			state: "pending",
+			requestedBy: null,
+			requestedAt: Date.now(),
+			expiresAt: null,
+			resolvedAt: null,
+			resolvedBy: null,
+		},
+		call: { threadId: "thread-1", actor: null },
+		actor: "U_APPROVER",
+		context: { thread: "thread-1" },
+		policy: { bypass: { durationMs: 60_000 } },
+		approvalBypasses: bypasses,
+		log: captureLogger(events),
+	});
+
+	assert.equal(out, undefined);
+	assert.equal(bypasses.rows.length, 0);
+	assert.equal(
+		events.some((event) => event.event === "approval_bypass.missing_actor"),
+		true,
+	);
 });
 
 test("approval admins inherit approver permissions", async () => {
@@ -1105,7 +1145,7 @@ class FakeBypasses implements ApprovalBypasses {
 		scope: "thread" | "channel" | "user" | "adapter";
 		channel: string;
 		threadId?: string;
-		actor?: string;
+		actor: string;
 		createdBy: string;
 		reason?: string;
 		approvalId?: string;
@@ -1117,7 +1157,7 @@ class FakeBypasses implements ApprovalBypasses {
 			scope: input.scope,
 			channel: input.channel,
 			threadId: input.threadId ?? null,
-			actor: input.actor ?? null,
+			actor: input.actor,
 			createdBy: input.createdBy,
 			reason: input.reason ?? null,
 			approvalId: input.approvalId ?? null,

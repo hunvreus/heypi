@@ -51,14 +51,8 @@ export function canCancelRun(
 	return actor.actor === initiator;
 }
 
-export function approvalVisible(
-	row: { channel: string; threadId: string | null },
-	config: ApprovalPolicy | undefined,
-	msg: { provider: string; team?: string },
-	threadId: string,
-): boolean {
-	if (!hasActorPolicy(config?.approvers) && !hasActorPolicy(config?.admins)) return row.threadId === threadId;
-	return row.channel.startsWith(`${msg.provider}:${msg.team ?? ""}:`);
+export function approvalVisible(row: { channel: string }, channel: string): boolean {
+	return row.channel === channel;
 }
 
 export function bypassVisible(

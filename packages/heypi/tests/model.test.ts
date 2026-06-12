@@ -819,14 +819,27 @@ test("approvals command lists pending approvals for approvers only", async () =>
 		assert.equal(denied?.private, true);
 		assert.match(denied?.text ?? "", /not allowed/);
 
+		const crossChannel = await handler({
+			trace: "trace-approvals-cross-channel",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-approvals-cross-channel",
+			channel: "D1",
+			actor: "U_ALLOWED",
+			thread: "D1:D1",
+			text: "/approvals",
+		});
+		assert.equal(crossChannel?.private, true);
+		assert.equal(crossChannel?.text, "No pending approvals.");
+
 		const listed = await handler({
 			trace: "trace-approvals",
 			provider: "slack",
 			team: "T1",
 			eventId: "event-approvals",
-			channel: "D1",
+			channel: "C1",
 			actor: "U_ALLOWED",
-			thread: "D1:D1",
+			thread: "C1:1",
 			text: "/approvals",
 		});
 		assert.equal(listed?.private, true);
