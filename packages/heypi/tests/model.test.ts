@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { callArgs, callArgsForStorage, callContext } from "../src/core/call-reply.js";
 import { CallRunner } from "../src/core/calls.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { commandConfirm } from "../src/core/policy.js";
@@ -157,6 +158,50 @@ test("approved tool continuations branch from the synthetic tool result parent",
 	assert.deepEqual(
 		messages.filter((message) => message.role === "toolResult").map((message) => message.toolCallId),
 		["tool-call-1", "tool-call-2"],
+	);
+});
+
+test("call args reserve heypi metadata without hijacking user runtimeScope args", () => {
+	const stored = callArgsForStorage({ runtimeScope: "user-value" }, { runtimeScope: "channel/a/slack/T1/C1" });
+
+	assert.deepEqual(callArgs(stored), { runtimeScope: "user-value" });
+	assert.deepEqual(callContext({ threadId: null, turnId: null, messageId: null, toolCallId: null, args: stored }), {
+		thread: undefined,
+		turn: undefined,
+		message: undefined,
+		toolCall: undefined,
+		runtimeScope: "channel/a/slack/T1/C1",
+	});
+	assert.deepEqual(
+		callContext({
+			threadId: null,
+			turnId: null,
+			messageId: null,
+			toolCallId: null,
+			args: JSON.stringify({ runtimeScope: "user-value" }),
+		}),
+		{
+			thread: undefined,
+			turn: undefined,
+			message: undefined,
+			toolCall: undefined,
+			runtimeScope: undefined,
+		},
+	);
+});
+
+test("call args reject reserved heypi metadata and tolerate corrupt stored args", () => {
+	assert.throws(() => callArgsForStorage({ __heypi: { runtimeScope: "x" } }), /reserved/);
+	assert.deepEqual(callArgs("{not-json"), {});
+	assert.deepEqual(
+		callContext({ threadId: null, turnId: null, messageId: null, toolCallId: null, args: "{not-json" }),
+		{
+			thread: undefined,
+			turn: undefined,
+			message: undefined,
+			toolCall: undefined,
+			runtimeScope: undefined,
+		},
 	);
 });
 

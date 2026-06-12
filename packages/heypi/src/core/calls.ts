@@ -98,7 +98,7 @@ export class CallRunner {
 			actor,
 			tool: "bash",
 			command,
-			args: compact({ command, runtimeScope: context.runtimeScope }),
+			args: compact({ command }),
 			runtime: runtime.name,
 			details,
 			policyReason: confirmation?.policyReason ?? confirmation?.reason ?? "tool default",

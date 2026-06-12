@@ -50,13 +50,12 @@ export function callContext(call: {
 		turn: call.turnId ?? undefined,
 		message: call.messageId ?? undefined,
 		toolCall: call.toolCallId ?? undefined,
-		runtimeScope:
-			parsed.meta.runtimeScope ??
-			(typeof parsed.args.runtimeScope === "string" ? parsed.args.runtimeScope : undefined),
+		runtimeScope: parsed.meta.runtimeScope,
 	};
 }
 
 export function callArgsForStorage(args: Record<string, unknown>, context?: { runtimeScope?: string }): string {
+	if (CALL_ARG_META in args) throw new Error(`${CALL_ARG_META} is reserved for heypi call metadata`);
 	if (!context?.runtimeScope) return JSON.stringify(args);
 	return JSON.stringify({ ...args, [CALL_ARG_META]: { runtimeScope: context.runtimeScope } });
 }
@@ -72,7 +71,12 @@ function callArgsText(input: string | null): string {
 
 function parseCallArgs(input: string | null): { args: Record<string, unknown>; meta: { runtimeScope?: string } } {
 	if (!input) return { args: {}, meta: {} };
-	const parsed = JSON.parse(input) as unknown;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(input) as unknown;
+	} catch {
+		return { args: {}, meta: {} };
+	}
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { args: {}, meta: {} };
 	const record = parsed as Record<string, unknown>;
 	const meta = callMeta(record[CALL_ARG_META]);
