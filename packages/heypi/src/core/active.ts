@@ -27,6 +27,7 @@ type ActiveRun = {
 	resolve: () => void;
 	session?: LiveSession;
 	pending: PendingLiveMessage[];
+	enqueuedKeys: Set<string>;
 	additions: number;
 	accepting: boolean;
 	info: ActiveRunInfo;
@@ -59,6 +60,7 @@ export class ActiveRuns {
 			done,
 			resolve: resolveDone,
 			pending: [],
+			enqueuedKeys: new Set(),
 			additions: 0,
 			accepting: true,
 			info,
@@ -88,10 +90,13 @@ export class ActiveRuns {
 		kind: "steer" | "followUp",
 		text: string,
 		attachments?: Attachment[],
-	): Promise<"queued" | "not_found"> {
+		key?: string,
+	): Promise<"queued" | "not_found" | "duplicate"> {
 		const run = this.runs.get(id);
 		if (!run) return "not_found";
 		if (!run.accepting) return "not_found";
+		if (key && run.enqueuedKeys.has(key)) return "duplicate";
+		if (key) run.enqueuedKeys.add(key);
 		run.additions++;
 		run.pending.push({ kind, text, attachments });
 		await this.drainLive(run);

@@ -41,6 +41,15 @@ test("parseIntent recognizes approval bypass and revoke commands", () => {
 	});
 });
 
+test("parseIntent rejects unknown approval command arguments", () => {
+	assert.deepEqual(parseIntent({ text: "/approve approval-1 bypas", channel: "C1", actor: "U1" }), {
+		kind: "help",
+	});
+	assert.deepEqual(parseIntent({ text: "/deny approval-1 now", channel: "C1", actor: "U1" }), {
+		kind: "help",
+	});
+});
+
 test("parseIntent treats bare control words as agent prompts", () => {
 	assert.deepEqual(parseIntent({ text: "approve appr_123", channel: "C1", actor: "U1" }), {
 		kind: "ask",

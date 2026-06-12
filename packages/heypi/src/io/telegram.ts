@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PermissionsConfig } from "../config.js";
@@ -264,10 +265,9 @@ async function receiveTelegramWebhook(
 ): Promise<void> {
 	try {
 		if (req.method !== "POST") return json(res, 405, { ok: false, error: "method not allowed" });
-		if (input.setup.secretToken) {
-			const token = req.headers["x-telegram-bot-api-secret-token"];
-			if (token !== input.setup.secretToken) return json(res, 401, { ok: false, error: "unauthorized" });
-		}
+		const token = req.headers["x-telegram-bot-api-secret-token"];
+		if (!safeEqual(typeof token === "string" ? token : "", input.setup.secretToken))
+			return json(res, 401, { ok: false, error: "unauthorized" });
 		const update = (await readJson(req, input.setup.maxBodyBytes)) as TelegramUpdate;
 		json(res, 200, { ok: true });
 		void handleUpdate({
@@ -310,6 +310,12 @@ async function readJson(req: IncomingMessage, maxBytes: number): Promise<unknown
 	}
 	const raw = Buffer.concat(chunks).toString("utf8");
 	return raw ? JSON.parse(raw) : {};
+}
+
+function safeEqual(left: string, right: string): boolean {
+	const leftBytes = Buffer.from(left);
+	const rightBytes = Buffer.from(right);
+	return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

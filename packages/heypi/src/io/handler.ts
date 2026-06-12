@@ -314,7 +314,9 @@ export function createHandler(input: {
 					task.busy,
 					attributedMessage(msg, messageText),
 					msg.attachments,
+					msg.eventId,
 				);
+				if (queued === "duplicate") return undefined;
 				if (queued === "queued") {
 					const created = await input.store.messages.createOnce({
 						threadId: thread.id,

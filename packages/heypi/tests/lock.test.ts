@@ -309,6 +309,89 @@ test("handler dedupes retried busy asks before steering the active run", async (
 	}
 });
 
+test("handler dedupes concurrent busy retries before steering the active run", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		let releaseRun!: () => void;
+		let sessionReady!: () => void;
+		let releaseSteer!: () => void;
+		const runGate = new Promise<void>((resolve) => {
+			releaseRun = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			sessionReady = resolve;
+		});
+		const steerGate = new Promise<void>((resolve) => {
+			releaseSteer = resolve;
+		});
+		const steered: string[] = [];
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					req.onLiveSession?.({
+						steer: async (text) => {
+							steered.push(text);
+							await steerGate;
+						},
+						followUp: async () => undefined,
+					});
+					sessionReady();
+					await runGate;
+					return { text: "done" };
+				},
+				continue: async () => ({ text: "should not run" }),
+			},
+		});
+
+		const first = handler({
+			trace: "trace-1",
+			provider: "slack",
+			eventId: "event-1",
+			channel: "C1",
+			actor: "U1",
+			thread: "C1:T1",
+			text: "deploy",
+		});
+		await ready;
+		const second = handler({
+			trace: "trace-2",
+			provider: "slack",
+			eventId: "event-2",
+			channel: "C1",
+			actor: "U2",
+			thread: "C1:T1",
+			text: "also check nginx",
+		});
+		const duplicate = await handler({
+			trace: "trace-3",
+			provider: "slack",
+			eventId: "event-2",
+			channel: "C1",
+			actor: "U2",
+			thread: "C1:T1",
+			text: "also check nginx",
+		});
+		releaseSteer();
+		const secondOut = await second;
+		releaseRun();
+		await first;
+
+		assert.equal(secondOut?.text, "Got it. I'll include that.");
+		assert.equal(duplicate, undefined);
+		assert.deepEqual(steered, ["[Message from U2]\nalso check nginx"]);
+	} finally {
+		await db.cleanup();
+	}
+});
+
 test("handler lets only the run initiator cancel when no approvers are configured", async () => {
 	const db = await tempDb();
 	try {

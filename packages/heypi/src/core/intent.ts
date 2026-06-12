@@ -27,18 +27,24 @@ export function parseIntent(input: { text: string; channel: string; actor: strin
 	const approve = arg("/approve", text);
 	if (approve) {
 		const parts = approve.split(/\s+/u).filter(Boolean);
+		const extra = parts.slice(1);
+		if (parts.length === 0 || extra.some((part) => part.toLowerCase() !== "bypass")) return { kind: "help" };
 		return {
 			kind: "approve",
-			approvalId: parts[0] ?? approve,
+			approvalId: parts[0],
 			channel: input.channel,
 			actor: input.actor,
-			bypass: parts.slice(1).some((part) => part.toLowerCase() === "bypass"),
+			bypass: extra.some((part) => part.toLowerCase() === "bypass"),
 		};
 	}
 	if (text === "/approve") return { kind: "help" };
 
 	const deny = arg("/deny", text);
-	if (deny) return { kind: "deny", approvalId: deny, channel: input.channel, actor: input.actor };
+	if (deny) {
+		const parts = deny.split(/\s+/u).filter(Boolean);
+		if (parts.length !== 1) return { kind: "help" };
+		return { kind: "deny", approvalId: parts[0], channel: input.channel, actor: input.actor };
+	}
 	if (text === "/deny") return { kind: "help" };
 
 	const cancel = arg("/cancel", text);

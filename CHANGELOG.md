@@ -73,7 +73,10 @@
 - Fixed approved custom tool replay after a restart so the original runtime scope is preserved.
 - Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
 - Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
+- Fixed concurrent duplicate provider retries being steered into an active run more than once.
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.
+- Fixed Telegram webhook secret-token checks to use timing-safe comparison.
+- Fixed malformed approval command suffixes like `/approve <id> bypas` being silently ignored.
 - Fixed startup recovery silently skipping unsupported custom store recovery capabilities.
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.
