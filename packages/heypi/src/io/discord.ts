@@ -27,6 +27,7 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
+import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
@@ -38,6 +39,19 @@ const DENY = "heypi_deny";
 const DISCORD_TEXT_LIMIT = 2000;
 const DISCORD_EMBED_FIELD_LIMIT = 1024;
 const APPROVAL_PENDING_COLOR = 0xf59e0b;
+const DISCORD_CONFIG_KEYS = new Set([
+	"name",
+	"token",
+	"clientId",
+	"registerCommands",
+	"allow",
+	"permissions",
+	"trigger",
+	"threadTrigger",
+	"progress",
+	"streaming",
+	"delivery",
+]);
 
 export type DiscordConfig = {
 	name?: string;
@@ -71,6 +85,7 @@ export type DiscordProgress = {
 /** Creates a Discord gateway adapter. Requires Message Content Intent for non-mention message text. */
 export function discord(input: DiscordConfig): Adapter {
 	const name = input.name ?? "discord";
+	const configValidation = validateAdapterConfig(name, input, DISCORD_CONFIG_KEYS);
 	const kind = "discord";
 	const client = new Client({
 		intents: [
@@ -92,6 +107,7 @@ export function discord(input: DiscordConfig): Adapter {
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
+			warnAdapterConfig(start.logger, name, configValidation);
 			const groups = new DiscordGroupResolver(
 				[
 					...(input.allow?.groups ?? []),

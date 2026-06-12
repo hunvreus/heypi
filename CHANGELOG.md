@@ -61,6 +61,7 @@
 - Split core call execution and handler turn/control helpers into narrower internal modules.
 
 ### Fixed
+- Fixed invalid built-in adapter config keys like root `approvers` and `admins` being silently ignored instead of failing with a clear permissions error.
 - Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
 - Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.

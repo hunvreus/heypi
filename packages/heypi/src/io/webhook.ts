@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { PermissionsConfig } from "../config.js";
 import { message } from "../core/log.js";
+import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import type { Adapter, AdapterStart, Outbound, StatusResult } from "./handler.js";
 import { assertRouteName } from "./name.js";
 
@@ -31,10 +32,26 @@ export type WebhookMessage = {
 	data?: unknown;
 };
 
+const WEBHOOK_CONFIG_KEYS = new Set([
+	"name",
+	"secret",
+	"port",
+	"host",
+	"path",
+	"unsafePathOverride",
+	"syncTimeoutMs",
+	"replyTimeoutMs",
+	"maxBodyBytes",
+	"maxInFlight",
+	"replyHosts",
+	"permissions",
+]);
+
 /** Creates an HTTP webhook adapter for generic, async-first integrations. */
 export function webhook(config: WebhookConfig): Adapter {
 	const name = config.name ?? "webhook";
 	assertRouteName(name);
+	const configValidation = validateAdapterConfig(name, config, WEBHOOK_CONFIG_KEYS);
 	const kind = "webhook";
 	if (config.path && !config.unsafePathOverride) {
 		throw new Error("Webhook path override requires unsafePathOverride: true");
@@ -53,6 +70,7 @@ export function webhook(config: WebhookConfig): Adapter {
 		permissions: config.permissions,
 		async start(input) {
 			start = input;
+			warnAdapterConfig(input.logger, name, configValidation);
 			const handler = (req: IncomingMessage, res: ServerResponse) =>
 				route({
 					req,

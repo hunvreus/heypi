@@ -8,6 +8,7 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
+import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
@@ -20,6 +21,19 @@ const CANCEL = "cancel";
 const STATUS = "status";
 const TELEGRAM_TEXT_LIMIT = 4096;
 const TELEGRAM_CALLBACK_LIMIT = 200;
+const TELEGRAM_CONFIG_KEYS = new Set([
+	"name",
+	"token",
+	"apiUrl",
+	"pollTimeoutSeconds",
+	"allow",
+	"permissions",
+	"trigger",
+	"threadTrigger",
+	"progress",
+	"streaming",
+	"delivery",
+]);
 
 export type TelegramConfig = {
 	name?: string;
@@ -52,6 +66,7 @@ export type TelegramProgress = {
 /** Creates a Telegram long-polling adapter. */
 export function telegram(input: TelegramConfig): Adapter {
 	const name = input.name ?? "telegram";
+	const configValidation = validateAdapterConfig(name, input, TELEGRAM_CONFIG_KEYS);
 	const kind = "telegram";
 	const client = new TelegramClient(input.token, input.apiUrl);
 	let stopped = false;
@@ -68,6 +83,7 @@ export function telegram(input: TelegramConfig): Adapter {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
 			stopped = false;
+			warnAdapterConfig(start.logger, name, configValidation);
 			start.logger.info("adapter.start", { adapter: name, kind });
 			if (!telegramAllowConfigured(input.allow)) {
 				start.logger.warn("security.adapter_allow_missing", {

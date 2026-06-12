@@ -9,6 +9,7 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
+import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
@@ -26,6 +27,26 @@ const APPROVAL_PENDING_COLOR = "#f2c744";
 const APPROVAL_APPROVED_COLOR = "#2eb67d";
 const APPROVAL_REJECTED_COLOR = "#e01e5a";
 const APPROVAL_EXPIRED_COLOR = "#868686";
+const SLACK_CONFIG_KEYS = new Set([
+	"name",
+	"botToken",
+	"command",
+	"allow",
+	"permissions",
+	"trigger",
+	"threadTrigger",
+	"reply",
+	"replyBroadcast",
+	"progress",
+	"streaming",
+	"delivery",
+	"mode",
+	"appToken",
+	"signingSecret",
+	"port",
+	"path",
+	"unsafePathOverride",
+]);
 
 export type SlackConfig = {
 	name?: string;
@@ -77,6 +98,7 @@ export type SlackProgress = {
 export function slack(input: SlackConfig): Adapter {
 	const name = input.name ?? "slack";
 	assertRouteName(name);
+	const configValidation = validateAdapterConfig(name, input, SLACK_CONFIG_KEYS);
 	const setup = slackSetup(input, name);
 	const kind = "slack";
 	let app: App | undefined;
@@ -95,6 +117,7 @@ export function slack(input: SlackConfig): Adapter {
 			const { handler, logger: log } = start;
 			activeLogger = log;
 			delivery = new DeliveryQueue(input.delivery, log);
+			warnAdapterConfig(log, name, configValidation);
 			log.info("adapter.start", { adapter: name, kind, mode: setup.mode });
 			if (!slackAllowConfigured(input.allow)) {
 				log.warn("security.adapter_allow_missing", {
