@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { ApprovalBypassScope } from "../config.js";
 import { approvalBypass } from "../db/schema.js";
 import type { Db } from "./db.js";
@@ -93,6 +93,16 @@ export class ApprovalBypassRepo {
 			.orderBy(desc(approvalBypass.expiresAt))
 			.limit(clampLimit(input.limit, 50, 500))
 			.offset(clampOffset(input.offset));
+	}
+
+	async countActive(input: { agent?: string; now?: number } = {}): Promise<number> {
+		const filters: SQL[] = [gt(approvalBypass.expiresAt, input.now ?? Date.now()), isNull(approvalBypass.revokedAt)];
+		if (input.agent) filters.push(eq(approvalBypass.agent, input.agent));
+		const rows = await this.db
+			.select({ value: count() })
+			.from(approvalBypass)
+			.where(and(...filters));
+		return rows[0]?.value ?? 0;
 	}
 
 	async revoke(id: string, actor: string, input: { agent?: string } = {}): Promise<boolean> {

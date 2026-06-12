@@ -28,6 +28,7 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | --- | --- |
 | [`heypi init`](#heypi-init) | Print app scaffolding commands. |
 | [`heypi check`](#heypi-check) | Validate Node, env, database, and runtime paths. |
+| [`heypi status`](#heypi-status) | Inspect persisted app status for operators. |
 | [`heypi db`](#heypi-db) | Check or migrate the SQLite store. |
 | [`heypi slack`](#heypi-slack) | Verify Slack auth, generate manifests, and discover channels. |
 | [`heypi telegram`](#heypi-telegram) | Verify Telegram auth and discover chat IDs from delivered messages. |
@@ -70,6 +71,21 @@ Example:
 ```bash
 heypi check --env .env --db ./state/heypi.db --runtime-root ./workspace
 ```
+
+## heypi status
+
+```bash
+heypi status --db ./state/heypi.db [--agent default] [--runtime-root ./workspace] [--json]
+```
+
+Inspects persisted operator state for one agent. It opens the database without applying migrations. If shipped migrations are pending, it warns and asks you to run `heypi db migrate` before querying status. When migrations are current, it optionally checks the runtime root and reports the app lock, running turns, running and approval-blocked calls, pending approvals, active bypasses, and scheduled jobs. It does not inspect in-memory adapter connections or queue depth from a stopped CLI process.
+
+| Option | Description |
+| --- | --- |
+| `--db <path>` | Required SQLite database path. |
+| `--agent <id>` | Agent to inspect. Defaults to `default`. |
+| `--runtime-root <path>` | Check that the runtime workspace directory exists. |
+| `--json` | Print machine-readable output. |
 
 ## heypi db
 

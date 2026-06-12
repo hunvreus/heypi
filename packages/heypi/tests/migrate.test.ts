@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { sql } from "drizzle-orm";
 import { openDb } from "../src/store/db.js";
-import { migrate } from "../src/store/migrate.js";
+import { migrate, migrationStatus } from "../src/store/migrate.js";
 import { MIGRATIONS } from "../src/store/migrations.js";
 
 test("migrate records applied heypi migrations and can run twice", async () => {
@@ -21,6 +21,23 @@ test("migrate records applied heypi migrations and can run twice", async () => {
 			rows.map((row) => row.name),
 			MIGRATIONS.map((migration) => migration.name),
 		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("migration status checks shipped migrations without applying them", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-migrate-status-"));
+	try {
+		const db = openDb({ url: `file:${join(root, "heypi.db")}` });
+		assert.deepEqual(await migrationStatus(db), {
+			state: "pending",
+			applied: 0,
+			pending: MIGRATIONS.map((migration) => migration.name),
+		});
+		assert.deepEqual(await tables(db), []);
+		await migrate(db);
+		assert.deepEqual(await migrationStatus(db), { state: "ok", applied: MIGRATIONS.length, pending: [] });
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -137,6 +154,13 @@ async function columns(db: ReturnType<typeof openDb>, table: string): Promise<st
 
 async function indexes(db: ReturnType<typeof openDb>, table: string): Promise<string[]> {
 	const rows = await db.all<{ name: string }>(sql.raw(`PRAGMA index_list(${JSON.stringify(table)})`));
+	return rows.map((row) => row.name);
+}
+
+async function tables(db: ReturnType<typeof openDb>): Promise<string[]> {
+	const rows = await db.all<{ name: string }>(
+		sql.raw("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"),
+	);
 	return rows.map((row) => row.name);
 }
 

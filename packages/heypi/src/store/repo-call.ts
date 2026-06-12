@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, type SQL } from "drizzle-orm";
 import type { CallErrorKind, CallState } from "../core/types.js";
 import { call } from "../db/schema.js";
 import type { Db } from "./db.js";
@@ -96,6 +96,17 @@ export class CallRepo {
 			.orderBy(desc(call.updatedAt))
 			.limit(clampLimit(input.limit, 100, 500))
 			.offset(clampOffset(input.offset));
+	}
+
+	async count(input: { agent?: string; states?: CallState[] } = {}): Promise<number> {
+		const filters: SQL[] = [];
+		if (input.agent) filters.push(eq(call.agent, input.agent));
+		if (input.states?.length) filters.push(inArray(call.state, input.states));
+		const rows = await this.db
+			.select({ value: count() })
+			.from(call)
+			.where(filters.length ? and(...filters) : undefined);
+		return rows[0]?.value ?? 0;
 	}
 
 	async failRunning(input: { agent: string; error: string }): Promise<number> {

@@ -50,6 +50,7 @@
 - Added durable approval bypass storage.
 - Added admin configuration visibility for task behavior and adapter approval permissions.
 - Added admin approval policy visibility and admin/CLI active approval bypass listing.
+- Added `heypi status` for persisted operator diagnostics.
 
 ### Changed
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.

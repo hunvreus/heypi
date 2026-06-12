@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, lte, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, lte, notInArray, type SQL } from "drizzle-orm";
 import { job, jobRun } from "../db/schema.js";
 import type { JobState } from "../job.js";
 import type { Db } from "./db.js";
@@ -82,6 +82,18 @@ export class JobRepo {
 			.orderBy(asc(job.agent), asc(job.id))
 			.limit(clampLimit(input.limit, 100, 1000))
 			.offset(clampOffset(input.offset));
+	}
+
+	async count(input: { agent?: string; state?: JobState; dueAt?: number } = {}): Promise<number> {
+		const filters: SQL[] = [];
+		if (input.agent) filters.push(eq(job.agent, input.agent));
+		if (input.state) filters.push(eq(job.state, input.state));
+		if (input.dueAt !== undefined) filters.push(lte(job.nextAt, input.dueAt));
+		const rows = await this.db
+			.select({ value: count() })
+			.from(job)
+			.where(filters.length ? and(...filters) : undefined);
+		return rows[0]?.value ?? 0;
 	}
 
 	async setState(input: { agent?: string; id: string }, state: JobState): Promise<void> {

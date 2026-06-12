@@ -9,9 +9,6 @@
 - Extend approval policy visibility and controls.
 	- Add chat listing for active approval bypasses.
 	- Show command/tool confirmation rules in admin once confirmation policy is centrally introspectable.
-- Add operator status command.
-	- Keep existing `check`, provider diagnostics, `approvals`, and `jobs` commands.
-	- Add app health/status that reports store access, migration state, runtime root, adapter config, scheduler readiness, active turns, locks, queued follow-ups, pending approvals, and due jobs.
 - Add Telegram webhook mode.
 	- Keep polling as the local/dev path.
 	- Register a shared HTTP route for Telegram updates and acknowledge provider requests before long agent work.
@@ -34,6 +31,7 @@
 	- Kubernetes: PVC-backed state/workspace directories, single-owner locking, probes, and rollout guidance.
 - Add operator audit views.
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
+	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
 - Add transcript recall.
 	- Keep Pi responsible for active-session context, branching, and compaction.
 	- Add heypi-level search across persisted DB messages and Pi JSONL sessions outside the current thread/context window.

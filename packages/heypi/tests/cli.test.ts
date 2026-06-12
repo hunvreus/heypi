@@ -89,6 +89,142 @@ test("cli check loads .env by default", async () => {
 	}
 });
 
+test("cli status summarizes persisted operator state", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-status-"));
+	try {
+		const path = join(root, "heypi.db");
+		assert.match(cli(["db", "migrate", "--db", path]), /ok: database migrated/);
+		const store = sqliteStore({ path });
+		await store.setup();
+		const thread = await store.threads.getOrCreate({
+			agent: "test",
+			provider: "slack",
+			kind: "slack",
+			channel: "slack:T1:C1",
+			key: "C1",
+		});
+		const message = await store.messages.create({
+			threadId: thread.id,
+			provider: "slack",
+			kind: "slack",
+			role: "user",
+			actor: "U1",
+			text: "deploy",
+		});
+		await store.turns.create({
+			threadId: thread.id,
+			inputMessageId: message.id,
+			agent: "test",
+			provider: "slack",
+			kind: "slack",
+			channel: thread.channel,
+			actor: "U1",
+		});
+		const call = await store.calls.create({
+			agent: "test",
+			threadId: thread.id,
+			messageId: message.id,
+			channel: thread.channel,
+			actor: "U1",
+			tool: "bash",
+			command: "deploy",
+			state: "pending_approval",
+		});
+		const approval = await store.approvals.create({
+			agent: "test",
+			callId: call.id,
+			channel: thread.channel,
+			command: "deploy",
+			runtime: "host-bash",
+			reason: "Deploy",
+		});
+		await store.approvalBypasses?.create({
+			agent: "test",
+			scope: "thread",
+			channel: thread.channel,
+			threadId: thread.id,
+			actor: "U1",
+			createdBy: "U_ADMIN",
+			approvalId: approval.id,
+			expiresAt: Date.now() + 60_000,
+		});
+		await store.jobs?.upsert({
+			id: "daily",
+			agent: "test",
+			kind: "heartbeat",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			prompt: "check",
+			state: "active",
+			nextAt: Date.now() - 1000,
+		});
+		await store.locks?.acquire({ key: "app:test", owner: "status-test", ttlMs: 60_000 });
+		for (let i = 0; i < 101; i++) {
+			const extraCall = await store.calls.create({
+				agent: "test",
+				threadId: thread.id,
+				messageId: message.id,
+				channel: thread.channel,
+				actor: "U1",
+				tool: "bash",
+				command: `deploy-${i}`,
+				state: "pending_approval",
+			});
+			await store.approvals.create({
+				agent: "test",
+				callId: extraCall.id,
+				channel: thread.channel,
+				command: `deploy-${i}`,
+				runtime: "host-bash",
+				reason: "Deploy",
+			});
+		}
+
+		const out = cli(["status", "--db", path, "--agent", "test", "--runtime-root", root]);
+		assert.match(out, /ok: database ok/);
+		assert.match(out, /ok: runtime root exists/);
+		assert.match(out, /ok: app lock active/);
+		assert.match(out, /turns: 1 running/);
+		assert.match(out, /calls: 0 running, 102 pending approval/);
+		assert.match(out, /approvals: 102 pending, 1 active bypasses/);
+		assert.match(out, /jobs: 1 total, 1 active, 0 paused, 1 due/);
+		const json = JSON.parse(cli(["status", "--db", path, "--agent", "test", "--json"])) as {
+			agent: string;
+			calls: { pendingApproval: number };
+			jobs: { due: number };
+			approvals: { pending: number; bypasses: number };
+		};
+		assert.equal(json.agent, "test");
+		assert.equal(json.calls.pendingApproval, 102);
+		assert.equal(json.jobs.due, 1);
+		assert.deepEqual(json.approvals, { pending: 102, bypasses: 1 });
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli status reports pending migrations without applying them", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-status-pending-"));
+	try {
+		const path = join(root, "heypi.db");
+		const out = cli(["status", "--db", path, "--agent", "test"]);
+		assert.match(out, /warn: database migrations \d+ pending; run heypi db migrate --db /);
+		assert.match(out, /warn: status unavailable until migrations are current/);
+		const db = sqliteStore({ path });
+		await assert.rejects(() =>
+			db.threads.getOrCreate({ agent: "test", provider: "slack", channel: "C1", key: "C1" }),
+		);
+		const json = JSON.parse(cli(["status", "--db", path, "--agent", "test", "--json"])) as {
+			database: { migrations: string; pending: string[] };
+			status: string;
+		};
+		assert.equal(json.database.migrations, "pending");
+		assert.ok(json.database.pending.length > 0);
+		assert.equal(json.status, "unavailable");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("cli prints Slack manifests by explicit mode", () => {
 	const socket = cli(["slack", "manifest", "--mode", "socket"]);
 	assert.match(socket, /socket_mode_enabled: true/);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { approval } from "../db/schema.js";
 import type { Db } from "./db.js";
 import { clampLimit, clampOffset } from "./paging.js";
@@ -107,6 +107,18 @@ export class ApprovalRepo {
 			.orderBy(desc(approval.requestedAt))
 			.limit(clampLimit(input.limit, 5, 500))
 			.offset(clampOffset(input.offset));
+	}
+
+	async countPending(input: { agent?: string; threadId?: string; turnId?: string } = {}): Promise<number> {
+		const filters = [eq(approval.state, "pending")];
+		if (input.agent) filters.push(eq(approval.agent, input.agent));
+		if (input.threadId) filters.push(eq(approval.threadId, input.threadId));
+		if (input.turnId) filters.push(eq(approval.turnId, input.turnId));
+		const rows = await this.db
+			.select({ value: count() })
+			.from(approval)
+			.where(and(...filters));
+		return rows[0]?.value ?? 0;
 	}
 
 	async resolve(

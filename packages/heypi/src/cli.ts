@@ -20,10 +20,13 @@ import {
 } from "./io/discord-discovery.js";
 import { slackChannels } from "./io/slack-discovery.js";
 import { openDb } from "./store/db.js";
-import { migrate } from "./store/migrate.js";
+import { migrate, migrationStatus } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
 import { ApprovalBypassRepo } from "./store/repo-approval-bypass.js";
+import { CallRepo } from "./store/repo-call.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
+import { LockRepo } from "./store/repo-lock.js";
+import { TurnRepo } from "./store/repo-turn.js";
 
 const VERSION = packageVersion();
 
@@ -67,6 +70,13 @@ function buildCli() {
 		.option("--db <path>", "SQLite database path")
 		.option("--runtime-root <path>", "Runtime workspace path")
 		.action(withEnv(check));
+	cli.command("status", "Inspect persisted app status")
+		.option("--env <path>", "Load env file")
+		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter status for one agent")
+		.option("--runtime-root <path>", "Runtime workspace path")
+		.option("--json", "Print JSON")
+		.action(withEnv(status));
 	cli.command("db <action>", "Database commands: check, migrate")
 		.option("--db <path>", "SQLite database path")
 		.action((action: string, flags: Flags) =>
@@ -185,6 +195,113 @@ async function check(flags: Flags): Promise<void> {
 	if (db) rows.push(await checkDb(db));
 	const root = stringFlag(flags, "runtime-root");
 	if (root) rows.push(checkDir(root, "runtime root"));
+	line(rows.join("\n"));
+}
+
+async function status(flags: Flags): Promise<void> {
+	const dbPath = requiredFlag(flags, "db");
+	const db = dbFor(dbPath);
+	const migrations = await migrationStatus(db);
+	const agent = stringFlag(flags, "agent") ?? "default";
+	if (migrations.state !== "ok") {
+		const body = {
+			agent,
+			database: {
+				path: dbPath,
+				migrations: migrations.state,
+				applied: migrations.applied,
+				pending: migrations.pending,
+				message:
+					migrations.state === "pending"
+						? `Run heypi db migrate --db ${dbPath}`
+						: `Migration changed after apply: ${migrations.changed}`,
+			},
+			status: "unavailable",
+			checkedAt: Date.now(),
+		};
+		if (booleanFlag(flags, "json")) return line(JSON.stringify(body, null, 2));
+		const details =
+			migrations.state === "pending"
+				? `${migrations.pending.length} pending; run heypi db migrate --db ${dbPath}`
+				: `changed after apply: ${migrations.changed}`;
+		return line(
+			[warn(`database migrations ${details}`), warn("status unavailable until migrations are current")].join("\n"),
+		);
+	}
+	const now = Date.now();
+	const jobs = new JobRepo(db);
+	const turns = new TurnRepo(db);
+	const calls = new CallRepo(db);
+	const approvals = new ApprovalRepo(db);
+	const bypasses = new ApprovalBypassRepo(db);
+	const locks = new LockRepo(db);
+	const runtimeRoot = stringFlag(flags, "runtime-root");
+	const [
+		totalJobs,
+		activeJobs,
+		pausedJobs,
+		dueJobs,
+		runningTurns,
+		runningCalls,
+		pendingCalls,
+		pendingApprovals,
+		activeBypasses,
+		appLock,
+	] = await Promise.all([
+		jobs.count({ agent }),
+		jobs.count({ agent, state: "active" }),
+		jobs.count({ agent, state: "paused" }),
+		jobs.count({ agent, state: "active", dueAt: now }),
+		turns.count({ agent, states: ["running"] }),
+		calls.count({ agent, states: ["running"] }),
+		calls.count({ agent, states: ["pending_approval"] }),
+		approvals.countPending({ agent }),
+		bypasses.countActive({ agent, now }),
+		locks.get(`app:${agent}`),
+	]);
+	const body = {
+		agent,
+		database: { path: dbPath, migrations: "ok", applied: migrations.applied, pending: migrations.pending },
+		runtimeRoot: runtimeRoot
+			? { path: runtimeRoot, exists: existsSync(runtimeRoot) && statSync(runtimeRoot).isDirectory() }
+			: null,
+		lock: appLock
+			? {
+					key: appLock.key,
+					owner: appLock.owner,
+					expiresAt: appLock.expiresAt,
+					active: appLock.expiresAt > now,
+				}
+			: null,
+		turns: { running: runningTurns },
+		calls: { running: runningCalls, pendingApproval: pendingCalls },
+		approvals: { pending: pendingApprovals, bypasses: activeBypasses },
+		jobs: {
+			total: totalJobs,
+			active: activeJobs,
+			paused: pausedJobs,
+			due: dueJobs,
+		},
+		checkedAt: now,
+	};
+	if (booleanFlag(flags, "json")) return line(JSON.stringify(body, null, 2));
+	const rows = [
+		ok(`database ok: ${dbPath}`),
+		runtimeRoot
+			? body.runtimeRoot?.exists
+				? ok(`runtime root exists: ${runtimeRoot}`)
+				: fail(`runtime root missing: ${runtimeRoot}`)
+			: warn("runtime root not checked"),
+		appLock
+			? appLock.expiresAt > now
+				? ok(`app lock active: ${appLock.owner} until ${fmtTime(appLock.expiresAt)}`)
+				: warn(`app lock expired: ${appLock.owner} at ${fmtTime(appLock.expiresAt)}`)
+			: warn(`app lock missing: app:${agent}`),
+		`turns: ${runningTurns} running`,
+		`calls: ${runningCalls} running, ${pendingCalls} pending approval`,
+		`approvals: ${pendingApprovals} pending, ${activeBypasses} active bypasses`,
+		`jobs: ${totalJobs} total, ${activeJobs} active, ${pausedJobs} paused, ${dueJobs} due`,
+	];
 	line(rows.join("\n"));
 }
 
@@ -645,6 +762,7 @@ function helpText(): string {
 Usage:
   heypi init
   heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
+  heypi status --db ./state/heypi.db [--agent <id>] [--runtime-root ./workspace] [--json]
   heypi db check --db ./state/heypi.db
   heypi db migrate --db ./state/heypi.db
   heypi slack check [--env .env] [--mode socket|http]
