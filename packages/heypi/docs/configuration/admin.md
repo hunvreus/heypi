@@ -1,6 +1,6 @@
 # Admin
 
-Admin is a local web panel for inspecting a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, memory files, configuration, calls, runs, adapters, and activity.
+Admin is a local web panel for inspecting a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, memory files, configuration, approval policy, active approval bypasses, calls, runs, adapters, and activity.
 
 Admin is disabled by default and is served under `/admin/*` when enabled.
 

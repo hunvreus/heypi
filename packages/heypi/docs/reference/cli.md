@@ -33,7 +33,7 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | [`heypi telegram`](#heypi-telegram) | Verify Telegram auth and discover chat IDs from delivered messages. |
 | [`heypi discord`](#heypi-discord) | Verify Discord auth, generate invite URLs, and discover channels. |
 | [`heypi admin`](#heypi-admin) | Mint local admin login links. |
-| [`heypi approvals`](#heypi-approvals) | Inspect pending approval requests. |
+| [`heypi approvals`](#heypi-approvals) | Inspect pending approval requests and active approval bypasses. |
 | [`heypi jobs`](#heypi-jobs) | Inspect and change scheduled jobs. |
 | [`heypi help`](#help-and-version) | Print CLI help. |
 | [`heypi version`](#help-and-version) | Print the installed package version. |
@@ -213,8 +213,9 @@ heypi admin link --state ./state --url https://agent.example.com
 ## heypi approvals
 
 ```bash
-heypi approvals list --db ./state/heypi.db [--limit 25] [--json]
-heypi approvals show <id> --db ./state/heypi.db [--json]
+heypi approvals list --db ./state/heypi.db [--agent <id>] [--limit 25] [--json]
+heypi approvals show <id> --db ./state/heypi.db [--agent <id>] [--json]
+heypi approvals bypasses --db ./state/heypi.db [--agent <id>] [--limit 25] [--json]
 ```
 
 Approval commands are read-only. Approve or reject from the original chat provider so the audit trail records the provider actor.
@@ -223,11 +224,13 @@ Approval commands are read-only. Approve or reject from the original chat provid
 | --- | --- |
 | `list` | Lists pending approvals. |
 | `show <id>` | Shows one approval. |
+| `bypasses` | Lists active temporary approval bypasses. |
 
 | Option | Applies to | Description |
 | --- | --- | --- |
 | `--db <path>` | All | Required SQLite database path. |
-| `--limit <count>` | `list` | Maximum rows. Defaults to `25`. |
+| `--agent <id>` | All | Filter rows for one agent. |
+| `--limit <count>` | `list`, `bypasses` | Maximum rows. Defaults to `25`. |
 | `--json` | All | Print raw JSON. |
 
 ## heypi jobs

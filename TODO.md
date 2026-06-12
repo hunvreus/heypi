@@ -7,9 +7,8 @@
 	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
 	- Run full workspace checks before tagging.
 - Extend approval policy visibility and controls.
-	- Add chat/admin listing for active approval bypasses.
-	- Show effective approval policy in admin/CLI, including adapter-scoped approvers, admins, expiry, active bypasses, and command/tool confirmation rules.
-	- For one-time approvals only, verify the pending call still matches the approved call before execution.
+	- Add chat listing for active approval bypasses.
+	- Show command/tool confirmation rules in admin once confirmation policy is centrally introspectable.
 - Add operator status command.
 	- Keep existing `check`, provider diagnostics, `approvals`, and `jobs` commands.
 	- Add app health/status that reports store access, migration state, runtime root, adapter config, scheduler readiness, active turns, locks, queued follow-ups, pending approvals, and due jobs.

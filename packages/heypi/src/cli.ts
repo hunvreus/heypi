@@ -22,6 +22,7 @@ import { slackChannels } from "./io/slack-discovery.js";
 import { openDb } from "./store/db.js";
 import { migrate } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
+import { ApprovalBypassRepo } from "./store/repo-approval-bypass.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 
 const VERSION = packageVersion();
@@ -147,13 +148,15 @@ function buildCli() {
 				throw new Error(`Unknown command: jobs ${action}`);
 			})(flags),
 		);
-	cli.command("approvals <action> [id]", "Approval commands: list, show")
+	cli.command("approvals <action> [id]", "Approval commands: list, show, bypasses")
 		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter approvals or bypasses for one agent")
 		.option("--limit <count>", "Maximum approvals to list")
 		.option("--json", "Print JSON")
 		.action((action: string, id: string | undefined, flags: Flags) =>
 			withEnv((input) => {
 				if (action === "list") return approvalsList(input);
+				if (action === "bypasses") return approvalBypassesList(input);
 				if (!id) throw new Error(`Missing approval id for approvals ${action}`);
 				if (action === "show") return approvalsShow(input, id);
 				throw new Error(`Unknown command: approvals ${action}`);
@@ -495,7 +498,10 @@ async function jobsRun(flags: Flags, id: string): Promise<void> {
 
 async function approvalsList(flags: Flags): Promise<void> {
 	const approvals = approvalRepo(flags);
-	const rows = await approvals.listPending({ limit: numberFlag(flags, "limit", 25) });
+	const rows = await approvals.listPending({
+		agent: stringFlag(flags, "agent"),
+		limit: numberFlag(flags, "limit", 25),
+	});
 	if (booleanFlag(flags, "json")) return line(JSON.stringify(rows, null, 2));
 	if (!rows.length) return line("No pending approvals.");
 	line(
@@ -515,7 +521,7 @@ async function approvalsList(flags: Flags): Promise<void> {
 }
 
 async function approvalsShow(flags: Flags, id: string): Promise<void> {
-	const approval = await approvalRepo(flags).get(id);
+	const approval = await approvalRepo(flags).get(id, { agent: stringFlag(flags, "agent") });
 	if (!approval) throw new Error(`approval not found: ${id}`);
 	if (booleanFlag(flags, "json")) return line(JSON.stringify(approval, null, 2));
 	line(
@@ -537,6 +543,30 @@ async function approvalsShow(flags: Flags, id: string): Promise<void> {
 	);
 }
 
+async function approvalBypassesList(flags: Flags): Promise<void> {
+	const rows = await approvalBypassRepo(flags).listActive({
+		agent: stringFlag(flags, "agent"),
+		limit: numberFlag(flags, "limit", 25),
+	});
+	if (booleanFlag(flags, "json")) return line(JSON.stringify(rows, null, 2));
+	if (!rows.length) return line("No active approval bypasses.");
+	line(
+		table(
+			["id", "agent", "scope", "channel", "thread", "actor", "created_by", "expires"],
+			rows.map((row) => [
+				row.id,
+				row.agent,
+				row.scope,
+				row.channel,
+				row.threadId ?? "-",
+				row.actor ?? "-",
+				row.createdBy,
+				fmtTime(row.expiresAt),
+			]),
+		),
+	);
+}
+
 function jobRepos(flags: Flags): { jobs: JobRepo; runs: JobRunRepo } {
 	const db = dbFor(requiredFlag(flags, "db"));
 	return { jobs: new JobRepo(db), runs: new JobRunRepo(db) };
@@ -544,6 +574,10 @@ function jobRepos(flags: Flags): { jobs: JobRepo; runs: JobRunRepo } {
 
 function approvalRepo(flags: Flags): ApprovalRepo {
 	return new ApprovalRepo(dbFor(requiredFlag(flags, "db")));
+}
+
+function approvalBypassRepo(flags: Flags): ApprovalBypassRepo {
+	return new ApprovalBypassRepo(dbFor(requiredFlag(flags, "db")));
 }
 
 async function checkDb(path: string): Promise<string> {
@@ -624,8 +658,9 @@ Usage:
   heypi discord observe [--env .env] [--timeout 60]
   heypi discord channels [--env .env]
   heypi admin link [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
-  heypi approvals list --db ./state/heypi.db [--json]
-  heypi approvals show <id> --db ./state/heypi.db [--json]
+  heypi approvals list --db ./state/heypi.db [--agent <id>] [--json]
+  heypi approvals show <id> --db ./state/heypi.db [--agent <id>] [--json]
+  heypi approvals bypasses --db ./state/heypi.db [--agent <id>] [--json]
   heypi jobs list --db ./state/heypi.db [--agent <id>] [--json]
   heypi jobs show <id> --db ./state/heypi.db [--agent <id>] [--json]
   heypi jobs run <id> --db ./state/heypi.db [--agent <id>]

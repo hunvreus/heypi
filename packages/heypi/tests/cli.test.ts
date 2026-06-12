@@ -168,6 +168,7 @@ test("cli approvals commands inspect pending approvals", async () => {
 		const path = join(root, "heypi.db");
 		assert.match(cli(["db", "migrate", "--db", path]), /ok: database migrated/);
 		assert.match(cli(["approvals", "list", "--db", path]), /No pending approvals/);
+		assert.match(cli(["approvals", "bypasses", "--db", path]), /No active approval bypasses/);
 
 		const store = sqliteStore({ path });
 		await store.setup();
@@ -180,13 +181,31 @@ test("cli approvals commands inspect pending approvals", async () => {
 			reason: "Add host",
 			requestedBy: "U1",
 		});
+		const bypass = await store.approvalBypasses?.create({
+			agent: "test",
+			scope: "thread",
+			channel: "slack:T1:C1",
+			threadId: "thread-1",
+			actor: "U1",
+			createdBy: "U_ALLOWED",
+			reason: "Add host",
+			approvalId: approval.id,
+			expiresAt: Date.now() + 60_000,
+		});
+		assert.ok(bypass);
 
 		assert.match(cli(["approvals", "list", "--db", path]), new RegExp(approval.id));
 		assert.match(cli(["approvals", "show", approval.id, "--db", path]), /reason: Add host/);
+		assert.match(cli(["approvals", "bypasses", "--db", path, "--agent", "test"]), new RegExp(bypass.id));
 		const json = JSON.parse(cli(["approvals", "list", "--db", path, "--json"])) as Array<{ id: string }>;
 		assert.deepEqual(
 			json.map((row) => row.id),
 			[approval.id],
+		);
+		const bypassJson = JSON.parse(cli(["approvals", "bypasses", "--db", path, "--json"])) as Array<{ id: string }>;
+		assert.deepEqual(
+			bypassJson.map((row) => row.id),
+			[bypass.id],
 		);
 	} finally {
 		await rm(root, { recursive: true, force: true });

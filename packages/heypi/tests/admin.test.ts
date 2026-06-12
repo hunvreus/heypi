@@ -305,8 +305,19 @@ test("admin service scopes approvals and calls to the current agent", async () =
 				agent: "default",
 				runtime: { name: "host-bash", root: join(root, "workspace") },
 				state: { root: stateRoot(root) },
+				approval: {
+					expiresInMs: 120_000,
+					allowSelfApproval: false,
+					bypass: { scope: "channel", durationMs: 60_000 },
+				},
 				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
-				adapters: [],
+				adapters: [
+					{
+						name: "ops",
+						kind: "slack",
+						permissions: { approvers: ["U_APPROVER"], admins: ["U_ADMIN"] },
+					},
+				],
 				startedAt: now,
 			},
 		} as AdapterStart);
@@ -322,6 +333,11 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			approvals.rows.map((row) => row.id),
 			[ownApproval.id],
 		);
+		const overview = await service.overview();
+		assert.equal(overview.approval?.allowSelfApproval, false);
+		const admins = overview.adapters[0]?.permissions?.admins;
+		assert.ok(Array.isArray(admins));
+		assert.equal(admins[0], "U_ADMIN");
 
 		const threads = await service.threads();
 		assert.deepEqual(
@@ -389,6 +405,12 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 			agent: { id: "agent", model: "openai/gpt-5-mini" },
 			runtime: { name: "host-bash", root: "/tmp/workspace" },
 			task: { busy: "followUp", cancel: "approver" },
+			approval: {
+				expiresInMs: 120_000,
+				allowSelfApproval: false,
+				bypass: { scope: "channel", durationMs: 60_000 },
+			},
+			activeBypasses: [],
 			startedAt: now - 120_000,
 			adapters: [
 				{ name: "ops", kind: "slack", permissions: { approvers: ["U_APPROVER"], admins: { groups: ["S_ADMIN"] } } },
@@ -440,6 +462,10 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 	assert.match(body, /HTTP/);
 	assert.match(body, /Task/);
 	assert.match(body, /Busy: followUp; cancel: approver/);
+	assert.match(body, /Approval/);
+	assert.match(body, /expires: 2m(?: 0s)?; self: blocked; bypass: channel for 1m(?: 0s)?/);
+	assert.match(body, /Active bypasses/);
+	assert.match(body, /none/);
 	assert.match(body, /Adapters/);
 	assert.match(body, /title="slack, 1 approver, 1 admin"/);
 	assert.match(body, /ops/);

@@ -307,6 +307,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 						runtime: { name: appRuntime.name, root: config.runtime.root },
 						state: { root: stateRoot },
 						task: normalizeTaskConfig(config.task),
+						approval: config.approval,
 						memory: memoryConfig,
 						skills: skillsConfig,
 						adapters: config.adapters.map((item) => ({

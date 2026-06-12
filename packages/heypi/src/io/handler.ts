@@ -116,6 +116,7 @@ export type AdapterStart = {
 		runtime: { name: string; root: string };
 		state: { root: string };
 		task?: Required<TaskConfig>;
+		approval?: ApprovalPolicy;
 		memory: NormalizedMemoryConfig;
 		skills?: NormalizedSkillsConfig;
 		adapters: Array<{ name: string; kind: string; permissions?: PermissionsConfig }>;

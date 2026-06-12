@@ -1,5 +1,5 @@
 import { actorGroups, actorUsers } from "../core/approvers.js";
-import type { Approval } from "../store/types.js";
+import type { Approval, ApprovalBypass } from "../store/types.js";
 import {
 	type AdminActivityDetail,
 	type AdminActivityRow,
@@ -280,6 +280,7 @@ ${emptyState({
 export function configurationView(input: AdminOverview, admin: AdminInfo): string {
 	const uptime = Math.max(Date.now() - input.startedAt, 0);
 	const memory = memorySummary(input.memory);
+	const activeBypasses = bypassList(input.activeBypasses);
 	return `<div class="grid min-w-0 gap-4">
 ${card(
 	"Configuration",
@@ -291,7 +292,9 @@ ${card(
 			["Runtime", mono(input.runtime.name)],
 			["HTTP", mono(`${admin.host}:${admin.port}`)],
 			["Task", taskSummary(input.task)],
+			["Approval", approvalSummary(input)],
 			["Adapters", adapterList(input.adapters)],
+			["Active bypasses", activeBypasses],
 			["Memory", memory],
 			["Started", `${duration(uptime)} ago (${time(input.startedAt)})`],
 		],
@@ -1152,6 +1155,31 @@ function adapterList(adapters: AdminOverview["adapters"]): Cell {
 
 function taskSummary(task: AdminOverview["task"]): string {
 	return `Busy: ${task.busy}; cancel: ${task.cancel}`;
+}
+
+function approvalSummary(input: AdminOverview): string {
+	const approval = input.approval;
+	return [
+		`expires: ${approval?.expiresInMs ? duration(approval.expiresInMs) : "default"}`,
+		`self: ${approval?.allowSelfApproval === false ? "blocked" : "allowed"}`,
+		approval?.bypass === false
+			? "bypass: off"
+			: approval?.bypass
+				? `bypass: ${approval.bypass.scope ?? "thread"} for ${duration(approval.bypass.durationMs ?? 5 * 60_000)}`
+				: "bypass: off",
+	].join("; ");
+}
+
+function bypassList(rows: ApprovalBypass[]): Cell {
+	if (!rows.length) return mono("none");
+	return html(
+		`<span class="grid min-w-0 gap-1">${rows
+			.map(
+				(row) =>
+					`<span class="min-w-0 text-xs"><span class="font-mono">${escapeHtml(row.id)}</span> ${escapeHtml(row.scope)} ${escapeHtml(row.actor ?? "-")} <span class="text-muted-foreground">until ${escapeHtml(time(row.expiresAt))}</span></span>`,
+			)
+			.join("")}</span>`,
+	);
 }
 
 function adapterPermissionSummary(permissions: AdminOverview["adapters"][number]["permissions"]): string {
