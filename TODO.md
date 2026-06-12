@@ -6,8 +6,6 @@
 	- Treat the approval permission move and native command changes as the main release notes.
 	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
 	- Run full workspace checks before tagging.
-- Extend approval policy visibility and controls.
-	- Show command/tool confirmation rules in admin once confirmation policy is centrally introspectable.
 - Add Telegram webhook mode.
 	- Keep polling as the local/dev path.
 	- Register a shared HTTP route for Telegram updates and acknowledge provider requests before long agent work.
