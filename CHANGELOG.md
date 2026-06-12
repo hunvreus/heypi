@@ -41,7 +41,6 @@
   ```
 
 ### Added
-- Added an experimental Cloudflare deployment guide using Containers and R2 FUSE for durable runtime workspaces.
 - Added approval admins with inherited approver permissions and configurable self-approval blocking.
 - Added adapter-scoped approval permissions with per-adapter approvers and admins.
 - Added `allow.bots` to Slack, Discord, and Telegram for explicitly accepting messages from selected bots/apps or all other bots/apps.

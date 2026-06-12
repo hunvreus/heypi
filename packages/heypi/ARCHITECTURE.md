@@ -217,7 +217,5 @@ Supported:
 
 Not supported:
 
-- Cloudflare Containers, until durable state/workspace handling is defined for sleeping containers with fresh disks
-- Cloudflare Workers / Fetch API adapters
 - multi-replica distributed delivery limiting
 - crash-durable approval replay beyond persisted call and approval rows

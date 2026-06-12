@@ -30,7 +30,7 @@ Pass adapters to `createHeypi({ adapters: [...] })`. The adapter owns provider a
 
 ## Runtime provider
 
-Use a custom runtime provider for a new execution backend: a VM manager, remote container service, Cloudflare Sandbox, E2B, Daytona, or an internal runner.
+Use a custom runtime provider for a new execution backend: a VM manager, remote container service, E2B, Daytona, or an internal runner.
 
 ```ts
 import type { RuntimeProvider } from "@hunvreus/heypi/runtime";

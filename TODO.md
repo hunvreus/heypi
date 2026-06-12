@@ -11,6 +11,8 @@
 - Harden the Cloudflare Containers deployment path.
 	- Treat Containers as restartable Node/container mode, not a pure Worker rewrite.
 	- Add a Worker front door that routes signed HTTP adapter traffic to one or more explicit container instances.
+	- Add a Cloudflare D1-backed `Store` adapter or another supported durable store path for container deployments.
+	- Add a `examples/cloudflare-containers-d1` starter app once the store path exists.
 	- Decide the durable `Store` backend for container mode; do not rely on local SQLite surviving container sleep unless it is on a platform-supported persistent filesystem with the required locking and fsync semantics.
 	- Make startup, shutdown, lock recovery, scheduler recovery, and rolling deploy behavior tolerate container sleep, restart, and fresh disks.
 	- Keep Slack Socket Mode, Discord gateway, and Telegram polling in container mode; use Worker ingress only for HTTP/webhook paths.
@@ -22,11 +24,18 @@
 - Add operator audit views.
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
 	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
+	- Report store access, migration version, lock health, runtime root/provider status, warm scopes, runtime queue depth, adapter connectivity, bot identity, last adapter event/error, active turns, queued follow-ups, pending approvals, due/running jobs, delivery retries/failures, and risky configuration posture.
+- Add model configuration visibility and selection.
+	- Add configured model aliases, such as `fast`, `deep`, or `ops`, that map to explicit provider/model settings.
+	- Add CLI/admin picker support for selecting from configured aliases instead of typing raw provider/model strings.
+	- Add per-job, per-adapter, and per-agent model overrides.
+	- Decide whether any chat-side model switching should exist; if added, keep it permissioned and auditable rather than open to all channel participants.
 - Add transcript recall.
 	- Keep Pi responsible for active-session context, branching, and compaction.
 	- Add heypi-level search across persisted DB messages and Pi JSONL sessions outside the current thread/context window.
 	- Add conversation hydration for existing provider conversations: when the bot is invited, first mentioned, or attached to an existing channel/thread, fetch recent provider history where APIs and permissions allow it.
 	- Return compact, source-linked summaries over prior chats, jobs, approvals, and resolved incidents.
+	- Add memory/recall improvements that keep scoped file memory as the writable durable context layer while adding scoped, source-linked recall over older transcripts, tool calls, jobs, approvals, and attachments.
 - Add blob/file spillover for large stored output.
 	- Spill large call stdout/stderr, tool logs, attachments, and generated artifacts to blobs/files.
 	- Keep DB rows to previews, metadata, and blob refs.
@@ -43,9 +52,20 @@
 - Review scoped-skill resources.
 	- Decide whether scoped skills should remain single-file `SKILL.md` entries or support scoped resource files.
 	- If resource files are added, define safe paths, size limits, write/delete policy, prompt loading rules, and whether resource mutation needs separate approval.
+	- Extend the skills ecosystem with controlled import/install/sync for approved skill bundles, admin/CLI visibility for installed skills, scope, provenance, and write policy.
+	- Add admin commands to install approved skills from configured registries or local bundles.
+	- Decide whether non-admin users can request skill installs; if allowed, route through the existing approval flow instead of installing directly from chat.
+	- Add on-demand skill creation from chat/admin commands with scoped write policy, provenance, and review status.
+	- Add autonomous skill extraction from completed turns, incidents, runbooks, and repeated workflows, but require admin/approver review before generated skills become active by default.
 - Extend GitHub webhook automation.
 	- Decide whether to add labels, branches, or pull requests.
 	- Keep write-side GitHub tokens in host-side custom tools, not runtime containers.
+- Improve automation UX.
+	- Add named webhook subscriptions with route, auth, event filters, prompt templates, delivery target, enabled/disabled state, and last-run status.
+	- Add automation templates for common team workflows such as incident triage, PR review, deploy verification, docs drift, and daily or weekly digests.
+	- Add trusted script preprocessing for jobs and webhook subscriptions where script output becomes compact turn context before the agent runs.
+	- Add explicit multi-skill job/subscription configuration so automations can load selected skills without relying on prompt-only instructions.
+	- Add admin/CLI visibility for configured automations, recent runs, delivery results, and failures.
 - Add a memory provider plugin surface.
 	- Keep scoped file memory as the default.
 	- Let optional plugins provide semantic memory, profile/user memory, or external recall providers without coupling them to core chat storage.
@@ -54,6 +74,11 @@
 	- Start with local Chrome/CDP or local browser automation before paid cloud providers.
 	- Include navigation, accessibility snapshot, click/type, screenshot, extraction, web fetch, and web search.
 	- Keep logged-in browser use explicit and separate from plain HTTP fetch/search.
+	- Add team-safe approval rules for logged-in sessions, form submission, downloads/uploads, and external network access.
+	- Persist compact tool outputs and generated screenshots/artifacts through the normal call and attachment paths.
+- Add additional runtime providers where the lifecycle is clear.
+	- Evaluate Cloudflare Sandbox, Vercel Sandbox, Daytona, and Modal as runtime provider backends.
+	- Define persistence, idle timeout, cold start, networking, secrets, file sync, logs, cancellation, and cleanup semantics before exposing a provider publicly.
 - Add email approval transport.
 	- Treat email as an approval delivery channel, not just a chat adapter.
 	- Decisions should write to the existing approval store and resume the original turn.
@@ -72,10 +97,21 @@
 	- Consider provider-specific loop metadata, hop/depth limits, or cooldowns only if real integrations show loops.
 - Add more adapters.
 	- Teams.
+- Add voice memo media support.
+	- Decode and transcribe inbound voice/audio attachments where adapters expose them.
+	- Support uploading generated audio or media files through the existing attachment path.
+	- Treat live calls or phone-call handling as out of scope unless explicitly designed later.
 - Document trusted MCP usage through Pi extensions.
 	- MCP is not built into Pi core.
 	- heypi should only load preapproved MCP extensions.
 	- First-class MCP config, tool filtering, and MCP-specific approval policy can come later if needed.
+	- Add MCP support starting with trusted, config-declared MCP servers loaded through Pi extensions.
+	- Add tool allowlists, naming collision handling, per-tool approval policy, and admin visibility before allowing broad team use.
+	- Do not let agents install or start arbitrary MCP servers from chat.
+- Add subagent and programmatic pipeline support through Pi extensions.
+	- Prefer Pi extensions for subagents, tool-pipeline execution, and process tracking instead of building a second agent runtime in heypi core.
+	- Keep sensitive pipeline steps inside the existing approval, audit, runtime scope, and cancellation paths.
+	- Define how pipeline progress, artifacts, failures, and spawned work are shown in team chats and admin views.
 
 ## Won't do for now
 

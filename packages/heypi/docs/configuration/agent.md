@@ -103,7 +103,6 @@ Common provider env vars:
 | Google Gemini | `google/gemini-2.5-pro` | `GEMINI_API_KEY` |
 | OpenRouter | `openrouter/...` | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `vercel-ai-gateway/...` | `AI_GATEWAY_API_KEY` |
-| Cloudflare AI Gateway | `cloudflare-ai-gateway/...` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID` |
 | Amazon Bedrock | `amazon-bedrock/...` | AWS credentials such as `AWS_PROFILE` or workload credentials |
 
 This list is intentionally partial. The canonical provider list belongs to Pi's provider layer; see Pi's [providers guide](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md).
