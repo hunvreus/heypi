@@ -2,6 +2,7 @@ import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bo
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
+import { commandText } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
@@ -613,16 +614,7 @@ function nativeCommandText(input: string): string {
 	const [name, ...rest] = trimmed.split(/\s+/u);
 	const command = name.toLowerCase();
 	const args = rest.join(" ");
-	if (command === "help") return "/help";
-	if (command === "approvals") return "/approvals";
-	if (command === "bypasses") return "/bypasses";
-	if (command === "approve") return `/approve ${args}`.trim();
-	if (command === "deny") return `/deny ${args}`.trim();
-	if (command === "status") return args ? `/status ${args}` : "/status";
-	if (command === "cancel") return `/cancel ${args}`.trim();
-	if (command === "revoke") return `/revoke ${args}`.trim();
-	if (command === "bash") return `/bash ${args}`.trim();
-	return "/help";
+	return commandText(command, args) ?? "/help";
 }
 
 async function slackTargetChannel(

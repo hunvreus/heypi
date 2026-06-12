@@ -20,6 +20,7 @@ import {
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
+import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { ScopedKey } from "../core/scope.js";
 import type { ApprovalResolution } from "../core/types.js";
@@ -575,51 +576,41 @@ async function registerDiscordCommands(token: string, clientId: string, log: Log
 	log.info("discord.commands_registered", { clientId });
 }
 
-const DISCORD_COMMANDS = new Set([
-	"help",
-	"approvals",
-	"bypasses",
-	"approve",
-	"deny",
-	"status",
-	"cancel",
-	"revoke",
-	"bash",
-]);
+const DISCORD_COMMANDS: ReadonlySet<string> = COMMAND_NAMES;
 
 function discordCommands() {
-	return [
-		new SlashCommandBuilder().setName("help").setDescription("Show heypi command help"),
-		new SlashCommandBuilder().setName("approvals").setDescription("List pending approvals"),
-		new SlashCommandBuilder().setName("bypasses").setDescription("List active approval bypasses"),
-		new SlashCommandBuilder()
-			.setName("approve")
-			.setDescription("Approve a pending approval")
+	return COMMANDS.map((command) => discordCommand(command.name).setDescription(command.description));
+}
+
+function discordCommand(name: string) {
+	const command = new SlashCommandBuilder().setName(name);
+	if (name === "approve") {
+		return command
 			.addStringOption((option) => option.setName("id").setDescription("Approval ID").setRequired(true))
 			.addBooleanOption((option) =>
 				option.setName("bypass").setDescription("Create a temporary bypass after approval"),
-			),
-		new SlashCommandBuilder()
-			.setName("deny")
-			.setDescription("Deny a pending approval")
-			.addStringOption((option) => option.setName("id").setDescription("Approval ID").setRequired(true)),
-		new SlashCommandBuilder()
-			.setName("status")
-			.setDescription("Show thread or run status")
-			.addStringOption((option) => option.setName("id").setDescription("Run or call ID")),
-		new SlashCommandBuilder()
-			.setName("cancel")
-			.setDescription("Cancel a running turn")
-			.addStringOption((option) => option.setName("id").setDescription("Turn or trace ID").setRequired(true)),
-		new SlashCommandBuilder()
-			.setName("revoke")
-			.setDescription("Revoke an approval bypass")
-			.addStringOption((option) => option.setName("id").setDescription("Bypass ID").setRequired(true)),
-		new SlashCommandBuilder()
-			.setName("bash")
-			.setDescription("Run a bash command through heypi policy")
-			.addStringOption((option) => option.setName("command").setDescription("Command to run").setRequired(true)),
-	];
+			);
+	}
+	if (name === "deny") {
+		return command.addStringOption((option) => option.setName("id").setDescription("Approval ID").setRequired(true));
+	}
+	if (name === "status") {
+		return command.addStringOption((option) => option.setName("id").setDescription("Run or call ID"));
+	}
+	if (name === "cancel") {
+		return command.addStringOption((option) =>
+			option.setName("id").setDescription("Turn or trace ID").setRequired(true),
+		);
+	}
+	if (name === "revoke") {
+		return command.addStringOption((option) => option.setName("id").setDescription("Bypass ID").setRequired(true));
+	}
+	if (name === "bash") {
+		return command.addStringOption((option) =>
+			option.setName("command").setDescription("Command to run").setRequired(true),
+		);
+	}
+	return command;
 }
 
 async function discordTargetChannel(client: Client, target: AdapterTarget): Promise<TextBasedChannel> {

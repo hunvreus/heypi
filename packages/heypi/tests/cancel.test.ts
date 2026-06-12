@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ActiveRuns, isAbortError } from "../src/core/active.js";
+import { commandText, isControlCommand } from "../src/core/commands.js";
 import { parseIntent } from "../src/core/intent.js";
 import { Queue } from "../src/runtime/queue.js";
 
@@ -47,6 +48,17 @@ test("parseIntent treats bare control words as agent prompts", () => {
 		channel: "C1",
 		actor: "U1",
 	});
+});
+
+test("command catalog normalizes native wrapper commands and control gating", () => {
+	assert.equal(commandText("approve", "approval-1 bypass"), "/approve approval-1 bypass");
+	assert.equal(commandText("bypasses"), "/bypasses");
+	assert.equal(commandText("bypasses", "extra"), undefined);
+	assert.equal(commandText("unknown"), undefined);
+	assert.equal(isControlCommand("/bypasses"), true);
+	assert.equal(isControlCommand("/approve approval-1"), true);
+	assert.equal(isControlCommand("/approve"), false);
+	assert.equal(isControlCommand("/approvals extra"), false);
 });
 
 test("ActiveRuns cancels all aliases for a run", () => {

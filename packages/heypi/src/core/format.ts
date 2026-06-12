@@ -1,6 +1,7 @@
 import { isRuntimeStartupErrorText, RUNTIME_STARTUP_ERROR_KIND } from "../runtime/errors.js";
 import type { ApprovalBypass } from "../store/types.js";
 import { codeFence } from "./approval-view.js";
+import { COMMANDS } from "./commands.js";
 import { redact } from "./log.js";
 import { type AppMessages, DEFAULT_APP_MESSAGES } from "./messages.js";
 import type { ApprovalDetail, CallErrorKind, Reply } from "./types.js";
@@ -21,17 +22,17 @@ export function helpReply(): Reply {
 	return {
 		text: [
 			"Commands:",
-			"- /bash <shell command>",
-			"- /approvals: list pending approvals",
-			"- /bypasses: list active approval bypasses",
-			"- /approve <approval-id>",
-			"- /deny <approval-id>",
-			"- /cancel <turn-id>",
-			"- /status: show this thread status",
+			...COMMANDS.filter((command) => command.name !== "help").map(
+				(command) => `- ${command.usage}: ${lowercaseFirst(command.description)}`,
+			),
 			"- /status <call-id>: show one call status",
 			"- any other text: handled by the assistant",
 		].join("\n"),
 	};
+}
+
+function lowercaseFirst(input: string): string {
+	return input ? input[0].toLowerCase() + input.slice(1) : input;
 }
 
 export function renderApprovals(rows: ApprovalSummary[]): Reply {

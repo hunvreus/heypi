@@ -1,3 +1,5 @@
+import { isControlCommand } from "../core/commands.js";
+
 export type GateResult = { ok: true } | { ok: false; reason: string };
 
 export type GateDimension = {
@@ -44,10 +46,5 @@ function included(allowlist: string[] | undefined, value: string | undefined): b
 
 function controlCommand(input?: string): boolean {
 	const text = input?.replace(/<@[^>]+>/g, "").trim();
-	return Boolean(
-		text &&
-			/^\/(approvals|bypasses|approve\s+\S+|deny\s+\S+|cancel\s+\S+|status(?:\s+\S+)?|help|bash(?:\s+.+)?)$/i.test(
-				text,
-			),
-	);
+	return Boolean(text && isControlCommand(text));
 }

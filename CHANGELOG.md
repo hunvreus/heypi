@@ -62,6 +62,7 @@
 - Changed startup recovery to fail stale running calls and job runs after a process restart.
 - Changed CLI docs to use `heypi` consistently while documenting package-manager invocation separately.
 - Derived store row types from the Drizzle schema and centralized store pagination clamps.
+- Centralized typed chat command metadata for help text, trigger gating, and native adapter registration.
 - Split core call execution and handler turn/control helpers into narrower internal modules.
 
 ### Fixed
