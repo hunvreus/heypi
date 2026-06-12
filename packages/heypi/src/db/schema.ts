@@ -109,7 +109,6 @@ export const approval = sqliteTable(
 		runtime: text("runtime").notNull(),
 		reason: text("reason").notNull(),
 		details: text("details"),
-		snapshot: text("snapshot"),
 		state: text("state").notNull(),
 		requestedBy: text("requested_by"),
 		requestedAt: integer("requested_at").notNull(),

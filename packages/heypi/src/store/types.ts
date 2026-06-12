@@ -171,7 +171,6 @@ export interface Approvals {
 		runtime: string;
 		reason: string;
 		details?: string;
-		snapshot?: string;
 	}): Promise<Approval>;
 	get(id: string, input?: { agent?: string }): Promise<Approval | undefined>;
 	getByChannel(channel: string, id: string, input?: { agent?: string }): Promise<Approval | undefined>;

@@ -89,43 +89,6 @@ test("authorized approval executes the pending command", async () => {
 	);
 });
 
-test("approval rejects drifted pending bash calls before execution", async () => {
-	const calls = new FakeCalls();
-	const approvals = new FakeApprovals();
-	const events: LogEvent[] = [];
-	const callRunner = new CallRunner(
-		calls,
-		approvals,
-		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
-		runtime(),
-		{ approvers: ["U_ALLOWED"] },
-		captureLogger(events),
-		undefined,
-		commandConfirm(),
-	);
-
-	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
-	calls.rows[0].command = "rm -rf /tmp/example";
-	calls.rows[0].args = JSON.stringify({ command: "rm -rf /tmp/example" });
-
-	const rejected = await callRunner.handle({
-		kind: "approve",
-		approvalId: approvals.rows[0].id,
-		channel: "C1",
-		actor: "U_ALLOWED",
-	});
-
-	assert.equal(rejected.private, true);
-	assert.equal(rejected.replaceOriginal, true);
-	assert.match(rejected.text, /no longer matches/i);
-	assert.equal(approvals.rows[0].state, "denied");
-	assert.equal(calls.rows[0].state, "blocked");
-	assert.equal(
-		events.some((event) => event.event === "approval.call_mismatch"),
-		true,
-	);
-});
-
 test("bot actors cannot approve through zero-config fallback", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();
@@ -499,46 +462,6 @@ test("authorized approval executes a confirmed custom tool", async () => {
 	assert.equal(calls.rows[0].tool, "delete_ticket");
 	assert.equal(calls.rows[0].state, "done");
 	assert.equal(approvals.rows[0].state, "approved");
-});
-
-test("approval rejects drifted custom tool args before execution", async () => {
-	const calls = new FakeCalls();
-	const approvals = new FakeApprovals();
-	const callRunner = new CallRunner(
-		calls,
-		approvals,
-		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
-		runtime(),
-		{ approvers: ["U_ALLOWED"] },
-		noLogger(),
-	);
-	let executed = false;
-	const execute = async (args: Record<string, unknown>) => {
-		executed = true;
-		return { out: `deleted=${args.id}` };
-	};
-	callRunner.register("delete_ticket", execute);
-	await callRunner.tool({
-		channel: "C1",
-		actor: "U_REQUESTER",
-		name: "delete_ticket",
-		args: { id: "T1" },
-		confirm: { reason: "Deletes a ticket" },
-		execute,
-	});
-	calls.rows[0].args = JSON.stringify({ id: "T2" });
-
-	const rejected = await callRunner.handle({
-		kind: "approve",
-		approvalId: approvals.rows[0].id,
-		channel: "C1",
-		actor: "U_ALLOWED",
-	});
-
-	assert.equal(executed, false);
-	assert.match(rejected.text, /no longer matches/i);
-	assert.equal(calls.rows[0].state, "blocked");
-	assert.equal(approvals.rows[0].state, "denied");
 });
 
 test("approval details persist, normalize, and roundtrip through approval summaries", async () => {
@@ -1105,7 +1028,6 @@ class FakeApprovals implements Approvals {
 		runtime: string;
 		reason: string;
 		details?: string;
-		snapshot?: string;
 	}): Promise<Approval> {
 		const row: Approval = {
 			id: `approval-${this.rows.length + 1}`,
@@ -1119,7 +1041,6 @@ class FakeApprovals implements Approvals {
 			runtime: input.runtime,
 			reason: input.reason,
 			details: input.details ?? null,
-			snapshot: input.snapshot ?? null,
 			state: "pending",
 			requestedBy: input.requestedBy ?? null,
 			requestedAt: Date.now(),
