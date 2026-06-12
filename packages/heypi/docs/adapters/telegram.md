@@ -1,6 +1,6 @@
 # Telegram
 
-The Telegram adapter lets a heypi agent receive Telegram DMs, groups, channels, and forum topics through long polling or Telegram webhooks.
+The Telegram adapter lets a heypi agent receive Telegram DMs, groups, supergroups, and forum topics through long polling or Telegram webhooks.
 
 heypi's `allow` config filters what the bot responds to; Telegram controls what it receives. Configure bot membership and group privacy mode in Telegram first.
 
@@ -22,13 +22,13 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 | `webhook.secretToken` | Webhook mode | Telegram webhook secret token checked against `X-Telegram-Bot-Api-Secret-Token`. |
 | `webhook.port` | No | HTTP listener port name/number when the app exposes multiple HTTP listeners. |
 | `webhook.maxBodyBytes` | No | Maximum webhook request body size. Defaults to `1000000`. |
-| `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, channels, and forum topics. |
+| `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, supergroups, and forum topics. |
 | `allow.users` | No | Telegram user IDs allowed to talk to the bot. |
 | `allow.bots` | No | `true` to accept messages from all other Telegram bots, or a list of Telegram bot user IDs. Defaults to rejecting bot messages. |
 | `allow.dms` | No | Whether DMs are accepted. |
 | `permissions.approvers` | No | Telegram user IDs allowed to list and resolve approvals for this adapter. Groups are not supported. |
 | `permissions.admins` | No | Telegram user IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
-| `trigger` | No | `"mention"` or `"message"` for top-level group/channel messages. Defaults to `"mention"` in groups and channels. |
+| `trigger` | No | `"mention"` or `"message"` for top-level group messages. Defaults to `"mention"` in groups. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for forum topic replies. Defaults to `"message"` in active topics. |
 | `progress` | No | Progress message behavior, or `false`. |
 | `streaming` | No | Draft reply streaming behavior. |
@@ -64,6 +64,8 @@ Use `bots: true` to accept messages from all other Telegram bots. This adapter's
 
 Group privacy mode can limit what the bot receives. Use BotFather's `/setprivacy` when the bot needs all group messages instead of only commands and mentions.
 
+Telegram channel posts are not a primary chat-agent surface and are not handled as inbound prompts. Use groups, supergroups, or forum topics for conversational use.
+
 ### CLI-assisted setup
 
 Verify the token and observe delivered updates:
@@ -73,7 +75,7 @@ heypi telegram check --env .env
 heypi telegram observe --env .env
 ```
 
-Telegram cannot enumerate chats. `telegram observe` waits for a delivered DM, group, channel, or forum message and prints IDs for config and job targets.
+Telegram cannot enumerate chats. `telegram observe` waits for a delivered DM, group, supergroup, or forum topic message and prints IDs for config and job targets.
 
 `telegram observe` deletes any active webhook for that bot token before polling. Do not run another long-polling process with the same token while observing.
 
@@ -92,6 +94,8 @@ heypi telegram delete-webhook --env .env
 ```
 
 Telegram does not allow `getUpdates` polling while a webhook is active for the same bot token. Use polling for local/dev, and webhook mode for production HTTP ingress.
+
+heypi syncs Telegram's bot command menu from its built-in command catalog on adapter startup and when `heypi telegram set-webhook` runs. Manual BotFather command-menu entries for the same bot can be overwritten.
 
 ## Config
 
