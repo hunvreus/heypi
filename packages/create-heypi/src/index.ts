@@ -186,10 +186,10 @@ function install(root: string, pm: PackageManager): void {
 
 function packageJson(options: Options): string {
 	const deps: Record<string, string> = {
-		"@hunvreus/heypi": "^0.1.3",
+		"@hunvreus/heypi": "^0.1.4",
 	};
-	if (options.runtime === "docker") deps["@hunvreus/heypi-runtime-docker"] = "^0.1.3";
-	if (options.runtime === "gondolin") deps["@hunvreus/heypi-runtime-gondolin"] = "^0.1.3";
+	if (options.runtime === "docker") deps["@hunvreus/heypi-runtime-docker"] = "^0.1.4";
+	if (options.runtime === "gondolin") deps["@hunvreus/heypi-runtime-gondolin"] = "^0.1.4";
 	return json({
 		name: packageName(options.dir),
 		private: true,

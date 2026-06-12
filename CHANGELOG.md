@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-12
+
 ### Breaking
 - Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
 - Configs that still set root `approval.approvers` or `approval.admins` now fail at startup instead of silently falling back to zero-config approval authority.

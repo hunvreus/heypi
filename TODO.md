@@ -2,10 +2,9 @@
 
 ## Now
 
-- Prepare the next release.
-	- Treat the approval permission move and native command changes as the main release notes.
-	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
-	- Run full workspace checks before tagging.
+- Tag and publish the prepared `0.1.4` release when approved.
+	- Release notes, migration notes, package versions, and dry-run package validation are prepared.
+	- Do not tag or publish until explicitly approved.
 
 ## Next
 
