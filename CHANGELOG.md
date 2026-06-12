@@ -49,7 +49,7 @@
 - Added actor-bound temporary approval bypasses through approval controls and `/revoke <bypass-id>`.
 - Added durable approval bypass storage.
 - Added admin configuration visibility for task behavior and adapter approval permissions.
-- Added admin and CLI visibility for approval policy and active approval bypasses.
+- Added admin approval policy visibility and admin/CLI active approval bypass listing.
 
 ### Changed
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.

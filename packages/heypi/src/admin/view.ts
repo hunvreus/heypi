@@ -1176,10 +1176,14 @@ function bypassList(rows: ApprovalBypass[]): Cell {
 		`<span class="grid min-w-0 gap-1">${rows
 			.map(
 				(row) =>
-					`<span class="min-w-0 text-xs"><span class="font-mono">${escapeHtml(row.id)}</span> ${escapeHtml(row.scope)} ${escapeHtml(row.actor ?? "-")} <span class="text-muted-foreground">until ${escapeHtml(time(row.expiresAt))}</span></span>`,
+					`<span class="min-w-0 text-xs"><span class="font-mono">${escapeHtml(row.id)}</span> ${escapeHtml(row.scope)} actor ${escapeHtml(row.actor ?? "-")} target ${escapeHtml(bypassTarget(row))} by ${escapeHtml(row.createdBy)} <span class="text-muted-foreground">until ${escapeHtml(time(row.expiresAt))}</span></span>`,
 			)
 			.join("")}</span>`,
 	);
+}
+
+function bypassTarget(row: ApprovalBypass): string {
+	return row.threadId ? `${row.channel} / ${row.threadId}` : row.channel;
 }
 
 function adapterPermissionSummary(permissions: AdminOverview["adapters"][number]["permissions"]): string {

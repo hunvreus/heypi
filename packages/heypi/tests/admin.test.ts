@@ -297,6 +297,18 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			runtime: "host-bash",
 			reason: "Other approval",
 		});
+		const bypass = await store.approvalBypasses?.create({
+			agent: "default",
+			scope: "thread",
+			channel: "slack:T1:C1",
+			threadId: ownThread.id,
+			actor: "U1",
+			createdBy: "U_ADMIN",
+			reason: "Default approval",
+			approvalId: ownApproval.id,
+			expiresAt: now + 60_000,
+		});
+		assert.ok(bypass);
 		const service = createAdminService({
 			store,
 			handler: async () => undefined,
@@ -338,6 +350,13 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		const admins = overview.adapters[0]?.permissions?.admins;
 		assert.ok(Array.isArray(admins));
 		assert.equal(admins[0], "U_ADMIN");
+		assert.deepEqual(
+			overview.activeBypasses.map((row) => row.id),
+			[bypass.id],
+		);
+		await store.approvalBypasses?.revoke(bypass.id, "U_ADMIN", { agent: "default" });
+		const afterBypassRevoke = await service.live();
+		assert.notEqual(afterBypassRevoke.revision, live.revision);
 
 		const threads = await service.threads();
 		assert.deepEqual(
@@ -410,7 +429,23 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 				allowSelfApproval: false,
 				bypass: { scope: "channel", durationMs: 60_000 },
 			},
-			activeBypasses: [],
+			activeBypasses: [
+				{
+					id: "bypass-1",
+					agent: "agent",
+					scope: "thread",
+					channel: "slack:T1:C1",
+					threadId: "thread-1",
+					actor: "U_REQUESTER",
+					createdBy: "U_ADMIN",
+					reason: "Deploy",
+					approvalId: "approval-1",
+					createdAt: now - 30_000,
+					expiresAt: now + 60_000,
+					revokedAt: null,
+					revokedBy: null,
+				},
+			],
 			startedAt: now - 120_000,
 			adapters: [
 				{ name: "ops", kind: "slack", permissions: { approvers: ["U_APPROVER"], admins: { groups: ["S_ADMIN"] } } },
@@ -465,7 +500,8 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 	assert.match(body, /Approval/);
 	assert.match(body, /expires: 2m(?: 0s)?; self: blocked; bypass: channel for 1m(?: 0s)?/);
 	assert.match(body, /Active bypasses/);
-	assert.match(body, /none/);
+	assert.match(body, /bypass-1/);
+	assert.match(body, /actor U_REQUESTER target slack:T1:C1 \/ thread-1 by U_ADMIN/);
 	assert.match(body, /Adapters/);
 	assert.match(body, /title="slack, 1 approver, 1 admin"/);
 	assert.match(body, /ops/);

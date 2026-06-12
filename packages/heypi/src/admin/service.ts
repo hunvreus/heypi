@@ -187,15 +187,17 @@ export function createAdminService(start: AdapterStart): AdminService {
 			};
 		},
 		async live(): Promise<AdminLiveSummary> {
-			const [approvals, jobs, runningRuns, recentTurns, recentThreads, recentMessages, calls] = await Promise.all([
-				store.approvals.listPending({ agent: app.agent, limit: 100 }),
-				store.jobs?.list({ agent: app.agent, limit: 1000 }) ?? [],
-				store.turns.listRunning?.({ agent: app.agent, limit: 100 }) ?? [],
-				store.turns.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
-				store.threads.list({ agent: app.agent, limit: 100 }),
-				store.messages.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
-				store.calls.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
-			]);
+			const [approvals, bypasses, jobs, runningRuns, recentTurns, recentThreads, recentMessages, calls] =
+				await Promise.all([
+					store.approvals.listPending({ agent: app.agent, limit: 100 }),
+					store.approvalBypasses?.listActive({ agent: app.agent, limit: 100 }) ?? [],
+					store.jobs?.list({ agent: app.agent, limit: 1000 }) ?? [],
+					store.turns.listRunning?.({ agent: app.agent, limit: 100 }) ?? [],
+					store.turns.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
+					store.threads.list({ agent: app.agent, limit: 100 }),
+					store.messages.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
+					store.calls.listRecent?.({ agent: app.agent, limit: 100 }) ?? [],
+				]);
 			const checkedAt = Date.now();
 			const threadRevisionRows = [
 				...approvals
@@ -226,6 +228,15 @@ export function createAdminService(start: AdapterStart): AdminService {
 				...recentThreads.map((row) => ["thread", row.id, row.channel, row.actor, row.updatedAt]),
 				...recentMessages.map((row) => ["message", row.id, row.state, row.actor, row.createdAt, row.updatedAt]),
 				...calls.map((row) => ["call", row.id, row.state, row.updatedAt]),
+				...bypasses.map((row) => [
+					"bypass",
+					row.id,
+					row.scope,
+					row.channel,
+					row.threadId,
+					row.actor,
+					row.expiresAt,
+				]),
 			]);
 			return {
 				pendingApprovals: approvals.length,
