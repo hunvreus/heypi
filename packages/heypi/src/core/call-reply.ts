@@ -1,3 +1,4 @@
+import type { Call } from "../store/types.js";
 import { parseApprovalDetails } from "./approval-view.js";
 import { renderCall } from "./format.js";
 import type { ApprovalResolution, Reply } from "./types.js";
@@ -62,6 +63,22 @@ export function callArgsForStorage(args: Record<string, unknown>, context?: { ru
 
 export function callArgs(input: string | null): Record<string, unknown> {
 	return parseCallArgs(input).args;
+}
+
+export function callSnapshot(call: Call): string {
+	return JSON.stringify({
+		agent: call.agent,
+		channel: call.channel,
+		actor: call.actor,
+		threadId: call.threadId,
+		turnId: call.turnId,
+		messageId: call.messageId,
+		toolCallId: call.toolCallId,
+		tool: call.tool,
+		command: call.command,
+		args: call.args,
+		runtime: call.runtime,
+	});
 }
 
 function callArgsText(input: string | null): string {

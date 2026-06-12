@@ -2,7 +2,7 @@ import type { ApprovalPolicy } from "../config.js";
 import { runtimeWithEvents } from "../runtime/events.js";
 import type { Queue } from "../runtime/queue.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
-import type { Approval, ApprovalBypasses, Approvals, Calls, Store } from "../store/types.js";
+import type { Approval, ApprovalBypasses, Approvals, Call, Calls, Store } from "../store/types.js";
 import * as approvalBypass from "./approval-bypass.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
 import { actorAllowed, actorLabels, actorMatches, hasActorPolicy } from "./approvers.js";
@@ -166,6 +166,7 @@ export class CallRunner {
 			runtime: input.runtime ?? "tool",
 			reason,
 			details: serializeApprovalDetails(input.details),
+			snapshot: callReply.callSnapshot(row),
 		});
 		this.log.info("approval.created", {
 			...input.context,
@@ -290,6 +291,24 @@ export class CallRunner {
 		const current = await this.calls.get(approval.callId, { agent: approval.agent });
 		if (!current) throw new Error("call not found");
 		assertTransition(parseCallState(current.state), "running");
+		if (!this.approvalMatchesCall(approval, current)) {
+			this.log.warn("approval.call_mismatch", {
+				approval: approval.id,
+				call: approval.callId,
+				channel: approval.channel,
+				actor: intent.actor,
+			});
+			const resolved = await this.updateApprovalCall(
+				approval.id,
+				"denied",
+				intent.actor,
+				approval.callId,
+				"blocked",
+				approval.agent,
+			);
+			if (!resolved) return callReply.staleApproval(this.messages.approvalResolved);
+			return callReply.staleApproval("Approval no longer matches the pending action. Recreate the request.");
+		}
 		if (intent.bypass) {
 			if (!this.approvalBypasses) return { text: "Approval bypasses are not configured.", private: true };
 			if (!approvalBypass.config(policy)) return { text: "Approval bypasses are disabled.", private: true };
@@ -640,6 +659,10 @@ export class CallRunner {
 		policy = this.approval,
 	): Reply {
 		return callReply.approvalSummary(approval, call, this.approvers(policy), resolution);
+	}
+
+	private approvalMatchesCall(approval: Approval, call: Call): boolean {
+		return approval.snapshot === callReply.callSnapshot(call);
 	}
 
 	private async handleStatus(intent: Extract<Intent, { kind: "status" }>, context: CallContext): Promise<Reply> {

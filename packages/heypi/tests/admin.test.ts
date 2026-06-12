@@ -475,6 +475,7 @@ test("admin approvals expiry uses duration labels", () => {
 				runtime: "host-bash",
 				reason: "Run command",
 				details: null,
+				snapshot: null,
 				state: "pending",
 				requestedBy: "U123",
 				requestedAt: now - 30_000,

@@ -6,6 +6,7 @@
 - Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
 - Configs that still set root `approval.approvers` or `approval.admins` now fail at startup instead of silently falling back to zero-config approval authority.
 - Pending approvals created by earlier unreleased builds that stored replay metadata in top-level call args should be recreated; heypi now reserves `__heypi` inside call args for internal replay metadata.
+- Pending approvals created by earlier unreleased builds that do not have an approval snapshot should be recreated; heypi now rejects one-time approvals if the pending call row no longer matches the approval snapshot.
 
   Before:
 
@@ -64,6 +65,7 @@
 ### Fixed
 - Fixed invalid built-in adapter config keys like root `approvers` and `admins` being silently ignored instead of failing with a clear permissions error.
 - Fixed approved custom tool replay after a restart so the original runtime scope is preserved.
+- Fixed one-time approval execution so changed pending call rows are rejected before command or custom tool execution.
 - Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
 - Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.

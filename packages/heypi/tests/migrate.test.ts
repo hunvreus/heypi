@@ -74,6 +74,7 @@ test("migrate creates the current baseline schema", async () => {
 			"expires_at",
 			"resolved_at",
 			"resolved_by",
+			"snapshot",
 		]);
 		assert.deepEqual(await columns(db, "job_run"), [
 			"id",
