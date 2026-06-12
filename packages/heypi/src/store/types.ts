@@ -178,6 +178,7 @@ export interface Approvals {
 	listForThread?(threadId: string, input?: { agent?: string; limit?: number; offset?: number }): Promise<Approval[]>;
 	listPending(input?: {
 		agent?: string;
+		channel?: string;
 		threadId?: string;
 		turnId?: string;
 		limit?: number;

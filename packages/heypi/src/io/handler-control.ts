@@ -51,10 +51,6 @@ export function canCancelRun(
 	return actor.actor === initiator;
 }
 
-export function approvalVisible(row: { channel: string }, channel: string): boolean {
-	return row.channel === channel;
-}
-
 export function bypassVisible(
 	row: ApprovalBypass,
 	config: ApprovalPolicy | undefined,

@@ -832,6 +832,20 @@ test("approvals command lists pending approvals for approvers only", async () =>
 		assert.equal(crossChannel?.private, true);
 		assert.equal(crossChannel?.text, "No pending approvals.");
 
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		for (let i = 0; i < 26; i++) {
+			await store.approvals.create({
+				agent: "a",
+				callId: `other-call-${i}`,
+				channel: "slack:T1:D1",
+				threadId: `D1:${i}`,
+				requestedBy: "U_REQUESTER",
+				command: "curl https://example.com",
+				runtime: "just-bash",
+				reason: "Run bash command.",
+			});
+		}
+
 		const listed = await handler({
 			trace: "trace-approvals",
 			provider: "slack",

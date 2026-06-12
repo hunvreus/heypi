@@ -1112,11 +1112,14 @@ class FakeApprovals implements Approvals {
 		);
 	}
 
-	async listPending(input: { agent?: string; threadId?: string; turnId?: string } = {}): Promise<Approval[]> {
+	async listPending(
+		input: { agent?: string; channel?: string; threadId?: string; turnId?: string } = {},
+	): Promise<Approval[]> {
 		return this.rows.filter(
 			(row) =>
 				row.state === "pending" &&
 				(!input.agent || row.agent === input.agent) &&
+				(!input.channel || row.channel === input.channel) &&
 				(!input.threadId || row.threadId === input.threadId) &&
 				(!input.turnId || row.turnId === input.turnId),
 		);

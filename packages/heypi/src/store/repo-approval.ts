@@ -94,10 +94,18 @@ export class ApprovalRepo {
 	}
 
 	async listPending(
-		input: { agent?: string; threadId?: string; turnId?: string; limit?: number; offset?: number } = {},
+		input: {
+			agent?: string;
+			channel?: string;
+			threadId?: string;
+			turnId?: string;
+			limit?: number;
+			offset?: number;
+		} = {},
 	): Promise<Approval[]> {
 		const filters = [eq(approval.state, "pending")];
 		if (input.agent) filters.push(eq(approval.agent, input.agent));
+		if (input.channel) filters.push(eq(approval.channel, input.channel));
 		if (input.threadId) filters.push(eq(approval.threadId, input.threadId));
 		if (input.turnId) filters.push(eq(approval.turnId, input.turnId));
 		return await this.db

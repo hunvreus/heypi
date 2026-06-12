@@ -20,7 +20,6 @@ import type { Store } from "../store/types.js";
 import { type Attachment, type AttachmentStore, attachmentPrompt } from "./attachments.js";
 import {
 	actorMention,
-	approvalVisible,
 	attributedMessage,
 	bypassVisible,
 	type CallIntent,
@@ -258,9 +257,8 @@ export function createHandler(input: {
 			if (!canListApprovals(input.approval, msg)) {
 				return { text: messages.approvalsUnauthorized, private: true };
 			}
-			const all = await input.store.approvals.listPending({ agent: agentId, limit: 25 });
 			const channel = scopedChannelKey(msg);
-			const rows = all.filter((row) => approvalVisible(row, channel));
+			const rows = await input.store.approvals.listPending({ agent: agentId, channel, limit: 25 });
 			return renderApprovals(rows);
 		}
 		if (intent.kind === "bypasses") {
