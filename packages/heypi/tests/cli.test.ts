@@ -95,6 +95,7 @@ test("cli prints Slack manifests by explicit mode", () => {
 	assert.doesNotMatch(socket, /request_url:/);
 	assert.match(socket, /channels:read/);
 	assert.match(socket, /usergroups:read/);
+	assert.match(socket, /command: \/heypi/);
 	assert.doesNotMatch(socket, /groups:history/);
 
 	const http = cli(["slack", "manifest", "--mode", "http", "--url", "https://agent.example.com/slack/slack/events"]);
@@ -102,11 +103,23 @@ test("cli prints Slack manifests by explicit mode", () => {
 	assert.match(http, /request_url: https:\/\/agent\.example\.com\/slack\/slack\/events/);
 	assert.match(http, /channels:read/);
 	assert.match(http, /usergroups:read/);
+	assert.match(http, /command: \/heypi/);
 	assert.doesNotMatch(http, /groups:history/);
 });
 
 test("cli requires Slack manifest mode", () => {
 	assert.throws(() => cli(["slack", "manifest"]), /Missing --mode/);
+});
+
+test("cli Slack manifest supports a custom slash command", () => {
+	const out = cli(["slack", "manifest", "--mode", "socket", "--command", "/opsbot"]);
+	assert.match(out, /command: \/opsbot/);
+	assert.doesNotMatch(out, /command: \/heypi/);
+});
+
+test("cli Discord invite includes application commands scope", () => {
+	const out = cli(["discord", "invite", "--client-id", "123"]);
+	assert.match(out, /scope=bot%20applications\.commands/);
 });
 
 test("cli db migrate and jobs commands operate on sqlite store", async () => {

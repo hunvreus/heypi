@@ -3,6 +3,7 @@
 	"files": {
 		"includes": [
 			"**",
+			"!.claude",
 			"!**/dist",
 			"!packages/heypi/drizzle/meta",
 			"!.heypi",

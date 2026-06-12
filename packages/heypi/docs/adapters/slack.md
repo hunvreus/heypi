@@ -33,6 +33,7 @@ https://<host>/slack/ops/events
 | --- | --- | --- |
 | `mode` | No | `"socket"` or `"http"`. Defaults to `"socket"`. |
 | `botToken` | Yes | Slack bot token, usually `xoxb-...`. |
+| `command` | No | Slack slash command name. Defaults to `/heypi`. Must be unique in the Slack workspace. |
 | `appToken` | Socket mode | Slack app-level token, usually `xapp-...`. |
 | `signingSecret` | HTTP mode | Slack signing secret for HTTP request verification. |
 | `name` | No | Adapter name. Also controls the default HTTP route. Defaults to `slack`. |
@@ -88,7 +89,21 @@ For Socket Mode, generate the Socket Mode manifest:
 heypi slack manifest --mode socket
 ```
 
-Import the manifest into Slack, then review scopes, events, and interactivity for your workspace. Socket Mode still needs an app-level token with `connections:write`.
+Import the manifest into Slack, then review scopes, events, interactivity, and the `/heypi` slash command for your workspace. Socket Mode still needs an app-level token with `connections:write`.
+
+Slack slash command names are workspace-global. If you run multiple heypi Slack apps in one workspace, set a unique command name in both the manifest and adapter config.
+
+Typed controls use `/heypi` subcommands:
+
+```text
+/heypi approvals
+/heypi approve <approval-id>
+/heypi deny <approval-id>
+/heypi status [run-or-call-id]
+/heypi cancel <turn-id-or-trace>
+/heypi revoke <bypass-id>
+/heypi bash <command>
+```
 
 ### Manual setup
 
@@ -97,9 +112,10 @@ Import the manifest into Slack, then review scopes, events, and interactivity fo
 3. Add bot scopes from the table below.
 4. Subscribe to bot events from the table below.
 5. Enable Interactivity for approval buttons and set the HTTP URL when using HTTP mode.
-6. Install the app into your workspace.
-7. Invite the bot to channels where it should respond.
-8. Copy the required tokens or secrets into your environment.
+6. Add the configured slash command, `/heypi` by default.
+7. Install the app into your workspace.
+8. Invite the bot to channels where it should respond.
+9. Copy the required tokens or secrets into your environment.
 
 Typical bot scopes:
 

@@ -54,7 +54,7 @@ Adapter `permissions.approvers` and `permissions.admins` accept either an array 
 
 Approval buttons are the primary control surface where the adapter supports them.
 
-Typed fallback commands are only available where the provider delivers them as messages, such as Telegram commands and trusted webhook/internal text:
+Typed fallback commands are provider-specific. Slack uses `/heypi` subcommands, Discord and Telegram use native commands, and webhook/internal adapters can send trusted text commands:
 
 ```text
 /approvals
@@ -64,7 +64,7 @@ Typed fallback commands are only available where the provider delivers them as m
 /revoke <bypass-id>
 ```
 
-In Telegram groups, use bot-qualified commands such as `/approve@YourBotName <approval-id>` when needed. Slack and Discord reserve slash commands for provider-native command registration, so typed approval commands should use native command support when that adapter exposes it. Natural language approval text is treated as a normal agent prompt, not as an approval decision.
+In Telegram groups, use bot-qualified commands such as `/approve@YourBotName <approval-id>` when needed. In Slack, use `/heypi approve <approval-id>` instead of `/approve`. Natural language approval text is treated as a normal agent prompt, not as an approval decision.
 
 ## How calls become approvals
 

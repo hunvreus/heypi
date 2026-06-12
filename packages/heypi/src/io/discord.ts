@@ -4,6 +4,7 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	ChannelType,
+	type ChatInputCommandInteraction,
 	Client,
 	EmbedBuilder,
 	Events,
@@ -11,6 +12,9 @@ import {
 	type Interaction,
 	type Message,
 	Partials,
+	REST,
+	Routes,
+	SlashCommandBuilder,
 	type TextBasedChannel,
 } from "discord.js";
 import type { PermissionsConfig } from "../config.js";
@@ -38,6 +42,8 @@ const APPROVAL_PENDING_COLOR = 0xf59e0b;
 export type DiscordConfig = {
 	name?: string;
 	token: string;
+	clientId?: string;
+	registerCommands?: boolean;
 	allow?: DiscordAllow;
 	permissions?: PermissionsConfig;
 	trigger?: DiscordTrigger;
@@ -106,9 +112,12 @@ export function discord(input: DiscordConfig): Adapter {
 				void handleMessage({ client, start, config: input, delivery, provider: name, kind, groups, msg });
 			});
 			client.on(Events.InteractionCreate, (interaction) => {
-				void handleInteraction({ start, delivery, provider: name, kind, groups, interaction });
+				void handleInteraction({ start, config: input, delivery, provider: name, kind, groups, interaction });
 			});
 			await client.login(input.token);
+			if (input.registerCommands !== false && input.clientId) {
+				await registerDiscordCommands(input.token, input.clientId, start.logger);
+			}
 		},
 		async stop(): Promise<void> {
 			client.removeAllListeners();
@@ -309,12 +318,14 @@ async function handleMessage(input: {
 
 async function handleInteraction(input: {
 	start: AdapterStart;
+	config: DiscordConfig;
 	delivery: DeliveryQueue;
 	provider: string;
 	kind: string;
 	groups: DiscordGroupResolver;
 	interaction: Interaction;
 }): Promise<void> {
+	if (input.interaction.isChatInputCommand()) return handleCommandInteraction(input);
 	if (!input.interaction.isButton()) return;
 	const interaction = input.interaction;
 	const action = parseAction(interaction.customId);
@@ -445,6 +456,142 @@ async function handleInteraction(input: {
 			.followUp({ content: userError(input.start.messages?.error), ephemeral: true })
 			.catch(() => undefined);
 	}
+}
+
+async function handleCommandInteraction(input: {
+	start: AdapterStart;
+	config: DiscordConfig;
+	delivery: DeliveryQueue;
+	provider: string;
+	kind: string;
+	groups: DiscordGroupResolver;
+	interaction: Interaction;
+}): Promise<void> {
+	const interaction = input.interaction;
+	if (!interaction.isChatInputCommand() || !DISCORD_COMMANDS.has(interaction.commandName)) return;
+	const trace = `discord:${interaction.id}`;
+	const channel = interaction.channelId ?? "unknown";
+	const actor = interaction.user.id;
+	const team = interaction.guildId ?? undefined;
+	const context = (extra?: Record<string, unknown>) =>
+		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
+	try {
+		const actorGroups = await input.groups.forInteraction(interaction);
+		const allow = discordAllowed(input.config.allow, {
+			channel,
+			user: actor,
+			groups: actorGroups,
+			isDm: !interaction.guildId,
+		});
+		if (!allow.ok) {
+			input.start.logger.debug("adapter.drop", context({ actor, reason: allow.reason }));
+			await interaction.reply({ content: "You are not allowed to use heypi here.", ephemeral: true });
+			return;
+		}
+		await interaction.deferReply({ ephemeral: true });
+		const text = discordCommandText(interaction);
+		const out = await input.start.handler({
+			trace,
+			provider: input.provider,
+			kind: input.kind,
+			eventId: interaction.id,
+			team,
+			channel,
+			actor,
+			actorGroups,
+			thread: channel,
+			text,
+			data: { command: interaction.commandName },
+		});
+		if (!out || out.silent) {
+			await interaction.deleteReply().catch(() => undefined);
+			return;
+		}
+		if (out.private || !interaction.channel?.isTextBased()) {
+			await interaction.editReply({ content: firstChunk(out.text) });
+			return;
+		}
+		await interaction.editReply({ content: "Posted to channel." });
+		await sendDiscordOutput({
+			channel: interaction.channel,
+			store: input.start.attachments,
+			out,
+			logger: input.start.logger,
+			context: context(),
+			delivery: input.delivery,
+		});
+	} catch (error) {
+		input.start.logger.error("adapter.error", context({ error: errorMessage(error) }));
+		if (interaction.deferred || interaction.replied) {
+			await interaction.editReply({ content: userError(input.start.messages?.error) }).catch(() => undefined);
+		} else {
+			await interaction
+				.reply({ content: userError(input.start.messages?.error), ephemeral: true })
+				.catch(() => undefined);
+		}
+	}
+}
+
+function discordCommandText(interaction: ChatInputCommandInteraction): string {
+	const command = interaction.commandName;
+	if (command === "help") return "/help";
+	if (command === "approvals") return "/approvals";
+	if (command === "approve") {
+		const id = interaction.options.getString("id", true);
+		const bypass = interaction.options.getBoolean("bypass") ? " bypass" : "";
+		return `/approve ${id}${bypass}`;
+	}
+	if (command === "deny") return `/deny ${interaction.options.getString("id", true)}`;
+	if (command === "status") {
+		const id = interaction.options.getString("id");
+		return id ? `/status ${id}` : "/status";
+	}
+	if (command === "cancel") return `/cancel ${interaction.options.getString("id", true)}`;
+	if (command === "revoke") return `/revoke ${interaction.options.getString("id", true)}`;
+	if (command === "bash") return `/bash ${interaction.options.getString("command", true)}`;
+	return "/help";
+}
+
+async function registerDiscordCommands(token: string, clientId: string, log: Logger): Promise<void> {
+	const rest = new REST({ version: "10" }).setToken(token);
+	await rest.put(Routes.applicationCommands(clientId), { body: discordCommands().map((command) => command.toJSON()) });
+	log.info("discord.commands_registered", { clientId });
+}
+
+const DISCORD_COMMANDS = new Set(["help", "approvals", "approve", "deny", "status", "cancel", "revoke", "bash"]);
+
+function discordCommands() {
+	return [
+		new SlashCommandBuilder().setName("help").setDescription("Show heypi command help"),
+		new SlashCommandBuilder().setName("approvals").setDescription("List pending approvals"),
+		new SlashCommandBuilder()
+			.setName("approve")
+			.setDescription("Approve a pending approval")
+			.addStringOption((option) => option.setName("id").setDescription("Approval ID").setRequired(true))
+			.addBooleanOption((option) =>
+				option.setName("bypass").setDescription("Create a temporary bypass after approval"),
+			),
+		new SlashCommandBuilder()
+			.setName("deny")
+			.setDescription("Deny a pending approval")
+			.addStringOption((option) => option.setName("id").setDescription("Approval ID").setRequired(true)),
+		new SlashCommandBuilder()
+			.setName("status")
+			.setDescription("Show thread or run status")
+			.addStringOption((option) => option.setName("id").setDescription("Run or call ID")),
+		new SlashCommandBuilder()
+			.setName("cancel")
+			.setDescription("Cancel a running turn")
+			.addStringOption((option) => option.setName("id").setDescription("Turn or trace ID").setRequired(true)),
+		new SlashCommandBuilder()
+			.setName("revoke")
+			.setDescription("Revoke an approval bypass")
+			.addStringOption((option) => option.setName("id").setDescription("Bypass ID").setRequired(true)),
+		new SlashCommandBuilder()
+			.setName("bash")
+			.setDescription("Run a bash command through heypi policy")
+			.addStringOption((option) => option.setName("command").setDescription("Command to run").setRequired(true)),
+	];
 }
 
 async function discordTargetChannel(client: Client, target: AdapterTarget): Promise<TextBasedChannel> {

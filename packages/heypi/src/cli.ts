@@ -82,6 +82,7 @@ function buildCli() {
 		.option("--signing-secret <secret>", "Slack signing secret")
 		.option("--mode <mode>", "Slack transport: socket or http")
 		.option("--url <url>", "Slack events URL")
+		.option("--command <command>", "Slack slash command")
 		.option("--private", "Include private channels visible to the bot")
 		.action((action: string, flags: Flags) =>
 			withEnv((input) => {
@@ -237,7 +238,8 @@ async function slackCheck(flags: Flags): Promise<void> {
 function slackManifest(flags: Flags): void {
 	const mode = requiredSlackMode(flags);
 	const url = stringFlag(flags, "url") ?? "https://example.com/slack/slack/events";
-	line(slackManifestYaml(mode, url));
+	const command = slackCommandFlag(flags);
+	line(slackManifestYaml(mode, url, command));
 }
 
 function optionalSlackMode(flags: Flags): SlackMode | undefined {
@@ -253,7 +255,15 @@ function requiredSlackMode(flags: Flags): SlackMode {
 	return mode;
 }
 
-function slackManifestYaml(mode: SlackMode, url: string): string {
+function slackCommandFlag(flags: Flags): string {
+	const value = stringFlag(flags, "command") ?? "/heypi";
+	if (!/^\/[a-z0-9_-]{1,31}$/u.test(value)) {
+		throw new Error("Invalid --command. Use / plus lowercase letters, numbers, underscores, or hyphens.");
+	}
+	return value;
+}
+
+function slackManifestYaml(mode: SlackMode, url: string, command: string): string {
 	const settings =
 		mode === "socket"
 			? `  event_subscriptions:
@@ -276,6 +286,11 @@ features:
   bot_user:
     display_name: heypi
     always_online: false
+  slash_commands:
+    - command: ${command}
+      description: Control heypi
+      usage_hint: approve <approval-id>
+      should_escape: false
 oauth_config:
   scopes:
     bot:

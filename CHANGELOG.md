@@ -43,6 +43,7 @@
 - Added adapter-scoped approval permissions with per-adapter approvers and admins.
 - Added `allow.bots` to Slack, Discord, and Telegram for explicitly accepting messages from selected bots/apps or all other bots/apps.
 - Added Slack Socket Mode and HTTP mode manifest generation to `create-heypi` and `heypi slack manifest`.
+- Added native typed control fallback through Slack `/heypi` subcommands and Discord application commands.
 - Added `task.cancel` with `admin`, `approver`, `initiator`, and `allowed` cancellation policy levels.
 - Added actor-bound temporary approval bypasses through approval controls and `/revoke <bypass-id>`.
 - Added durable approval bypass storage.

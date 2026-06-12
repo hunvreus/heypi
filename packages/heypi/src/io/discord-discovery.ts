@@ -84,7 +84,7 @@ export async function discordObserve(token: string, timeoutSeconds: number): Pro
 
 export function discordInviteUrl(clientId: string): string {
 	const permissions = "397586506816";
-	return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&scope=bot&permissions=${permissions}`;
+	return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&scope=bot%20applications.commands&permissions=${permissions}`;
 }
 
 async function withDiscordClient<T>(

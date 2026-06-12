@@ -13,6 +13,8 @@ For a runnable example, see [`examples/discord-gondolin`](https://github.com/hun
 | Option | Required | Description |
 | --- | --- | --- |
 | `token` | Yes | Discord bot token. |
+| `clientId` | Native commands | Discord application client ID. When set, heypi registers global application commands at startup. |
+| `registerCommands` | No | Whether to register native commands when `clientId` is set. Defaults to `true`. |
 | `name` | No | Adapter name. Defaults to `discord`. |
 | `allow.channels` | No | Discord channel IDs where the bot may respond. Thread channels use their own channel ID. |
 | `allow.users` | No | Discord user IDs allowed to talk to the bot. |
@@ -64,7 +66,21 @@ Direct Messages
 Message Content
 ```
 
-Required OAuth permissions: `Send Messages`, `Read Message History`, and `Add Reactions`.
+Required OAuth scopes: `bot` and `applications.commands`.
+
+Required bot permissions: `Send Messages`, `Read Message History`, and `Add Reactions`.
+
+Native controls use flat application commands:
+
+```text
+/approvals
+/approve approval-id
+/deny approval-id
+/status run-or-call-id
+/cancel turn-id-or-trace
+/revoke bypass-id
+/bash command
+```
 
 ### CLI-assisted setup
 
@@ -85,6 +101,7 @@ createHeypi({
 	adapters: [
 		discord({
 			token: process.env.DISCORD_BOT_TOKEN!,
+			clientId: process.env.DISCORD_CLIENT_ID!,
 			allow: {
 				channels: ["234567890123456789"],
 				users: ["345678901234567890"],

@@ -30,6 +30,7 @@ const APPROVAL_EXPIRED_COLOR = "#868686";
 export type SlackConfig = {
 	name?: string;
 	botToken: string;
+	command?: string;
 	allow?: SlackAllow;
 	permissions?: PermissionsConfig;
 	trigger?: SlackTrigger;
@@ -83,6 +84,7 @@ export function slack(input: SlackConfig): Adapter {
 	let delivery = new DeliveryQueue(input.delivery);
 	let botUserId: string | undefined;
 	let botIdentity: SlackBotIdentity = {};
+	const commandName = slackCommandName(input.command);
 
 	return {
 		name,
@@ -178,6 +180,23 @@ export function slack(input: SlackConfig): Adapter {
 					adapterKind: kind,
 					groups,
 					messages: start.messages,
+				});
+			});
+			bolt.command(commandName, async ({ ack, command, client }) => {
+				await ack();
+				await handleCommand({
+					command,
+					client,
+					handler,
+					logger: log,
+					delivery,
+					provider: name,
+					adapterKind: kind,
+					commandName,
+					groups,
+					allow: input.allow,
+					messages: start.messages,
+					attachments: start.attachments,
 				});
 			});
 			bolt.message(async ({ event, client, body }) => {
@@ -444,6 +463,142 @@ export function slack(input: SlackConfig): Adapter {
 			log?.debug("adapter.send", { adapter: name, kind, channel, thread: target.thread, chars: out.text.length });
 		},
 	};
+}
+
+type SlackCommand = {
+	text: string;
+	user_id: string;
+	team_id?: string;
+	channel_id: string;
+	channel_name?: string;
+	trigger_id?: string;
+};
+
+async function handleCommand(input: {
+	command: SlackCommand;
+	client: SlackClient;
+	handler: Handler;
+	logger: Logger;
+	delivery: DeliveryQueue;
+	provider: string;
+	adapterKind: string;
+	commandName: string;
+	groups: SlackGroupResolver;
+	allow?: SlackAllow;
+	messages?: AppMessages;
+	attachments?: AttachmentStore;
+}): Promise<void> {
+	const command = input.command;
+	const trace = command.trigger_id ? `slack:${command.trigger_id}` : undefined;
+	const channel = command.channel_id;
+	const actor = command.user_id;
+	const context = (extra?: Record<string, unknown>) =>
+		logCtx({ trace, adapter: input.provider, kind: input.adapterKind, channel }, extra);
+	try {
+		const actorGroups = await input.groups.forUser(input.client, actor);
+		const allow = slackAllowed(input.allow, {
+			channel,
+			user: actor,
+			groups: actorGroups,
+			isDm: slackCommandDm(command),
+		});
+		if (!allow.ok) {
+			input.logger.debug("adapter.drop", context({ actor, reason: allow.reason }));
+			await postEphemeralChunks({
+				client: input.client,
+				channel,
+				user: actor,
+				text: "You are not allowed to use heypi here.",
+				delivery: input.delivery,
+			});
+			return;
+		}
+		const text = nativeCommandText(command.text);
+		const out = await input.handler({
+			trace,
+			provider: input.provider,
+			kind: input.adapterKind,
+			eventId: command.trigger_id,
+			team: command.team_id,
+			channel,
+			actor,
+			actorGroups,
+			thread: channel,
+			text,
+			data: { command: input.commandName, text: command.text },
+		});
+		if (!out || out.silent) return;
+		if (out.private) {
+			await postEphemeralChunks({
+				client: input.client,
+				channel,
+				user: actor,
+				text: out.text,
+				approval: out.approval,
+				delivery: input.delivery,
+			});
+			return;
+		}
+		await postPublicChunks({
+			client: input.client,
+			channel,
+			text: out.text,
+			approval: out.approval,
+			logger: input.logger,
+			context: context(),
+			delivery: input.delivery,
+		});
+		await uploadSlackAttachments({
+			client: input.client,
+			store: input.attachments,
+			channel,
+			attachments: out.attachments,
+			scope: out.attachmentScope,
+			logger: input.logger,
+			context: context(),
+			delivery: input.delivery,
+		});
+	} catch (error) {
+		input.logger.error("adapter.error", context({ error: errorMessage(error) }));
+		await postEphemeralChunks({
+			client: input.client,
+			channel,
+			user: actor,
+			text: userError(input.messages?.error),
+			delivery: input.delivery,
+		}).catch(() => undefined);
+	}
+}
+
+function slackCommandName(input: string | undefined): string {
+	const value = input ?? "/heypi";
+	if (!/^\/[a-z0-9_-]{1,31}$/u.test(value)) {
+		throw new Error(
+			"Slack command must start with / and contain 1-31 lowercase letters, numbers, underscores, or hyphens",
+		);
+	}
+	return value;
+}
+
+function slackCommandDm(command: SlackCommand): boolean {
+	return command.channel_id.startsWith("D") || command.channel_name === "directmessage";
+}
+
+function nativeCommandText(input: string): string {
+	const trimmed = input.trim();
+	if (!trimmed) return "/help";
+	const [name, ...rest] = trimmed.split(/\s+/u);
+	const command = name.toLowerCase();
+	const args = rest.join(" ");
+	if (command === "help") return "/help";
+	if (command === "approvals") return "/approvals";
+	if (command === "approve") return `/approve ${args}`.trim();
+	if (command === "deny") return `/deny ${args}`.trim();
+	if (command === "status") return args ? `/status ${args}` : "/status";
+	if (command === "cancel") return `/cancel ${args}`.trim();
+	if (command === "revoke") return `/revoke ${args}`.trim();
+	if (command === "bash") return `/bash ${args}`.trim();
+	return "/help";
 }
 
 async function slackTargetChannel(
