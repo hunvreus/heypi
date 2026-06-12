@@ -6,9 +6,6 @@
 	- Treat the approval permission move and native command changes as the main release notes.
 	- Include migration notes for configs that still use root `approval.approvers` or `approval.admins`.
 	- Run full workspace checks before tagging.
-- Add approval crash replay coverage.
-	- Add a regression test for restart while approval is pending, then approve after restart.
-	- Fix any gaps for bash calls, registered custom tools, Pi continuation state, and stale pending approvals.
 - Extend approval policy visibility and controls.
 	- Add chat/admin listing for active approval bypasses.
 	- Show effective approval policy in admin/CLI, including adapter-scoped approvers, admins, expiry, active bypasses, and command/tool confirmation rules.

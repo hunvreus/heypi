@@ -2,6 +2,8 @@ import { parseApprovalDetails } from "./approval-view.js";
 import { renderCall } from "./format.js";
 import type { ApprovalResolution, Reply } from "./types.js";
 
+const CALL_ARG_META = "__heypi";
+
 export function staleApproval(text: string): Reply {
 	return { text, private: true, replaceOriginal: true };
 }
@@ -25,7 +27,7 @@ export function approvalSummary(
 			state: "pending_approval",
 			approvalId: approval.id,
 			reason: approval.reason,
-			command: call.command ?? `${call.tool} ${call.args ?? ""}`.trim(),
+			command: call.command ?? `${call.tool} ${callArgsText(call.args)}`.trim(),
 			runtime: approval.runtime,
 			approvers,
 			requestedBy: approval.requestedBy ?? undefined,
@@ -42,20 +44,46 @@ export function callContext(call: {
 	toolCallId: string | null;
 	args?: string | null;
 }) {
-	const parsed = callArgs(call.args ?? null);
+	const parsed = parseCallArgs(call.args ?? null);
 	return {
 		thread: call.threadId ?? undefined,
 		turn: call.turnId ?? undefined,
 		message: call.messageId ?? undefined,
 		toolCall: call.toolCallId ?? undefined,
-		runtimeScope: typeof parsed.runtimeScope === "string" ? parsed.runtimeScope : undefined,
+		runtimeScope:
+			parsed.meta.runtimeScope ??
+			(typeof parsed.args.runtimeScope === "string" ? parsed.args.runtimeScope : undefined),
 	};
 }
 
+export function callArgsForStorage(args: Record<string, unknown>, context?: { runtimeScope?: string }): string {
+	if (!context?.runtimeScope) return JSON.stringify(args);
+	return JSON.stringify({ ...args, [CALL_ARG_META]: { runtimeScope: context.runtimeScope } });
+}
+
 export function callArgs(input: string | null): Record<string, unknown> {
-	if (!input) return {};
+	return parseCallArgs(input).args;
+}
+
+function callArgsText(input: string | null): string {
+	if (!input) return "";
+	return JSON.stringify(callArgs(input));
+}
+
+function parseCallArgs(input: string | null): { args: Record<string, unknown>; meta: { runtimeScope?: string } } {
+	if (!input) return { args: {}, meta: {} };
 	const parsed = JSON.parse(input) as unknown;
-	return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { args: {}, meta: {} };
+	const record = parsed as Record<string, unknown>;
+	const meta = callMeta(record[CALL_ARG_META]);
+	const { [CALL_ARG_META]: _internal, ...args } = record;
+	return { args, meta };
+}
+
+function callMeta(value: unknown): { runtimeScope?: string } {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const runtimeScope = (value as Record<string, unknown>).runtimeScope;
+	return typeof runtimeScope === "string" ? { runtimeScope } : {};
 }
 
 export function continuation(

@@ -7,12 +7,14 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CallRunner } from "../src/core/calls.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { commandConfirm } from "../src/core/policy.js";
+import type { ToolContinuation } from "../src/core/types.js";
 import { createHandler, createStatus } from "../src/io/handler.js";
 import type { ReplyStream } from "../src/io/reply-stream.js";
 import type { AgentReq } from "../src/runtime/agent.js";
 import { applyModelPayloadConfig, streamTextDelta, toolResultParentEntryId } from "../src/runtime/pi-agent.js";
 import { Queue } from "../src/runtime/queue.js";
 import { sqliteStore } from "../src/store/sqlite.js";
+import type { Store } from "../src/store/types.js";
 
 async function tempDb(): Promise<{ path: string; cleanup: () => Promise<void> }> {
 	const dir = await mkdtemp(join(tmpdir(), "heypi-model-"));
@@ -21,6 +23,89 @@ async function tempDb(): Promise<{ path: string; cleanup: () => Promise<void> }>
 
 function secret(value: string): string {
 	return `sk-${value}`;
+}
+
+function createRestartBashHandler(store: Store, out: string) {
+	return createHandler({
+		agentId: "a",
+		store,
+		callRunner: new CallRunner(
+			store.calls,
+			store.approvals,
+			new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+			{
+				name: "just-bash",
+				root: ".",
+				bash: async () => ({ code: 0, out, err: "", ms: 1 }),
+			},
+			{ approvers: ["U_ALLOWED"] },
+			undefined,
+			store.transaction,
+			commandConfirm(),
+		),
+		agent: {
+			ask: async () => ({ text: "ok" }),
+			continue: async () => ({ text: "ok" }),
+		},
+	});
+}
+
+function createRestartToolHandler(store: Store, out: string) {
+	const continuations: ToolContinuation[] = [];
+	const runtimeScopes: Array<string | undefined> = [];
+	const callRunner = new CallRunner(
+		store.calls,
+		store.approvals,
+		new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+		{ name: "tool-runtime", root: "." },
+		{ approvers: ["U_ALLOWED"] },
+		undefined,
+		store.transaction,
+	);
+	const execute = async (args: Record<string, unknown>, context: { runtimeScope?: string }) => {
+		runtimeScopes.push(context.runtimeScope);
+		return { out: `deleted=${args.id}:${out}` };
+	};
+	callRunner.register("delete_ticket", execute);
+	let threadId = "";
+	const handler = createHandler({
+		agentId: "a",
+		store,
+		callRunner,
+		agent: {
+			ask: async (req) => {
+				threadId = req.threadId;
+				return callRunner.tool({
+					channel: req.channel,
+					actor: req.actor,
+					name: "delete_ticket",
+					args: { id: "T1" },
+					confirm: { reason: "Deletes a ticket" },
+					context: {
+						agent: "a",
+						thread: req.threadId,
+						turn: req.turnId,
+						message: req.inputMessageId,
+						toolCall: "tool-call-1",
+						runtimeScope: req.scope?.workspace.path,
+					},
+					execute,
+				});
+			},
+			continue: async (req) => {
+				if (req.continuation) continuations.push(req.continuation);
+				return { text: `continued ${req.continuation?.out}` };
+			},
+		},
+	});
+	return {
+		handler,
+		continuations,
+		runtimeScopes,
+		get threadId() {
+			return threadId;
+		},
+	};
 }
 
 test("model payload config applies response verbosity", () => {
@@ -470,6 +555,97 @@ test("handler scopes approvals by provider team and channel", async () => {
 			text: `/approve ${approvalId}`,
 		});
 		assert.match(approved?.text ?? "", /Result: `done`/);
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler approves pending bash calls after handler restart", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const first = createRestartBashHandler(store, "before restart");
+
+		const requested = await first({
+			trace: "trace-restart-bash-request",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-restart-bash-request",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:restart-bash",
+			text: "/bash curl https://example.com",
+		});
+		const approvalId = requested?.approval?.id;
+		assert.ok(approvalId);
+
+		const restarted = createRestartBashHandler(store, "after restart");
+		const approved = await restarted({
+			trace: "trace-restart-bash-approve",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-restart-bash-approve",
+			channel: "C1",
+			actor: "U_ALLOWED",
+			thread: "C1:restart-bash",
+			text: `/approve ${approvalId}`,
+		});
+
+		assert.match(approved?.text ?? "", /Result: `done`/);
+		assert.match(approved?.text ?? "", /after restart/);
+		assert.equal((await store.approvals.get(approvalId))?.state, "approved");
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler continues approved custom tool calls after handler restart", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const first = createRestartToolHandler(store, "before restart");
+
+		const requested = await first.handler({
+			trace: "trace-restart-tool-request",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-restart-tool-request",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "C1:restart-tool",
+			text: "delete ticket T1",
+		});
+		const approvalId = requested?.approval?.id;
+		assert.ok(approvalId);
+
+		const restarted = createRestartToolHandler(store, "after restart");
+		const approved = await restarted.handler({
+			trace: "trace-restart-tool-approve",
+			provider: "slack",
+			team: "T1",
+			eventId: "event-restart-tool-approve",
+			channel: "C1",
+			actor: "U_ALLOWED",
+			thread: "C1:restart-tool",
+			text: `/approve ${approvalId}`,
+		});
+
+		assert.equal(approved?.text, "continued deleted=T1:after restart");
+		assert.equal((await store.approvals.get(approvalId))?.state, "approved");
+		assert.deepEqual(restarted.runtimeScopes, ["channel/a/slack/T1/C1"]);
+		assert.deepEqual(restarted.continuations, [
+			{
+				threadId: first.threadId,
+				toolCallId: "tool-call-1",
+				tool: "delete_ticket",
+				actor: "U_REQUESTER",
+				out: "deleted=T1:after restart",
+				err: "",
+				isError: false,
+			},
+		]);
 	} finally {
 		await db.cleanup();
 	}

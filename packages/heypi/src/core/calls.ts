@@ -198,7 +198,7 @@ export class CallRunner {
 			actor: input.actor,
 			tool: input.tool,
 			command: input.command,
-			args: JSON.stringify(input.args),
+			args: callReply.callArgsForStorage(input.args, input.context),
 			runtime: input.runtime,
 			state,
 			policyReason: input.policyReason,

@@ -62,6 +62,7 @@
 
 ### Fixed
 - Fixed invalid built-in adapter config keys like root `approvers` and `admins` being silently ignored instead of failing with a clear permissions error.
+- Fixed approved custom tool replay after a restart so the original runtime scope is preserved.
 - Fixed a busy-message race where a follow-up could be persisted as processed even when it failed to enqueue.
 - Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.
