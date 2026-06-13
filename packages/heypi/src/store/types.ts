@@ -28,7 +28,7 @@ export type ApprovalBypass = typeof approvalBypass.$inferSelect;
 
 export type Lock = typeof lock.$inferSelect;
 
-export type JobRunState = "running" | "done" | "failed" | "skipped";
+export type JobRunState = "queued" | "running" | "done" | "failed" | "skipped" | "cancelled";
 export type DeliveryState = "pending" | "delivered" | "failed" | "none";
 
 export type Job = typeof job.$inferSelect;
@@ -249,7 +249,6 @@ export interface Jobs {
 	get(input: { agent?: string; id: string }): Promise<Job | undefined>;
 	list(input?: { agent?: string; limit?: number; offset?: number }): Promise<Job[]>;
 	setState(input: { agent?: string; id: string }, state: JobState): Promise<void>;
-	runNow(input: { agent?: string; id: string }): Promise<void>;
 	finish(input: { agent: string; id: string }, result: { nextAt: number | null; lastAt: number }): Promise<void>;
 	pauseMissing(agent: string, ids: string[]): Promise<number>;
 }
@@ -261,12 +260,29 @@ export interface JobRuns {
 		jobId: string;
 		threadId?: string;
 		trace: string;
+		dueAt?: number;
+		targetKey?: string;
+		adapter?: string;
+		channel?: string;
+		threadKey?: string;
+		target?: string | null;
+		availableAt?: number;
 	}): Promise<{ row: JobRun; inserted: boolean }>;
+	claim?(input: { agent: string; owner: string; now: number; limit?: number }): Promise<JobRun[]>;
+	hasActiveTarget?(input: {
+		agent: string;
+		jobId: string;
+		targetKey: string;
+		states?: JobRunState[];
+	}): Promise<boolean>;
 	finish(
 		id: string,
 		input: { state: JobRunState; output?: string; error?: string; deliveryState?: DeliveryState },
 	): Promise<void>;
+	requeue?(input: { id: string; availableAt?: number; error?: string }): Promise<void>;
 	lastForJob(input: { agent: string; id: string }): Promise<JobRun | undefined>;
+	cancelQueuedForJob?(input: { agent: string; id: string; reason?: string }): Promise<number>;
+	requeueRunning?(input: { agent: string; error?: string }): Promise<number>;
 	failRunning?(input: { agent: string; error: string }): Promise<number>;
 }
 

@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { agentFrom, consoleLogger, createHeypi, sqliteStore, workspace } from "@hunvreus/heypi";
 import { nextAt } from "../src/core/schedule.js";
-import { createScheduler } from "../src/core/scheduler.js";
+import { createScheduler, enqueueJobRuns } from "../src/core/scheduler.js";
 import type { Adapter, AdapterTarget, Handler, Inbound, Outbound } from "../src/io/handler.js";
+import type { SchedulerStore } from "../src/store/types.js";
 
 test("nextAt anchors intervals and skips missed runs", () => {
 	const next = nextAt({ everyMs: 10 }, 35, 0);
@@ -237,7 +238,7 @@ test("scheduler sends cron jobs to explicit target channels", async () => {
 			},
 		});
 		await scheduler?.start();
-		await store.jobs?.runNow({ agent: "agent", id: "daily" });
+		await queueJob(store as SchedulerStore, "agent", "daily");
 		await waitFor(() => sent.length === 2);
 		await scheduler?.stop();
 		assert.deepEqual(
@@ -248,6 +249,215 @@ test("scheduler sends cron jobs to explicit target channels", async () => {
 			seen.map((row) => row.provider),
 			["test", "test"],
 		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("scheduler runs queued targets concurrently up to maxConcurrentRuns", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-concurrent-"));
+	let release: (() => void) | undefined;
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		let active = 0;
+		let maxActive = 0;
+		const started: string[] = [];
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const blockingHandler: Handler = Object.assign(async (input: Inbound): Promise<Outbound> => {
+			active++;
+			maxActive = Math.max(maxActive, active);
+			started.push(input.channel);
+			await gate;
+			active--;
+			return { text: `ok ${input.channel}` };
+		}, {});
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: blockingHandler,
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				maxConcurrentRuns: 2,
+				jobs: [
+					{
+						id: "parallel",
+						everyMs: 60_000,
+						targets: { test: { channels: ["C1", "C2"] } },
+						prompt: "check",
+					},
+				],
+			},
+		});
+		await scheduler?.start();
+		await queueJob(store as SchedulerStore, "agent", "parallel");
+		await waitFor(() => started.length === 2);
+
+		assert.equal(maxActive, 2);
+		release?.();
+		await waitFor(() => sent.length === 2);
+		await scheduler?.stop();
+		assert.deepEqual(started.sort(), ["C1", "C2"]);
+	} finally {
+		release?.();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("scheduler stop waits for active queued runs", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-stop-drain-"));
+	let release: (() => void) | undefined;
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		let started = false;
+		let stopped = false;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const blockingHandler: Handler = Object.assign(async (input: Inbound): Promise<Outbound> => {
+			started = true;
+			await gate;
+			return { text: `ok ${input.channel}` };
+		}, {});
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: blockingHandler,
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				jobs: [
+					{
+						id: "drain",
+						everyMs: 60_000,
+						targets: { test: { channels: ["C1"] } },
+						prompt: "drain",
+					},
+				],
+			},
+		});
+		await scheduler?.start();
+		await queueJob(store as SchedulerStore, "agent", "drain");
+		await waitFor(() => started);
+
+		const stop = scheduler?.stop().then(() => {
+			stopped = true;
+		});
+		await sleep(20);
+		assert.equal(stopped, false);
+		release?.();
+		await stop;
+
+		assert.equal(stopped, true);
+		assert.equal(sent.length, 1);
+		assert.equal((await store.jobRuns?.lastForJob({ agent: "agent", id: "drain" }))?.state, "done");
+	} finally {
+		release?.();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("scheduler skips queued runs when the source job is gone", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-gone-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.jobRuns?.create({
+			jobAgent: "agent",
+			jobId: "gone",
+			trace: "job:agent:gone:1:C1",
+			dueAt: Date.now(),
+			targetKey: "C1:C1",
+			adapter: "test",
+			channel: "C1",
+			threadKey: "C1:C1",
+			target: JSON.stringify({ channel: "C1" }),
+		});
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(),
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				jobs: [{ id: "keepalive", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "keep" }],
+			},
+		});
+
+		await scheduler?.start();
+		await waitFor(async () => (await store.jobRuns?.lastForJob({ agent: "agent", id: "gone" }))?.state === "skipped");
+		await scheduler?.stop();
+
+		const run = await store.jobRuns?.lastForJob({ agent: "agent", id: "gone" });
+		assert.equal(run?.output, "job removed");
+		assert.deepEqual(sent, []);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("scheduler still executes queued runs for paused jobs", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-paused-queued-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.jobs?.upsert({
+			id: "paused",
+			agent: "agent",
+			kind: "cron",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			target: JSON.stringify({ test: { channels: ["C1"] } }),
+			prompt: "paused queued",
+			state: "paused",
+			nextAt: Date.now() + 60_000,
+		});
+		await store.jobRuns?.create({
+			jobAgent: "agent",
+			jobId: "paused",
+			trace: "job:agent:paused:1:C1",
+			dueAt: Date.now(),
+			targetKey: "C1:C1",
+			adapter: "test",
+			channel: "C1",
+			threadKey: "C1:C1",
+			target: JSON.stringify({ channel: "C1" }),
+		});
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		const seen: Inbound[] = [];
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(seen),
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 5,
+				jobs: [{ id: "paused", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "paused queued" }],
+			},
+		});
+
+		await scheduler?.start();
+		await waitFor(() => sent.length === 1);
+		await scheduler?.stop();
+
+		const run = await store.jobRuns?.lastForJob({ agent: "agent", id: "paused" });
+		assert.equal(run?.state, "done");
+		assert.equal(seen[0]?.text, "paused queued");
+		assert.equal((await store.jobs?.get({ agent: "agent", id: "paused" }))?.state, "paused");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -338,11 +548,58 @@ test("scheduler fans heartbeat jobs out over scoped known threads", async () => 
 			},
 		});
 		await scheduler?.start();
-		await store.jobs?.runNow({ agent: "agent", id: "follow-up" });
+		await queueJob(store as SchedulerStore, "agent", "follow-up");
 		await waitFor(() => sent.length === 1);
 		await scheduler?.stop();
 		assert.equal(sent[0]?.target.channel, "C1");
 		assert.equal(sent[0]?.target.thread, "111.222");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("scheduler skips overlapping heartbeat runs for the same stored thread", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-heartbeat-overlap-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.threads.getOrCreate({
+			agent: "agent",
+			provider: "test",
+			channel: "C1",
+			actor: "U1",
+			key: "C1:111.222",
+		});
+		await store.jobs?.upsert({
+			id: "follow-up",
+			agent: "agent",
+			kind: "heartbeat",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			scope: JSON.stringify({ test: { channels: ["C1"] } }),
+			prompt: "follow up",
+			state: "active",
+			nextAt: Date.now() + 60_000,
+		});
+		const job = await store.jobs?.get({ agent: "agent", id: "follow-up" });
+		if (!job) throw new Error("missing heartbeat job");
+
+		const first = await enqueueJobRuns({
+			agent: "agent",
+			store: store as SchedulerStore,
+			job,
+			dueAt: Date.now(),
+			skipActiveHeartbeat: true,
+		});
+		const second = await enqueueJobRuns({
+			agent: "agent",
+			store: store as SchedulerStore,
+			job,
+			dueAt: Date.now() + 60_000,
+			skipActiveHeartbeat: true,
+		});
+
+		assert.deepEqual(first, { targets: 1, inserted: 1, skipped: 0 });
+		assert.deepEqual(second, { targets: 1, inserted: 0, skipped: 1 });
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -403,10 +660,20 @@ function handler(seen: Inbound[] = []): Handler {
 	}, {});
 }
 
+async function queueJob(store: SchedulerStore, agent: string, id: string): Promise<void> {
+	const job = await store.jobs.get({ agent, id });
+	if (!job) throw new Error(`missing test job: ${id}`);
+	await enqueueJobRuns({ agent, store, job, dueAt: Date.now() });
+}
+
 async function waitFor(done: () => boolean | Promise<boolean>): Promise<void> {
 	const deadline = Date.now() + 1000;
 	while (!(await done())) {
 		if (Date.now() > deadline) throw new Error("Timed out waiting for scheduler");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await sleep(10);
 	}
+}
+
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, ms));
 }

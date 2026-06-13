@@ -694,7 +694,10 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 		input.logger.warn("app.recovery_calls_unsupported", { agent: input.agent });
 	}
 	if (input.store.jobRuns) {
-		if (input.store.jobRuns.failRunning) {
+		if (input.store.jobRuns.requeueRunning) {
+			const jobRuns = await input.store.jobRuns.requeueRunning({ agent: input.agent, error: restartMessage });
+			if (jobRuns) input.logger.warn("app.requeued_job_runs", { agent: input.agent, jobRuns });
+		} else if (input.store.jobRuns.failRunning) {
 			const jobRuns = await input.store.jobRuns.failRunning({ agent: input.agent, error: restartMessage });
 			if (jobRuns) input.logger.warn("app.recovered_job_runs", { agent: input.agent, jobRuns });
 		} else {

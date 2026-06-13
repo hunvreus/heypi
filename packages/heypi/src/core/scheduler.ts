@@ -2,24 +2,33 @@ import { randomUUID } from "node:crypto";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "../io/handler.js";
 import type { JobConfig, JobSchedule, JobScope, JobTarget, JobTargets } from "../job.js";
 import { transaction } from "../store/transaction.js";
-import type { DeliveryState, Job, JobRunState, SchedulerStore, Store, Thread } from "../store/types.js";
+import type { DeliveryState, Job, JobRun, JobRunState, SchedulerStore, Store, Thread } from "../store/types.js";
 import type { Logger } from "./log.js";
-import { message as errorMessage } from "./log.js";
+import { message as errorMessage, logger } from "./log.js";
 import { nextAt } from "./schedule.js";
 
 const DEFAULT_POLL_MS = 30_000;
 const DEFAULT_LOCK_MS = 10 * 60_000;
+const DEFAULT_MAX_CONCURRENT_RUNS = 1;
 
 export type SchedulerConfig = {
 	jobs?: JobConfig[];
 	pollMs?: number;
 	lockMs?: number;
+	maxConcurrentRuns?: number;
 };
 
 export type Scheduler = {
 	start(): Promise<void>;
 	stop(): Promise<void>;
 };
+
+type QueueJobRuns = SchedulerStore["jobRuns"] & {
+	claim: NonNullable<SchedulerStore["jobRuns"]["claim"]>;
+	hasActiveTarget: NonNullable<SchedulerStore["jobRuns"]["hasActiveTarget"]>;
+};
+
+type QueueSchedulerStore = SchedulerStore & { jobRuns: QueueJobRuns };
 
 export function createScheduler(input: {
 	agent: string;
@@ -35,19 +44,30 @@ export function createScheduler(input: {
 	if (!input.store.jobs || !input.store.jobRuns || !input.store.locks) {
 		throw new Error("scheduled jobs require store.jobs, store.jobRuns, and store.locks");
 	}
-	const store = input.store as SchedulerStore;
+	if (!input.store.jobRuns.claim || !input.store.jobRuns.hasActiveTarget) {
+		throw new Error("scheduled jobs require store.jobRuns claim and active-target support");
+	}
+	const store = input.store as QueueSchedulerStore;
 
 	let stopped = false;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let tickPromise: Promise<void> | undefined;
 	const adapters = new Map(input.adapters.map((adapter) => [adapter.name, adapter]));
+	const owner = `scheduler:${input.agent}:${randomUUID()}`;
+	const activeRuns = new Set<Promise<void>>();
 
 	async function tick(): Promise<void> {
 		const now = Date.now();
 		const due = await store.jobs.due({ agent: input.agent, now });
-		for (const job of due) await runJob(job, now);
+		for (const job of due) {
+			if (stopped) return;
+			await materializeJob(job, now);
+		}
+		if (stopped) return;
+		await claimRuns(now);
 	}
 
-	async function runJob(row: Job | undefined, now: number): Promise<void> {
+	async function materializeJob(row: Job | undefined, now: number): Promise<void> {
 		if (!row) return;
 		const parsed = parseJob(row);
 		if (!parsed.ok) {
@@ -60,7 +80,7 @@ export function createScheduler(input: {
 			await store.jobs.setState({ agent: row.agent, id: row.id }, "paused");
 			return;
 		}
-		const { schedule, scope, targets: routeTargets } = parsed;
+		const { schedule } = parsed;
 		const lockOwner = randomUUID();
 		const lockKey = `job:${row.agent}:${row.id}`;
 		const lock = await store.locks.acquire({
@@ -73,36 +93,67 @@ export function createScheduler(input: {
 			return;
 		}
 		try {
-			const targets = await resolveTargets({
-				store,
-				agent: input.agent,
-				scope,
-				targets: routeTargets,
+			await transaction(input.store, async (inner) => {
+				const tx = inner as SchedulerStore;
+				const result = await enqueueJobRuns({
+					agent: input.agent,
+					store: tx,
+					job: row,
+					dueAt: now,
+					logger: input.logger,
+					skipActiveHeartbeat: true,
+				});
+				if (!result.targets) input.logger.warn("job.no_target", { job: row.id, kind: row.kind });
+				await tx.jobs.finish({ agent: row.agent, id: row.id }, finishResult(schedule, now, row.nextAt));
 			});
-			if (!targets.length) {
-				input.logger.warn("job.no_target", { job: row.id, kind: row.kind });
-				await store.jobs.finish({ agent: row.agent, id: row.id }, finishResult(schedule, now, row.nextAt));
-				return;
-			}
-			for (const resolved of targets) await runTarget(row, resolved, schedule, now);
-			await finishJob(row, finishResult(schedule, now, row.nextAt));
 		} finally {
 			await store.locks.release({ key: lockKey, owner: lockOwner });
 		}
 	}
 
-	async function runTarget(row: Job, resolved: ResolvedTarget, schedule: JobSchedule, dueAt: number): Promise<void> {
-		const trace = `job:${row.agent}:${row.id}:${dueAt}:${resolved.threadKey}`;
-		const run = await store.jobRuns.create({
-			jobAgent: row.agent,
-			jobId: row.id,
-			threadId: resolved.thread?.id,
-			trace,
-		});
-		if (!run.inserted) {
-			input.logger.debug("job.duplicate", { job: row.id, trace });
+	async function claimRuns(now: number): Promise<void> {
+		const limit = input.config?.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
+		const slots = Math.max(0, limit - activeRuns.size);
+		if (!slots) return;
+		const claimed = await store.jobRuns.claim({ agent: input.agent, owner, now, limit: slots });
+		for (const run of claimed) {
+			const task = executeRun(run).finally(() => activeRuns.delete(task));
+			activeRuns.add(task);
+		}
+	}
+
+	async function executeRun(run: JobRun): Promise<void> {
+		const row = await store.jobs.get({ agent: run.jobAgent, id: run.jobId });
+		if (!row) {
+			await finishRun(run.id, {
+				state: "skipped",
+				deliveryState: "none",
+				output: "job removed",
+			});
 			return;
 		}
+		const parsed = parseJob(row);
+		if (!parsed.ok) {
+			input.logger.error("job.invalid_config", {
+				agent: row.agent,
+				job: row.id,
+				field: parsed.field,
+				error: parsed.error,
+			});
+			await store.jobs.setState({ agent: row.agent, id: row.id }, "paused");
+			await finishRun(run.id, { state: "failed", deliveryState: "failed", error: parsed.error });
+			return;
+		}
+		const resolved = await resolvedTargetFromRun(store, run);
+		if (!resolved) {
+			await finishRun(run.id, {
+				state: "failed",
+				deliveryState: "failed",
+				error: "job run is missing target metadata",
+			});
+			return;
+		}
+		const trace = run.trace;
 		input.logger.info("job.start", {
 			job: row.id,
 			trace,
@@ -112,7 +163,7 @@ export function createScheduler(input: {
 		});
 		try {
 			if (row.kind === "heartbeat" && resolved.thread && !(await idleEnough(store, resolved.thread, row))) {
-				await finishRun(run.row.id, {
+				await finishRun(run.id, {
 					state: "skipped",
 					deliveryState: "none",
 					output: "not idle",
@@ -131,10 +182,10 @@ export function createScheduler(input: {
 				thread: resolved.threadKey,
 				text: row.prompt,
 				scheduled: true,
-				data: { job: row.id, kind: row.kind, schedule },
+				data: { job: row.id, kind: row.kind, schedule: parsed.schedule },
 			});
 			if (!out) {
-				await finishRun(run.row.id, {
+				await finishRun(run.id, {
 					state: "skipped",
 					deliveryState: "none",
 					output: "no output",
@@ -142,16 +193,16 @@ export function createScheduler(input: {
 				return;
 			}
 			if (out.silent) {
-				await finishRun(run.row.id, { state: "done", deliveryState: "none", output: out.text });
+				await finishRun(run.id, { state: "done", deliveryState: "none", output: out.text });
 				return;
 			}
 			await send(resolved, out);
-			await finishRun(run.row.id, { state: "done", deliveryState: "delivered", output: out.text });
+			await finishRun(run.id, { state: "done", deliveryState: "delivered", output: out.text });
 			input.logger.info("job.done", { job: row.id, trace });
 		} catch (error) {
 			const msg = errorMessage(error);
 			input.logger.error("job.failed", { job: row.id, trace, error: msg });
-			await finishRun(run.row.id, { state: "failed", deliveryState: "failed", error: msg });
+			await finishRun(run.id, { state: "failed", deliveryState: "failed", error: msg });
 		}
 	}
 
@@ -159,17 +210,7 @@ export function createScheduler(input: {
 		id: string,
 		result: { state: JobRunState; output?: string; error?: string; deliveryState?: DeliveryState },
 	): Promise<void> {
-		await transaction(input.store, async (inner) => {
-			const store = inner as SchedulerStore;
-			await store.jobRuns.finish(id, result);
-		});
-	}
-
-	async function finishJob(row: Job, result: { lastAt: number; nextAt: number | null }): Promise<void> {
-		await transaction(input.store, async (inner) => {
-			const store = inner as SchedulerStore;
-			await store.jobs.finish({ agent: row.agent, id: row.id }, result);
-		});
+		await store.jobRuns.finish(id, result);
 	}
 
 	async function send(target: ResolvedTarget, out: Outbound): Promise<void> {
@@ -185,9 +226,12 @@ export function createScheduler(input: {
 			const loop = async () => {
 				if (stopped) return;
 				try {
-					await tick();
+					tickPromise = tick();
+					await tickPromise;
 				} catch (error) {
 					input.logger.error("job.tick_failed", { error: errorMessage(error) });
+				} finally {
+					tickPromise = undefined;
 				}
 				if (stopped) return;
 				timer = setTimeout(loop, input.config?.pollMs ?? DEFAULT_POLL_MS);
@@ -197,8 +241,68 @@ export function createScheduler(input: {
 		async stop(): Promise<void> {
 			stopped = true;
 			if (timer) clearTimeout(timer);
+			await tickPromise?.catch(() => undefined);
+			while (activeRuns.size) await Promise.allSettled([...activeRuns]);
 		},
 	};
+}
+
+export async function enqueueJobRuns(input: {
+	agent: string;
+	store: Pick<Store, "threads"> & Pick<SchedulerStore, "jobRuns">;
+	job: Job;
+	dueAt?: number;
+	logger?: Logger;
+	skipActiveHeartbeat?: boolean;
+}): Promise<{ targets: number; inserted: number; skipped: number }> {
+	const log = input.logger ?? logger;
+	const parsed = parseJob(input.job);
+	if (!parsed.ok) throw new Error(`invalid job ${parsed.field}: ${parsed.error}`);
+	const dueAt = input.dueAt ?? Date.now();
+	const targets = await resolveTargets({
+		store: input.store,
+		agent: input.agent,
+		scope: parsed.scope,
+		targets: parsed.targets,
+	});
+	let inserted = 0;
+	let skipped = 0;
+	for (const resolved of targets) {
+		const targetKey = resolved.threadKey;
+		if (input.skipActiveHeartbeat && input.job.kind === "heartbeat") {
+			if (!input.store.jobRuns.hasActiveTarget) {
+				throw new Error("heartbeat overlap protection requires store.jobRuns.hasActiveTarget");
+			}
+			if (
+				await input.store.jobRuns.hasActiveTarget({
+					agent: input.job.agent,
+					jobId: input.job.id,
+					targetKey,
+					states: ["queued", "running"],
+				})
+			) {
+				skipped++;
+				log.debug("job.target_active", { job: input.job.id, targetKey });
+				continue;
+			}
+		}
+		const trace = `job:${input.job.agent}:${input.job.id}:${dueAt}:${targetKey}`;
+		const run = await input.store.jobRuns.create({
+			jobAgent: input.job.agent,
+			jobId: input.job.id,
+			threadId: resolved.thread?.id,
+			trace,
+			dueAt,
+			targetKey,
+			adapter: resolved.adapter,
+			channel: resolved.channel,
+			threadKey: resolved.threadKey,
+			target: JSON.stringify(resolved.target),
+		});
+		if (run.inserted) inserted++;
+		else skipped++;
+	}
+	return { targets: targets.length, inserted, skipped };
 }
 
 function finishResult(
@@ -259,7 +363,7 @@ type ResolvedTarget = {
 };
 
 async function resolveTargets(input: {
-	store: Store;
+	store: Pick<Store, "threads">;
 	agent: string;
 	scope?: JobScope;
 	targets?: JobTargets;
@@ -285,6 +389,20 @@ async function resolveTargets(input: {
 		);
 	}
 	return out;
+}
+
+async function resolvedTargetFromRun(store: Store, run: JobRun): Promise<ResolvedTarget | undefined> {
+	if (!run.adapter || !run.channel || !run.threadKey || !run.target) return undefined;
+	const target = parseJson<AdapterTarget>(run.target);
+	if (!target.ok || !target.value) return undefined;
+	const thread = run.threadId ? await store.threads.get(run.threadId) : undefined;
+	return {
+		adapter: run.adapter,
+		channel: run.channel,
+		threadKey: run.threadKey,
+		target: target.value,
+		thread,
+	};
 }
 
 function expandTargets(targets: JobTargets): ResolvedTarget[] {

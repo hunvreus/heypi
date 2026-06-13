@@ -271,7 +271,7 @@ heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
 | --- | --- |
 | `list` | Lists stored jobs, including last-run state when available. |
 | `show <id>` | Shows one stored job and its last run. |
-| `run <id>` | Marks a job due now. |
+| `run <id>` | Queues one immediate run for each current job target. |
 | `pause <id>` | Sets a job state to `paused`. |
 | `resume <id>` | Sets a job state to `active`. |
 
@@ -282,7 +282,7 @@ heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
 | `--limit <count>` | `list` | Maximum rows. Defaults to `100`. |
 | `--json` | `list`, `show` | Print raw JSON. |
 
-`jobs run` does not execute the job inside the CLI process. It only moves `nextAt` to now; a running heypi app executes the job on the next scheduler tick.
+`jobs run` does not execute the job inside the CLI process. It inserts queued `job_run` rows for the job's current targets; a running heypi app claims and executes them without changing the job's normal schedule.
 
 Example:
 

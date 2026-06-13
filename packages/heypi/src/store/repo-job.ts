@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, lte, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lte, notInArray, type SQL, sql } from "drizzle-orm";
 import { job, jobRun } from "../db/schema.js";
 import type { JobState } from "../job.js";
 import type { Db } from "./db.js";
@@ -102,12 +102,6 @@ export class JobRepo {
 		await this.db.update(job).set({ state, updatedAt: Date.now() }).where(jobWhere(key));
 	}
 
-	async runNow(input: { agent?: string; id: string }): Promise<void> {
-		const key = await this.key(input);
-		if (!key) return;
-		await this.db.update(job).set({ nextAt: Date.now(), updatedAt: Date.now() }).where(jobWhere(key));
-	}
-
 	async finish(
 		input: { agent: string; id: string },
 		result: { nextAt: number | null; lastAt: number },
@@ -140,9 +134,18 @@ export class JobRunRepo {
 		jobId: string;
 		threadId?: string;
 		trace: string;
+		dueAt?: number;
+		targetKey?: string;
+		adapter?: string;
+		channel?: string;
+		threadKey?: string;
+		target?: string | null;
+		availableAt?: number;
 	}): Promise<{ row: JobRun; inserted: boolean }> {
 		const id = randomUUID();
 		const now = Date.now();
+		const dueAt = input.dueAt ?? now;
+		const targetKey = input.targetKey ?? "";
 		await this.db
 			.insert(jobRun)
 			.values({
@@ -151,15 +154,69 @@ export class JobRunRepo {
 				jobId: input.jobId,
 				threadId: input.threadId,
 				trace: input.trace,
-				state: "running",
+				dueAt,
+				targetKey,
+				adapter: input.adapter,
+				channel: input.channel,
+				threadKey: input.threadKey,
+				target: input.target,
+				availableAt: input.availableAt ?? now,
+				attempts: 0,
+				state: "queued",
 				deliveryState: "pending",
-				startedAt: now,
+				createdAt: now,
+				startedAt: 0,
 			})
 			.onConflictDoNothing();
 		const rows = await this.db.select().from(jobRun).where(eq(jobRun.trace, input.trace)).limit(1);
 		const row = rows[0];
 		if (!row) throw new Error("job run insert failed");
 		return { row, inserted: row.id === id };
+	}
+
+	async claim(input: { agent: string; owner: string; now: number; limit?: number }): Promise<JobRun[]> {
+		const rows = await this.db
+			.select()
+			.from(jobRun)
+			.where(and(eq(jobRun.jobAgent, input.agent), eq(jobRun.state, "queued"), lte(jobRun.availableAt, input.now)))
+			.orderBy(asc(jobRun.availableAt), asc(jobRun.createdAt))
+			.limit(clampLimit(input.limit, 1, 100));
+		if (!rows.length) return [];
+		const ids = rows.map((row) => row.id);
+		const claimed = await this.db
+			.update(jobRun)
+			.set({
+				state: "running",
+				claimedBy: input.owner,
+				startedAt: input.now,
+				attempts: sql`${jobRun.attempts} + 1`,
+			})
+			.where(and(eq(jobRun.state, "queued"), inArray(jobRun.id, ids)))
+			.returning();
+		return claimed;
+	}
+
+	async hasActiveTarget(input: {
+		agent: string;
+		jobId: string;
+		targetKey: string;
+		states?: JobRunState[];
+	}): Promise<boolean> {
+		const states = input.states ?? ["queued", "running"];
+		if (!states.length) return false;
+		const rows = await this.db
+			.select({ id: jobRun.id })
+			.from(jobRun)
+			.where(
+				and(
+					eq(jobRun.jobAgent, input.agent),
+					eq(jobRun.jobId, input.jobId),
+					eq(jobRun.targetKey, input.targetKey),
+					inArray(jobRun.state, states),
+				),
+			)
+			.limit(1);
+		return rows.length > 0;
 	}
 
 	async finish(
@@ -173,9 +230,25 @@ export class JobRunRepo {
 				output: input.output,
 				error: input.error,
 				deliveryState: input.deliveryState ?? "none",
+				claimedBy: null,
 				endedAt: Date.now(),
 			})
 			.where(eq(jobRun.id, id));
+	}
+
+	async requeue(input: { id: string; availableAt?: number; error?: string }): Promise<void> {
+		await this.db
+			.update(jobRun)
+			.set({
+				state: "queued",
+				availableAt: input.availableAt ?? Date.now(),
+				claimedBy: null,
+				error: input.error,
+				deliveryState: "pending",
+				startedAt: 0,
+				endedAt: null,
+			})
+			.where(eq(jobRun.id, input.id));
 	}
 
 	async lastForJob(input: { agent: string; id: string }): Promise<JobRun | undefined> {
@@ -183,23 +256,44 @@ export class JobRunRepo {
 			.select()
 			.from(jobRun)
 			.where(and(eq(jobRun.jobAgent, input.agent), eq(jobRun.jobId, input.id)))
-			.orderBy(desc(jobRun.startedAt))
+			.orderBy(desc(jobRun.createdAt), desc(jobRun.startedAt))
 			.limit(1);
 		return rows[0];
 	}
 
-	async failRunning(input: { agent: string; error: string }): Promise<number> {
+	async cancelQueuedForJob(input: { agent: string; id: string; reason?: string }): Promise<number> {
 		const rows = await this.db
 			.update(jobRun)
 			.set({
-				state: "failed",
-				error: input.error,
-				deliveryState: "failed",
+				state: "cancelled",
+				error: input.reason,
+				deliveryState: "none",
 				endedAt: Date.now(),
+			})
+			.where(and(eq(jobRun.jobAgent, input.agent), eq(jobRun.jobId, input.id), eq(jobRun.state, "queued")))
+			.returning({ id: jobRun.id });
+		return rows.length;
+	}
+
+	async requeueRunning(input: { agent: string; error?: string }): Promise<number> {
+		const rows = await this.db
+			.update(jobRun)
+			.set({
+				state: "queued",
+				error: input.error,
+				deliveryState: "pending",
+				claimedBy: null,
+				availableAt: Date.now(),
+				startedAt: 0,
+				endedAt: null,
 			})
 			.where(and(eq(jobRun.jobAgent, input.agent), eq(jobRun.state, "running")))
 			.returning({ id: jobRun.id });
 		return rows.length;
+	}
+
+	async failRunning(input: { agent: string; error: string }): Promise<number> {
+		return await this.requeueRunning(input);
 	}
 }
 

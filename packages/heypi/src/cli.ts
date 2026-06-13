@@ -13,6 +13,7 @@ import {
 	readAdminServerDescriptors,
 } from "./admin/auth.js";
 import { COMMANDS } from "./core/commands.js";
+import { enqueueJobRuns } from "./core/scheduler.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -27,6 +28,7 @@ import { ApprovalBypassRepo } from "./store/repo-approval-bypass.js";
 import { CallRepo } from "./store/repo-call.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 import { LockRepo } from "./store/repo-lock.js";
+import { ThreadRepo } from "./store/repo-thread.js";
 import { TurnRepo } from "./store/repo-turn.js";
 
 const VERSION = packageVersion();
@@ -635,8 +637,20 @@ async function jobsRun(flags: Flags, id: string): Promise<void> {
 	const repos = jobRepos(flags);
 	const job = await repos.jobs.get({ agent: stringFlag(flags, "agent"), id });
 	if (!job) throw new Error(`job not found: ${id}`);
-	await repos.jobs.runNow({ agent: job.agent, id });
-	line(ok(`job ${id} marked due; a running heypi app will execute it on the next scheduler tick`));
+	const dueAt = Date.now();
+	const result = await enqueueJobRuns({
+		agent: job.agent,
+		store: { threads: repos.threads, jobRuns: repos.runs },
+		job,
+		dueAt,
+		skipActiveHeartbeat: true,
+	});
+	const skipped = result.skipped ? `, skipped ${result.skipped}` : "";
+	line(
+		ok(
+			`job ${id} queued ${result.inserted}/${result.targets} target(s)${skipped}; a running heypi app will execute them`,
+		),
+	);
 }
 
 async function approvalsList(flags: Flags): Promise<void> {
@@ -710,9 +724,9 @@ async function approvalBypassesList(flags: Flags): Promise<void> {
 	);
 }
 
-function jobRepos(flags: Flags): { jobs: JobRepo; runs: JobRunRepo } {
+function jobRepos(flags: Flags): { jobs: JobRepo; runs: JobRunRepo; threads: ThreadRepo } {
 	const db = dbFor(requiredFlag(flags, "db"));
-	return { jobs: new JobRepo(db), runs: new JobRunRepo(db) };
+	return { jobs: new JobRepo(db), runs: new JobRunRepo(db), threads: new ThreadRepo(db) };
 }
 
 function approvalRepo(flags: Flags): ApprovalRepo {

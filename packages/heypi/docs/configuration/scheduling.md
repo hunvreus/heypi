@@ -9,6 +9,8 @@ A scheduled job creates a normal heypi turn. It uses the same agent, runtime, to
 
 Jobs run inside the heypi Node process. Keep the process running for scheduled work to fire.
 
+Scheduled turns use the same approval policy as chat turns. If a scheduled turn reaches an approval-gated tool, heypi creates a normal pending approval and waits for approve, deny, or expiry.
+
 If a scheduled turn returns exactly `[SILENT]`, heypi records the turn without sending a chat message. Use this when the job should only act through tools or stay quiet when there is nothing useful to report.
 
 ## Config
@@ -35,7 +37,8 @@ createHeypi({
 | --- | --- | --- | --- |
 | `jobs` | No | `[]` | Scheduled job definitions. |
 | `scheduler.pollMs` | No | `30_000` | How often the scheduler checks for due jobs. |
-| `scheduler.lockMs` | No | `600_000` | Lock TTL used while a job run is being claimed. |
+| `scheduler.lockMs` | No | `600_000` | Lock TTL used while a due job is materialized into queued runs. |
+| `scheduler.maxConcurrentRuns` | No | `1` | Maximum queued scheduled targets to execute concurrently. Increase only when the store/runtime can tolerate parallel scheduled turns. |
 
 Job options:
 
@@ -92,11 +95,17 @@ On startup, heypi syncs code-defined jobs for the current agent:
 - removed jobs are paused,
 - manual CLI pause/resume state is preserved unless the job config explicitly sets `state`.
 
-The scheduler records job definitions and run attempts in SQLite. It uses durable locks to avoid duplicate execution and idempotent event IDs for each job target.
+The scheduler records job definitions and queued run attempts in SQLite. Due jobs are materialized into durable `job_run` rows, then worker slots claim queued rows up to `scheduler.maxConcurrentRuns`.
+
+Pausing a job stops future due-run materialization but does not cancel already queued runs. Removing a job from config pauses its stored definition during sync; if a queued run later has no source job row, the run is marked `skipped` with `job removed`.
+
+Each scheduled target gets a stable trace id. A queued or running heartbeat for the same job and stored thread prevents another overlapping heartbeat for that target.
 
 Target failures are recorded as failed `job_run` rows. The job cursor still advances, so delivery failures are visible in history but are not retried automatically by the scheduler.
 
-Custom stores that support scheduling must provide `jobs`, `jobRuns`, and `locks`. They should also implement `transaction()` so job run updates and job cursor updates can commit atomically.
+If the process restarts with a scheduled run marked `running`, startup recovery returns it to the queued state for the scheduler to try again. Delivery is at least once: if the process exits after sending to an adapter but before recording delivery state, the persisted run state may be conservative.
+
+Custom stores that support scheduling must provide `jobs`, `jobRuns`, and `locks`. `jobRuns` must support queued-run claiming and active-target checks. Stores should also implement `transaction()` so job run creation and job cursor updates can commit atomically.
 
 ## Not included
 

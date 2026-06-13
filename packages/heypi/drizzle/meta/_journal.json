@@ -22,6 +22,13 @@
       "when": 1781259976262,
       "tag": "0002_approval_bypass",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781326505847,
+      "tag": "0003_steep_anthem",
+      "breakpoints": true
     }
   ]
 }

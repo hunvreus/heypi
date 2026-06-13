@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+- Changed scheduled jobs to materialize durable queued `job_run` rows and execute them through scheduler worker slots instead of running every due target inline during the scheduler tick.
+- Changed `heypi jobs run` to enqueue immediate job runs for current targets without mutating `job.nextAt`, preserving recurring schedule anchors.
+- Changed SQLite startup recovery for running scheduled job runs to requeue them instead of marking them failed.
+
+### Fixed
+- Fixed heartbeat jobs being able to overlap for the same job and stored thread while an earlier run was still queued or running.
+- Fixed clean scheduler shutdown to wait for active scheduled runs before returning.
+
 ## [0.1.4] - 2026-06-12
 
 ### Breaking

@@ -854,6 +854,12 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			threadId: thread.id,
 			trace: "job:default:daily:stale",
 		});
+		await store.jobRuns?.claim({
+			agent: "default",
+			owner: "dead-process",
+			now: Date.now(),
+			limit: 1,
+		});
 		await store.locks?.acquire({ key: `thread:${thread.id}`, owner: "dead-process" });
 		const otherThread = await store.threads.getOrCreate({
 			agent: "other",
@@ -909,7 +915,7 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 		const recovered = (await store.turns.listForThread(thread.id)).find((row) => row.id === turn.id);
 		assert.equal(recovered?.state, "failed");
 		assert.equal((await store.calls.get(call.id))?.state, "failed");
-		assert.equal((await store.jobRuns?.lastForJob({ agent: "default", id: "daily" }))?.state, "failed");
+		assert.equal((await store.jobRuns?.lastForJob({ agent: "default", id: "daily" }))?.state, "queued");
 		assert.equal(jobRun?.inserted, true);
 		assert.equal(await store.locks?.get(`thread:${thread.id}`), undefined);
 		const other = (await store.turns.listForThread(otherThread.id)).find((row) => row.id === otherTurn.id);
@@ -952,6 +958,7 @@ test("createHeypi warns when store recovery capabilities are unsupported", async
 		await store.locks?.acquire({ key: `thread:${thread.id}`, owner: "dead-process" });
 		store.locks!.clear = undefined;
 		store.calls.failRunning = undefined;
+		store.jobRuns!.requeueRunning = undefined;
 		store.jobRuns!.failRunning = undefined;
 		const warnings: Record<string, unknown>[] = [];
 		const adapter: Adapter = { name: "test", kind: "test", start: async () => undefined };

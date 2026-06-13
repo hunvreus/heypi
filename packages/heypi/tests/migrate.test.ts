@@ -104,6 +104,16 @@ test("migrate creates the current baseline schema", async () => {
 			"delivery_state",
 			"started_at",
 			"ended_at",
+			"due_at",
+			"target_key",
+			"adapter",
+			"channel",
+			"thread_key",
+			"target",
+			"available_at",
+			"claimed_by",
+			"attempts",
+			"created_at",
 		]);
 		assert.ok((await indexes(db, "lock")).includes("lock_expires_idx"));
 	} finally {

@@ -94,7 +94,7 @@ export const store: Store = {
 };
 ```
 
-The store persists operational state: threads, messages, turns, calls, approvals, jobs, job runs, and locks. If scheduling is enabled, provide `jobs`, `jobRuns`, and `locks`. For multi-instance deployments, locks must be durable and shared.
+The store persists operational state: threads, messages, turns, calls, approvals, jobs, queued job runs, and locks. If scheduling is enabled, provide `jobs`, `jobRuns`, and `locks`; `jobRuns` must support queued-run claiming and active-target checks. Job run rows are both queue items and history. For multi-instance deployments, locks and queued-run claims must be durable and shared.
 
 ## Pi extensions
 

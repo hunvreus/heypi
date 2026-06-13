@@ -272,6 +272,7 @@ test("cli db migrate and jobs commands operate on sqlite store", async () => {
 			agent: "test",
 			kind: "heartbeat",
 			schedule: JSON.stringify({ everyMs: 60_000 }),
+			target: JSON.stringify({ test: { channels: ["C1"] } }),
 			prompt: "check in",
 			state: "active",
 			nextAt: Date.now() + 60_000,
@@ -290,9 +291,12 @@ test("cli db migrate and jobs commands operate on sqlite store", async () => {
 		assert.equal((await store.jobs?.get({ agent: "test", id: "daily" }))?.state, "paused");
 		assert.match(cli(["jobs", "resume", "daily", "--db", path, "--agent", "test"]), /ok: job daily active/);
 		assert.equal((await store.jobs?.get({ agent: "test", id: "daily" }))?.state, "active");
-		assert.match(cli(["jobs", "run", "daily", "--db", path, "--agent", "test"]), /marked due/);
-		const job = await store.jobs?.get({ agent: "test", id: "daily" });
-		assert.ok(job?.nextAt && job.nextAt <= Date.now());
+		const beforeRun = (await store.jobs?.get({ agent: "test", id: "daily" }))?.nextAt;
+		assert.match(cli(["jobs", "run", "daily", "--db", path, "--agent", "test"]), /queued 1\/1 target/);
+		const run = await store.jobRuns?.lastForJob({ agent: "test", id: "daily" });
+		assert.equal(run?.state, "queued");
+		assert.equal((await store.jobs?.get({ agent: "test", id: "daily" }))?.nextAt, beforeRun);
+		assert.match(cli(["jobs", "run", "daily", "--db", path, "--agent", "test"]), /queued 0\/1 target.*skipped 1/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
