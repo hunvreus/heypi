@@ -71,6 +71,9 @@
 	- Decide whether to add labels, branches, or pull requests.
 	- Keep write-side GitHub tokens in host-side custom tools, not runtime containers.
 - Improve automation UX.
+	- Fix `run now` so it inserts a one-off `jobRun` directly instead of mutating `job.nextAt`, preserving recurring schedule anchors.
+	- Define scheduled approval behavior, including an option to auto-deny approval-gated calls instead of parking a scheduled run indefinitely.
+	- Prevent overlapping heartbeat runs for the same job and stored thread.
 	- Add named webhook subscriptions with route, auth, event filters, prompt templates, delivery target, enabled/disabled state, and last-run status.
 	- Add automation templates for common team workflows such as incident triage, PR review, deploy verification, docs drift, and daily or weekly digests.
 	- Add trusted script preprocessing for jobs and webhook subscriptions where script output becomes compact turn context before the agent runs.
