@@ -10,19 +10,19 @@ Managed skills are off by default.
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	// ...adapters, agent, runtime
-	adapters: [
-		slack({
-			// ...Slack auth and delivery config
-			permissions: { approvers: { users: ["U123456"], groups: ["S123456"] } },
-		}),
-	],
-	skills: {
-		enabled: true,
-		scope: "channel",
-		writePolicy: "approvers",
-	},
+  state: { root: "./state" },
+  // ...adapters, agent, runtime
+  adapters: [
+    slack({
+      // ...Slack auth and delivery config
+      permissions: { approvers: { users: ["U123456"], groups: ["S123456"] } },
+    }),
+  ],
+  skills: {
+    enabled: true,
+    scope: "channel",
+    writePolicy: "approvers",
+  },
 });
 ```
 

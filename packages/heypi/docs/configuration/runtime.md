@@ -6,11 +6,11 @@ Runtime config controls where bash commands, file operations, and code execution
 
 ```ts
 createHeypi({
-	runtime: {
-		root: workspace("./workspace"),
-		name: "just-bash",
-	},
-	// ...state, adapters, agent
+  runtime: {
+    root: workspace("./workspace"),
+    name: "just-bash",
+  },
+  // ...state, adapters, agent
 });
 ```
 

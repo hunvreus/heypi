@@ -6,21 +6,21 @@ Scope controls which chats and users share runtime workspace files, attachments,
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	// ...adapters, agent
-	scope: "channel", // default: "channel" | "user" | "adapter" | "agent"
-	runtime: {
-		root: "./workspace",
-		// scope: "user", // optional runtime/workspace override
-	},
-	memory: {
-		enabled: true,
-		scope: "user", // optional memory override
-	},
-	skills: {
-		enabled: true,
-		scope: "channel", // optional skills override
-	},
+  state: { root: "./state" },
+  // ...adapters, agent
+  scope: "channel", // default: "channel" | "user" | "adapter" | "agent"
+  runtime: {
+    root: "./workspace",
+    // scope: "user", // optional runtime/workspace override
+  },
+  memory: {
+    enabled: true,
+    scope: "user", // optional memory override
+  },
+  skills: {
+    enabled: true,
+    scope: "channel", // optional skills override
+  },
 });
 ```
 

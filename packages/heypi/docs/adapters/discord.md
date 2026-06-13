@@ -98,22 +98,22 @@ Use `heypi discord observe` to capture exact guild, channel, user, role, and job
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	adapters: [
-		discord({
-			token: process.env.DISCORD_BOT_TOKEN!,
-			clientId: process.env.DISCORD_CLIENT_ID!,
-			allow: {
-				channels: ["234567890123456789"],
-				users: ["345678901234567890"],
-				groups: ["456789012345678901"],
-				bots: ["567890123456789012"],
-				dms: true,
-			},
-			trigger: "mention",
-			threadTrigger: "message",
-		}),
-	],
+  state: { root: "./state" },
+  adapters: [
+    discord({
+      token: process.env.DISCORD_BOT_TOKEN!,
+      clientId: process.env.DISCORD_CLIENT_ID!,
+      allow: {
+        channels: ["234567890123456789"],
+        users: ["345678901234567890"],
+        groups: ["456789012345678901"],
+        bots: ["567890123456789012"],
+        dms: true,
+      },
+      trigger: "mention",
+      threadTrigger: "message",
+    }),
+  ],
 });
 ```
 

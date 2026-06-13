@@ -14,15 +14,15 @@ npm install @hunvreus/heypi
 import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
-	state: { root: "./state" },
-	adapters: [
-		slack({
-			botToken: process.env.SLACK_BOT_TOKEN!,
-			appToken: process.env.SLACK_APP_TOKEN!,
-		}),
-	],
-	agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
-	runtime: { name: "just-bash", root: workspace("./workspace") },
+  state: { root: "./state" },
+  adapters: [
+    slack({
+      botToken: process.env.SLACK_BOT_TOKEN!,
+      appToken: process.env.SLACK_APP_TOKEN!,
+    }),
+  ],
+  agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
+  runtime: { name: "just-bash", root: workspace("./workspace") },
 });
 
 await runHeypi(app);

@@ -24,16 +24,16 @@ import { createHeypi, workspace } from "@hunvreus/heypi";
 import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 
 createHeypi({
-	// ...state, adapters, agent
-	runtime: {
-		root: workspace("./workspace"),
-		scope: "channel",
-		provider: dockerRuntime({
-			image: "debian:bookworm-slim",
-			network: "none",
-			idleMs: 10 * 60 * 1000,
-		}),
-	},
+  // ...state, adapters, agent
+  runtime: {
+    root: workspace("./workspace"),
+    scope: "channel",
+    provider: dockerRuntime({
+      image: "debian:bookworm-slim",
+      network: "none",
+      idleMs: 10 * 60 * 1000,
+    }),
+  },
 });
 ```
 
@@ -53,19 +53,19 @@ Use `network: "bridge"` only when the agent needs network access.
 
 ```ts
 dockerRuntime({
-	image: "debian:bookworm-slim",
-	network: "none",
-	idleMs: 10 * 60 * 1000,
-	timeoutMs: 120_000,
-	env: { NODE_ENV: "production" },
-	labels: { "com.example.app": "ops-agent" },
-	user: "1000:1000",
-	extraRunArgs: ["--cpus", "1"],
-	limits: {
-		maxFileBytes: 1_000_000,
-		maxScanBytes: 5_000_000,
-		maxEntries: 10_000,
-	},
+  image: "debian:bookworm-slim",
+  network: "none",
+  idleMs: 10 * 60 * 1000,
+  timeoutMs: 120_000,
+  env: { NODE_ENV: "production" },
+  labels: { "com.example.app": "ops-agent" },
+  user: "1000:1000",
+  extraRunArgs: ["--cpus", "1"],
+  limits: {
+    maxFileBytes: 1_000_000,
+    maxScanBytes: 5_000_000,
+    maxEntries: 10_000,
+  },
 });
 ```
 

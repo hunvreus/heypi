@@ -6,8 +6,8 @@
 
 ```ts
 createHeypi({
-	task: { busy: "steer", cancel: "initiator" },
-	// ...state, adapters, agent, runtime
+  task: { busy: "steer", cancel: "initiator" },
+  // ...state, adapters, agent, runtime
 });
 ```
 
@@ -43,12 +43,12 @@ Cancellation is enforced server-side. Shared chat surfaces may show cancel contr
 
 ```ts
 createHeypi({
-	messages: {
-		busySteer: "Got it. I'll include that.",
-		error: "Something went wrong. Ask an admin to check logs.",
-		runtimeStarting: "Preparing runtime...",
-	},
-	// ...state, adapters, agent, runtime
+  messages: {
+    busySteer: "Got it. I'll include that.",
+    error: "Something went wrong. Ask an admin to check logs.",
+    runtimeStarting: "Preparing runtime...",
+  },
+  // ...state, adapters, agent, runtime
 });
 ```
 

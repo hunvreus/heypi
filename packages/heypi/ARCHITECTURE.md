@@ -68,11 +68,11 @@ HTTP adapters register routes on the shared Node listener. Routes use the top-le
 
 ```ts
 type Adapter = {
-	name: string;
-	kind: string;
-	start(input: AdapterStart): Promise<void>;
-	send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
-	stop?(): Promise<void>;
+  name: string;
+  kind: string;
+  start(input: AdapterStart): Promise<void>;
+  send?(target: AdapterTarget, out: Outbound, input?: AdapterStart): Promise<void>;
+  stop?(): Promise<void>;
 };
 ```
 

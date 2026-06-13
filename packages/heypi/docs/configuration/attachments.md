@@ -6,11 +6,11 @@ Attachments let the agent receive user files and send generated runtime files ba
 
 ```ts
 createHeypi({
-	attachments: {
-		maxBytes: 25_000_000,
-		process: { documents: true },
-	},
-	// ...state, adapters, agent, runtime
+  attachments: {
+    maxBytes: 25_000_000,
+    process: { documents: true },
+  },
+  // ...state, adapters, agent, runtime
 });
 ```
 
@@ -34,15 +34,15 @@ Enable document conversion when the model should inspect PDFs, Office files, or 
 
 ```ts
 createHeypi({
-	attachments: {
-		process: {
-			documents: {
-				timeoutMs: 15_000,
-				maxOutputBytes: 1_000_000,
-			},
-		},
-	},
-	// ...state, adapters, agent, runtime
+  attachments: {
+    process: {
+      documents: {
+        timeoutMs: 15_000,
+        maxOutputBytes: 1_000_000,
+      },
+    },
+  },
+  // ...state, adapters, agent, runtime
 });
 ```
 
@@ -87,7 +87,7 @@ The `attach` core tool marks a runtime file for upload with the final reply. Fil
 
 ```ts
 agentFrom("./agent", {
-	tools: [...coreTools({ attach: true })],
+  tools: [...coreTools({ attach: true })],
 });
 ```
 

@@ -15,17 +15,17 @@ If a scheduled turn returns exactly `[SILENT]`, heypi records the turn without s
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	// ...adapters, agent, runtime
-	jobs: [
-		{
-			id: "weekly-ops",
-			kind: "cron",
-			schedule: { cron: "0 9 * * 1", timezone: "America/Los_Angeles" },
-			targets: { slack: { channels: ["C123"] } },
-			prompt: "Run the weekly ops review.",
-		},
-	],
+  state: { root: "./state" },
+  // ...adapters, agent, runtime
+  jobs: [
+    {
+      id: "weekly-ops",
+      kind: "cron",
+      schedule: { cron: "0 9 * * 1", timezone: "America/Los_Angeles" },
+      targets: { slack: { channels: ["C123"] } },
+      prompt: "Run the weekly ops review.",
+    },
+  ],
 });
 ```
 
@@ -67,10 +67,10 @@ Explicit targets can address channels or users:
 
 ```ts
 targets: {
-	acme: {
-		channels: ["C123", "C456"],
-		users: ["U123"],
-	},
+  acme: {
+    channels: ["C123", "C456"],
+    users: ["U123"],
+  },
 }
 ```
 
@@ -78,7 +78,7 @@ Scoped heartbeats fan out over stored threads matching the adapter filters:
 
 ```ts
 scope: {
-	acme: { channels: ["C123"] },
+  acme: { channels: ["C123"] },
 }
 ```
 

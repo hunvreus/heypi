@@ -12,17 +12,17 @@ Use a custom adapter for a new event source: another chat platform, an internal 
 import type { Adapter } from "@hunvreus/heypi/adapter";
 
 export const adapter: Adapter = {
-	name: "internal",
-	kind: "internal",
-	async start({ handler }) {
-		// Translate provider events into handler.message(...)
-	},
-	async send(target, output) {
-		// Send replies, approvals, progress, or attachments back.
-	},
-	async stop() {
-		// Close sockets, pollers, or HTTP clients.
-	},
+  name: "internal",
+  kind: "internal",
+  async start({ handler }) {
+    // Translate provider events into handler.message(...)
+  },
+  async send(target, output) {
+    // Send replies, approvals, progress, or attachments back.
+  },
+  async stop() {
+    // Close sockets, pollers, or HTTP clients.
+  },
 };
 ```
 
@@ -36,18 +36,18 @@ Use a custom runtime provider for a new execution backend: a VM manager, remote 
 import type { RuntimeProvider } from "@hunvreus/heypi/runtime";
 
 export const provider: RuntimeProvider = {
-	get(scope) {
-		return {
-			name: "internal-runtime",
-			root: scope.path,
-			async bash(input) {
-				// Execute inside the scoped backend.
-			},
-		};
-	},
-	async stop(scope) {
-		// Stop one scoped backend, or all when scope is omitted.
-	},
+  get(scope) {
+    return {
+      name: "internal-runtime",
+      root: scope.path,
+      async bash(input) {
+        // Execute inside the scoped backend.
+      },
+    };
+  },
+  async stop(scope) {
+    // Stop one scoped backend, or all when scope is omitted.
+  },
 };
 ```
 
@@ -61,13 +61,13 @@ Use a custom attachment store when files need to live outside the runtime worksp
 import type { AttachmentStore } from "@hunvreus/heypi/attachments";
 
 export const attachments: AttachmentStore = {
-	maxBytes: 25_000_000,
-	async save(input) {
-		// Store inbound provider bytes and return an Attachment.
-	},
-	async resolve(input, scope) {
-		// Resolve an outbound attachment for upload.
-	},
+  maxBytes: 25_000_000,
+  async save(input) {
+    // Store inbound provider bytes and return an Attachment.
+  },
+  async resolve(input, scope) {
+    // Resolve an outbound attachment for upload.
+  },
 };
 ```
 
@@ -81,16 +81,16 @@ Use a custom store when SQLite is not enough, especially for multi-instance depl
 import type { Store } from "@hunvreus/heypi/store";
 
 export const store: Store = {
-	threads,
-	messages,
-	turns,
-	calls,
-	approvals,
-	locks,
-	async setup() {},
-	async transaction(fn) {
-		// Run related writes atomically.
-	},
+  threads,
+  messages,
+  turns,
+  calls,
+  approvals,
+  locks,
+  async setup() {},
+  async transaction(fn) {
+    // Run related writes atomically.
+  },
 };
 ```
 

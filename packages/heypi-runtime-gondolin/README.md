@@ -25,14 +25,14 @@ import { createHeypi, workspace } from "@hunvreus/heypi";
 import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";
 
 createHeypi({
-	// ...state, adapters, agent
-	runtime: {
-		root: workspace("./workspace"),
-		scope: "channel",
-		provider: gondolinRuntime({
-			idleMs: 10 * 60 * 1000,
-		}),
-	},
+  // ...state, adapters, agent
+  runtime: {
+    root: workspace("./workspace"),
+    scope: "channel",
+    provider: gondolinRuntime({
+      idleMs: 10 * 60 * 1000,
+    }),
+  },
 });
 ```
 
@@ -51,23 +51,23 @@ createHeypi({
 
 ```ts
 gondolinRuntime({
-	idleMs: 10 * 60 * 1000,
-	timeoutMs: 120_000,
-	env: { NODE_ENV: "production" },
-	mounts: {
-		"/shared": "./shared",
-	},
-	secrets: {
-		EXAMPLE_API_KEY: {
-			value: process.env.EXAMPLE_API_KEY!,
-			hosts: ["api.example.com"],
-		},
-	},
-	limits: {
-		maxFileBytes: 1_000_000,
-		maxScanBytes: 5_000_000,
-		maxEntries: 10_000,
-	},
+  idleMs: 10 * 60 * 1000,
+  timeoutMs: 120_000,
+  env: { NODE_ENV: "production" },
+  mounts: {
+    "/shared": "./shared",
+  },
+  secrets: {
+    EXAMPLE_API_KEY: {
+      value: process.env.EXAMPLE_API_KEY!,
+      hosts: ["api.example.com"],
+    },
+  },
+  limits: {
+    maxFileBytes: 1_000_000,
+    maxScanBytes: 5_000_000,
+    maxEntries: 10_000,
+  },
 });
 ```
 

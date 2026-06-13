@@ -101,21 +101,21 @@ heypi syncs Telegram's bot command menu from its built-in command catalog on ada
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	adapters: [
-		telegram({
-			token: process.env.TELEGRAM_BOT_TOKEN!,
-			mode: "polling",
-			allow: {
-				chats: ["-1001234567890"],
-				users: ["8734062810"],
-				bots: ["123456789"],
-				dms: true,
-			},
-			trigger: "mention",
-			threadTrigger: "message",
-		}),
-	],
+  state: { root: "./state" },
+  adapters: [
+    telegram({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
+      mode: "polling",
+      allow: {
+        chats: ["-1001234567890"],
+        users: ["8734062810"],
+        bots: ["123456789"],
+        dms: true,
+      },
+      trigger: "mention",
+      threadTrigger: "message",
+    }),
+  ],
 });
 ```
 
@@ -123,21 +123,21 @@ Webhook mode registers an HTTP route through heypi's shared HTTP server:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	http: { port: 3000 },
-	adapters: [
-		telegram({
-			token: process.env.TELEGRAM_BOT_TOKEN!,
-			mode: "webhook",
-			webhook: {
-				secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
-			},
-			allow: {
-				chats: ["-1001234567890"],
-				users: ["8734062810"],
-			},
-		}),
-	],
+  state: { root: "./state" },
+  http: { port: 3000 },
+  adapters: [
+    telegram({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
+      mode: "webhook",
+      webhook: {
+        secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
+      },
+      allow: {
+        chats: ["-1001234567890"],
+        users: ["8734062810"],
+      },
+    }),
+  ],
 });
 ```
 

@@ -149,17 +149,17 @@ Typical bot events:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	adapters: [
-		slack({
-			mode: "socket",
-			botToken: process.env.SLACK_BOT_TOKEN!,
-			appToken: process.env.SLACK_APP_TOKEN!,
-			allow: { channels: ["C123"], bots: ["B_TEST"], dms: true },
-			trigger: "mention",
-			threadTrigger: "message",
-		}),
-	],
+  state: { root: "./state" },
+  adapters: [
+    slack({
+      mode: "socket",
+      botToken: process.env.SLACK_BOT_TOKEN!,
+      appToken: process.env.SLACK_APP_TOKEN!,
+      allow: { channels: ["C123"], bots: ["B_TEST"], dms: true },
+      trigger: "mention",
+      threadTrigger: "message",
+    }),
+  ],
 });
 ```
 
@@ -167,18 +167,18 @@ createHeypi({
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	http: { port: Number(process.env.PORT ?? 3000) },
-	adapters: [
-		slack({
-			mode: "http",
-			botToken: process.env.SLACK_BOT_TOKEN!,
-			signingSecret: process.env.SLACK_SIGNING_SECRET!,
-			allow: { channels: ["C123"], dms: true },
-			trigger: "mention",
-			threadTrigger: "message",
-		}),
-	],
+  state: { root: "./state" },
+  http: { port: Number(process.env.PORT ?? 3000) },
+  adapters: [
+    slack({
+      mode: "http",
+      botToken: process.env.SLACK_BOT_TOKEN!,
+      signingSecret: process.env.SLACK_SIGNING_SECRET!,
+      allow: { channels: ["C123"], dms: true },
+      trigger: "mention",
+      threadTrigger: "message",
+    }),
+  ],
 });
 ```
 

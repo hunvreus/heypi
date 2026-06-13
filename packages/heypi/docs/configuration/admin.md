@@ -10,9 +10,9 @@ Enable admin:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	admin: true,
-	// ...adapters, agent, runtime
+  state: { root: "./state" },
+  admin: true,
+  // ...adapters, agent, runtime
 });
 ```
 
@@ -22,10 +22,10 @@ Use top-level `http` when you need a specific host or port:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	http: { host: "127.0.0.1", port: 3000 },
-	admin: true,
-	// ...adapters, agent, runtime
+  state: { root: "./state" },
+  http: { host: "127.0.0.1", port: 3000 },
+  admin: true,
+  // ...adapters, agent, runtime
 });
 ```
 
@@ -33,9 +33,9 @@ For local development only, auth can be disabled:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	admin: { auth: false },
-	// ...adapters, agent, runtime
+  state: { root: "./state" },
+  admin: { auth: false },
+  // ...adapters, agent, runtime
 });
 ```
 
@@ -45,13 +45,13 @@ For non-loopback access, put admin behind HTTPS and an access-controlled proxy:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	http: { host: "0.0.0.0", port: 3000 },
-	admin: {
-		secret: process.env.HEYPI_ADMIN_SECRET!,
-		secureCookies: true,
-	},
-	// ...adapters, agent, runtime
+  state: { root: "./state" },
+  http: { host: "0.0.0.0", port: 3000 },
+  admin: {
+    secret: process.env.HEYPI_ADMIN_SECRET!,
+    secureCookies: true,
+  },
+  // ...adapters, agent, runtime
 });
 ```
 

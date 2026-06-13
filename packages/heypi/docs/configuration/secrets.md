@@ -6,9 +6,9 @@ Secret requests let the agent ask for credentials without putting plaintext secr
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	// ...adapters, agent, runtime
-	secrets: true,
+  state: { root: "./state" },
+  // ...adapters, agent, runtime
+  secrets: true,
 });
 ```
 
@@ -26,11 +26,11 @@ When enabled, heypi exposes `secret_request`. The agent passes a reason and one 
 
 ```ts
 {
-	reason: "Need a GitHub token to inspect private workflow logs.",
-	fields: [
-		{ name: "GITHUB_TOKEN", label: "GitHub token" },
-		{ name: "GITHUB_OWNER" },
-	],
+  reason: "Need a GitHub token to inspect private workflow logs.",
+  fields: [
+    { name: "GITHUB_TOKEN", label: "GitHub token" },
+    { name: "GITHUB_OWNER" },
+  ],
 }
 ```
 
@@ -61,13 +61,13 @@ To self-host the page from your own heypi app:
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	// ...adapters, agent, runtime
-	http: { host: "0.0.0.0", port: 3000 },
-	secrets: {
-		url: "https://203-0-113-10.sslip.io/secret",
-		serve: true,
-	},
+  state: { root: "./state" },
+  // ...adapters, agent, runtime
+  http: { host: "0.0.0.0", port: 3000 },
+  secrets: {
+    url: "https://203-0-113-10.sslip.io/secret",
+    serve: true,
+  },
 });
 ```
 

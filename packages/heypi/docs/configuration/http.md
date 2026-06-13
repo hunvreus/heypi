@@ -6,8 +6,8 @@
 
 ```ts
 createHeypi({
-	http: { host: "127.0.0.1", port: 3000 },
-	// ...state, adapters, agent, runtime
+  http: { host: "127.0.0.1", port: 3000 },
+  // ...state, adapters, agent, runtime
 });
 ```
 

@@ -45,9 +45,9 @@ Use adapter-level `host` and `port` only when the webhook should own its own HTT
 
 ```ts
 webhook({
-	secret: process.env.HEYPI_WEBHOOK_SECRET!,
-	host: "127.0.0.1",
-	port: 3000,
+  secret: process.env.HEYPI_WEBHOOK_SECRET!,
+  host: "127.0.0.1",
+  port: 3000,
 });
 ```
 
@@ -57,15 +57,15 @@ Do not combine standalone webhook servers with top-level `http` unless you inten
 
 ```ts
 createHeypi({
-	state: { root: "./state" },
-	http: { host: "127.0.0.1", port: 3000 },
-	adapters: [
-		webhook({
-			name: "internal",
-			secret: process.env.HEYPI_WEBHOOK_SECRET!,
-			replyHosts: ["internal.example.com"],
-		}),
-	],
+  state: { root: "./state" },
+  http: { host: "127.0.0.1", port: 3000 },
+  adapters: [
+    webhook({
+      name: "internal",
+      secret: process.env.HEYPI_WEBHOOK_SECRET!,
+      replyHosts: ["internal.example.com"],
+    }),
+  ],
 });
 ```
 

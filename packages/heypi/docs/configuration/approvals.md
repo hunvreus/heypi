@@ -6,25 +6,25 @@ Approvals pause pending tool calls until an authorized actor approves or denies 
 
 ```ts
 createHeypi({
-	approval: {
-		expiresInMs: 30 * 60_000,
-		allowSelfApproval: true,
-		bypass: {
-			durationMs: 5 * 60_000,
-			maxDurationMs: 15 * 60_000,
-			scope: "thread",
-		},
-	},
-	adapters: [
-		slack({
-			// ...Slack auth and delivery config
-			permissions: {
-				approvers: { users: ["U123"], groups: ["S123"] },
-				admins: { users: ["U999"] },
-			},
-		}),
-	],
-	// ...state, agent, runtime
+  approval: {
+    expiresInMs: 30 * 60_000,
+    allowSelfApproval: true,
+    bypass: {
+      durationMs: 5 * 60_000,
+      maxDurationMs: 15 * 60_000,
+      scope: "thread",
+    },
+  },
+  adapters: [
+    slack({
+      // ...Slack auth and delivery config
+      permissions: {
+        approvers: { users: ["U123"], groups: ["S123"] },
+        admins: { users: ["U999"] },
+      },
+    }),
+  ],
+  // ...state, agent, runtime
 });
 ```
 

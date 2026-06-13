@@ -8,11 +8,11 @@ Use `agentFrom()` for folder-based agents:
 
 ```ts
 createHeypi({
-	agent: agentFrom("./agent", {
-		model: "openai/gpt-5.4-mini",
-		tools: [...coreTools()],
-	}),
-	// ...state, adapters, runtime
+  agent: agentFrom("./agent", {
+    model: "openai/gpt-5.4-mini",
+    tools: [...coreTools()],
+  }),
+  // ...state, adapters, runtime
 });
 ```
 
@@ -20,15 +20,15 @@ Use a manual Pi-compatible agent config when you do not want heypi's folder conv
 
 ```ts
 createHeypi({
-	agent: {
-		id: "ops",
-		directory: process.cwd(),
-		model: { provider: "openai", name: "gpt-5.4-mini" },
-		prompt: "You are a concise operations assistant.",
-		soul: "Answer directly. Ask when blocked.",
-		tools: [...coreTools()],
-	},
-	// ...state, adapters, runtime
+  agent: {
+    id: "ops",
+    directory: process.cwd(),
+    model: { provider: "openai", name: "gpt-5.4-mini" },
+    prompt: "You are a concise operations assistant.",
+    soul: "Answer directly. Ask when blocked.",
+    tools: [...coreTools()],
+  },
+  // ...state, adapters, runtime
 });
 ```
 
@@ -113,13 +113,13 @@ Use `context` for compact facts that change per turn: current deployment, tenant
 
 ```ts
 agentFrom("./agent", {
-	model: "openai/gpt-5.4-mini",
-	context: [
-		async ({ channel, actor }) => ({
-			title: "Request context",
-			text: [`channel=${channel}`, `actor=${actor}`].join("\n"),
-		}),
-	],
+  model: "openai/gpt-5.4-mini",
+  context: [
+    async ({ channel, actor }) => ({
+      title: "Request context",
+      text: [`channel=${channel}`, `actor=${actor}`].join("\n"),
+    }),
+  ],
 });
 ```
 

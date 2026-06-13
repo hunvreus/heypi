@@ -138,17 +138,17 @@ For production-style Slack HTTP mode, use the commented block in `index.ts`:
 
 ```ts
 slack({
-	botToken: required("SLACK_BOT_TOKEN"),
-	signingSecret: required("SLACK_SIGNING_SECRET"),
-	mode: "http",
-	allow: {
-		channels: list("HEYPI_SLACK_CHANNELS"),
-		users: list("HEYPI_SLACK_USERS"),
-		groups: list("HEYPI_SLACK_GROUPS"),
-	},
-	trigger: "mention",
-	reply: "thread",
-	streaming: true,
+  botToken: required("SLACK_BOT_TOKEN"),
+  signingSecret: required("SLACK_SIGNING_SECRET"),
+  mode: "http",
+  allow: {
+    channels: list("HEYPI_SLACK_CHANNELS"),
+    users: list("HEYPI_SLACK_USERS"),
+    groups: list("HEYPI_SLACK_GROUPS"),
+  },
+  trigger: "mention",
+  reply: "thread",
+  streaming: true,
 });
 ```
 

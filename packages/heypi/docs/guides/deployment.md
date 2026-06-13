@@ -183,11 +183,11 @@ By default, heypi takes an app lock in the configured store before starting adap
 
 ```ts
 createHeypi({
-	appLock: {
-		ttlMs: 60_000,
-		drainMs: 30_000,
-	},
-	// ...state, adapters, agent, runtime
+  appLock: {
+    ttlMs: 60_000,
+    drainMs: 30_000,
+  },
+  // ...state, adapters, agent, runtime
 });
 ```
 
@@ -212,8 +212,8 @@ heypi logs structured events through `logger`. The default is pretty console out
 import { consoleLogger } from "@hunvreus/heypi";
 
 createHeypi({
-	logger: consoleLogger({ level: "info", format: "json" }),
-	// ...state, adapters, agent, runtime
+  logger: consoleLogger({ level: "info", format: "json" }),
+  // ...state, adapters, agent, runtime
 });
 ```
 

@@ -18,14 +18,14 @@ Configure core tools with `coreTools()`:
 import { commandConfirm, coreTools } from "@hunvreus/heypi";
 
 agentFrom("./agent", {
-	model: "openai/gpt-5.4-mini",
-	tools: [
-		...coreTools({
-			bash: { confirm: commandConfirm() },
-			write: false,
-			edit: false,
-		}),
-	],
+  model: "openai/gpt-5.4-mini",
+  tools: [
+    ...coreTools({
+      bash: { confirm: commandConfirm() },
+      write: false,
+      edit: false,
+    }),
+  ],
 });
 ```
 
@@ -56,13 +56,13 @@ import { tool } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 const inspectWorkspace = tool({
-	name: "inspect_workspace",
-	description: "List files in the active runtime workspace.",
-	parameters: Type.Object({}),
-	execute: async (_params, ctx) => {
-		const result = await ctx.runtime.bash?.({ command: "find . -maxdepth 2 -type f", signal: ctx.signal });
-		return result?.out ?? "runtime does not support bash";
-	},
+  name: "inspect_workspace",
+  description: "List files in the active runtime workspace.",
+  parameters: Type.Object({}),
+  execute: async (_params, ctx) => {
+    const result = await ctx.runtime.bash?.({ command: "find . -maxdepth 2 -type f", signal: ctx.signal });
+    return result?.out ?? "runtime does not support bash";
+  },
 });
 ```
 
@@ -91,14 +91,14 @@ Use `ctx.runtime` when shell or file work should go through the selected runtime
 
 ```ts
 const pageService = tool({
-	name: "page_service",
-	description: "Record a service page request.",
-	parameters: Type.Object({
-		service: Type.String(),
-		reason: Type.String(),
-	}),
-	confirm: ({ service }) => ({ message: `Page ${service}.` }),
-	execute: async ({ service, reason }) => `page recorded: service=${service} reason=${reason}`,
+  name: "page_service",
+  description: "Record a service page request.",
+  parameters: Type.Object({
+    service: Type.String(),
+    reason: Type.String(),
+  }),
+  confirm: ({ service }) => ({ message: `Page ${service}.` }),
+  execute: async ({ service, reason }) => `page recorded: service=${service} reason=${reason}`,
 });
 ```
 
@@ -116,8 +116,8 @@ For approval cards, use `message` plus optional `details`:
 
 ```ts
 confirm: ({ command }) => ({
-	message: "Run deployment command.",
-	details: [{ label: "Command", value: command, format: "code" }],
+  message: "Run deployment command.",
+  details: [{ label: "Command", value: command, format: "code" }],
 })
 ```
 
@@ -125,13 +125,13 @@ confirm: ({ command }) => ({
 
 ```ts
 coreTools({
-	bash: {
-		confirm: commandConfirm({
-			allow: [/^curl -I https:\/\/status\.example\.com\b/],
-			approve: [/\bmake deploy\b/],
-			block: [/\bgh repo delete\b/],
-		}),
-	},
+  bash: {
+    confirm: commandConfirm({
+      allow: [/^curl -I https:\/\/status\.example\.com\b/],
+      approve: [/\bmake deploy\b/],
+      block: [/\bgh repo delete\b/],
+    }),
+  },
 });
 ```
 
