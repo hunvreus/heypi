@@ -28,7 +28,7 @@ The main keys are:
 | `skills` | No | Scoped procedures and runbooks the agent can create, patch, read, and delete. Disabled by default. See [Skills](skills.md) and [Agent tools](tools.md#managed-tools). |
 | `secrets` | No | Encrypted browser handoff for sensitive values that should become runtime files. Disabled by default. See [Secrets](secrets.md). |
 | `attachments` | No | Inbound files, generated-file delivery, size limits, document conversion, and custom attachment stores. See [Attachments](attachments.md) and the [`attach` tool](tools.md#core-tools). |
-| `jobs` | No | Configured cron jobs and heartbeat jobs. Empty by default. See [Scheduling](scheduling.md). |
+| `jobs` | No | Configured cron jobs and heartbeat jobs. Omit to disable scheduling; set `[]` to reconcile and pause previously configured jobs. See [Scheduling](scheduling.md). |
 | `store` | No | Custom durable store. Defaults to SQLite under `state.root`. Needed only when you replace the default state backend, usually for multi-instance deployments. See [Custom integrations](../guides/integrations.md#store). |
 | `scheduler` | No | Scheduler polling and job lock behavior. Defaults: `pollMs: 30_000`, `lockMs: 600_000`. Most apps should keep them. See [Scheduling](scheduling.md#options). |
 | `appLock` | No | Single-process app lock. Enabled by default with `ttlMs: 60_000` and `drainMs: 30_000`. Disable only when deployment ownership is handled elsewhere. See [Deployment](../guides/deployment.md#process-ownership). |

@@ -2,16 +2,7 @@
 
 ## [Unreleased]
 
-### Changed
-- Changed scheduled jobs to materialize durable queued `job_run` rows and execute them through scheduler worker slots instead of running every due target inline during the scheduler tick.
-- Changed `heypi jobs run` to enqueue immediate job runs for current targets without mutating `job.nextAt`, preserving recurring schedule anchors.
-- Changed SQLite startup recovery for running scheduled job runs to requeue them instead of marking them failed.
-
-### Fixed
-- Fixed heartbeat jobs being able to overlap for the same job and stored thread while an earlier run was still queued or running.
-- Fixed clean scheduler shutdown to wait for active scheduled runs before returning.
-
-## [0.1.4] - 2026-06-12
+## [0.1.4] - 2026-06-14
 
 ### Breaking
 - Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
@@ -65,13 +56,16 @@
 - Added Telegram webhook mode with required secret-token validation, Telegram bot command registration, and `heypi telegram set-webhook`/`delete-webhook`.
 
 ### Changed
+- Changed scheduled jobs to materialize durable queued `job_run` rows and execute them through scheduler worker slots instead of running every due target inline during the scheduler tick.
+- Changed `heypi jobs run` to enqueue immediate job runs for current targets without mutating `job.nextAt`, preserving recurring schedule anchors.
+- Changed SQLite startup recovery for running scheduled job runs to requeue them instead of marking them failed.
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.
 - Changed expired approvals to persist as `expired` instead of `denied` for clearer audit history.
 - Changed typed chat control parsing to strict slash syntax such as `/approve`, `/deny`, `/approvals`, `/status`, `/cancel`, and `/bash` for adapters that deliver those messages.
 - Changed chat `/approvals` listing to show only approvals actionable from the current channel; use CLI/admin for cross-channel views.
 - Changed cancellation output to a single terminal task message that includes the cancelling actor when known.
 - Changed same-thread busy behavior configuration from `chat.busy` to `task.busy`.
-- Changed startup recovery to fail stale running calls and job runs after a process restart.
+- Changed startup recovery to fail stale running calls and requeue stale running job runs after a process restart.
 - Changed CLI docs to use `heypi` consistently while documenting package-manager invocation separately.
 - Derived store row types from the Drizzle schema and centralized store pagination clamps.
 - Centralized typed chat command metadata for help text, trigger gating, and native adapter registration.
@@ -96,6 +90,13 @@
 - Fixed missing debug drop logs for disallowed bot messages.
 - Fixed cancellation output leaking raw `cancelled` text or duplicate success acknowledgements.
 - Fixed Slack user group and Discord role resolution for approval admins.
+- Fixed app shutdown so scheduled turns no longer bypass the configured drain timeout while waiting for scheduler shutdown.
+- Fixed explicit `jobs: []` config so previously stored jobs are reconciled as removed instead of leaving stale active jobs behind.
+- Fixed heartbeat jobs being able to overlap for the same job and stored thread while an earlier run was still queued or running.
+- Fixed clean scheduler shutdown to stop claiming new work before bounded app-level drain.
+
+### Upgrade notes
+- Scheduled run rows created before `0.1.4` do not contain the new target metadata added for durable queued job execution. If any old queued scheduled runs exist during upgrade, they may be marked failed instead of resumed.
 
 ## [0.1.3] - 2026-06-04
 

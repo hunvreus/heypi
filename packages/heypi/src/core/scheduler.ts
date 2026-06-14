@@ -21,6 +21,7 @@ export type SchedulerConfig = {
 export type Scheduler = {
 	start(): Promise<void>;
 	stop(): Promise<void>;
+	drain(timeoutMs: number): Promise<boolean>;
 };
 
 type QueueJobRuns = SchedulerStore["jobRuns"] & {
@@ -39,8 +40,8 @@ export function createScheduler(input: {
 	logger: Logger;
 	config?: SchedulerConfig;
 }): Scheduler | undefined {
-	const jobs = input.config?.jobs ?? [];
-	if (!jobs.length) return undefined;
+	const jobs = input.config?.jobs;
+	if (!jobs) return undefined;
 	if (!input.store.jobs || !input.store.jobRuns || !input.store.locks) {
 		throw new Error("scheduled jobs require store.jobs, store.jobRuns, and store.locks");
 	}
@@ -242,7 +243,21 @@ export function createScheduler(input: {
 			stopped = true;
 			if (timer) clearTimeout(timer);
 			await tickPromise?.catch(() => undefined);
-			while (activeRuns.size) await Promise.allSettled([...activeRuns]);
+		},
+		async drain(timeoutMs: number): Promise<boolean> {
+			if (activeRuns.size === 0) return true;
+			return await new Promise((resolve) => {
+				let done = false;
+				let timer: ReturnType<typeof setTimeout>;
+				const finish = (value: boolean) => {
+					if (done) return;
+					done = true;
+					clearTimeout(timer);
+					resolve(value);
+				};
+				timer = setTimeout(() => finish(activeRuns.size === 0), timeoutMs);
+				void Promise.allSettled([...activeRuns]).then(() => finish(true));
+			});
 		},
 	};
 }

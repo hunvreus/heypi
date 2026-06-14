@@ -168,7 +168,7 @@ heypi telegram delete-webhook [--env .env] [--token <token>]
 | `--url <url>` | Public HTTPS Telegram webhook URL for `set-webhook`. |
 | `--secret-token <token>` | Required for `set-webhook`. Secret token passed to Telegram and checked by webhook mode. |
 
-Telegram cannot enumerate chats. Send `/start` to the bot, or post in the target group/channel, then run:
+Telegram cannot enumerate chats. Send `/start` to the bot, or post in the target group, supergroup, or forum topic, then run:
 
 ```bash
 heypi telegram observe --env .env

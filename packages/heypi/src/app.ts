@@ -348,15 +348,19 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			log.info("app.stop", { agent: config.agent.id, reason });
 			try {
 				await scheduler?.stop();
-				await Promise.allSettled(lifecycleAdapters.map((adapter) => adapter.stop?.()));
 				await http.close();
-				await runtimes.close();
 				const drained = await active.drain(appLock.drainMs);
 				if (!drained) {
 					const cancelled = active.abortAll();
 					log.warn("app.drain_cancelled", { agent: config.agent.id, runs: cancelled, reason });
 					await active.drain(Math.min(appLock.drainMs, 5_000));
 				}
+				const scheduledDrained = await scheduler?.drain(Math.min(appLock.drainMs, 5_000));
+				if (scheduledDrained === false) {
+					log.warn("app.scheduler_drain_timeout", { agent: config.agent.id, reason });
+				}
+				await Promise.allSettled(lifecycleAdapters.map((adapter) => adapter.stop?.()));
+				await runtimes.close();
 			} finally {
 				starts.clear();
 				await releaseAppLock({ lock: appLock, store });

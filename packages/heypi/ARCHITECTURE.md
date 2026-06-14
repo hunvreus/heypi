@@ -29,7 +29,7 @@ createHeypi(config)
   scheduler.start()
 ```
 
-`runHeypi(app)` installs `SIGINT`/`SIGTERM` handlers and releases the app lock during shutdown. `app.stop()` stops the scheduler and adapters, waits for active runs, then cancels survivors after the drain timeout.
+`runHeypi(app)` installs `SIGINT`/`SIGTERM` handlers and releases the app lock during shutdown. `app.stop()` stops new scheduled work, closes HTTP ingress, waits for active turns, cancels survivors after the drain timeout, then gives scheduled delivery a bounded drain before stopping adapters and runtimes.
 
 ## Main Boundaries
 

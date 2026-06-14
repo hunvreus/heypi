@@ -95,6 +95,8 @@ heypi telegram delete-webhook --env .env
 
 Telegram does not allow `getUpdates` polling while a webhook is active for the same bot token. Use polling for local/dev, and webhook mode for production HTTP ingress.
 
+Webhook mode acknowledges Telegram after validating the secret token and request body, then processes the update asynchronously. If the process exits after the acknowledgement but before processing finishes, Telegram will not redeliver that update.
+
 heypi syncs Telegram's bot command menu from its built-in command catalog on adapter startup and when `heypi telegram set-webhook` runs. Manual BotFather command-menu entries for the same bot can be overwritten.
 
 ## Config

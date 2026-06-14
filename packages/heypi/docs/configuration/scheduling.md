@@ -35,7 +35,7 @@ createHeypi({
 
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `jobs` | No | `[]` | Scheduled job definitions. |
+| `jobs` | No | omitted | Scheduled job definitions. Set `[]` to disable future runs while reconciling stored jobs as removed. |
 | `scheduler.pollMs` | No | `30_000` | How often the scheduler checks for due jobs. |
 | `scheduler.lockMs` | No | `600_000` | Lock TTL used while a due job is materialized into queued runs. |
 | `scheduler.maxConcurrentRuns` | No | `1` | Maximum queued scheduled targets to execute concurrently. Increase only when the store/runtime can tolerate parallel scheduled turns. |
@@ -89,7 +89,7 @@ scope: {
 
 Jobs are stored under `(agent, id)`, so two configured agents can reuse the same job id without colliding.
 
-On startup, heypi syncs code-defined jobs for the current agent:
+On startup, heypi syncs code-defined jobs for the current agent when `jobs` is configured, including an explicit empty array:
 
 - configured jobs are installed or updated,
 - removed jobs are paused,

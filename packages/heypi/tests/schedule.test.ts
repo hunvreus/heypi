@@ -190,6 +190,40 @@ test("scheduler pauses removed config jobs and preserves manual pauses", async (
 	}
 });
 
+test("scheduler reconciles explicit empty job config", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-empty-config-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.jobs?.upsert({
+			id: "removed",
+			agent: "agent",
+			kind: "cron",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			target: JSON.stringify({ test: { channels: ["C1"] } }),
+			prompt: "removed",
+			state: "active",
+			nextAt: Date.now() + 60_000,
+		});
+		const scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(),
+			adapters: [adapter()],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: { jobs: [] },
+		});
+
+		await scheduler?.start();
+		await scheduler?.stop();
+
+		assert.equal((await store.jobs?.get({ agent: "agent", id: "removed" }))?.state, "paused");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("scheduler rejects cron jobs without explicit targets", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-routes-"));
 	try {
@@ -310,7 +344,7 @@ test("scheduler runs queued targets concurrently up to maxConcurrentRuns", async
 	}
 });
 
-test("scheduler stop waits for active queued runs", async () => {
+test("scheduler stop stops the loop without waiting for active queued runs", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-stop-drain-"));
 	let release: (() => void) | undefined;
 	try {
@@ -353,12 +387,21 @@ test("scheduler stop waits for active queued runs", async () => {
 		const stop = scheduler?.stop().then(() => {
 			stopped = true;
 		});
+		await waitFor(() => stopped);
+		assert.equal(sent.length, 0);
+		let drained = false;
+		const drain = scheduler?.drain(1_000).then((result) => {
+			drained = result;
+		});
 		await sleep(20);
-		assert.equal(stopped, false);
+		assert.equal(drained, false);
 		release?.();
 		await stop;
+		await drain;
+		await waitFor(() => sent.length === 1);
 
 		assert.equal(stopped, true);
+		assert.equal(drained, true);
 		assert.equal(sent.length, 1);
 		assert.equal((await store.jobRuns?.lastForJob({ agent: "agent", id: "drain" }))?.state, "done");
 	} finally {

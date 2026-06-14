@@ -8,7 +8,7 @@ Pick the adapter that matches where the agent should be reachable:
 | --- | --- |
 | [Slack](slack.md) | Team channels, DMs, files, threads, approval buttons, Socket mode, or signed HTTP delivery. |
 | [Discord](discord.md) | Guild channels, DMs, threads, attachments, streaming edits, and approval buttons. |
-| [Telegram](telegram.md) | DMs, groups, channels, forum topics, attachments, and callback buttons. |
+| [Telegram](telegram.md) | DMs, groups, supergroups, forum topics, attachments, scheduled delivery to chat IDs, and callback buttons. |
 | [Webhook](webhook.md) | Trusted internal systems that call heypi over JSON HTTP. |
 
 ## Shared behavior
@@ -52,7 +52,7 @@ For shared workspaces, configure `allow`. Without it, any delivered DM can trigg
 | --- | --- |
 | Slack | Socket mode for local/dev, signed HTTP for production-style inbound delivery. `allow.groups` uses Slack user group IDs. |
 | Discord | Gateway event adapter. `allow.groups` uses role IDs. |
-| Telegram | Long polling adapter. User access has no shared group/role concept. |
+| Telegram | Long polling or webhook adapter. User access has no shared group/role concept. |
 | Webhook | Inbound-only JSON adapter. Scheduled jobs cannot target webhook adapters. |
 
 ## Delivery
