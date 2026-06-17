@@ -305,7 +305,7 @@ function runtimeTools(
 			name: "attach",
 			label: "Attach",
 			description:
-				"Attach a file from the runtime workspace to the final chat reply. Use this after creating a report, image, archive, or other artifact the user should receive. Do not attach temporary, private, or intermediate files.",
+				"Attach a file from the runtime workspace to the final chat reply. Use this after creating a document, image, export, archive, or other artifact the user should receive. Prefer this over pasting content that is long, structured, intended for download, or easier to inspect as a file. Do not attach temporary, private, or intermediate files.",
 			parameters: Type.Object({
 				path: Type.String({ minLength: 1 }),
 				name: Type.Optional(Type.String()),

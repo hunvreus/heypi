@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-06-14
+### Changed
+- Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
+
+### Fixed
+- Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.
+- Fixed approval controls being recorded as fresh user turns, which could make an approved action trigger a second approval.
+- Fixed Discord approval cards keeping the pending color after approval, denial, or expiry.
+- Fixed Discord approved continuations skipping the progress message while the approved action resumed.
+
+## [0.2.0-beta.0] - 2026-06-15
 
 ### Breaking
 - Moved approval actor identity from root `approval.approvers` and `approval.admins` to adapter-local `permissions.approvers` and `permissions.admins`. Root `approval` now only controls approval policy such as expiry, self-approval, and bypass behavior.
@@ -13,11 +22,11 @@
 
   ```ts
   createHeypi({
-  	approval: {
-  		approvers: ["U123"],
-  		admins: ["U999"],
-  	},
-  	adapters: [slack({ ... })],
+    approval: {
+      approvers: ["U123"],
+      admins: ["U999"],
+    },
+    adapters: [slack({ ... })],
   });
   ```
 
@@ -25,26 +34,29 @@
 
   ```ts
   createHeypi({
-  	approval: {
-  		// expiry, self-approval, and bypass policy
-  	},
-  	adapters: [
-  		slack({
-  			...
-  			permissions: {
-  				approvers: ["U123"],
-  				admins: ["U999"],
-  			},
-  		}),
-  	],
+    approval: {
+      // expiry, self-approval, and bypass policy
+    },
+    adapters: [
+      slack({
+        ...
+        permissions: {
+          approvers: ["U123"],
+          admins: ["U999"],
+        },
+      }),
+    ],
   });
   ```
 
 ### Added
+- Added a manual `qa/` smoke checklist for testing the Slack, Discord, Telegram, and webhook examples.
 - Added approval admins with inherited approver permissions and configurable self-approval blocking.
 - Added adapter-scoped approval permissions with per-adapter approvers and admins.
 - Added `allow.bots` to Slack, Discord, and Telegram for explicitly accepting messages from selected bots/apps or all other bots/apps.
 - Added Slack Socket Mode and HTTP mode manifest generation to `create-heypi` and `heypi slack manifest`.
+- Added `heypi slack users` for Slack user ID discovery, with positional and `--query` filtering for Slack user and channel lookup.
+- Added positional and `--query` filtering for `heypi discord channels`.
 - Added native typed control fallback through Slack `/heypi` subcommands and Discord application commands.
 - Added `task.cancel` with `admin`, `approver`, `initiator`, and `allowed` cancellation policy levels.
 - Added actor-bound temporary approval bypasses through approval controls and `/revoke <bypass-id>`.
@@ -58,6 +70,10 @@
 ### Changed
 - Changed scheduled jobs to materialize durable queued `job_run` rows and execute them through scheduler worker slots instead of running every due target inline during the scheduler tick.
 - Changed `heypi jobs run` to enqueue immediate job runs for current targets without mutating `job.nextAt`, preserving recurring schedule anchors.
+- Changed Slack, Discord, and Telegram discovery CLI output to print provider IDs only, without example-specific config snippets.
+- Changed local chat examples and generated admin apps to use `http.port: 0` by default so development servers avoid port `3000` collisions.
+- Renamed example approver env vars to provider-scoped names such as `HEYPI_SLACK_APPROVERS` and `HEYPI_DISCORD_APPROVERS`.
+- Added provider-scoped admin env vars to Slack and Discord examples for admin-path QA.
 - Changed SQLite startup recovery for running scheduled job runs to requeue them instead of marking them failed.
 - Changed `allow.bots` approval behavior so accepted bot messages do not inherit zero-config approval authority; trusted bot approvers must be explicitly listed in adapter permissions.
 - Changed expired approvals to persist as `expired` instead of `denied` for clearer audit history.
@@ -78,6 +94,13 @@
 - Fixed duplicate provider retries being steered into an active run before provider-event dedupe ran.
 - Fixed concurrent duplicate provider retries being steered into an active run more than once.
 - Fixed adapter-scoped approval bypass matching for adapter names containing glob wildcard characters.
+- Fixed shared HTTP listener startup failures being masked by cleanup `ERR_SERVER_NOT_RUNNING` errors.
+- Fixed Slack attachment upload failures being logged silently after a reply claimed a file was attached.
+- Fixed Slack approval continuations claiming an attachment without uploading the generated file.
+- Fixed CLI `--env` path resolution under package-manager wrappers so relative paths resolve from the original command directory.
+- Fixed Discord and Telegram attachment upload failures being invisible after a reply claimed a file was attached.
+- Fixed streamed replies replacing the progress placeholder awkwardly by reusing the progress message as the first stream message across Slack, Discord, and Telegram.
+- Fixed Telegram scheduled deliveries skipping generated file uploads.
 - Fixed Telegram webhook secret-token checks to use timing-safe comparison.
 - Fixed malformed approval command suffixes like `/approve <id> bypas` being silently ignored.
 - Fixed approval bypass creation so actor-bound bypasses are never stored without a target actor.
@@ -96,7 +119,7 @@
 - Fixed clean scheduler shutdown to stop claiming new work before bounded app-level drain.
 
 ### Upgrade notes
-- Scheduled run rows created before `0.1.4` do not contain the new target metadata added for durable queued job execution. If any old queued scheduled runs exist during upgrade, they may be marked failed instead of resumed.
+- Scheduled run rows created before `0.2.0-beta.0` do not contain the new target metadata added for durable queued job execution. If any old queued scheduled runs exist during upgrade, they may be marked failed instead of resumed.
 
 ## [0.1.3] - 2026-06-04
 

@@ -248,6 +248,45 @@ test("approval bypass creation skips rows without a target actor", async () => {
 	);
 });
 
+test("thread approval bypass creation skips rows without a target thread", async () => {
+	const bypasses = new FakeBypasses();
+	const events: LogEvent[] = [];
+	const out = await approvalBypass.create({
+		approval: {
+			id: "approval-1",
+			agent: "a",
+			callId: "call-1",
+			channel: "C1",
+			threadId: null,
+			turnId: null,
+			requestMessageId: null,
+			command: "curl https://example.com",
+			runtime: "just-bash",
+			reason: "Run bash command.",
+			details: null,
+			state: "pending",
+			requestedBy: "U_REQUESTER",
+			requestedAt: Date.now(),
+			expiresAt: null,
+			resolvedAt: null,
+			resolvedBy: null,
+		},
+		call: { threadId: null, actor: "U_REQUESTER" },
+		actor: "U_APPROVER",
+		context: {},
+		policy: { bypass: { durationMs: 60_000, scope: "thread" } },
+		approvalBypasses: bypasses,
+		log: captureLogger(events),
+	});
+
+	assert.equal(out, undefined);
+	assert.equal(bypasses.rows.length, 0);
+	assert.equal(
+		events.some((event) => event.event === "approval_bypass.missing_thread"),
+		true,
+	);
+});
+
 test("approval admins inherit approver permissions", async () => {
 	const calls = new FakeCalls();
 	const approvals = new FakeApprovals();

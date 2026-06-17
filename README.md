@@ -41,10 +41,10 @@ pnpm run build:all
 Run examples:
 
 ```bash
-pnpm run dev:slack
-pnpm run dev:discord
-pnpm run dev:telegram
-pnpm run dev:webhook
+(cd examples/slack-devops && pnpm dev)
+(cd examples/discord-gondolin && pnpm dev)
+(cd examples/telegram-workout && pnpm dev)
+(cd examples/webhook-github-docker && pnpm dev)
 ```
 
 Dry-run packages before publishing:

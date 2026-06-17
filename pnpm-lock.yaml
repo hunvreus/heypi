@@ -51,6 +51,85 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/discord-gondolin:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: workspace:*
+        version: link:../../packages/heypi
+      '@hunvreus/heypi-runtime-gondolin':
+        specifier: workspace:*
+        version: link:../../packages/heypi-runtime-gondolin
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.22.3
+        version: 4.22.3
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/slack-devops:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: workspace:*
+        version: link:../../packages/heypi
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.22.3
+        version: 4.22.3
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/telegram-workout:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: workspace:*
+        version: link:../../packages/heypi
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.22.3
+        version: 4.22.3
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/webhook-github-docker:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: workspace:*
+        version: link:../../packages/heypi
+      '@hunvreus/heypi-runtime-docker':
+        specifier: workspace:*
+        version: link:../../packages/heypi-runtime-docker
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.22.3
+        version: 4.22.3
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/create-heypi:
     dependencies:
       '@clack/prompts':

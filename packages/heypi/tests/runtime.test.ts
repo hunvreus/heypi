@@ -207,6 +207,7 @@ test("attach tool records scoped runtime files for the final reply", async () =>
 	});
 	const attach = out.find((tool) => tool.name === "attach");
 	assert.ok(attach);
+	assert.match(attach.description ?? "", /Prefer this over pasting content that is long, structured/);
 
 	const result = await attach.execute(
 		"tool-call-1",

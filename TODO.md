@@ -2,7 +2,7 @@
 
 ## Now
 
-- Tag and publish the prepared `0.1.4` release when approved.
+- Tag and publish the prepared `0.2.0-beta.0` release when approved.
 	- Release notes, migration notes, package versions, and dry-run package validation are prepared.
 	- Do not tag or publish until explicitly approved.
 
@@ -21,6 +21,12 @@
 	- Fly.io: persistent volume-backed state/workspace directories and process health checks.
 	- VPS/Docker: bind-mounted state/workspace directories, backups, and systemd/container restart behavior.
 	- Kubernetes: PVC-backed state/workspace directories, single-owner locking, probes, and rollout guidance.
+- Add a live provider QA harness.
+	- Keep `qa/` manual-only until there are runnable commands that consume dedicated QA config.
+	- Add minimal Slack, Discord, Telegram, and webhook QA apps that run outside the examples and use isolated state/workspace roots.
+	- Add `pnpm run qa:slack`, `pnpm run qa:discord`, `pnpm run qa:telegram`, and `pnpm run qa:webhook` or an equivalent `heypi qa` command.
+	- Keep examples focused on user-facing demos; keep QA focused on repeatable smoke behavior, attachment uploads, approvals, native commands, and provider-specific delivery.
+	- Support optional driver bots/apps for API-driven message checks, but keep provider-native button and slash-command UI checks manual unless a safe browser-profile lane exists.
 - Add operator audit views.
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
 	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.

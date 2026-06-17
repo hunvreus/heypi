@@ -14,26 +14,19 @@ The agent loads:
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
 - Channel-scoped memory, so the agent can keep small durable notes for each Slack channel.
 - Custom host tools from `tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
-- Core runtime tools through `coreTools({ bash: true })`. Local workspace commands run in the default heypi runtime without command confirmation in this example; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
+- Core runtime tools through `coreTools()`. Risky local workspace commands use heypi's default approval policy; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
 
 Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
 ## Run
 
 ```bash
-cp examples/slack-devops/.env.example examples/slack-devops/.env
-pnpm run dev:slack
+cd examples/slack-devops
+cp .env.example .env
+pnpm dev
 ```
 
-The repo script runs `index.ts` with `examples/slack-devops` as the working directory.
-
-This example enables the local admin panel by default:
-
-```text
-http://127.0.0.1:3000/admin
-```
-
-On loopback, heypi logs a one-time admin login link at startup. If the link expires while the app is still running, run `pnpm heypi admin link --state examples/slack-devops/state` from the repo root.
+This example enables the local admin panel by default. `HEYPI_HTTP_PORT=0` asks the OS for a free local port, and heypi logs the bound port and one-time admin login link at startup. If the link expires while the app is still running, run `pnpm exec heypi admin link` from this example folder.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
 
@@ -53,40 +46,46 @@ OPENAI_API_KEY=...
 Optional env vars:
 
 ```bash
-HEYPI_APPROVERS=U123456,U234567
-HEYPI_APPROVER_GROUPS=S123456
+HEYPI_SLACK_APPROVERS=U123456,U234567
+HEYPI_SLACK_APPROVER_GROUPS=S123456
+HEYPI_SLACK_ADMINS=U999999
+HEYPI_SLACK_ADMIN_GROUPS=S999999
 HEYPI_SLACK_CHANNELS=
 HEYPI_SLACK_USERS=
 HEYPI_SLACK_GROUPS=
 HEYPI_SLACK_JOB_CHANNEL=C1234567890
+HEYPI_HTTP_PORT=0
+# HEYPI_SECRET_URL=http://127.0.0.1:3000/secret
 ```
 
-Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set comma-separated IDs to restrict which channels, users, or Slack user groups may trigger the agent. Slack user groups require the `usergroups:read` bot scope.
+Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers. Set `HEYPI_SLACK_USERS` or `HEYPI_SLACK_GROUPS` to restrict who can use the bot, and set `HEYPI_SLACK_APPROVERS` or `HEYPI_SLACK_ADMINS` for risky actions. Slack user groups require the `usergroups:read` bot scope.
 
-`SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`.
+`SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`. `HEYPI_SECRET_URL` is optional; leave it unset to use the hosted secret handoff page, or set it with a fixed `HEYPI_HTTP_PORT` to self-host `/secret` locally.
 
 This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters.md`](../../packages/heypi/docs/adapters.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup:
 
 ```bash
-pnpm heypi slack check --env examples/slack-devops/.env
-pnpm heypi slack channels --env examples/slack-devops/.env
-pnpm heypi slack manifest --url https://<host>/slack/slack/events
+pnpm exec heypi slack check
+pnpm exec heypi slack channels devops
+pnpm exec heypi slack users ronan
+pnpm exec heypi slack manifest --mode http --url https://<host>/slack/slack/events
 ```
 
-Use `slack channels` to find the channel ID for `HEYPI_SLACK_JOB_CHANNEL`. If you keep the env file at `./.env`, the CLI loads it automatically and `--env` is optional.
+Use `slack channels <name-or-id>` and `slack users <name-or-id>` to find Slack IDs. This example reads those IDs from `HEYPI_SLACK_CHANNELS`, `HEYPI_SLACK_JOB_CHANNEL`, `HEYPI_SLACK_APPROVERS`, and `HEYPI_SLACK_ADMINS`. Omit the query to list everything visible to the bot. If you keep the env file at `./.env`, the CLI loads it automatically and `--env` is optional.
 
 Invite the Slack app to any channel where it should answer. heypi's allowlists filter events after Slack delivers them; they do not make Slack send events for channels the bot has not joined.
 
-Smoke test from the repo root:
+Smoke test:
 
-1. Fill `examples/slack-devops/.env` with `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `OPENAI_API_KEY`.
-2. Run `pnpm heypi slack check --env examples/slack-devops/.env`.
-3. Run `pnpm heypi slack channels --env examples/slack-devops/.env`, then set `HEYPI_SLACK_CHANNELS` to the channel you want to test.
-4. Invite the Slack app to that channel.
-5. Run `pnpm run dev:slack`.
-6. Mention the app in Slack, for example: `@heypi help`.
+1. Fill `.env` with `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `OPENAI_API_KEY`.
+2. Run `pnpm exec heypi slack check`.
+3. Run `pnpm exec heypi slack channels devops`, then optionally set `HEYPI_SLACK_CHANNELS` to the channel you want to test.
+4. Run `pnpm exec heypi slack users <your-name>`, then optionally set `HEYPI_SLACK_APPROVERS` to your Slack user ID.
+5. Invite the Slack app to that channel.
+6. Run `pnpm dev`.
+7. Mention the app in Slack, for example: `@heypi help`.
 
 Try:
 
@@ -113,7 +112,7 @@ First host setup:
 3. Copy the public key returned by Slack into `~/.ssh/authorized_keys` for that SSH user on the VPS.
 4. Tell the bot the key is installed. It can then test the connection and refresh cached facts with safe probes.
 
-If `HEYPI_APPROVERS` and `HEYPI_APPROVER_GROUPS` are empty, any Slack user who can interact with the bot can approve pending actions. Set user or group approvers for a real workspace.
+If `HEYPI_SLACK_APPROVERS`, `HEYPI_SLACK_APPROVER_GROUPS`, `HEYPI_SLACK_ADMINS`, and `HEYPI_SLACK_ADMIN_GROUPS` are empty, any Slack user who can interact with the bot can approve pending actions. Set user or group approvers/admins for a real workspace. Admins inherit approver permissions.
 
 Host tools:
 
@@ -154,6 +153,6 @@ slack({
 
 With these defaults, top-level channel messages require a mention and thread replies do not.
 
-In Slack app settings, set Event Subscriptions and Interactivity URLs to `https://<host>/slack/slack/events`. If you set a custom adapter `name`, use `/slack/<name>/events`. Configure non-default host/port with top-level `http`.
+In Slack app settings, set Event Subscriptions and Interactivity URLs to `https://<host>/slack/slack/events`. If you set a custom adapter `name`, use `/slack/<name>/events`. Configure non-default host/port with top-level `http`; HTTP mode should use a stable externally reachable URL, not `port: 0`.
 
 The admin panel uses the same HTTP listener as Slack HTTP mode and remains available at `/admin` when enabled.

@@ -22,24 +22,32 @@ function list(name: string): string[] {
 		.filter(Boolean);
 }
 
+function optional(name: string): string | undefined {
+	return process.env[name]?.trim() || undefined;
+}
+
+const secretUrl = optional("HEYPI_SECRET_URL");
+
 const app = createHeypi({
 	state: { root: "./state" },
 	http: {
 		host: "127.0.0.1",
-		port: 3000,
+		port: Number(process.env.HEYPI_HTTP_PORT ?? 0),
 	},
 	admin: true,
 	scope: "channel",
 	adapters: [
 		discord({
 			token: required("DISCORD_BOT_TOKEN"),
+			clientId: process.env.DISCORD_CLIENT_ID,
 			allow: {
 				channels: list("HEYPI_DISCORD_CHANNELS"),
 				users: list("HEYPI_DISCORD_USERS"),
 				groups: list("HEYPI_DISCORD_GROUPS"),
 			},
 			permissions: {
-				approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
+				approvers: { users: list("HEYPI_DISCORD_APPROVERS"), groups: list("HEYPI_DISCORD_APPROVER_GROUPS") },
+				admins: { users: list("HEYPI_DISCORD_ADMINS"), groups: list("HEYPI_DISCORD_ADMIN_GROUPS") },
 			},
 			trigger: "mention",
 			streaming: true,
@@ -47,7 +55,7 @@ const app = createHeypi({
 	],
 	agent: agentFrom("./agent", {
 		model: "openai/gpt-5-mini",
-		tools: coreTools({ bash: true }),
+		tools: coreTools(),
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,
@@ -64,10 +72,7 @@ const app = createHeypi({
 		enabled: true,
 		scope: "channel",
 	},
-	secrets: {
-		url: "http://127.0.0.1:3000/secret",
-		serve: true,
-	},
+	secrets: secretUrl ? { url: secretUrl, serve: true } : true,
 });
 
 await runHeypi(app);

@@ -156,6 +156,7 @@ export function slack(input: SlackConfig): Adapter {
 					progress: input.progress,
 					streaming: input.streaming,
 					messages: start.messages,
+					attachments: start.attachments,
 				});
 			});
 			bolt.action(DENY, async ({ ack, body, action, client }) => {
@@ -172,6 +173,7 @@ export function slack(input: SlackConfig): Adapter {
 					adapterKind: kind,
 					groups,
 					messages: start.messages,
+					attachments: start.attachments,
 				});
 			});
 			bolt.action(CANCEL, async ({ ack, body, action, client }) => {
@@ -188,6 +190,7 @@ export function slack(input: SlackConfig): Adapter {
 					adapterKind: kind,
 					groups,
 					messages: start.messages,
+					attachments: start.attachments,
 				});
 			});
 			bolt.action(STATUS, async ({ ack, body, action, client }) => {
@@ -204,6 +207,7 @@ export function slack(input: SlackConfig): Adapter {
 					adapterKind: kind,
 					groups,
 					messages: start.messages,
+					attachments: start.attachments,
 				});
 			});
 			bolt.command(commandName, async ({ ack, command, client }) => {
@@ -308,16 +312,6 @@ export function slack(input: SlackConfig): Adapter {
 					}),
 				);
 				const progress = slackProgress(input.progress);
-				const stream = slackReplyStream({
-					config: input.streaming,
-					client,
-					channel,
-					thread: reply.thread,
-					approval: undefined,
-					logger: log,
-					context: context({ thread: reply.thread }),
-					delivery,
-				});
 				const pending = startProgress({
 					channel,
 					source: shouldReact(mode, msg) ? msg.ts : undefined,
@@ -328,6 +322,17 @@ export function slack(input: SlackConfig): Adapter {
 					logger: log,
 					context: context({ thread: msg.thread_ts ?? reply.thread, event: msg.ts }),
 					delivery,
+				});
+				const stream = slackReplyStream({
+					config: input.streaming,
+					client,
+					channel,
+					thread: reply.thread,
+					approval: undefined,
+					logger: log,
+					context: context({ thread: reply.thread }),
+					delivery,
+					takeoverFirstMessage: () => pending.takeover(),
 				});
 				await runChatMessage({
 					logger: log,
@@ -431,13 +436,22 @@ export function slack(input: SlackConfig): Adapter {
 					},
 					afterSend: async (out, visibility) => {
 						if (visibility === "public") {
-							await uploadSlackAttachments({
+							const upload = await uploadSlackAttachments({
 								client,
 								store: start.attachments,
 								channel,
 								thread: reply.thread,
 								attachments: out.attachments,
 								scope: out.attachmentScope,
+								logger: log,
+								context: context({ thread: reply.thread }),
+								delivery,
+							});
+							await postSlackAttachmentUploadNotice({
+								client,
+								channel,
+								thread: reply.thread,
+								upload,
 								logger: log,
 								context: context({ thread: reply.thread }),
 								delivery,
@@ -473,13 +487,22 @@ export function slack(input: SlackConfig): Adapter {
 				context: { adapter: name, kind, channel, thread: target.thread },
 				delivery,
 			});
-			await uploadSlackAttachments({
+			const upload = await uploadSlackAttachments({
 				client: bolt.client,
 				store: start?.attachments,
 				channel,
 				thread: target.mode === "channel" ? undefined : target.thread,
 				attachments: out.attachments,
 				scope: out.attachmentScope,
+				logger: log ?? { debug() {}, info() {}, warn() {}, error() {} },
+				context: { adapter: name, kind, channel, thread: target.thread },
+				delivery,
+			});
+			await postSlackAttachmentUploadNotice({
+				client: bolt.client,
+				channel,
+				thread: target.mode === "channel" ? undefined : target.thread,
+				upload,
 				logger: log ?? { debug() {}, info() {}, warn() {}, error() {} },
 				context: { adapter: name, kind, channel, thread: target.thread },
 				delivery,
@@ -572,12 +595,20 @@ async function handleCommand(input: {
 			context: context(),
 			delivery: input.delivery,
 		});
-		await uploadSlackAttachments({
+		const upload = await uploadSlackAttachments({
 			client: input.client,
 			store: input.attachments,
 			channel,
 			attachments: out.attachments,
 			scope: out.attachmentScope,
+			logger: input.logger,
+			context: context(),
+			delivery: input.delivery,
+		});
+		await postSlackAttachmentUploadNotice({
+			client: input.client,
+			channel,
+			upload,
 			logger: input.logger,
 			context: context(),
 			delivery: input.delivery,
@@ -700,7 +731,13 @@ function slackProgress(input: SlackConfig["progress"]): SlackProgress | undefine
 	return input ?? { delayMs: 0 };
 }
 
-async function uploadSlackAttachments(input: {
+type SlackAttachmentUploadResult = {
+	requested: number;
+	resolved: number;
+	uploaded: boolean;
+};
+
+export async function uploadSlackAttachments(input: {
 	client: SlackClient;
 	store?: AttachmentStore;
 	channel: string;
@@ -710,8 +747,9 @@ async function uploadSlackAttachments(input: {
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
-	if (!input.attachments?.length) return;
+}): Promise<SlackAttachmentUploadResult> {
+	const requested = input.attachments?.length ?? 0;
+	if (!requested) return { requested, resolved: 0, uploaded: true };
 	const files = await resolveOutboundAttachments({
 		provider: "slack",
 		store: input.store,
@@ -720,7 +758,7 @@ async function uploadSlackAttachments(input: {
 		logger: input.logger,
 		context: input.context,
 	});
-	if (!files.length) return;
+	if (!files.length) return { requested, resolved: 0, uploaded: false };
 	try {
 		await input.delivery.run(
 			() =>
@@ -735,9 +773,37 @@ async function uploadSlackAttachments(input: {
 				}),
 			{ ...input.context, retry: "send" },
 		);
+		return { requested, resolved: files.length, uploaded: true };
 	} catch (error) {
 		input.logger.warn("slack.attachment_upload_failed", { ...input.context, error: errorMessage(error) });
+		return { requested, resolved: files.length, uploaded: false };
 	}
+}
+
+export async function postSlackAttachmentUploadNotice(input: {
+	client: SlackClient;
+	channel: string;
+	thread?: string;
+	upload: SlackAttachmentUploadResult;
+	logger: Logger;
+	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
+}): Promise<void> {
+	if (!input.upload.requested) return;
+	if (input.upload.uploaded && input.upload.resolved === input.upload.requested) return;
+	const text =
+		input.upload.resolved > 0
+			? "I created the file, but Slack did not accept the upload. Check the bot's `files:write` scope and server logs."
+			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	await postPublicChunks({
+		client: input.client,
+		channel: input.channel,
+		thread: input.thread,
+		text,
+		logger: input.logger,
+		context: input.context,
+		delivery: input.delivery,
+	});
 }
 
 async function postPublicChunks(input: {
@@ -813,12 +879,27 @@ function slackReplyStream(input: {
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
+	takeoverFirstMessage?: () => Promise<string | undefined>;
 }) {
 	if (!input.config || (typeof input.config === "object" && input.config.enabled === false)) return undefined;
 	return new DraftReplyStream(
 		{
 			limit: SLACK_TEXT_LIMIT,
 			create: async (text) => {
+				const adopted = await input.takeoverFirstMessage?.();
+				if (adopted) {
+					await input.delivery.run(
+						() =>
+							input.client.chat.update({
+								channel: input.channel,
+								ts: adopted,
+								text,
+								blocks: [],
+							}),
+						input.context,
+					);
+					return adopted;
+				}
 				const res = await input.delivery.run(
 					() =>
 						input.client.chat.postMessage(
@@ -842,6 +923,7 @@ function slackReplyStream(input: {
 							channel: input.channel,
 							ts: id,
 							text,
+							blocks: [],
 						}),
 					input.context,
 				);
@@ -867,7 +949,7 @@ function slackChunks(text: string, hasBlocks: boolean): string[] {
 	return chunkText(text, hasBlocks ? SLACK_BLOCK_TEXT_LIMIT : SLACK_TEXT_LIMIT);
 }
 
-function startProgress(input: {
+export function startProgress(input: {
 	channel: string;
 	source?: string;
 	target?: string;
@@ -882,8 +964,40 @@ function startProgress(input: {
 	let reacted = false;
 	let placeholder: string | undefined;
 	let placeholderTask: Promise<void> | undefined;
+	let placeholderTimer: ReturnType<typeof setTimeout> | undefined;
+	let resolvePlaceholderTask: (() => void) | undefined;
 	const reaction = input.progress ? (input.progress.reaction ?? "eyes") : false;
 	let message = input.progress ? (input.progress.message ?? "Working...") : false;
+
+	const finishPlaceholderTask = () => {
+		const resolve = resolvePlaceholderTask;
+		resolvePlaceholderTask = undefined;
+		placeholderTask = undefined;
+		resolve?.();
+	};
+	const cancelPlaceholderTimer = () => {
+		if (!placeholderTimer) return;
+		clearTimeout(placeholderTimer);
+		placeholderTimer = undefined;
+		finishPlaceholderTask();
+	};
+	const removeReaction = async () => {
+		if (reacted && reaction && input.source) {
+			const source = input.source;
+			reacted = false;
+			await input.delivery
+				.run(() => input.client.reactions.remove({ channel: input.channel, timestamp: source, name: reaction }), {
+					...input.context,
+					delivery: "reaction_remove",
+				})
+				.catch((error) => {
+					input.logger.warn("slack.progress.reaction_remove_failed", {
+						...input.context,
+						error: errorMessage(error),
+					});
+				});
+		}
+	};
 
 	if (reaction && input.target && input.source) {
 		const source = input.source;
@@ -903,14 +1017,16 @@ function startProgress(input: {
 	const delay = input.progress?.delayMs ?? 750;
 	if (message) {
 		placeholderTask = new Promise((resolve) => {
-			setTimeout(() => {
+			resolvePlaceholderTask = resolve;
+			placeholderTimer = setTimeout(() => {
+				placeholderTimer = undefined;
 				if (!active) {
-					resolve();
+					finishPlaceholderTask();
 					return;
 				}
 				const progressText = message;
 				if (progressText === false) {
-					resolve();
+					finishPlaceholderTask();
 					return;
 				}
 				input.delivery
@@ -938,7 +1054,7 @@ function startProgress(input: {
 					.catch((error) => {
 						input.logger.warn("slack.progress.message_failed", { ...input.context, error: errorMessage(error) });
 					})
-					.finally(resolve);
+					.finally(finishPlaceholderTask);
 			}, delay);
 		});
 	}
@@ -974,6 +1090,7 @@ function startProgress(input: {
 		},
 		async update(text: string, approval?: Outbound["approval"]): Promise<boolean> {
 			active = false;
+			cancelPlaceholderTimer();
 			await placeholderTask;
 			if (!placeholder) return false;
 			const ts = placeholder;
@@ -1003,8 +1120,18 @@ function startProgress(input: {
 				return false;
 			}
 		},
+		async takeover(): Promise<string | undefined> {
+			active = false;
+			cancelPlaceholderTimer();
+			await placeholderTask;
+			const ts = placeholder;
+			placeholder = undefined;
+			await removeReaction();
+			return ts;
+		},
 		async stop(): Promise<void> {
 			active = false;
+			cancelPlaceholderTimer();
 			await placeholderTask;
 			if (placeholder) {
 				const ts = placeholder;
@@ -1018,24 +1145,7 @@ function startProgress(input: {
 						input.logger.warn("slack.progress.delete_failed", { ...input.context, error: errorMessage(error) });
 					});
 			}
-			if (reacted && reaction && input.source) {
-				const source = input.source;
-				reacted = false;
-				await input.delivery
-					.run(
-						() => input.client.reactions.remove({ channel: input.channel, timestamp: source, name: reaction }),
-						{
-							...input.context,
-							delivery: "reaction_remove",
-						},
-					)
-					.catch((error) => {
-						input.logger.warn("slack.progress.reaction_remove_failed", {
-							...input.context,
-							error: errorMessage(error),
-						});
-					});
-			}
+			await removeReaction();
 		},
 	};
 }
@@ -1207,7 +1317,7 @@ type SlackUpdate = { text: string; blocks?: SlackBlock[]; attachments?: SlackAtt
 
 const SLACK_GROUP_CACHE_MS = 60_000;
 
-class SlackGroupResolver {
+export class SlackGroupResolver {
 	private readonly groups: string[];
 	private readonly cache = new Map<string, { groups: string[]; expiresAt: number }>();
 
@@ -1313,7 +1423,7 @@ function slackFileHost(host: string): boolean {
 	return host === "slack.com" || host.endsWith(".slack.com") || host.endsWith(".slack-edge.com");
 }
 
-async function handleAction(input: {
+export async function handleAction(input: {
 	kind: "approve" | "deny" | "cancel" | "status";
 	body: unknown;
 	action: unknown;
@@ -1327,6 +1437,7 @@ async function handleAction(input: {
 	progress?: SlackConfig["progress"];
 	streaming?: ReplyStreamOption;
 	messages?: AppMessages;
+	attachments?: AttachmentStore;
 }): Promise<void> {
 	const value = stringProp(record(input.action), "value");
 	const context = actionContext(input.body);
@@ -1398,6 +1509,7 @@ async function handleAction(input: {
 					logger: input.logger,
 					context: logContext({ channel: context.channel, thread: target }),
 					delivery: input.delivery,
+					takeoverFirstMessage: () => progress?.takeover() ?? Promise.resolve(undefined),
 				})
 			: undefined;
 	try {
@@ -1480,6 +1592,7 @@ async function handleAction(input: {
 		const chunks = slackChunks(out.text, true);
 		const streamed = Boolean(stream?.complete?.() && input.kind === "approve");
 		if (acknowledged) {
+			const thread = context.threadTs ?? message;
 			if (streamed) {
 				await progress?.stop();
 			} else {
@@ -1489,17 +1602,38 @@ async function handleAction(input: {
 					channel,
 					text: out.text,
 					approval: sent ? undefined : out.approval,
-					thread: context.threadTs ?? message,
+					thread,
 					skipFirst: sent,
 					logger: input.logger,
-					context: logContext({ channel, thread: context.threadTs ?? message }),
+					context: logContext({ channel, thread }),
 					delivery: input.delivery,
 				});
 			}
+			const upload = await uploadSlackAttachments({
+				client: input.client,
+				store: input.attachments,
+				channel,
+				thread,
+				attachments: out.attachments,
+				scope: out.attachmentScope,
+				logger: input.logger,
+				context: logContext({ channel, thread }),
+				delivery: input.delivery,
+			});
+			await postSlackAttachmentUploadNotice({
+				client: input.client,
+				channel,
+				thread,
+				upload,
+				logger: input.logger,
+				context: logContext({ channel, thread }),
+				delivery: input.delivery,
+			});
 			input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
 			return;
 		}
 		if (input.kind === "approve") {
+			const thread = context.threadTs ?? message;
 			if (streamed) {
 				await progress?.stop();
 			} else {
@@ -1508,12 +1642,32 @@ async function handleAction(input: {
 					channel,
 					text: out.text,
 					approval: out.approval,
-					thread: context.threadTs ?? message,
+					thread,
 					logger: input.logger,
-					context: logContext({ channel, thread: context.threadTs ?? message }),
+					context: logContext({ channel, thread }),
 					delivery: input.delivery,
 				});
 			}
+			const upload = await uploadSlackAttachments({
+				client: input.client,
+				store: input.attachments,
+				channel,
+				thread,
+				attachments: out.attachments,
+				scope: out.attachmentScope,
+				logger: input.logger,
+				context: logContext({ channel, thread }),
+				delivery: input.delivery,
+			});
+			await postSlackAttachmentUploadNotice({
+				client: input.client,
+				channel,
+				thread,
+				upload,
+				logger: input.logger,
+				context: logContext({ channel, thread }),
+				delivery: input.delivery,
+			});
 			input.logger.debug("adapter.send", logContext({ channel: context.channel, update: true }));
 			return;
 		}

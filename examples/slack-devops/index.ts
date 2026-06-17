@@ -55,6 +55,7 @@ const runbookTools = createRunbookTools({ root: "./agent/runbooks" });
 const hostContext = createHostContext({ root: stateRoot });
 const log = consoleLogger({ level: "debug", format: "pretty" });
 const jobChannel = optional("HEYPI_SLACK_JOB_CHANNEL");
+const secretUrl = optional("HEYPI_SECRET_URL");
 
 if (!jobChannel) {
 	log.warn("example.jobs_disabled", {
@@ -66,11 +67,12 @@ if (!jobChannel) {
 const app = createHeypi({
 	state: { root: stateRoot },
 	logger: log,
-	admin: true,
-	secrets: {
-		url: "http://127.0.0.1:3000/secret",
-		serve: true,
+	http: {
+		host: "127.0.0.1",
+		port: Number(process.env.HEYPI_HTTP_PORT ?? 0),
 	},
+	admin: true,
+	secrets: secretUrl ? { url: secretUrl, serve: true } : true,
 	adapters: [
 		slack({
 			botToken: required("SLACK_BOT_TOKEN"),
@@ -82,7 +84,8 @@ const app = createHeypi({
 				groups: list("HEYPI_SLACK_GROUPS"),
 			},
 			permissions: {
-				approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
+				approvers: { users: list("HEYPI_SLACK_APPROVERS"), groups: list("HEYPI_SLACK_APPROVER_GROUPS") },
+				admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
 			},
 			trigger: "mention",
 			reply: "thread",
@@ -99,7 +102,8 @@ const app = createHeypi({
 		// 		groups: list("HEYPI_SLACK_GROUPS"),
 		// 	},
 		// 	permissions: {
-		// 		approvers: { users: list("HEYPI_APPROVERS"), groups: list("HEYPI_APPROVER_GROUPS") },
+		// 		approvers: { users: list("HEYPI_SLACK_APPROVERS"), groups: list("HEYPI_SLACK_APPROVER_GROUPS") },
+		// 		admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
 		// 	},
 		// 	trigger: "mention",
 		// 	reply: "thread",
@@ -110,7 +114,7 @@ const app = createHeypi({
 		id: "slack-devops",
 		model: "openai/gpt-5-mini",
 		context: [hostContext],
-		tools: [...coreTools({ bash: true }), ...runbookTools, ...hostTools],
+		tools: [...coreTools(), ...runbookTools, ...hostTools],
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,

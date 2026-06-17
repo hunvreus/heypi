@@ -20,7 +20,7 @@ import {
 	discordInviteUrl,
 	discordObserve as observeDiscord,
 } from "./io/discord-discovery.js";
-import { slackChannels } from "./io/slack-discovery.js";
+import { slackChannels, slackUsers } from "./io/slack-discovery.js";
 import { openDb } from "./store/db.js";
 import { migrate, migrationStatus } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
@@ -43,11 +43,13 @@ const slackBotScopes = [
 	"channels:read",
 	"chat:write",
 	"chat:write.public",
+	"commands",
 	"files:read",
 	"files:write",
 	"im:history",
 	"reactions:write",
 	"usergroups:read",
+	"users:read",
 ] as const;
 const slackBotEvents = ["app_mention", "message.channels", "message.im"] as const;
 
@@ -89,7 +91,7 @@ function buildCli() {
 				throw new Error(`Unknown command: db ${action}`);
 			})(flags),
 		);
-	cli.command("slack <action>", "Slack commands: check, manifest, channels, env")
+	cli.command("slack <action> [query]", "Slack commands: check, manifest, channels, users, env")
 		.option("--env <path>", "Load env file")
 		.option("--bot-token <token>", "Slack bot token")
 		.option("--app-token <token>", "Slack app token")
@@ -98,11 +100,14 @@ function buildCli() {
 		.option("--url <url>", "Slack events URL")
 		.option("--command <command>", "Slack slash command")
 		.option("--private", "Include private channels visible to the bot")
-		.action((action: string, flags: Flags) =>
+		.option("--bots", "Include bot users")
+		.option("--query <text>", "Filter Slack channels or users by name or ID")
+		.action((action: string, query: string | undefined, flags: Flags) =>
 			withEnv((input) => {
 				if (action === "check") return slackCheck(input);
 				if (action === "manifest") return slackManifest(input);
-				if (action === "channels") return slackChannelsList(input);
+				if (action === "channels") return slackChannelsList(input, query);
+				if (action === "users") return slackUsersList(input, query);
 				if (action === "env") return slackEnv();
 				throw new Error(`Unknown command: slack ${action}`);
 			})(flags),
@@ -122,16 +127,17 @@ function buildCli() {
 				throw new Error(`Unknown command: telegram ${action}`);
 			})(flags),
 		);
-	cli.command("discord <action>", "Discord commands: check, observe, channels, invite, env")
+	cli.command("discord <action> [query]", "Discord commands: check, observe, channels, invite, env")
 		.option("--env <path>", "Load env file")
 		.option("--token <token>", "Discord bot token")
 		.option("--client-id <id>", "Discord application/client ID")
 		.option("--timeout <seconds>", "Timeout in seconds")
-		.action((action: string, flags: Flags) =>
+		.option("--query <text>", "Filter Discord channels by guild, channel name, or ID")
+		.action((action: string, query: string | undefined, flags: Flags) =>
 			withEnv((input) => {
 				if (action === "check") return discordCheck(input);
 				if (action === "observe") return discordObserve(input);
-				if (action === "channels") return discordChannelsList(input);
+				if (action === "channels") return discordChannelsList(input, query);
 				if (action === "invite") return discordInvite(input);
 				if (action === "env") return discordEnv();
 				throw new Error(`Unknown command: discord ${action}`);
@@ -190,7 +196,8 @@ function withEnv(fn: (flags: Flags) => void | Promise<void>): (flags: Flags) => 
 }
 
 function loadEnv(flags: Flags): void {
-	const path = stringFlag(flags, "env") ?? ".env";
+	const raw = stringFlag(flags, "env") ?? ".env";
+	const path = isAbsolute(raw) ? raw : resolve(invocationRoot(), raw);
 	if (existsSync(path)) loadEnvFile(path);
 }
 
@@ -439,21 +446,41 @@ SLACK_APP_TOKEN=<slack-app-token> # Socket Mode only
 SLACK_SIGNING_SECRET=<slack-signing-secret> # HTTP mode only`);
 }
 
-async function slackChannelsList(flags: Flags): Promise<void> {
+async function slackChannelsList(flags: Flags, positionalQuery?: string): Promise<void> {
 	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
-	const channels = await slackChannels(token, { includePrivate: booleanFlag(flags, "private") });
-	if (!channels.length) return line("No Slack channels visible to the bot.");
+	const query = queryFlag(flags, positionalQuery);
+	const channels = filterByQuery(
+		await slackChannels(token, { includePrivate: booleanFlag(flags, "private") }),
+		query,
+		[(channel) => channel.id, (channel) => channel.name],
+	);
+	if (!channels.length)
+		return line(query ? `No Slack channels matched "${query}".` : "No Slack channels visible to the bot.");
 	line(
 		table(
-			["id", "channel", "access", "target"],
-			channels.map((channel) => [
-				channel.id,
-				`#${channel.name}`,
-				channel.private ? "private" : "public",
-				`targets: { slack: { channels: ["${channel.id}"] } }`,
-			]),
+			["id", "channel", "access"],
+			channels.map((channel) => [channel.id, `#${channel.name}`, channel.private ? "private" : "public"]),
 		),
 	);
+}
+
+async function slackUsersList(flags: Flags, positionalQuery?: string): Promise<void> {
+	const token = secret(flags, "bot-token", "SLACK_BOT_TOKEN");
+	const includeBots = booleanFlag(flags, "bots");
+	const query = queryFlag(flags, positionalQuery);
+	const users = filterByQuery(await slackUsers(token, { includeBots }), query, [
+		(user) => user.id,
+		(user) => user.name,
+		(user) => user.realName,
+	]);
+	if (!users.length) return line(query ? `No Slack users matched "${query}".` : "No Slack users visible to the bot.");
+	const headers = includeBots ? ["id", "user", "name", "bot"] : ["id", "user", "name"];
+	const rows = users.map((user) => {
+		const row = [user.id, `@${user.name}`, user.realName ?? "-"];
+		if (includeBots) row.push(user.bot ? "yes" : "no");
+		return row;
+	});
+	line(table(headers, rows));
 }
 
 async function telegramCheck(flags: Flags): Promise<void> {
@@ -481,7 +508,6 @@ async function telegramObserve(flags: Flags): Promise<void> {
 			const msg = update.message ?? update.edited_message;
 			if (!msg?.chat) continue;
 			line(ok(`Observed ${msg.chat.type ?? "chat"}: ${chatName(msg.chat)} (${msg.chat.id})`));
-			line(`targets: { telegram: { channels: ["${msg.chat.id}"] } }`);
 			return;
 		}
 	}
@@ -525,28 +551,31 @@ async function discordObserve(flags: Flags): Promise<void> {
 	if (found.guild) line(`guild: ${found.guild}${found.guildName ? ` (${found.guildName})` : ""}`);
 	line(`channel: ${found.channel}${found.channelName ? ` (${found.channelName})` : ""}`);
 	line(`user: ${found.user}${found.userName ? ` (${found.userName})` : ""}`);
-	line(`targets: { discord: { channels: ["${found.channel}"] } }`);
 }
 
-async function discordChannelsList(flags: Flags): Promise<void> {
+async function discordChannelsList(flags: Flags, positionalQuery?: string): Promise<void> {
 	const token = secret(flags, "token", "DISCORD_BOT_TOKEN");
-	const channels = await discordChannels(token);
-	if (!channels.length) return line("No Discord text channels visible to the bot.");
+	const query = queryFlag(flags, positionalQuery);
+	const channels = filterByQuery(await discordChannels(token), query, [
+		(channel) => channel.guild,
+		(channel) => channel.guildName,
+		(channel) => channel.channel,
+		(channel) => channel.channelName,
+	]);
+	if (!channels.length)
+		return line(
+			query ? `No Discord text channels matched "${query}".` : "No Discord text channels visible to the bot.",
+		);
 	line(
 		table(
-			["guild", "channel", "name", "target"],
-			channels.map((channel) => [
-				channel.guild,
-				channel.channel,
-				`${channel.guildName} #${channel.channelName}`,
-				`targets: { discord: { channels: ["${channel.channel}"] } }`,
-			]),
+			["guild", "channel", "name"],
+			channels.map((channel) => [channel.guild, channel.channel, `${channel.guildName} #${channel.channelName}`]),
 		),
 	);
 }
 
 function discordInvite(flags: Flags): void {
-	const clientId = stringFlag(flags, "client-id") ?? process.env.DISCORD_CLIENT_ID;
+	const clientId = rawStringFlag("client-id") ?? stringFlag(flags, "client-id") ?? process.env.DISCORD_CLIENT_ID;
 	if (!clientId) throw new Error("Missing --client-id or DISCORD_CLIENT_ID");
 	line(discordInviteUrl(clientId));
 }
@@ -798,8 +827,40 @@ function stringFlag(flags: Flags, name: string): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function rawStringFlag(name: string): string | undefined {
+	const long = `--${name}`;
+	for (let index = 2; index < process.argv.length; index++) {
+		const arg = process.argv[index];
+		if (arg === long) {
+			const next = process.argv[index + 1];
+			return next && !next.startsWith("-") ? next : undefined;
+		}
+		if (arg.startsWith(`${long}=`)) return arg.slice(long.length + 1) || undefined;
+	}
+	return undefined;
+}
+
 function booleanFlag(flags: Flags, name: string): boolean {
 	return flags[name] === true || flags[camel(name)] === true;
+}
+
+function queryFlag(flags: Flags, positionalQuery?: unknown): string | undefined {
+	return (stringFlag(flags, "query") ?? queryText(positionalQuery))?.trim().toLowerCase() || undefined;
+}
+
+function queryText(input: unknown): string | undefined {
+	if (typeof input === "number" && Number.isFinite(input)) return String(input);
+	return typeof input === "string" ? input : undefined;
+}
+
+function filterByQuery<T>(rows: T[], query: string | undefined, fields: Array<(row: T) => string | undefined>): T[] {
+	if (!query) return rows;
+	return rows.filter((row) =>
+		fields.some((field) => {
+			const value = field(row);
+			return value ? value.toLowerCase().includes(query) : false;
+		}),
+	);
 }
 
 function helpText(): string {
@@ -814,7 +875,8 @@ Usage:
   heypi slack check [--env .env] [--mode socket|http]
   heypi slack manifest --mode socket
   heypi slack manifest --mode http --url https://host/slack/slack/events
-  heypi slack channels [--env .env] [--private]
+  heypi slack channels [devops] [--env .env] [--private] [--query devops]
+  heypi slack users [ronan] [--env .env] [--bots] [--query ronan]
   heypi slack env
   heypi telegram check [--env .env]
   heypi telegram observe [--env .env] [--timeout 60]
@@ -822,7 +884,7 @@ Usage:
   heypi telegram delete-webhook [--env .env]
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
-  heypi discord channels [--env .env]
+  heypi discord channels [engineering] [--env .env] [--query engineering]
   heypi admin link [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
   heypi approvals list --db ./state/heypi.db [--agent <id>] [--json]
   heypi approvals show <id> --db ./state/heypi.db [--agent <id>] [--json]

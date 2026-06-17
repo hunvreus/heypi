@@ -8,6 +8,7 @@
 			"!packages/heypi/drizzle/meta",
 			"!.heypi",
 			"!examples/*/state",
+			"!examples/*/workspace",
 			"!packages/heypi/src/admin/assets",
 			"!packages/heypi/src/core/assets"
 		]

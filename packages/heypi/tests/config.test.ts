@@ -7,7 +7,7 @@ import { agentFrom, DEFAULT_SOUL, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
-import { approvalFromMessages, renderContextBlock, runtimeSystemPrompt } from "../src/runtime/pi-agent.js";
+import { approvalFromMessages, channelContext, renderContextBlock, runtimeSystemPrompt } from "../src/runtime/pi-agent.js";
 
 test("agentFrom requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
@@ -58,6 +58,24 @@ test("runtimeSystemPrompt generates core tool guidance from active tools", () =>
 	assert.match(runtimeSystemPrompt(["bash", "read", "grep"]), /prefer them over shell commands/i);
 	assert.match(runtimeSystemPrompt(["bash"]), /shell commands and file exploration/i);
 	assert.doesNotMatch(runtimeSystemPrompt(["read"]), /shell commands/i);
+});
+
+test("runtimeSystemPrompt tells attach-capable agents to attach file-like output", () => {
+	const prompt = runtimeSystemPrompt(["attach"]);
+	assert.match(prompt, /Prefer attachments for content that is long, structured/);
+	assert.match(prompt, /easier to inspect as a file/);
+});
+
+test("channelContext tells chat agents to avoid pasting large file-like content", () => {
+	const context = channelContext({
+		provider: "discord",
+		channel: "C1",
+		actor: "U1",
+		threadId: "thread-1",
+	});
+	assert.match(context ?? "", /Keep chat replies concise/);
+	assert.match(context ?? "", /save it as a file and attach it instead of pasting the full content/);
+	assert.match(context ?? "", /Provider: discord/);
 });
 
 test("renderContextBlock formats dynamic agent context", () => {

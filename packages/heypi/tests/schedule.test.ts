@@ -410,6 +410,57 @@ test("scheduler stop stops the loop without waiting for active queued runs", asy
 	}
 });
 
+test("scheduler claims another queued run when a worker slot opens", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-refill-"));
+	let scheduler: ReturnType<typeof createScheduler> | undefined;
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		await store.jobs?.upsert({
+			id: "fanout",
+			agent: "agent",
+			kind: "cron",
+			schedule: JSON.stringify({ everyMs: 60_000 }),
+			target: JSON.stringify({ test: { channels: ["C1", "C2"] } }),
+			prompt: "fan out",
+			state: "active",
+			nextAt: Date.now() + 60_000,
+		});
+		const job = await store.jobs?.get({ agent: "agent", id: "fanout" });
+		if (!job) throw new Error("missing fanout job");
+		await enqueueJobRuns({ agent: "agent", store: store as SchedulerStore, job, dueAt: Date.now() });
+
+		const sent: Array<{ target: AdapterTarget; out: Outbound }> = [];
+		scheduler = createScheduler({
+			agent: "agent",
+			store,
+			handler: handler(),
+			adapters: [adapter("test", sent)],
+			starts: new Map(),
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			config: {
+				pollMs: 10_000,
+				maxConcurrentRuns: 1,
+				jobs: [
+					{
+						id: "fanout",
+						everyMs: 60_000,
+						targets: { test: { channels: ["C1", "C2"] } },
+						prompt: "fan out",
+					},
+				],
+			},
+		});
+		await scheduler?.start();
+
+		await waitFor(() => sent.length === 2);
+		assert.deepEqual(sent.map((row) => row.target.channel).sort(), ["C1", "C2"]);
+	} finally {
+		await scheduler?.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("scheduler skips queued runs when the source job is gone", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-jobs-gone-"));
 	try {

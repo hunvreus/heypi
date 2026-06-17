@@ -18,16 +18,18 @@ createHeypi({
 
 By default, admin binds through heypi's shared HTTP listener on loopback. On startup, heypi logs a one-time login URL that expires after 5 minutes.
 
-Use top-level `http` when you need a specific host or port:
+Use top-level `http` when you need a specific host or port. Use `port: 0` for local development when you want the OS to pick a free port:
 
 ```ts
 createHeypi({
   state: { root: "./state" },
-  http: { host: "127.0.0.1", port: 3000 },
+  http: { host: "127.0.0.1", port: 0 },
   admin: true,
   // ...adapters, agent, runtime
 });
 ```
+
+heypi logs the actual bound port and one-time admin login link at startup. Use a fixed port when a reverse proxy, tunnel, or external provider needs a stable URL.
 
 For local development only, auth can be disabled:
 

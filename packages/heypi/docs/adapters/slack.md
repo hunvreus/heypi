@@ -132,6 +132,7 @@ Typical bot scopes:
 | `im:history` | Receive DMs. |
 | `reactions:write` | Add progress reactions. |
 | `usergroups:read` | Resolve `allow.groups`, `permissions.approvers.groups`, and `permissions.admins.groups`. Only needed when using Slack user groups. |
+| `users:read` | List workspace users for CLI approver ID discovery. |
 
 Add private-channel scopes only if the bot must read private channels.
 
@@ -182,6 +183,8 @@ createHeypi({
 });
 ```
 
+Slack HTTP mode needs a stable public URL for Slack Event Subscriptions, Interactivity, and slash commands. Use `port: 0` only for local Socket Mode/admin setups, not for Slack HTTP mode unless a tunnel or reverse proxy provides a stable URL.
+
 Common environment variables:
 
 | Variable | Required when | Description |
@@ -199,5 +202,6 @@ For app-wide config such as `http`, `state`, `runtime`, and `agent`, see [Config
 | `heypi slack check [--env .env] [--mode socket\|http]` | Verify Slack auth and report the selected transport secrets. |
 | `heypi slack manifest --mode socket` | Print a starter Socket Mode Slack manifest. |
 | `heypi slack manifest --mode http --url https://host/slack/slack/events` | Print a starter HTTP-mode Slack manifest. |
-| `heypi slack channels [--env .env] [--private]` | List channels visible to the bot and print target snippets. |
+| `heypi slack channels [query] [--env .env] [--private]` | List or filter channels visible to the bot. |
+| `heypi slack users [query] [--env .env] [--bots]` | List or filter users visible to the bot. |
 | `heypi slack env` | Print expected Slack environment variable names. |

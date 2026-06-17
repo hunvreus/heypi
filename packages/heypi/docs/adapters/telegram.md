@@ -75,7 +75,7 @@ heypi telegram check --env .env
 heypi telegram observe --env .env
 ```
 
-Telegram cannot enumerate chats. `telegram observe` waits for a delivered DM, group, supergroup, or forum topic message and prints IDs for config and job targets.
+Telegram cannot enumerate chats. `telegram observe` waits for a delivered DM, group, supergroup, or forum topic message and prints IDs.
 
 `telegram observe` deletes any active webhook for that bot token before polling. Do not run another long-polling process with the same token while observing.
 
@@ -126,7 +126,7 @@ Webhook mode registers an HTTP route through heypi's shared HTTP server:
 ```ts
 createHeypi({
   state: { root: "./state" },
-  http: { port: 3000 },
+  http: { port: Number(process.env.PORT ?? 3000) },
   adapters: [
     telegram({
       token: process.env.TELEGRAM_BOT_TOKEN!,
@@ -143,6 +143,8 @@ createHeypi({
 });
 ```
 
+Telegram webhook mode needs a stable public URL for Telegram to deliver updates. Use `port: 0` only for local polling/admin setups, not for webhook mode unless a tunnel or reverse proxy provides a stable URL.
+
 Common environment variables:
 
 | Variable | Required when | Description |
@@ -157,6 +159,6 @@ For app-wide config such as `state`, `runtime`, and `agent`, see [Configuration]
 | Command | Purpose |
 | --- | --- |
 | `heypi telegram check [--env .env]` | Verify Telegram bot credentials. |
-| `heypi telegram observe [--env .env] [--timeout 60]` | Wait for a delivered Telegram update and print IDs/target snippets. |
+| `heypi telegram observe [--env .env] [--timeout 60]` | Wait for a delivered Telegram update and print IDs. |
 | `heypi telegram set-webhook [--env .env] --url <url> --secret-token <token>` | Register Telegram webhook delivery and bot commands. |
 | `heypi telegram delete-webhook [--env .env]` | Remove Telegram webhook delivery so polling can be used again. |

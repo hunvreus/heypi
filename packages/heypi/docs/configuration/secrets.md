@@ -73,6 +73,8 @@ createHeypi({
 
 `secrets.url` is the public URL placed in chat. With `serve: true`, heypi serves the static page at that URL's path. It also serves the stylesheet at `<path>.css`. Use HTTPS for real secrets.
 
+Self-hosted secret pages need a stable URL. Avoid `http.port: 0` for self-hosted secrets unless another layer provides a stable public URL and forwards to the selected local port. For local development, either use a fixed local port that matches `secrets.url`, or omit `serve` and use the hosted page.
+
 ## Security model
 
 - The private key stays in the heypi process memory and expires with the request.

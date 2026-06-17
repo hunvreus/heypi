@@ -493,7 +493,7 @@ export function runtimeSystemPrompt(activeTools: string[]): string {
 	}
 	if (tools.has("attach")) {
 		guidance.push(
-			"When you create a file the user should receive, call the attach tool before your final reply. Do not attach temporary, private, or intermediate files.",
+			"When you create a file the user should receive, call the attach tool before your final reply. Prefer attachments for content that is long, structured, intended for download, or easier to inspect as a file. Do not attach temporary, private, or intermediate files.",
 		);
 	}
 	return guidance.join("\n\n");
@@ -511,9 +511,10 @@ async function agentContext(agent: AgentConfig, input: AgentContextInput): Promi
 	return out;
 }
 
-function channelContext(input: AgentContextInput): string | undefined {
+export function channelContext(input: AgentContextInput): string | undefined {
 	const lines = [
 		"This message arrived through an external chat or webhook adapter. Replies are sent back to the same provider, channel, and thread unless the user or runtime routes them elsewhere.",
+		"Keep chat replies concise. Use short summaries and snippets inline. If content is long, structured, file-like, or intended for inspection/download, save it as a file and attach it instead of pasting the full content.",
 		`Provider: ${input.provider}`,
 		input.channelName ? `Channel: ${input.channelName} (${input.channel})` : `Channel id: ${input.channel}`,
 		input.threadName

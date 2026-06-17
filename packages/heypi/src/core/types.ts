@@ -93,6 +93,7 @@ export type ToolExecute = (
 
 export type ToolContinuation = {
 	threadId: string;
+	turnId?: string;
 	toolCallId: string;
 	tool: string;
 	actor?: string;

@@ -21,8 +21,9 @@ docker pull node:22-bookworm
 ## Run
 
 ```bash
-cp examples/webhook-github-docker/.env.example examples/webhook-github-docker/.env
-pnpm run dev:webhook
+cd examples/webhook-github-docker
+cp .env.example .env
+pnpm dev
 ```
 
 Required env vars:
@@ -47,7 +48,7 @@ HEYPI_WEBHOOK_PORT=3000
 Use one stable thread id per issue. With `scope: "channel"`, that gives each issue its own scoped Docker workspace and warm container.
 
 ```bash
-curl -X POST http://127.0.0.1:3000/webhook/github/threads/github-owner-repo-42/messages \
+curl -X POST http://127.0.0.1:${HEYPI_WEBHOOK_PORT:-3000}/webhook/github/threads/github-owner-repo-42/messages \
   -H "authorization: Bearer dev-secret-change-me" \
   -H "content-type: application/json" \
   -d '{"user":"github","sync":true,"text":"Diagnose issue #42. Fetch issue details, search duplicate candidates, clone the configured repo if useful, inspect relevant files or tests, and return severity, duplicate candidates, diagnosis, and next action. If tests were run, post a GitHub comment with the result. If this is clearly a duplicate, comment and close it as duplicate."}'
@@ -56,7 +57,7 @@ curl -X POST http://127.0.0.1:3000/webhook/github/threads/github-owner-repo-42/m
 For longer requests, omit `sync: true`. The response includes a `threadId` and `runId`, then you can check status:
 
 ```bash
-curl http://127.0.0.1:3000/webhook/github/threads/github-owner-repo-42/runs/<runId> \
+curl http://127.0.0.1:${HEYPI_WEBHOOK_PORT:-3000}/webhook/github/threads/github-owner-repo-42/runs/<runId> \
   -H "authorization: Bearer dev-secret-change-me"
 ```
 

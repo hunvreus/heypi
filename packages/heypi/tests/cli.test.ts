@@ -25,21 +25,25 @@ function escapeRegExp(value: string): string {
 }
 
 function cli(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: string }): string {
+	const env = { ...process.env, ...(input?.env ?? {}) };
+	if (!input?.env || !("INIT_CWD" in input.env)) delete env.INIT_CWD;
 	return execFileSync(process.execPath, [CLI, ...args], {
 		cwd: input?.cwd ?? process.cwd(),
-		env: { ...process.env, ...(input?.env ?? {}) },
+		env,
 		encoding: "utf8",
 	});
 }
 
 function cliAsync(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: string }): Promise<string> {
 	return new Promise((resolve, reject) => {
+		const env = { ...process.env, ...(input?.env ?? {}) };
+		if (!input?.env || !("INIT_CWD" in input.env)) delete env.INIT_CWD;
 		execFile(
 			process.execPath,
 			[CLI, ...args],
 			{
 				cwd: input?.cwd ?? process.cwd(),
-				env: { ...process.env, ...(input?.env ?? {}) },
+				env,
 				encoding: "utf8",
 			},
 			(error, stdout, stderr) => {
@@ -59,6 +63,9 @@ test("cli prints help and version", () => {
 	assert.match(help, new RegExp(`heypi ${escapeRegExp(PACKAGE_VERSION)}`));
 	assert.match(help, /heypi init/);
 	assert.match(help, /heypi slack channels/);
+	assert.match(help, /heypi slack users/);
+	assert.match(help, /heypi slack users \[ronan\]/);
+	assert.match(help, /--query ronan/);
 	assert.equal(cli(["version"]).trim(), PACKAGE_VERSION);
 	assert.match(cli(["init"]), /npm create heypi@latest/);
 });
@@ -84,6 +91,19 @@ test("cli check loads .env by default", async () => {
 		const out = cli(["check", "--runtime-root", root], { cwd: root });
 		assert.match(out, /ok: OPENAI_API_KEY present/);
 		assert.match(out, /ok: runtime root exists/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli resolves env paths from original invocation root", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-invocation-env-"));
+	try {
+		await mkdir(join(root, "config"));
+		await mkdir(join(root, "nested"));
+		await writeFile(join(root, "config", ".env"), "OPENAI_API_KEY=openai-api-key\n", "utf8");
+		const out = cli(["check", "--env", "config/.env"], { cwd: join(root, "nested"), env: { INIT_CWD: root } });
+		assert.match(out, /ok: OPENAI_API_KEY present/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -230,7 +250,9 @@ test("cli prints Slack manifests by explicit mode", () => {
 	assert.match(socket, /socket_mode_enabled: true/);
 	assert.doesNotMatch(socket, /request_url:/);
 	assert.match(socket, /channels:read/);
+	assert.match(socket, /commands/);
 	assert.match(socket, /usergroups:read/);
+	assert.match(socket, /users:read/);
 	assert.match(socket, /command: \/heypi/);
 	assert.doesNotMatch(socket, /groups:history/);
 
@@ -238,13 +260,43 @@ test("cli prints Slack manifests by explicit mode", () => {
 	assert.match(http, /socket_mode_enabled: false/);
 	assert.match(http, /request_url: https:\/\/agent\.example\.com\/slack\/slack\/events/);
 	assert.match(http, /channels:read/);
+	assert.match(http, /commands/);
 	assert.match(http, /usergroups:read/);
+	assert.match(http, /users:read/);
 	assert.match(http, /command: \/heypi/);
 	assert.doesNotMatch(http, /groups:history/);
 });
 
 test("cli requires Slack manifest mode", () => {
 	assert.throws(() => cli(["slack", "manifest"]), /Missing --mode/);
+});
+
+test("cli accepts positional Slack discovery queries", () => {
+	const env = { ...process.env };
+	delete env.INIT_CWD;
+	delete env.SLACK_BOT_TOKEN;
+	const result = spawnSync(process.execPath, [CLI, "slack", "users", "ronan"], {
+		cwd: process.cwd(),
+		env,
+		encoding: "utf8",
+	});
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Missing --bot-token or SLACK_BOT_TOKEN/);
+	assert.doesNotMatch(result.stderr, /Unused args/);
+});
+
+test("cli accepts positional Discord discovery queries", () => {
+	const env = { ...process.env };
+	delete env.INIT_CWD;
+	delete env.DISCORD_BOT_TOKEN;
+	const result = spawnSync(process.execPath, [CLI, "discord", "channels", "engineering"], {
+		cwd: process.cwd(),
+		env,
+		encoding: "utf8",
+	});
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Missing --token or DISCORD_BOT_TOKEN/);
+	assert.doesNotMatch(result.stderr, /Unused args/);
 });
 
 test("cli Slack manifest supports a custom slash command", () => {
@@ -256,6 +308,13 @@ test("cli Slack manifest supports a custom slash command", () => {
 test("cli Discord invite includes application commands scope", () => {
 	const out = cli(["discord", "invite", "--client-id", "123"]);
 	assert.match(out, /scope=bot%20applications\.commands/);
+});
+
+test("cli Discord invite preserves snowflake client IDs", () => {
+	const clientId = "1508265026085982359";
+	const out = cli(["discord", "invite", "--client-id", clientId]);
+	assert.match(out, new RegExp(`client_id=${clientId}`));
+	assert.doesNotMatch(out, /1508265026085982500/);
 });
 
 test("cli db migrate and jobs commands operate on sqlite store", async () => {

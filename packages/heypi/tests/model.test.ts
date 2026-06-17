@@ -54,6 +54,7 @@ function createRestartBashHandler(store: Store, out: string) {
 function createRestartToolHandler(store: Store, out: string) {
 	const continuations: ToolContinuation[] = [];
 	const runtimeScopes: Array<string | undefined> = [];
+	const continuationStreams: boolean[] = [];
 	const callRunner = new CallRunner(
 		store.calls,
 		store.approvals,
@@ -95,6 +96,7 @@ function createRestartToolHandler(store: Store, out: string) {
 			},
 			continue: async (req) => {
 				if (req.continuation) continuations.push(req.continuation);
+				continuationStreams.push(Boolean(req.stream));
 				return { text: `continued ${req.continuation?.out}` };
 			},
 		},
@@ -102,6 +104,7 @@ function createRestartToolHandler(store: Store, out: string) {
 	return {
 		handler,
 		continuations,
+		continuationStreams,
 		runtimeScopes,
 		get threadId() {
 			return threadId;
@@ -203,6 +206,58 @@ test("call args reject reserved heypi metadata and tolerate corrupt stored args"
 			runtimeScope: undefined,
 		},
 	);
+});
+
+test("approval controls do not create fresh agent turns", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		const scenario = createRestartToolHandler(store, "ok");
+		const requested = await scenario.handler({
+			provider: "slack",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			thread: "thread-1",
+			text: "delete ticket",
+			eventId: "event-1",
+		});
+		assert.match(requested?.text ?? "", /Approval required/);
+
+		const approvals = await store.approvals.listPending({ agent: "a", threadId: scenario.threadId, limit: 10 });
+		assert.equal(approvals.length, 1);
+
+		let finalized = false;
+		const approved = await scenario.handler({
+			provider: "slack",
+			channel: "C1",
+			actor: "U_ALLOWED",
+			thread: "thread-1",
+			text: `/approve ${approvals[0].id}`,
+			eventId: `approve:${approvals[0].id}`,
+			stream: {
+				update: async () => undefined,
+				finalize: async () => {
+					finalized = true;
+				},
+				stop: async () => undefined,
+			},
+		});
+		assert.match(approved?.text ?? "", /continued deleted=T1:ok/);
+		assert.equal(approved?.finalPlacement, "progress");
+		assert.equal(finalized, true);
+		assert.deepEqual(scenario.continuationStreams, [true]);
+
+		const turns = await store.turns.listForThread(scenario.threadId, { limit: 10 });
+		assert.equal(turns.length, 1);
+		const messages = await store.messages.listForThread(scenario.threadId, { limit: 10 });
+		assert.equal(
+			messages.some((message) => message.text.startsWith("/approve ")),
+			false,
+		);
+	} finally {
+		await db.cleanup();
+	}
 });
 
 test("handler passes per-turn model override to agent", async () => {
@@ -680,9 +735,12 @@ test("handler continues approved custom tool calls after handler restart", async
 		assert.equal(approved?.text, "continued deleted=T1:after restart");
 		assert.equal((await store.approvals.get(approvalId))?.state, "approved");
 		assert.deepEqual(restarted.runtimeScopes, ["channel/a/slack/T1/C1"]);
+		const turns = await store.turns.listForThread(first.threadId, { limit: 1 });
+		assert.ok(turns[0]);
 		assert.deepEqual(restarted.continuations, [
 			{
 				threadId: first.threadId,
+				turnId: turns[0].id,
 				toolCallId: "tool-call-1",
 				tool: "delete_ticket",
 				actor: "U_REQUESTER",

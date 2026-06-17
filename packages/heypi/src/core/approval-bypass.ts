@@ -82,11 +82,21 @@ export async function create(input: {
 		});
 		return undefined;
 	}
+	const threadId = call.threadId ?? context.thread;
+	if (settings.scope === "thread" && !threadId) {
+		log.warn("approval_bypass.missing_thread", {
+			approval: approval.id,
+			call: approval.callId,
+			channel: approval.channel,
+			createdBy: actor,
+		});
+		return undefined;
+	}
 	const bypass = await approvalBypasses.create({
 		agent: approval.agent,
 		scope: settings.scope,
 		channel: approval.channel,
-		threadId: call.threadId ?? context.thread,
+		threadId,
 		actor: targetActor,
 		createdBy: actor,
 		reason: approval.reason,

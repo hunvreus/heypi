@@ -58,7 +58,7 @@ Do not combine standalone webhook servers with top-level `http` unless you inten
 ```ts
 createHeypi({
   state: { root: "./state" },
-  http: { host: "127.0.0.1", port: 3000 },
+  http: { host: "127.0.0.1", port: Number(process.env.HEYPI_WEBHOOK_PORT ?? 3000) },
   adapters: [
     webhook({
       name: "internal",
@@ -76,6 +76,8 @@ Common environment variables:
 | `HEYPI_WEBHOOK_SECRET` | Always | Shared secret checked against `authorization: Bearer ...` or `x-heypi-secret`. |
 
 For app-wide config such as `http`, `state`, `runtime`, and `agent`, see [Configuration](../configuration/index.md).
+
+Webhook callers need a stable URL. Use a fixed port for webhook deployments; `http.port: 0` is intended for local admin or polling/socket-mode chat adapters where no external caller needs to know the port ahead of time.
 
 ## Routes
 
@@ -95,7 +97,7 @@ Message requests are async-first and return `202` while the turn runs. Pass `syn
 Start a thread:
 
 ```bash
-curl -X POST http://localhost:3000/webhook/internal/messages \
+curl -X POST http://localhost:${HEYPI_WEBHOOK_PORT:-3000}/webhook/internal/messages \
   -H "authorization: Bearer $HEYPI_WEBHOOK_SECRET" \
   -H "content-type: application/json" \
   -d '{"user":"alice@example.com","text":"Start incident review"}'

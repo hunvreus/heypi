@@ -30,7 +30,7 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | [`heypi check`](#heypi-check) | Validate Node, env, database, and runtime paths. |
 | [`heypi status`](#heypi-status) | Inspect persisted app status for operators. |
 | [`heypi db`](#heypi-db) | Check or migrate the SQLite store. |
-| [`heypi slack`](#heypi-slack) | Verify Slack auth, generate manifests, and discover channels. |
+| [`heypi slack`](#heypi-slack) | Verify Slack auth, generate manifests, and discover channels/users. |
 | [`heypi telegram`](#heypi-telegram) | Verify Telegram auth and discover chat IDs from delivered messages. |
 | [`heypi discord`](#heypi-discord) | Verify Discord auth, generate invite URLs, and discover channels. |
 | [`heypi admin`](#heypi-admin) | Mint local admin login links. |
@@ -115,7 +115,8 @@ heypi db migrate --db ./state/heypi.db
 heypi slack check [--env .env] [--mode socket|http] [--bot-token <token>] [--app-token <token>] [--signing-secret <secret>]
 heypi slack manifest --mode socket
 heypi slack manifest --mode http --url https://host/slack/slack/events
-heypi slack channels [--env .env] [--bot-token <token>] [--private]
+heypi slack channels [query] [--env .env] [--bot-token <token>] [--private] [--query <text>]
+heypi slack users [query] [--env .env] [--bot-token <token>] [--bots] [--query <text>]
 heypi slack env
 ```
 
@@ -123,25 +124,31 @@ heypi slack env
 | --- | --- |
 | `check` | Verifies Slack bot auth and reports Socket Mode or HTTP secret presence. |
 | `manifest` | Prints a starter Slack app manifest for Socket Mode or HTTP mode. |
-| `channels` | Lists visible Slack channel IDs and prints `targets` snippets. |
+| `channels` | Lists visible Slack channel IDs. |
+| `users` | Lists visible Slack user IDs. |
 | `env` | Prints expected Slack environment variables. |
 
 | Option | Applies to | Description |
 | --- | --- | --- |
-| `--env <path>` | `check`, `channels` | Load env file. |
-| `--bot-token <token>` | `check`, `channels` | Use instead of `SLACK_BOT_TOKEN`. |
+| `--env <path>` | `check`, `channels`, `users` | Load env file. Relative paths resolve from the original command directory. |
+| `--bot-token <token>` | `check`, `channels`, `users` | Use instead of `SLACK_BOT_TOKEN`. |
 | `--app-token <token>` | `check` | Use instead of `SLACK_APP_TOKEN`. Needed only for Socket Mode. |
 | `--signing-secret <secret>` | `check` | Use instead of `SLACK_SIGNING_SECRET`. Needed only for HTTP mode. |
 | `--mode socket\|http` | `check`, `manifest` | Select Slack transport mode. Required for `manifest`; optional for `check`. |
 | `--url <url>` | `manifest` | Event and interactivity request URL for HTTP mode. |
 | `--private` | `channels` | Include private channels visible to the bot. |
+| `--bots` | `users` | Include Slack bot users. |
+| `[query]` | `channels`, `users` | Positional filter for visible rows by name or ID. User lookup also checks real names. |
+| `--query <text>` | `channels`, `users` | Explicit filter alternative to positional `[query]`. |
 
 Examples:
 
 ```bash
 heypi slack manifest --mode socket
 heypi slack manifest --mode http --url https://agent.example.com/slack/slack/events
-heypi slack channels --env .env --private
+heypi slack channels devops --env .env
+heypi slack channels ops --env .env --private
+heypi slack users ronan --env .env
 ```
 
 ## heypi telegram
@@ -156,7 +163,7 @@ heypi telegram delete-webhook [--env .env] [--token <token>]
 | Subcommand | Description |
 | --- | --- |
 | `check` | Verifies Telegram bot credentials with `getMe`. |
-| `observe` | Waits for a delivered message and prints chat IDs plus `targets` snippets. |
+| `observe` | Waits for a delivered message and prints Telegram chat IDs. |
 | `set-webhook` | Registers Telegram webhook delivery for `message` and `callback_query` updates, then registers heypi bot commands. |
 | `delete-webhook` | Removes Telegram webhook delivery so polling can be used again. |
 
@@ -183,7 +190,7 @@ Webhook mode uses the adapter path `/telegram/<adapter-name>/webhook`; the defau
 ```bash
 heypi discord check [--env .env] [--token <token>]
 heypi discord observe [--env .env] [--token <token>] [--timeout 60]
-heypi discord channels [--env .env] [--token <token>]
+heypi discord channels [query] [--env .env] [--token <token>] [--query <text>]
 heypi discord invite [--client-id <application-id>]
 heypi discord env
 ```
@@ -191,7 +198,7 @@ heypi discord env
 | Subcommand | Description |
 | --- | --- |
 | `check` | Verifies Discord bot credentials and prints an invite URL. |
-| `observe` | Waits for a delivered message and prints guild, channel, user, and `targets` snippets. |
+| `observe` | Waits for a delivered message and prints guild, channel, and user IDs. |
 | `channels` | Lists Discord text channels visible to the bot. |
 | `invite` | Prints a Discord install URL. Uses `DISCORD_CLIENT_ID` when `--client-id` is omitted. |
 | `env` | Prints expected Discord environment variables. |
@@ -202,11 +209,16 @@ heypi discord env
 | `--token <token>` | `check`, `observe`, `channels` | Use instead of `DISCORD_BOT_TOKEN`. |
 | `--client-id <id>` | `invite` | Use instead of `DISCORD_CLIENT_ID`. |
 | `--timeout <seconds>` | `observe` | Wait time. Defaults to `60`. |
+| `[query]` | `channels` | Positional filter for visible rows by guild name, channel name, or ID. |
+| `--query <text>` | `channels` | Explicit filter alternative to positional `[query]`. |
+
+Discord IDs are snowflakes. Keep them as strings; do not coerce them through JavaScript numbers.
 
 Examples:
 
 ```bash
 heypi discord invite --client-id <application-id>
+heypi discord channels engineering --env .env
 heypi discord observe --env .env
 ```
 

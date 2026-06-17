@@ -155,6 +155,7 @@ export function telegram(input: TelegramConfig): Adapter {
 			const chatId = telegramTargetChat(target);
 			const threadId = numberOrUndefined(target.thread);
 			const log = start?.logger ?? activeLogger;
+			const context = { adapter: name, kind, channel: String(chatId), thread: target.thread };
 			await sendTargetChunks({
 				client,
 				chatId,
@@ -162,17 +163,28 @@ export function telegram(input: TelegramConfig): Adapter {
 				text: out.text,
 				approval: out.approval,
 				logger: log,
-				context: { adapter: name, kind, channel: String(chatId), thread: target.thread },
+				context,
 				delivery,
 			});
-			if (out.attachments?.length) {
-				start?.logger.warn("telegram.scheduled_attachments_unsupported", {
-					adapter: name,
-					kind,
-					channel: target.channel,
-					thread: target.thread,
-				});
-			}
+			const upload = await uploadTelegramAttachments({
+				client,
+				store: start?.attachments,
+				chatId,
+				threadId,
+				attachments: out.attachments,
+				scope: out.attachmentScope,
+				logger: log ?? noopLogger,
+				context,
+				delivery,
+			});
+			await postTelegramAttachmentUploadNotice({
+				client,
+				chatId,
+				threadId,
+				upload,
+				context,
+				delivery,
+			});
 			log?.debug("adapter.send", {
 				adapter: name,
 				kind,
@@ -449,16 +461,7 @@ async function handleUpdate(input: {
 		);
 		return;
 	}
-	const streaming = streamingEnabled(input.config.streaming);
-	const progress = telegramProgress(input.config.progress, streaming);
-	const stream = telegramReplyStream({
-		config: input.config.streaming,
-		client: input.client,
-		message: msg,
-		logger: input.start.logger,
-		context: context(),
-		delivery: input.delivery,
-	});
+	const progress = telegramProgress(input.config.progress);
 	const pending = startProgress({
 		client: input.client,
 		chatId: msg.chat.id,
@@ -469,6 +472,15 @@ async function handleUpdate(input: {
 		logger: input.start.logger,
 		context: context({ event: input.update.update_id }),
 		delivery: input.delivery,
+	});
+	const stream = telegramReplyStream({
+		config: input.config.streaming,
+		client: input.client,
+		message: msg,
+		logger: input.start.logger,
+		context: context(),
+		delivery: input.delivery,
+		takeoverFirstMessage: () => pending.takeover(),
 	});
 	await runChatMessage({
 		logger: input.start.logger,
@@ -517,13 +529,24 @@ async function handleUpdate(input: {
 				});
 			},
 			streamed: async (out) => {
-				await uploadTelegramAttachments({
+				const upload = await uploadTelegramAttachments({
 					client: input.client,
 					store: input.start.attachments,
-					message: msg,
+					chatId: msg.chat.id,
+					threadId: msg.message_thread_id,
+					replyTo: msg.message_id,
 					attachments: out.attachments,
 					scope: out.attachmentScope,
 					logger: input.start.logger,
+					context: context(),
+					delivery: input.delivery,
+				});
+				await postTelegramAttachmentUploadNotice({
+					client: input.client,
+					chatId: msg.chat.id,
+					threadId: msg.message_thread_id,
+					replyTo: msg.message_id,
+					upload,
 					context: context(),
 					delivery: input.delivery,
 				});
@@ -792,13 +815,24 @@ async function sendTelegramOutput(input: {
 		context: input.context,
 		delivery: input.delivery,
 	});
-	await uploadTelegramAttachments({
+	const upload = await uploadTelegramAttachments({
 		client: input.client,
 		store: input.store,
-		message: input.message,
+		chatId: input.message.chat.id,
+		threadId: input.message.message_thread_id,
+		replyTo: input.message.message_id,
 		attachments: input.out.attachments,
 		scope: input.out.attachmentScope,
 		logger: input.logger,
+		context: input.context,
+		delivery: input.delivery,
+	});
+	await postTelegramAttachmentUploadNotice({
+		client: input.client,
+		chatId: input.message.chat.id,
+		threadId: input.message.message_thread_id,
+		replyTo: input.message.message_id,
+		upload,
 		context: input.context,
 		delivery: input.delivery,
 	});
@@ -862,12 +896,27 @@ function telegramReplyStream(input: {
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
+	takeoverFirstMessage?: () => Promise<string | undefined>;
 }) {
 	if (!input.config || (typeof input.config === "object" && input.config.enabled === false)) return undefined;
 	return new DraftReplyStream(
 		{
 			limit: TELEGRAM_TEXT_LIMIT,
 			create: async (text) => {
+				const adopted = await input.takeoverFirstMessage?.();
+				if (adopted) {
+					await input.delivery.run(
+						() =>
+							input.client.editMessageText({
+								chat_id: input.message.chat.id,
+								message_id: Number(adopted),
+								text,
+								reply_markup: emptyMarkup(),
+							}),
+						input.context,
+					);
+					return adopted;
+				}
 				const res = await input.delivery.run(
 					() =>
 						input.client.sendMessage({
@@ -887,6 +936,7 @@ function telegramReplyStream(input: {
 							chat_id: input.message.chat.id,
 							message_id: Number(id),
 							text,
+							reply_markup: emptyMarkup(),
 						}),
 					input.context,
 				);
@@ -904,26 +954,31 @@ function telegramReplyStream(input: {
 	);
 }
 
-function streamingEnabled(input?: ReplyStreamOption): boolean {
-	return Boolean(input && (input === true || typeof input !== "object" || input.enabled !== false));
-}
-
-function telegramProgress(input: TelegramConfig["progress"], streaming: boolean): TelegramProgress | undefined {
-	if (input === false || streaming) return undefined;
+function telegramProgress(input: TelegramConfig["progress"]): TelegramProgress | undefined {
+	if (input === false) return undefined;
 	return input ?? { delayMs: 0 };
 }
+
+type TelegramAttachmentUploadResult = {
+	requested: number;
+	resolved: number;
+	uploaded: boolean;
+};
 
 async function uploadTelegramAttachments(input: {
 	client: TelegramClient;
 	store?: AttachmentStore;
-	message: TelegramMessage;
+	chatId: number;
+	threadId?: number;
+	replyTo?: number;
 	attachments?: Array<{ path: string; name?: string; mimeType?: string }>;
 	scope?: ScopedKey;
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
-	if (!input.attachments?.length) return;
+}): Promise<TelegramAttachmentUploadResult> {
+	const requested = input.attachments?.length ?? 0;
+	if (!requested) return { requested, resolved: 0, uploaded: true };
 	const files = await resolveOutboundAttachments({
 		provider: "telegram",
 		store: input.store,
@@ -932,25 +987,56 @@ async function uploadTelegramAttachments(input: {
 		logger: input.logger,
 		context: input.context,
 	});
+	if (!files.length) return { requested, resolved: 0, uploaded: false };
+	let uploaded = true;
 	for (const file of files) {
 		try {
 			await input.delivery.run(
 				() =>
 					input.client.sendDocument({
-						chat_id: input.message.chat.id,
-						message_thread_id: input.message.message_thread_id,
-						reply_to_message_id: input.message.message_id,
+						chat_id: input.chatId,
+						message_thread_id: input.threadId,
+						reply_to_message_id: input.replyTo,
 						document: file,
 					}),
 				{ ...input.context, retry: "send" },
 			);
 		} catch (error) {
+			uploaded = false;
 			input.logger.warn("telegram.attachment_upload_failed", { ...input.context, error: errorMessage(error) });
 		}
 	}
+	return { requested, resolved: files.length, uploaded };
 }
 
-function startProgress(input: {
+async function postTelegramAttachmentUploadNotice(input: {
+	client: TelegramClient;
+	chatId: number;
+	threadId?: number;
+	replyTo?: number;
+	upload: TelegramAttachmentUploadResult;
+	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
+}): Promise<void> {
+	if (!input.upload.requested) return;
+	if (input.upload.uploaded && input.upload.resolved === input.upload.requested) return;
+	const text =
+		input.upload.resolved > 0
+			? "I created the file, but Telegram did not accept the upload. Check the bot's file permissions and server logs."
+			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	await input.delivery.run(
+		() =>
+			input.client.sendMessage({
+				chat_id: input.chatId,
+				message_thread_id: input.threadId,
+				reply_to_message_id: input.replyTo,
+				text,
+			}),
+		{ ...input.context, retry: "send" },
+	);
+}
+
+export function startProgress(input: {
 	client: TelegramClient;
 	chatId: number;
 	threadId?: number;
@@ -964,17 +1050,33 @@ function startProgress(input: {
 	let active = true;
 	let placeholder: number | undefined;
 	let task: Promise<void> | undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let resolveTask: (() => void) | undefined;
 	let message = input.progress ? (input.progress.message ?? "Working...") : false;
+	const finishTask = () => {
+		const resolve = resolveTask;
+		resolveTask = undefined;
+		task = undefined;
+		resolve?.();
+	};
+	const cancelTimer = () => {
+		if (!timer) return;
+		clearTimeout(timer);
+		timer = undefined;
+		finishTask();
+	};
 	if (message) {
 		task = new Promise((resolve) => {
-			setTimeout(() => {
+			resolveTask = resolve;
+			timer = setTimeout(() => {
+				timer = undefined;
 				if (!active) {
-					resolve();
+					finishTask();
 					return;
 				}
 				const progressText = message;
 				if (progressText === false) {
-					resolve();
+					finishTask();
 					return;
 				}
 				input.delivery
@@ -998,7 +1100,7 @@ function startProgress(input: {
 							error: errorMessage(error),
 						});
 					})
-					.finally(resolve);
+					.finally(finishTask);
 			}, input.progress?.delayMs ?? 750);
 		});
 	}
@@ -1027,6 +1129,7 @@ function startProgress(input: {
 		},
 		async update(out: Outbound): Promise<boolean> {
 			active = false;
+			cancelTimer();
 			await task;
 			if (!placeholder) return false;
 			const messageId = placeholder;
@@ -1048,8 +1151,17 @@ function startProgress(input: {
 				return false;
 			}
 		},
+		async takeover(): Promise<string | undefined> {
+			active = false;
+			cancelTimer();
+			await task;
+			const messageId = placeholder;
+			placeholder = undefined;
+			return messageId === undefined ? undefined : String(messageId);
+		},
 		async stop(): Promise<void> {
 			active = false;
+			cancelTimer();
 			await task;
 			if (!placeholder) return;
 			const messageId = placeholder;
@@ -1487,6 +1599,13 @@ function telegramUserName(user: TelegramUser | undefined): string | undefined {
 function telegramChatName(chat: TelegramMessage["chat"]): string | undefined {
 	return chat.title ?? (chat.username ? `@${chat.username}` : chat.first_name);
 }
+
+const noopLogger: Logger = {
+	debug: () => undefined,
+	info: () => undefined,
+	warn: () => undefined,
+	error: () => undefined,
+};
 
 type TelegramReplyMarkup = {
 	inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;

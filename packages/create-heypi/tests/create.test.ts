@@ -26,11 +26,13 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi"/);
 		assert.match(read(app, "index.ts"), /slack\(\{/);
 		assert.match(read(app, "index.ts"), /mode: "socket"/);
+		assert.match(read(app, "index.ts"), /http: \{ port: Number\(process\.env\.HEYPI_HTTP_PORT \?\? 0\) \}/);
 		assert.match(read(app, "index.ts"), /name: "just-bash"/);
 		assert.match(read(app, "index.ts"), /openai\/gpt-5\.4-mini/);
 		assert.match(read(app, ".env"), /OPENAI_API_KEY=/);
 		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
 		assert.match(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
+		assert.match(read(app, ".env.example"), /HEYPI_HTTP_PORT=0/);
 		assert.doesNotMatch(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
 		assert.match(read(app, "agent/AGENTS.md"), /concise team assistant/);
 		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
@@ -54,6 +56,7 @@ test("creates an HTTP-mode Slack app", async () => {
 		assert.match(read(app, "index.ts"), /http: \{ port: Number\(process\.env\.PORT \?\? 3000\) \}/);
 		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
 		assert.match(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
+		assert.match(read(app, ".env.example"), /PORT=3000/);
 		assert.doesNotMatch(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
 		assert.match(read(app, "setup/slack.manifest.json"), /"socket_mode_enabled": false/);
 		assert.match(

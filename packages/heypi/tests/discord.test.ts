@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import type { Message } from "discord.js";
+import type { Message, TextBasedChannel } from "discord.js";
 import { normalizeApprovalDetails } from "../src/core/approval-view.js";
 import { consoleLogger, type Logger } from "../src/core/log.js";
+import type { AttachmentStore } from "../src/io/attachments.js";
 import { DeliveryQueue } from "../src/io/delivery.js";
 import {
 	approvalView,
 	assertDiscordAttachmentUrl,
 	discordAllowed,
 	discordTriggered,
+	sendDiscordOutput,
 	startDiscordProgress,
 } from "../src/io/discord.js";
+import { DraftReplyStream } from "../src/io/reply-stream.js";
 
 test("Discord allowlists default to accepting delivered messages", () => {
 	assert.deepEqual(discordAllowed(undefined, { channel: "C1", user: "U1", isDm: false }), { ok: true });
@@ -86,10 +92,26 @@ test("Discord approval view presents pending and rejected states as card data", 
 
 	const rejected = approvalView({ approval, state: "rejected", actor: "U1" });
 	assert.equal(rejected.title, "Rejected");
-	assert.equal(rejected.color, 0xf59e0b);
+	assert.equal(rejected.color, 0xef4444);
 	assert.deepEqual(rejected.fields.at(-1), {
 		name: "Rejected by",
 		value: "<@U1>",
+	});
+
+	const approved = approvalView({ approval, state: "approved", actor: "U1" });
+	assert.equal(approved.title, "Approved");
+	assert.equal(approved.color, 0x22c55e);
+	assert.deepEqual(approved.fields.at(-1), {
+		name: "Approved by",
+		value: "<@U1>",
+	});
+
+	const expired = approvalView({ approval, state: "expired" });
+	assert.equal(expired.title, "Expired");
+	assert.equal(expired.color, 0x64748b);
+	assert.deepEqual(expired.fields.at(-1), {
+		name: "Status",
+		value: "Expired",
 	});
 });
 
@@ -172,6 +194,125 @@ test("Discord progress stop deletes an in-flight placeholder send", async () => 
 	});
 });
 
+test("Discord streaming adopts the progress message instead of deleting it", async () => {
+	const placeholder = discordPlaceholder();
+	const message = discordMessage(Promise.resolve(placeholder.message), placeholder);
+	await usingProgress(message, async (progress) => {
+		await waitFor(() => placeholder.replyStarted);
+		const stream = new DraftReplyStream(
+			{
+				limit: 100,
+				create: async (text) => {
+					const adopted = await progress.takeover();
+					if (!adopted) throw new Error("expected progress message takeover");
+					const sent = await message.channel.messages.fetch(adopted);
+					await sent.edit({ content: text, embeds: [], components: [] });
+					return adopted;
+				},
+				edit: async (id, text) => {
+					const sent = await message.channel.messages.fetch(id);
+					await sent.edit({ content: text, embeds: [], components: [] });
+				},
+				delete: async (id) => {
+					const sent = await message.channel.messages.fetch(id);
+					await sent.delete();
+				},
+			},
+			{ intervalMs: 1, minChars: 1 },
+		);
+
+		await stream.update("streaming");
+		await stream.finalize("streaming done");
+
+		assert.deepEqual(placeholder.edits, [
+			{ content: "streaming", embeds: [], components: [] },
+			{ content: "streaming done", embeds: [], components: [] },
+		]);
+		assert.deepEqual(placeholder.deletes, []);
+	});
+});
+
+test("Discord attachment upload failure is visible in the channel", async () => {
+	const sent: unknown[] = [];
+	const file = await testAttachmentFile();
+	const channel = {
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			if (payload.files) throw new Error("missing permissions");
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	try {
+		await sendDiscordOutput({
+			channel,
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.equal(sent.length, 3);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.match(JSON.stringify(sent[2]), /Discord did not accept the upload/);
+	} finally {
+		await file.cleanup();
+	}
+});
+
+test("Discord ambiguous attachment upload aborts do not post false failure notices", async () => {
+	const sent: unknown[] = [];
+	const file = await testAttachmentFile();
+	const channel = {
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			if (payload.files) throw new DOMException("This operation was aborted", "AbortError");
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	try {
+		await sendDiscordOutput({
+			channel,
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.equal(sent.length, 2);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.deepEqual(Object.keys(sent[1] as Record<string, unknown>).sort(), ["content", "files"]);
+		assert.equal((sent[1] as Record<string, unknown>).content, "Attached: report.html");
+	} finally {
+		await file.cleanup();
+	}
+});
+
 function discordPlaceholder() {
 	const edits: unknown[] = [];
 	const deletes: string[] = [];
@@ -234,4 +375,14 @@ async function waitFor(done: () => boolean): Promise<void> {
 		if (Date.now() > deadline) throw new Error("Timed out waiting for Discord progress");
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
+}
+
+async function testAttachmentFile(): Promise<{ path: string; cleanup(): Promise<void> }> {
+	const dir = await mkdtemp(join(tmpdir(), "heypi-discord-upload-"));
+	const path = join(dir, "report.html");
+	await writeFile(path, "<html>report</html>", "utf8");
+	return {
+		path,
+		cleanup: () => rm(dir, { recursive: true, force: true }),
+	};
 }

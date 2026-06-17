@@ -186,10 +186,10 @@ function install(root: string, pm: PackageManager): void {
 
 function packageJson(options: Options): string {
 	const deps: Record<string, string> = {
-		"@hunvreus/heypi": "^0.1.4",
+		"@hunvreus/heypi": "^0.2.0-beta.0",
 	};
-	if (options.runtime === "docker") deps["@hunvreus/heypi-runtime-docker"] = "^0.1.4";
-	if (options.runtime === "gondolin") deps["@hunvreus/heypi-runtime-gondolin"] = "^0.1.4";
+	if (options.runtime === "docker") deps["@hunvreus/heypi-runtime-docker"] = "^0.2.0-beta.0";
+	if (options.runtime === "gondolin") deps["@hunvreus/heypi-runtime-gondolin"] = "^0.2.0-beta.0";
 	return json({
 		name: packageName(options.dir),
 		private: true,
@@ -259,6 +259,12 @@ function httpConfig(options: Options): string {
 	if (options.adapter === "slack" && options.slackMode === "http") {
 		return "\thttp: { port: Number(process.env.PORT ?? 3000) },\n";
 	}
+	if (options.adapter === "webhook") {
+		return "\thttp: { port: Number(process.env.PORT ?? 3000) },\n";
+	}
+	if (options.admin) {
+		return "\thttp: { port: Number(process.env.HEYPI_HTTP_PORT ?? 0) },\n";
+	}
 	return "";
 }
 
@@ -304,6 +310,9 @@ function envExample(options: Options): string {
 	const rows = ["# Model provider credentials", ...modelEnvVars(options.model).map((name) => `${name}=`)];
 	rows.push("", "# Adapter credentials");
 	rows.push(...adapterEnvVars(options).map((name) => `${name}=`));
+	if (options.adapter === "slack" && options.slackMode === "http") rows.push("", "# HTTP listener", "PORT=3000");
+	else if (options.adapter === "webhook") rows.push("", "# HTTP listener", "PORT=3000");
+	else if (options.admin) rows.push("", "# Local HTTP listener", "HEYPI_HTTP_PORT=0");
 	return `${rows.join("\n")}\n`;
 }
 

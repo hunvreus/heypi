@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { consoleLogger } from "../src/core/log.js";
+import type { AttachmentStore } from "../src/io/attachments.js";
+import { DeliveryQueue } from "../src/io/delivery.js";
 import type { HttpRoute } from "../src/io/handler.js";
-import { parseTelegramCallback, telegram, telegramApprovalText, telegramChunks } from "../src/io/telegram.js";
+import { DraftReplyStream } from "../src/io/reply-stream.js";
+import {
+	parseTelegramCallback,
+	startProgress,
+	telegram,
+	telegramApprovalText,
+	telegramChunks,
+} from "../src/io/telegram.js";
 
 test("telegram webhook mode registers one HTTP route and bot commands", async () => {
 	const calls: string[] = [];
@@ -160,6 +172,143 @@ test("Telegram approval resolution preserves approval text and appends status", 
 	assert.match(approved, /Approved by user 42/);
 });
 
+test("Telegram streaming adopts the progress message instead of deleting it", async () => {
+	const calls: unknown[] = [];
+	const client = {
+		sendMessage: async (message: unknown) => {
+			calls.push({ method: "sendMessage", message });
+			return { message_id: 10 };
+		},
+		editMessageText: async (message: unknown) => {
+			calls.push({ method: "editMessageText", message });
+			return { ok: true };
+		},
+		deleteMessage: async (message: unknown) => {
+			calls.push({ method: "deleteMessage", message });
+			return { ok: true };
+		},
+	};
+	const progress = startProgress({
+		client: client as unknown as Parameters<typeof startProgress>[0]["client"],
+		chatId: 42,
+		replyTo: 1,
+		cancelId: "trace-1",
+		progress: { delayMs: 0 },
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+		context: {},
+		delivery: new DeliveryQueue(false),
+	});
+	await eventually(() => calls.some((call) => methodOf(call) === "sendMessage"));
+	const stream = new DraftReplyStream(
+		{
+			limit: 100,
+			create: async (text) => {
+				const adopted = await progress.takeover();
+				if (!adopted) throw new Error("expected progress message takeover");
+				await client.editMessageText({
+					chat_id: 42,
+					message_id: Number(adopted),
+					text,
+					reply_markup: { inline_keyboard: [] },
+				});
+				return adopted;
+			},
+			edit: async (id, text) => {
+				await client.editMessageText({
+					chat_id: 42,
+					message_id: Number(id),
+					text,
+					reply_markup: { inline_keyboard: [] },
+				});
+			},
+			delete: async (id) => {
+				await client.deleteMessage({ chat_id: 42, message_id: Number(id) });
+			},
+		},
+		{ intervalMs: 1, minChars: 1 },
+	);
+
+	await stream.update("streaming");
+	await stream.finalize("streaming done");
+
+	assert.deepEqual(
+		calls.map((call) => methodOf(call)),
+		["sendMessage", "editMessageText", "editMessageText"],
+	);
+	assert.deepEqual(calls.at(1), {
+		method: "editMessageText",
+		message: { chat_id: 42, message_id: 10, text: "streaming", reply_markup: { inline_keyboard: [] } },
+	});
+	assert.deepEqual(calls.at(2), {
+		method: "editMessageText",
+		message: { chat_id: 42, message_id: 10, text: "streaming done", reply_markup: { inline_keyboard: [] } },
+	});
+});
+
+test("Telegram scheduled target uploads attachments", async () => {
+	const events: TelegramFetchEvent[] = [];
+	const restore = mockTelegramFetchDetailed(events);
+	const root = await mkdtemp(join(tmpdir(), "heypi-telegram-attachment-"));
+	try {
+		const file = join(root, "report.html");
+		await writeFile(file, "<html></html>");
+		const store = attachmentStore(file);
+		const adapter = telegram({ token: "token" });
+		assert.ok(adapter.send);
+
+		await adapter.send(
+			{ channel: "42", thread: "7" },
+			{
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			{
+				handler: async () => undefined,
+				logger: consoleLogger({ level: "error", format: "pretty" }),
+				attachments: store,
+			},
+		);
+
+		assert.deepEqual(deliveryMethods(events), ["sendMessage", "sendDocument"]);
+	} finally {
+		restore();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("Telegram scheduled attachment upload failure is visible in the chat", async () => {
+	const events: TelegramFetchEvent[] = [];
+	const restore = mockTelegramFetchDetailed(events, { failDocument: true });
+	const root = await mkdtemp(join(tmpdir(), "heypi-telegram-attachment-fail-"));
+	try {
+		const file = join(root, "report.html");
+		await writeFile(file, "<html></html>");
+		const store = attachmentStore(file);
+		const adapter = telegram({ token: "token" });
+		assert.ok(adapter.send);
+
+		await adapter.send(
+			{ channel: "42", thread: "7" },
+			{
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			{
+				handler: async () => undefined,
+				logger: consoleLogger({ level: "error", format: "pretty" }),
+				attachments: store,
+			},
+		);
+
+		assert.deepEqual(deliveryMethods(events), ["sendMessage", "sendDocument", "sendMessage"]);
+		const notice = events.filter((event) => event.method === "sendMessage").at(-1);
+		assert.match(String(notice?.body?.text), /Telegram did not accept the upload/);
+	} finally {
+		restore();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 function mockTelegramFetch(calls: string[]): () => void {
 	const original = globalThis.fetch;
 	globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -179,8 +328,51 @@ function mockTelegramFetch(calls: string[]): () => void {
 	};
 }
 
-function jsonResponse(body: unknown): Response {
-	return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+type TelegramFetchEvent = {
+	method: string;
+	body?: Record<string, unknown>;
+};
+
+function mockTelegramFetchDetailed(events: TelegramFetchEvent[], options: { failDocument?: boolean } = {}): () => void {
+	const original = globalThis.fetch;
+	globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+		const value = String(url);
+		if (value.startsWith("http://127.0.0.1:")) return original(url, init);
+		const method = value.slice(value.lastIndexOf("/") + 1);
+		const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
+		events.push({ method, body });
+		if (method === "sendDocument" && options.failDocument) {
+			return jsonResponse({ ok: false, description: "forbidden" }, 403);
+		}
+		if (method === "sendMessage") return jsonResponse({ ok: true, result: telegramMessage("ok", events.length) });
+		return jsonResponse({ ok: true, result: true });
+	}) as typeof fetch;
+	return () => {
+		globalThis.fetch = original;
+	};
+}
+
+function attachmentStore(file: string): AttachmentStore {
+	return {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file, name: "report.html", mimeType: "text/html", size: 13 };
+		},
+	};
+}
+
+function deliveryMethods(events: TelegramFetchEvent[]): string[] {
+	return events.map((event) => event.method).filter((method) => method !== "deleteMessage");
+}
+
+function methodOf(input: unknown): string | undefined {
+	return typeof input === "object" && input !== null && "method" in input ? String(input.method) : undefined;
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
 function telegramUpdate(text: string) {

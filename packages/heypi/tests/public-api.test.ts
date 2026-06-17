@@ -854,7 +854,8 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			threadId: thread.id,
 			trace: "job:default:daily:stale",
 		});
-		await store.jobRuns?.claim({
+		if (!store.jobRuns?.claim) throw new Error("job run claims are required");
+		await store.jobRuns.claim({
 			agent: "default",
 			owner: "dead-process",
 			now: Date.now(),

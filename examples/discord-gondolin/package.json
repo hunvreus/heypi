@@ -1,0 +1,21 @@
+{
+	"name": "heypi-example-discord-gondolin",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch --conditions development index.ts",
+		"start": "tsx --conditions development index.ts"
+	},
+	"dependencies": {
+		"@hunvreus/heypi": "workspace:*",
+		"@hunvreus/heypi-runtime-gondolin": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.1",
+		"tsx": "^4.22.3",
+		"typescript": "^6.0.3"
+	},
+	"engines": {
+		"node": ">=23.6"
+	}
+}

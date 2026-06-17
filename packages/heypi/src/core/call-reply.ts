@@ -95,6 +95,7 @@ export function continuation(
 	tool: string,
 	context: {
 		thread?: string;
+		turn?: string;
 		toolCall?: string;
 	},
 	actor: string | null | undefined,
@@ -105,6 +106,7 @@ export function continuation(
 	if (!context.thread || !context.toolCall) return undefined;
 	return {
 		threadId: context.thread,
+		...(context.turn ? { turnId: context.turn } : {}),
 		toolCallId: context.toolCall,
 		tool,
 		actor: actor ?? undefined,

@@ -1324,9 +1324,14 @@ function docsAction(): string {
 }
 
 function logo(className = "h-auto w-24"): string {
-	const path =
-		"M582.474 171.429V205.714H616.737V171.429H582.474ZM239.842 102.857H205.579V68.5713H239.842V102.857ZM376.895 102.857H342.632V34.2861H308.368V137.143H376.895V205.714H411.158V34.2861H376.895V102.857ZM513.947 102.857H479.685V68.5713H513.947V102.857ZM34.2627 34.2861V205.714H68.5264V137.143H102.789V205.714H137.053V102.857H68.5264V34.2861H34.2627ZM171.315 34.2861V205.714H274.105V171.429H205.579V137.143H274.105V34.2861H171.315ZM445.421 205.714H479.685V137.143H548.211V34.2861H445.421V205.714ZM582.474 137.143H616.737V34.2861H582.474V137.143Z";
-	return `<svg class="${escapeHtml(className)}" viewBox="34.2627 34.2861 582.4743 171.4279" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="${path}" fill="currentColor"/></svg>`;
+	return `<svg class="${escapeHtml(className)}" viewBox="0 0 816 192" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+		<path d="M48 192H0V0H48V48H144V192H96V96H48V192Z" fill="currentColor"/>
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M336 48L240 144H336V192H192V48L240 0H336V48ZM240 96L288 48H240V96Z" fill="currentColor"/>
+		<path d="M432 96H480V0H528V192H480V144H384V0H432V96Z" fill="currentColor"/>
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M720 144H624V192H576V0H720V144ZM624 96H672V48H624V96Z" fill="currentColor"/>
+		<path d="M816 192H768V144H816V192Z" fill="currentColor"/>
+		<path d="M816 96H768V0H816V96Z" fill="currentColor"/>
+	</svg>`;
 }
 
 function adapterIcon(kind: string): string {

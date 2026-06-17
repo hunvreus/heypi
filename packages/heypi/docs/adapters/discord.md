@@ -68,7 +68,7 @@ Message Content
 
 Required OAuth scopes: `bot` and `applications.commands`.
 
-Required bot permissions: `Send Messages`, `Read Message History`, and `Add Reactions`.
+Required bot permissions: `View Channel`, `Send Messages`, `Send Messages in Threads`, `Read Message History`, `Add Reactions`, and `Attach Files`.
 
 Native controls use flat application commands:
 
@@ -92,7 +92,9 @@ heypi discord invite --client-id <application-id>
 heypi discord check --env .env
 ```
 
-Use `heypi discord observe` to capture exact guild, channel, user, role, and job target IDs from a delivered message.
+`discord invite` prints an OAuth install URL with the `bot` and `applications.commands` scopes plus heypi's required bot permissions. Discord application IDs are snowflakes; keep them as strings in config, environment variables, and CLI usage.
+
+Use `heypi discord channels [query]` to list visible channel IDs. Use `heypi discord observe` to capture exact guild, channel, and user IDs from a delivered message.
 
 ## Config
 
@@ -132,6 +134,6 @@ For app-wide config such as `state`, `runtime`, and `agent`, see [Configuration]
 | --- | --- |
 | `heypi discord check [--env .env]` | Verify Discord bot credentials. |
 | `heypi discord invite --client-id <application-id>` | Print a Discord install URL. |
-| `heypi discord channels [--env .env]` | List Discord text channels visible to the bot. |
-| `heypi discord observe [--env .env] [--timeout 60]` | Wait for a delivered Discord message and print IDs/target snippets. |
+| `heypi discord channels [query] [--env .env]` | List or filter Discord text channels visible to the bot. |
+| `heypi discord observe [--env .env] [--timeout 60]` | Wait for a delivered Discord message and print IDs. |
 | `heypi discord env` | Print expected Discord environment variable names. |

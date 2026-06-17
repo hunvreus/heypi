@@ -24,11 +24,10 @@ Unlike the Slack DevOps example, it does not define remote execution tools, SSH 
 ## Run
 
 ```bash
-cp examples/telegram-workout/.env.example examples/telegram-workout/.env
-pnpm run dev:telegram
+cd examples/telegram-workout
+cp .env.example .env
+pnpm dev
 ```
-
-The repo script runs `index.ts` with `examples/telegram-workout` as the working directory.
 
 Required env vars:
 
@@ -51,19 +50,19 @@ This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters
 Check setup and discover a target chat:
 
 ```bash
-pnpm heypi telegram check --env examples/telegram-workout/.env
-pnpm heypi telegram observe --env examples/telegram-workout/.env
+pnpm exec heypi telegram check
+pnpm exec heypi telegram observe
 ```
 
 Use `telegram observe` to capture a group chat ID for `HEYPI_TELEGRAM_CHATS`. For a DM-only smoke test, leave the Telegram allowlists empty.
 
-Smoke test from the repo root:
+Smoke test:
 
-1. Fill `examples/telegram-workout/.env` with `TELEGRAM_BOT_TOKEN` and `OPENAI_API_KEY`.
-2. Run `pnpm heypi telegram check --env examples/telegram-workout/.env`.
-3. Run `pnpm heypi telegram observe --env examples/telegram-workout/.env`.
+1. Fill `.env` with `TELEGRAM_BOT_TOKEN` and `OPENAI_API_KEY`.
+2. Run `pnpm exec heypi telegram check`.
+3. Run `pnpm exec heypi telegram observe`.
 4. Send `/start` to the bot in Telegram and confirm `observe` prints the chat.
-5. Leave `HEYPI_TELEGRAM_CHATS` empty for the DM test, then run `pnpm run dev:telegram`.
+5. Leave `HEYPI_TELEGRAM_CHATS` empty for the DM test, then run `pnpm dev`.
 6. Send the bot a DM, for example: `help`.
 
 Try:

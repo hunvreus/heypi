@@ -56,6 +56,8 @@ export function createScheduler(input: {
 	const adapters = new Map(input.adapters.map((adapter) => [adapter.name, adapter]));
 	const owner = `scheduler:${input.agent}:${randomUUID()}`;
 	const activeRuns = new Set<Promise<void>>();
+	let claiming = false;
+	let claimRequested = false;
 
 	async function tick(): Promise<void> {
 		const now = Date.now();
@@ -113,12 +115,37 @@ export function createScheduler(input: {
 	}
 
 	async function claimRuns(now: number): Promise<void> {
+		if (claiming) {
+			claimRequested = true;
+			return;
+		}
+		claiming = true;
+		try {
+			let current = now;
+			do {
+				claimRequested = false;
+				await claimRunsOnce(current);
+				current = Date.now();
+			} while (claimRequested && !stopped);
+		} finally {
+			claiming = false;
+		}
+	}
+
+	async function claimRunsOnce(now: number): Promise<void> {
 		const limit = input.config?.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
 		const slots = Math.max(0, limit - activeRuns.size);
 		if (!slots) return;
 		const claimed = await store.jobRuns.claim({ agent: input.agent, owner, now, limit: slots });
 		for (const run of claimed) {
-			const task = executeRun(run).finally(() => activeRuns.delete(task));
+			const task = executeRun(run).finally(() => {
+				activeRuns.delete(task);
+				if (!stopped) {
+					void claimRuns(Date.now()).catch((error) => {
+						input.logger.error("job.claim_failed", { error: errorMessage(error) });
+					});
+				}
+			});
 			activeRuns.add(task);
 		}
 	}

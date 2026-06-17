@@ -86,6 +86,6 @@ See [Agent tools: Confirmation](tools.md#confirmation) for the `confirm` return 
 - `allow.bots` lets bots send messages to the agent. It does not let bots list, approve, deny, or revoke approvals unless the bot actor is explicitly listed in adapter `permissions.approvers` or `permissions.admins`.
 - Users can deny their own requested approval.
 - Human requesters can approve their own pending request when they are authorized by the zero-config fallback or by adapter permissions, unless `allowSelfApproval` is disabled.
-- Pending approvals are persisted. On startup, heypi fails stale running calls and job runs from a previous process so they do not stay stuck in `running`.
+- Pending approvals are persisted. On startup, heypi fails stale running calls and requeues stale running job runs from a previous process so they do not stay stuck in `running`.
 
 heypi logs a startup warning when bash or confirmed custom tools are enabled without explicit adapter approvers or admins.

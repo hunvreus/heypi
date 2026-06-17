@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { ServerResponse } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import { test } from "node:test";
 import type { Logger } from "../src/core/log.js";
 import { createHttpServerRegistry } from "../src/io/http.js";
@@ -48,6 +48,36 @@ test("HTTP registry does not append JSON errors after response headers are sent"
 		assert.equal(await response.text(), "partial");
 	} finally {
 		await registry.close();
+	}
+});
+
+test("HTTP registry preserves listen errors during cleanup", async () => {
+	const occupied = createServer();
+	await new Promise<void>((resolve, reject) => {
+		occupied.once("error", reject);
+		occupied.listen(0, "127.0.0.1", () => {
+			occupied.off("error", reject);
+			resolve();
+		});
+	});
+	const address = occupied.address();
+	assert.ok(address && typeof address !== "string");
+
+	const registry = createHttpServerRegistry({ logger, listen: { host: "127.0.0.1", port: address.port } });
+	registry.register({
+		method: "GET",
+		path: "/health",
+		handler: async (_req, res) => {
+			res.end("ok");
+		},
+	});
+	try {
+		await assert.rejects(() => registry.listen(), { code: "EADDRINUSE" });
+		await registry.close();
+	} finally {
+		await new Promise<void>((resolve, reject) => {
+			occupied.close((error) => (error ? reject(error) : resolve()));
+		});
 	}
 });
 

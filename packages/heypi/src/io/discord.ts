@@ -17,13 +17,13 @@ import {
 	SlashCommandBuilder,
 	type TextBasedChannel,
 } from "discord.js";
+import { readFile } from "node:fs/promises";
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { ScopedKey } from "../core/scope.js";
-import type { ApprovalResolution } from "../core/types.js";
 import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
@@ -37,9 +37,14 @@ import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "heypi_approve";
 const DENY = "heypi_deny";
+const CANCEL = "heypi_cancel";
+const STATUS = "heypi_status";
 const DISCORD_TEXT_LIMIT = 2000;
 const DISCORD_EMBED_FIELD_LIMIT = 1024;
 const APPROVAL_PENDING_COLOR = 0xf59e0b;
+const APPROVAL_APPROVED_COLOR = 0x22c55e;
+const APPROVAL_REJECTED_COLOR = 0xef4444;
+const APPROVAL_EXPIRED_COLOR = 0x64748b;
 const DISCORD_CONFIG_KEYS = new Set([
 	"name",
 	"token",
@@ -223,22 +228,25 @@ async function handleMessage(input: {
 		);
 		return;
 	}
-	const streaming = streamingEnabled(input.config.streaming);
-	const progress = discordProgress(input.config.progress, streaming);
-	const stream = discordReplyStream({
-		config: input.config.streaming,
-		message: msg,
-		logger: input.start.logger,
-		context: context(),
-		delivery: input.delivery,
-	});
+	const progress = discordProgress(input.config.progress);
+	const reply = !isDm(msg);
 	const pending = startDiscordProgress({
 		message: msg,
+		reply,
 		progress,
 		cancelId: trace,
 		logger: input.start.logger,
 		context: context(),
 		delivery: input.delivery,
+	});
+	const stream = discordReplyStream({
+		config: input.config.streaming,
+		message: msg,
+		reply,
+		logger: input.start.logger,
+		context: context(),
+		delivery: input.delivery,
+		takeoverFirstMessage: () => pending.takeover(),
 	});
 	await runChatMessage({
 		logger: input.start.logger,
@@ -285,7 +293,7 @@ async function handleMessage(input: {
 					channel: target,
 					store: input.start.attachments,
 					out,
-					replyTo: out.private ? undefined : msg,
+					replyTo: !reply || out.private ? undefined : msg,
 					skipFirst: false,
 					logger: input.start.logger,
 					context: context(),
@@ -310,7 +318,7 @@ async function handleMessage(input: {
 					channel: target,
 					store: input.start.attachments,
 					out,
-					replyTo: out.private ? undefined : msg,
+					replyTo: !reply || out.private ? undefined : msg,
 					skipFirst: edited,
 					logger: input.start.logger,
 					context: context(),
@@ -324,7 +332,7 @@ async function handleMessage(input: {
 			await sendTextChunks({
 				channel: msg.channel,
 				text,
-				replyTo: msg,
+				replyTo: reply ? msg : undefined,
 				skipFirst: edited,
 				context: context(),
 				delivery: input.delivery,
@@ -366,12 +374,8 @@ async function handleInteraction(input: {
 		acknowledged = true;
 	};
 	const replace = async (out: Outbound) => {
-		const embed = approvalEmbedForAction(
-			out,
-			out.approvalResolution ?? actionResolution(action.kind),
-			actor,
-			interaction.message,
-		);
+		const resolution = action.kind === "deny" ? "rejected" : "approved";
+		const embed = approvalEmbedForAction(out, out.approvalResolution ?? resolution, actor, interaction.message);
 		if (!embed) throw new Error("Discord approval replacement missing approval embed");
 		await interaction.editReply({
 			content: "",
@@ -380,6 +384,18 @@ async function handleInteraction(input: {
 		});
 	};
 	await interaction.deferUpdate();
+	const progress =
+		action.kind === "approve"
+			? startDiscordProgress({
+					message: interaction.message,
+					reply: !isDm(interaction.message),
+					progress: discordProgress(input.config.progress),
+					cancelId: trace,
+					logger: input.start.logger,
+					context: context(),
+					delivery: input.delivery,
+				})
+			: undefined;
 	try {
 		const out = await input.start.handler({
 			trace,
@@ -391,13 +407,18 @@ async function handleInteraction(input: {
 			actor,
 			actorGroups,
 			thread: channel,
-			text: `${action.kind} ${action.id}`,
+			text: discordActionText(action),
 			data: { customId: interaction.customId, messageId: interaction.message.id },
 			ack: action.kind === "approve" ? (out) => acknowledge(out) : undefined,
 			replace: action.kind === "approve" || action.kind === "deny" ? replace : undefined,
+			runtimeProgress: progress ? { update: (text) => progress.notify(text) } : undefined,
 		});
 		if (!out) return;
 		if (out.silent) return;
+		if (action.kind === "cancel" || action.kind === "status") {
+			await interaction.followUp({ content: out.text, ephemeral: true }).catch(() => undefined);
+			return;
+		}
 		if (out.private) {
 			if (out.replaceOriginal) {
 				const embed = approvalEmbedForAction(out, out.approvalResolution, actor, interaction.message);
@@ -416,10 +437,12 @@ async function handleInteraction(input: {
 		const target = interaction.channel;
 		if (!target) return;
 		if (acknowledged) {
+			const edited = progress ? await progress.update(out) : false;
 			await sendDiscordOutput({
 				channel: target,
 				store: input.start.attachments,
 				out,
+				skipFirst: edited,
 				logger: input.start.logger,
 				context: context(),
 				delivery: input.delivery,
@@ -472,6 +495,8 @@ async function handleInteraction(input: {
 		await interaction
 			.followUp({ content: userError(input.start.messages?.error), ephemeral: true })
 			.catch(() => undefined);
+	} finally {
+		await progress?.stop();
 	}
 }
 
@@ -624,7 +649,13 @@ async function discordTargetChannel(client: Client, target: AdapterTarget): Prom
 	return user.createDM();
 }
 
-async function sendDiscordOutput(input: {
+type DiscordAttachmentUploadResult = {
+	requested: number;
+	resolved: number;
+	status: "uploaded" | "failed" | "unknown";
+};
+
+export async function sendDiscordOutput(input: {
 	channel: TextBasedChannel;
 	store?: AttachmentStore;
 	out: Outbound;
@@ -643,12 +674,18 @@ async function sendDiscordOutput(input: {
 		context: input.context,
 		delivery: input.delivery,
 	});
-	await uploadDiscordAttachments({
+	const upload = await uploadDiscordAttachments({
 		channel: input.channel,
 		store: input.store,
 		attachments: input.out.attachments,
 		scope: input.out.attachmentScope,
 		logger: input.logger,
+		context: input.context,
+		delivery: input.delivery,
+	});
+	await postDiscordAttachmentUploadNotice({
+		channel: input.channel,
+		upload,
 		context: input.context,
 		delivery: input.delivery,
 	});
@@ -690,19 +727,30 @@ async function sendTextChunks(input: {
 function discordReplyStream(input: {
 	config?: ReplyStreamOption;
 	message: Message;
+	reply?: boolean;
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
+	takeoverFirstMessage?: () => Promise<string | undefined>;
 }) {
 	if (!input.config || (typeof input.config === "object" && input.config.enabled === false)) return undefined;
 	return new DraftReplyStream(
 		{
 			limit: DISCORD_TEXT_LIMIT,
 			create: async (text) => {
-				const sent = await input.delivery.run(() => input.message.reply({ content: text }), {
+				const adopted = await input.takeoverFirstMessage?.();
+				if (adopted) {
+					const msg = await input.message.channel.messages.fetch(adopted);
+					await input.delivery.run(() => msg.edit({ content: text, embeds: [], components: [] }), input.context);
+					return adopted;
+				}
+				const sent = await input.delivery.run(
+					() => sendTo(input.message.channel, input.reply === false ? undefined : input.message, { content: text }),
+					{
 					...input.context,
 					retry: "send",
-				});
+					},
+				);
 				return sent.id;
 			},
 			edit: async (id, text) => {
@@ -722,6 +770,7 @@ function discordReplyStream(input: {
 
 export function startDiscordProgress(input: {
 	message: Message;
+	reply?: boolean;
 	progress?: DiscordProgress;
 	cancelId?: string;
 	logger: Logger;
@@ -732,10 +781,26 @@ export function startDiscordProgress(input: {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let send: Promise<void> | undefined;
 	let text = input.progress?.message === false ? undefined : (input.progress?.message ?? "Working...");
+	const cancelTimer = () => {
+		if (!timer) return;
+		clearTimeout(timer);
+		timer = undefined;
+	};
 	if (text) {
 		timer = setTimeout(() => {
+			timer = undefined;
 			send = input.delivery
-				.run(() => input.message.reply({ content: text }), { ...input.context, retry: "send" })
+				.run(
+					() =>
+						sendTo(input.message.channel, input.reply === false ? undefined : input.message, {
+							content: text,
+							components: progressComponents(input.cancelId),
+						}),
+					{
+						...input.context,
+						retry: "send",
+					},
+				)
 				.then((msg) => {
 					id = msg.id;
 				})
@@ -751,7 +816,10 @@ export function startDiscordProgress(input: {
 			if (!id) return;
 			try {
 				const msg = await input.message.channel.messages.fetch(id);
-				await input.delivery.run(() => msg.edit({ content: next }), input.context);
+				await input.delivery.run(
+					() => msg.edit({ content: next, components: progressComponents(input.cancelId) }),
+					input.context,
+				);
 			} catch (error) {
 				input.logger.warn("discord.progress.notify_failed", {
 					...input.context,
@@ -760,6 +828,7 @@ export function startDiscordProgress(input: {
 			}
 		},
 		async update(out: Outbound): Promise<boolean> {
+			cancelTimer();
 			await send;
 			if (!id) return false;
 			const messageId = id;
@@ -781,8 +850,15 @@ export function startDiscordProgress(input: {
 				return false;
 			}
 		},
+		async takeover(): Promise<string | undefined> {
+			cancelTimer();
+			await send;
+			const messageId = id;
+			id = undefined;
+			return messageId;
+		},
 		async stop(): Promise<void> {
-			if (timer) clearTimeout(timer);
+			cancelTimer();
 			await send;
 			if (!id) return;
 			const messageId = id;
@@ -854,8 +930,9 @@ async function uploadDiscordAttachments(input: {
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
-	if (!input.attachments?.length) return;
+}): Promise<DiscordAttachmentUploadResult> {
+	const requested = input.attachments?.length ?? 0;
+	if (!requested) return { requested, resolved: 0, status: "uploaded" };
 	const resolved = await resolveOutboundAttachments({
 		provider: "discord",
 		store: input.store,
@@ -864,9 +941,65 @@ async function uploadDiscordAttachments(input: {
 		logger: input.logger,
 		context: input.context,
 	});
-	const files = resolved.map((file) => new AttachmentBuilder(file.path, { name: file.name }));
-	if (!files.length) return;
-	await input.delivery.run(() => sendTo(input.channel, undefined, { files }), { ...input.context, retry: "send" });
+	const files = await Promise.all(
+		resolved.map(async (file) => new AttachmentBuilder(await readFile(file.path), { name: file.name })),
+	);
+	if (!files.length) return { requested, resolved: 0, status: "failed" };
+	try {
+		await input.delivery.run(
+			() =>
+				sendTo(input.channel, undefined, {
+					content: attachmentUploadText(resolved.map((file) => file.name)),
+					files,
+				}),
+			{ ...input.context, retry: "send" },
+		);
+		input.logger.debug("discord.attachment_upload_done", {
+			...input.context,
+			requested,
+			resolved: files.length,
+		});
+		return { requested, resolved: files.length, status: "uploaded" };
+	} catch (error) {
+		const ambiguous = ambiguousDiscordSendError(error);
+		input.logger.warn(ambiguous ? "discord.attachment_upload_ambiguous" : "discord.attachment_upload_failed", {
+			...input.context,
+			error: errorMessage(error),
+		});
+		return { requested, resolved: files.length, status: ambiguous ? "unknown" : "failed" };
+	}
+}
+
+function attachmentUploadText(names: string[]): string {
+	const label = names.length === 1 ? names[0] : `${names.length} files`;
+	return `Attached: ${label}`;
+}
+
+async function postDiscordAttachmentUploadNotice(input: {
+	channel: TextBasedChannel;
+	upload: DiscordAttachmentUploadResult;
+	context: Record<string, unknown>;
+	delivery: DeliveryQueue;
+}): Promise<void> {
+	if (!input.upload.requested) return;
+	if (input.upload.status === "uploaded" && input.upload.resolved === input.upload.requested) return;
+	if (input.upload.status === "unknown") return;
+	const text =
+		input.upload.resolved > 0
+			? "I created the file, but Discord did not accept the upload. Check the bot's attachment permissions and server logs."
+			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	await sendTextChunks({
+		channel: input.channel,
+		text,
+		context: input.context,
+		delivery: input.delivery,
+	});
+}
+
+function ambiguousDiscordSendError(error: unknown): boolean {
+	if (error instanceof DOMException && error.name === "AbortError") return true;
+	const text = errorMessage(error).toLowerCase();
+	return text.includes("operation was aborted") || text.includes("aborterror");
 }
 
 function approvalComponents(approval: NonNullable<Outbound["approval"]>) {
@@ -876,6 +1009,16 @@ function approvalComponents(approval: NonNullable<Outbound["approval"]>) {
 			new ButtonBuilder().setCustomId(`${DENY}:${approval.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger),
 		),
 	];
+}
+
+function progressComponents(cancelId?: string) {
+	const buttons = [
+		cancelId
+			? new ButtonBuilder().setCustomId(`${CANCEL}:${cancelId}`).setLabel("Cancel").setStyle(ButtonStyle.Danger)
+			: undefined,
+		new ButtonBuilder().setCustomId(STATUS).setLabel("Status").setStyle(ButtonStyle.Secondary),
+	].filter((button): button is ButtonBuilder => Boolean(button));
+	return buttons.length ? [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)] : [];
 }
 
 type ApprovalViewState = "pending" | "approved" | "rejected" | "expired";
@@ -897,7 +1040,7 @@ export function approvalView(input: { approval?: Outbound["approval"]; state: Ap
 	if (input.approval?.requestedBy) fields.push({ name: "Requested by", value: `<@${input.approval.requestedBy}>` });
 	const resolution = approvalResolutionField(input.state, input.actor);
 	if (resolution) fields.push(resolution);
-	return { title: approvalTitle(input.state), color: APPROVAL_PENDING_COLOR, fields };
+	return { title: approvalTitle(input.state), color: approvalColor(input.state), fields };
 }
 
 function approvalEmbed(approval: Outbound["approval"] | undefined, state: ApprovalViewState, actor?: string) {
@@ -914,10 +1057,19 @@ function approvalEmbedForAction(
 	if (out.approval && state) return approvalEmbed(out.approval, state, actor);
 	const embed = source.embeds[0];
 	if (!embed || embed.fields.length >= 25) return undefined;
-	return EmbedBuilder.from(embed).addFields({
+	const builder = EmbedBuilder.from(embed).addFields({
 		name: "Status",
 		value: truncateEmbedValue(out.text),
 	});
+	if (state) builder.setColor(approvalColor(state));
+	return builder;
+}
+
+function approvalColor(state: ApprovalViewState): number {
+	if (state === "approved") return APPROVAL_APPROVED_COLOR;
+	if (state === "rejected") return APPROVAL_REJECTED_COLOR;
+	if (state === "expired") return APPROVAL_EXPIRED_COLOR;
+	return APPROVAL_PENDING_COLOR;
 }
 
 function approvalResolutionField(
@@ -930,15 +1082,25 @@ function approvalResolutionField(
 	return undefined;
 }
 
-function actionResolution(kind: "approve" | "deny"): ApprovalResolution {
-	return kind === "approve" ? "approved" : "rejected";
-}
+type DiscordAction =
+	| { kind: "approve"; id: string }
+	| { kind: "deny"; id: string }
+	| { kind: "cancel"; id: string }
+	| { kind: "status"; id?: string };
 
-function parseAction(input: string): { kind: "approve" | "deny"; id: string } | undefined {
+function parseAction(input: string): DiscordAction | undefined {
+	if (input === STATUS) return { kind: "status" };
 	const [kind, id] = input.split(":");
 	if (kind === APPROVE && id) return { kind: "approve", id };
 	if (kind === DENY && id) return { kind: "deny", id };
+	if (kind === CANCEL && id) return { kind: "cancel", id };
+	if (kind === STATUS && id) return { kind: "status", id };
 	return undefined;
+}
+
+function discordActionText(action: DiscordAction): string {
+	if (action.kind === "status") return action.id ? `/status ${action.id}` : "/status";
+	return `/${action.kind} ${action.id}`;
 }
 
 function approvedFallbackText(actor: string, text: string, id?: string): string {
@@ -1011,12 +1173,8 @@ function discordThread(msg: Message): boolean {
 	return typeof channel.isThread === "function" && channel.isThread();
 }
 
-function streamingEnabled(input?: ReplyStreamOption): boolean {
-	return Boolean(input && (input === true || typeof input !== "object" || input.enabled !== false));
-}
-
-function discordProgress(input: DiscordConfig["progress"], streaming: boolean): DiscordProgress | undefined {
-	if (input === false || streaming) return undefined;
+function discordProgress(input: DiscordConfig["progress"]): DiscordProgress | undefined {
+	if (input === false) return undefined;
 	return input ?? { delayMs: 0 };
 }
 

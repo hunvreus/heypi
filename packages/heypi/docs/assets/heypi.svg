@@ -1,0 +1,18 @@
+<svg viewBox="0 0 816 192" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="none">
+	<path d="M48 192H0V0H48V48H144V192H96V96H48V192Z" fill="currentColor" />
+	<path
+		fill-rule="evenodd"
+		clip-rule="evenodd"
+		d="M336 48L240 144H336V192H192V48L240 0H336V48ZM240 96L288 48H240V96Z"
+		fill="currentColor"
+	/>
+	<path d="M432 96H480V0H528V192H480V144H384V0H432V96Z" fill="currentColor" />
+	<path
+		fill-rule="evenodd"
+		clip-rule="evenodd"
+		d="M720 144H624V192H576V0H720V144ZM624 96H672V48H624V96Z"
+		fill="currentColor"
+	/>
+	<path d="M816 192H768V144H816V192Z" fill="currentColor" />
+	<path d="M816 96H768V0H816V96Z" fill="currentColor" />
+</svg>

@@ -55,7 +55,7 @@ export async function discordChannels(token: string): Promise<DiscordChannel[]> 
 	});
 }
 
-/** Observes the next delivered Discord message and returns IDs useful for allowlists and approvers. */
+/** Observes the next delivered Discord message and returns provider IDs. */
 export async function discordObserve(token: string, timeoutSeconds: number): Promise<DiscordObserved> {
 	return withDiscordClient(
 		token,
@@ -83,7 +83,7 @@ export async function discordObserve(token: string, timeoutSeconds: number): Pro
 }
 
 export function discordInviteUrl(clientId: string): string {
-	const permissions = "397586506816";
+	const permissions = "274878008384";
 	return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&scope=bot%20applications.commands&permissions=${permissions}`;
 }
 

@@ -83,9 +83,14 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 			if (!Number.isFinite(port)) throw new Error(`HTTP port must be numeric: ${target.port}`);
 			server = createServer((req, res) => void dispatch(routes, req, res));
 			await new Promise<void>((resolve, reject) => {
-				server?.once("error", reject);
+				const onError = (error: Error) => {
+					server = undefined;
+					address = undefined;
+					reject(error);
+				};
+				server?.once("error", onError);
 				server?.listen(port, target.host, () => {
-					server?.off("error", reject);
+					server?.off("error", onError);
 					const bound = server?.address();
 					address = {
 						host: target.host,
@@ -97,13 +102,18 @@ export function createHttpServerRegistry(input: { logger: Logger; listen?: HttpL
 			});
 		},
 		async close(): Promise<void> {
-			await new Promise<void>((resolve, reject) => {
-				if (!server) return resolve();
-				server.close((error) => (error ? reject(error) : resolve()));
-			});
-			if (server) input.logger.info("http.stop", { routes: routes.size });
+			const current = server;
+			const wasListening = current?.listening === true;
 			server = undefined;
 			address = undefined;
+			await new Promise<void>((resolve, reject) => {
+				if (!current) return resolve();
+				current.close((error) => {
+					if (error && "code" in error && error.code === "ERR_SERVER_NOT_RUNNING") return resolve();
+					return error ? reject(error) : resolve();
+				});
+			});
+			if (wasListening) input.logger.info("http.stop", { routes: routes.size });
 			routes.clear();
 			listen = undefined;
 		},

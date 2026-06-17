@@ -212,7 +212,7 @@ export function createHandler(input: {
 		const intent = parseIntent({ text: rawText || text, channel: msg.channel, actor: msg.actor });
 		const messageText = intent.kind === "ask" ? text : rawText;
 		const scheduled = msg.scheduled === true;
-		const stream = intent.kind === "ask" ? msg.stream : undefined;
+		const stream = intent.kind === "ask" || intent.kind === "approve" ? msg.stream : undefined;
 		const runtimeEvents =
 			msg.runtimeProgress && messages.runtimeStarting !== false
 				? runtimeProgressEvents(msg.runtimeProgress, messages.runtimeStarting)
@@ -289,6 +289,101 @@ export function createHandler(input: {
 				approvals,
 				lock: currentLock,
 			});
+		}
+		if (intent.kind === "approve" || intent.kind === "deny") {
+			const channelKey = scopedChannelKey(msg);
+			const controlBase: TurnContext = {
+				trace,
+				agent: agentId,
+				provider: msg.provider,
+				channel: channelKey,
+				thread: thread.id,
+				turn: "",
+				message: "",
+				actor: msg.actor,
+				actorGroups: msg.actorGroups,
+				actorBot: msg.actorBot,
+				runtimeScope: turnScope.workspace.path,
+				approval: input.approval,
+			};
+			try {
+				let reply = await input.callRunner.handle(
+					scopedIntent(intent as CallIntent, msg),
+					controlBase,
+					undefined,
+					intent.kind === "approve" ? msg.ack : undefined,
+					msg.replace,
+					runtimeEvents,
+				);
+				const targetThreadId = reply.continuation?.threadId;
+				if (reply.continuation) {
+					if (!reply.continuation.turnId) throw new Error("approved call missing original turn");
+					const continuationTurn = reply.continuation.turnId;
+					controlBase.turn = continuationTurn;
+					reply = await continueTool({
+						store: input.store,
+						agent: input.agent,
+						channel: channelKey,
+						provider: msg.provider,
+						actor: msg.actor,
+						trace,
+						turn: continuationTurn,
+						continuation: reply.continuation,
+						scope: turnScope,
+						stream,
+						runtimeEvents,
+						approval: input.approval,
+					});
+					if (reply.silent) {
+						return await finishSilentTurn({
+							store: input.store,
+							turn: continuationTurn,
+							aborted: false,
+							scheduled,
+							base: controlBase,
+							logger: log,
+						});
+					}
+					return await finishReplyTurn({
+						store: input.store,
+						turn: continuationTurn,
+						threadId: targetThreadId ?? thread.id,
+						provider: msg.provider,
+						kind: msg.kind ?? msg.provider,
+						reply,
+						aborted: false,
+						stream,
+						finalPlacement: "progress",
+						base: controlBase,
+						attachmentScope: turnScope.workspace,
+						logger: log,
+					});
+				}
+				if (reply.silent) return scheduled ? { text: "", silent: true } : undefined;
+				return {
+					text: redact(reply.text),
+					private: reply.private,
+					silent: reply.silent,
+					approval: reply.approval,
+					approvalResolution: reply.approvalResolution,
+					replaceOriginal: reply.replaceOriginal,
+					attachments: reply.attachments,
+					attachmentScope: turnScope.workspace,
+				};
+			} catch (error) {
+				logError(log, "handler", {
+					...controlBase,
+					error: message(error),
+				});
+				return await finishSystemTurn({
+					store: input.store,
+					threadId: thread.id,
+					provider: msg.provider,
+					kind: msg.kind ?? msg.provider,
+					text: userError(messages.error),
+					state: "failed",
+				});
+			}
 		}
 		const shouldLock = requiresThreadLock(intent.kind) && input.store.locks !== undefined;
 		let lock = shouldLock
@@ -463,8 +558,8 @@ export function createHandler(input: {
 								scopedIntent(intent as CallIntent, msg),
 								currentBase,
 								currentRun.signal,
-								intent.kind === "approve" ? msg.ack : undefined,
-								intent.kind === "approve" || intent.kind === "deny" ? msg.replace : undefined,
+								undefined,
+								undefined,
 								runtimeEvents,
 							);
 			if (currentRun.signal.aborted) reply = { text: cancelText(messages, currentRun.cancelledBy()) };
