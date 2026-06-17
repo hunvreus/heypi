@@ -40,6 +40,7 @@ export type Inbound = {
 	provider: string;
 	kind?: string;
 	eventId?: string;
+	providerMessageId?: string;
 	team?: string;
 	channel: string;
 	channelName?: string;
@@ -227,13 +228,13 @@ export function createHandler(input: {
 			actor: msg.actor,
 			key: msg.thread,
 		});
-		if (msg.eventId && input.store.providerMessages) {
+		if (msg.providerMessageId && input.store.providerMessages) {
 			await input.store.providerMessages.upsert({
 				agent: agentId,
 				provider: msg.provider,
 				team: msg.team,
 				channel: msg.channel,
-				providerMessageId: msg.eventId,
+				providerMessageId: msg.providerMessageId,
 				threadId: thread.id,
 				actor: msg.actor,
 			});

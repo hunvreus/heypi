@@ -3,6 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { CallRunner } from "../src/core/calls.js";
+import { createHandler } from "../src/io/handler.js";
+import { Queue } from "../src/runtime/queue.js";
 import { sqliteStore } from "../src/store/sqlite.js";
 
 test("threads are isolated by Slack team", async () => {
@@ -110,6 +113,61 @@ test("provider message index resolves provider messages across thread lookup", a
 		});
 		assert.equal(found?.threadId, thread.id);
 		assert.equal((await store.threads.get(found?.threadId ?? ""))?.key, "C1:M1");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("handler indexes provider messages separately from provider events", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-provider-message-event-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		assert.ok(store.providerMessages);
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(
+				store.calls,
+				store.approvals,
+				new Queue({ maxConcurrent: 1, maxPerChat: 1 }),
+				{ name: "none", root: "." },
+				{},
+				undefined,
+				store.transaction,
+			),
+			agent: {
+				ask: async () => ({ text: "ok" }),
+				continue: async () => ({ text: "ok" }),
+			},
+		});
+
+		await handler({
+			provider: "telegram",
+			eventId: "update-100",
+			providerMessageId: "message-10",
+			channel: "chat-1",
+			actor: "user-1",
+			thread: "chat-1:message-10",
+			text: "hello",
+		});
+
+		const byMessage = await store.providerMessages.get({
+			agent: "a",
+			provider: "telegram",
+			channel: "chat-1",
+			providerMessageId: "message-10",
+		});
+		const byEvent = await store.providerMessages.get({
+			agent: "a",
+			provider: "telegram",
+			channel: "chat-1",
+			providerMessageId: "update-100",
+		});
+
+		assert.equal(byMessage?.actor, "user-1");
+		assert.equal(byEvent, undefined);
+		assert.equal((await store.threads.get(byMessage?.threadId ?? ""))?.key, "chat-1:message-10");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

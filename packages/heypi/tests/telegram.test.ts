@@ -81,6 +81,53 @@ test("telegram webhook acknowledges before processing the update", async () => {
 	}
 });
 
+test("telegram webhook forwards message_id separately from update_id", async () => {
+	const restore = mockTelegramFetch([]);
+	let inbound:
+		| {
+				eventId?: string;
+				providerMessageId?: string;
+				thread: string;
+		  }
+		| undefined;
+	try {
+		const routes: HttpRoute[] = [];
+		const adapter = telegram({ token: "token", mode: "webhook", webhook: { secretToken: "secret" } });
+		await adapter.start({
+			handler: async (msg) => {
+				inbound = { eventId: msg.eventId, providerMessageId: msg.providerMessageId, thread: msg.thread };
+				return undefined;
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			http: { register: (route) => routes.push(route) },
+		});
+		const server = await routeServer(routes[0]);
+		try {
+			const update = { update_id: 99, message: telegramMessage("hello", 10) };
+			const response = await fetch(server.url, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-telegram-bot-api-secret-token": "secret",
+				},
+				body: JSON.stringify(update),
+			});
+
+			assert.equal(response.status, 200);
+			await eventually(() => inbound !== undefined);
+			assert.deepEqual(inbound, {
+				eventId: "99",
+				providerMessageId: "10",
+				thread: "42:42",
+			});
+		} finally {
+			await server.close();
+		}
+	} finally {
+		restore();
+	}
+});
+
 test("telegram webhook rejects bad secret token", async () => {
 	const restore = mockTelegramFetch([]);
 	try {

@@ -51,6 +51,9 @@
 - Add blob/file spillover for large stored output.
 	- Spill large call stdout/stderr, tool logs, attachments, and generated artifacts to blobs/files.
 	- Keep DB rows to previews, metadata, and blob refs.
+- Add store retention controls.
+	- Prune old provider-message index rows once they are no longer useful for reply continuation.
+	- Keep retention configurable per store/deployment so long-lived team channels do not grow unbounded.
 - Design durable secret request support.
 	- Design encrypted secret persistence before making pending secret requests durable.
 	- Do not persist request private keys or plaintext secret values in generic stores.

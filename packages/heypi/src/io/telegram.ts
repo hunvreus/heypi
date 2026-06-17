@@ -521,6 +521,7 @@ async function handleUpdate(input: {
 			provider: input.provider,
 			kind: input.kind,
 			eventId: String(input.update.update_id),
+			providerMessageId: String(msg.message_id),
 			channel,
 			channelName: telegramChatName(msg.chat),
 			actor,

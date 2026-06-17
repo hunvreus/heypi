@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+### Breaking
+- Changed chat response placement config to use adapter-local `response` objects. Slack `reply` is now `response.placement`, and Slack `replyBroadcast` is now `response.broadcast`; the old keys are not supported.
+
 ### Changed
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
-- Changed chat response placement config to use adapter-local `response` objects, including Slack `response.placement`/`response.broadcast` and Discord/Telegram `response.placement` plus recent same-actor continuation.
+- Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 
 ### Fixed
 - Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.

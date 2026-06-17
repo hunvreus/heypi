@@ -285,6 +285,7 @@ async function handleMessage(input: {
 			provider: input.provider,
 			kind: input.kind,
 			eventId: msg.id,
+			providerMessageId: msg.id,
 			team,
 			channel,
 			channelName: discordChannelName(msg.channel),

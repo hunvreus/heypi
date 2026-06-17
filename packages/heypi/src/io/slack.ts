@@ -359,6 +359,7 @@ export function slack(input: SlackConfig): Adapter {
 						provider: name,
 						kind,
 						eventId: msg.client_msg_id ?? msg.ts,
+						providerMessageId: msg.ts,
 						team,
 						channel,
 						actor,
