@@ -4,12 +4,14 @@
 
 ### Changed
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
+- Changed chat response placement config to use adapter-local `response` objects, including Slack `response.placement`/`response.broadcast` and Discord/Telegram `response.placement` plus recent same-actor continuation.
 
 ### Fixed
 - Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.
 - Fixed approval controls being recorded as fresh user turns, which could make an approved action trigger a second approval.
 - Fixed Discord approval cards keeping the pending color after approval, denial, or expiry.
 - Fixed Discord approved continuations skipping the progress message while the approved action resumed.
+- Fixed Discord and Telegram root channel/group conversations sharing one channel-level transcript by indexing provider message IDs and continuing explicit replies or recent same-actor follow-ups in the correct heypi thread.
 
 ## [0.2.0-beta.0] - 2026-06-15
 

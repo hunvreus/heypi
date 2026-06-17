@@ -30,6 +30,8 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 | `permissions.admins` | No | Telegram user IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level group messages. Defaults to `"mention"` in groups. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for forum topic replies. Defaults to `"message"` in active topics. |
+| `response.placement` | No | `"auto"`, `"same"`, or `"reply"`. Defaults to `"auto"`: private chats and forum topics are flat, group replies are anchored to the triggering message. |
+| `response.continueRecentMs` | No | Same-actor follow-up window for root groups. Defaults to `300000`; set `false` to require explicit replies for continuation. |
 | `progress` | No | Progress message behavior, or `false`. |
 | `streaming` | No | Draft reply streaming behavior. |
 | `delivery` | No | Telegram send pacing/retry behavior, or `false`. |
@@ -116,6 +118,10 @@ createHeypi({
       },
       trigger: "mention",
       threadTrigger: "message",
+      response: {
+        placement: "auto",
+        continueRecentMs: 300_000,
+      },
     }),
   ],
 });

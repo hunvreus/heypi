@@ -12,6 +12,8 @@ export type {
 	Locks,
 	Message,
 	Messages,
+	ProviderMessage,
+	ProviderMessages,
 	Store,
 	StoredMessage,
 	Thread,

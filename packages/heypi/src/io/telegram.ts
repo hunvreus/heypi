@@ -36,6 +36,7 @@ const TELEGRAM_CONFIG_KEYS = new Set([
 	"permissions",
 	"trigger",
 	"threadTrigger",
+	"response",
 	"progress",
 	"streaming",
 	"delivery",
@@ -52,6 +53,7 @@ export type TelegramConfig = {
 	permissions?: PermissionsConfig;
 	trigger?: TelegramTrigger;
 	threadTrigger?: TelegramTrigger | false;
+	response?: TelegramResponseConfig;
 	progress?: TelegramProgress | false;
 	streaming?: ReplyStreamOption;
 	delivery?: DeliveryConfig | false;
@@ -66,6 +68,11 @@ export type TelegramWebhookConfig = {
 };
 
 export type TelegramTrigger = "mention" | "message";
+
+export type TelegramResponseConfig = {
+	placement?: "auto" | "same" | "reply";
+	continueRecentMs?: number | false;
+};
 
 export type TelegramAllow = {
 	chats?: Array<string | number>;
@@ -417,10 +424,10 @@ async function handleUpdate(input: {
 	const bot = msg.from?.is_bot ? String(msg.from.id) : undefined;
 	const channel = String(msg.chat.id);
 	const actor = String(msg.from?.id ?? "unknown");
-	const thread = threadKey(msg);
 	const trace = `telegram:${msg.message_id}`;
+	const replyTo = telegramReplyTo(input.config.response, msg);
 	const context = (extra?: Record<string, unknown>) =>
-		logCtx({ trace, adapter: input.provider, kind: input.kind, channel, thread }, extra);
+		logCtx({ trace, adapter: input.provider, kind: input.kind, channel }, extra);
 	if (bot && !telegramBotAllowed(input.config.allow?.bots, bot, input.botId)) {
 		input.start.logger.debug("adapter.drop", context({ actor, reason: "bot_not_allowed" }));
 		return;
@@ -461,12 +468,20 @@ async function handleUpdate(input: {
 		);
 		return;
 	}
+	const thread = await telegramThreadKey({
+		start: input.start,
+		provider: input.provider,
+		channel,
+		actor,
+		message: msg,
+		response: input.config.response,
+	});
 	const progress = telegramProgress(input.config.progress);
 	const pending = startProgress({
 		client: input.client,
 		chatId: msg.chat.id,
 		threadId: msg.message_thread_id,
-		replyTo: msg.message_id,
+		replyTo,
 		cancelId: trace,
 		progress,
 		logger: input.start.logger,
@@ -477,6 +492,7 @@ async function handleUpdate(input: {
 		config: input.config.streaming,
 		client: input.client,
 		message: msg,
+		replyTo,
 		logger: input.start.logger,
 		context: context(),
 		delivery: input.delivery,
@@ -517,15 +533,24 @@ async function handleUpdate(input: {
 		}),
 		placement: {
 			fresh: async (out) => {
-				await sendTelegramOutput({
+				const ids = await sendTelegramOutput({
 					client: input.client,
 					store: input.start.attachments,
 					message: msg,
+					replyTo,
 					out,
 					skipFirst: false,
 					logger: input.start.logger,
 					context: context(),
 					delivery: input.delivery,
+				});
+				await indexTelegramProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					channel,
+					thread,
+					actor: String(input.botId),
+					ids,
 				});
 			},
 			streamed: async (out) => {
@@ -534,18 +559,26 @@ async function handleUpdate(input: {
 					store: input.start.attachments,
 					chatId: msg.chat.id,
 					threadId: msg.message_thread_id,
-					replyTo: msg.message_id,
+					replyTo,
 					attachments: out.attachments,
 					scope: out.attachmentScope,
 					logger: input.start.logger,
 					context: context(),
 					delivery: input.delivery,
 				});
+				await indexTelegramProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					channel,
+					thread,
+					actor: String(input.botId),
+					ids: [...(stream?.ids?.() ?? []), ...upload.messageIds],
+				});
 				await postTelegramAttachmentUploadNotice({
 					client: input.client,
 					chatId: msg.chat.id,
 					threadId: msg.message_thread_id,
-					replyTo: msg.message_id,
+					replyTo,
 					upload,
 					context: context(),
 					delivery: input.delivery,
@@ -553,15 +586,24 @@ async function handleUpdate(input: {
 			},
 			progress: async (out) => {
 				const edited = await pending.update(out);
-				await sendTelegramOutput({
+				const ids = await sendTelegramOutput({
 					client: input.client,
 					store: input.start.attachments,
 					message: msg,
+					replyTo,
 					out,
 					skipFirst: edited,
 					logger: input.start.logger,
 					context: context(),
 					delivery: input.delivery,
+				});
+				await indexTelegramProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					channel,
+					thread,
+					actor: String(input.botId),
+					ids,
 				});
 			},
 		},
@@ -799,15 +841,17 @@ async function sendTelegramOutput(input: {
 	client: TelegramClient;
 	store?: AttachmentStore;
 	message: TelegramMessage;
+	replyTo?: number;
 	out: Outbound;
 	skipFirst?: boolean;
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
-	await sendChunks({
+}): Promise<string[]> {
+	const ids = await sendChunks({
 		client: input.client,
 		message: input.message,
+		replyTo: input.replyTo,
 		text: input.out.text,
 		approval: input.out.approval,
 		skipFirst: input.skipFirst,
@@ -820,7 +864,7 @@ async function sendTelegramOutput(input: {
 		store: input.store,
 		chatId: input.message.chat.id,
 		threadId: input.message.message_thread_id,
-		replyTo: input.message.message_id,
+		replyTo: input.replyTo,
 		attachments: input.out.attachments,
 		scope: input.out.attachmentScope,
 		logger: input.logger,
@@ -831,37 +875,42 @@ async function sendTelegramOutput(input: {
 		client: input.client,
 		chatId: input.message.chat.id,
 		threadId: input.message.message_thread_id,
-		replyTo: input.message.message_id,
+		replyTo: input.replyTo,
 		upload,
 		context: input.context,
 		delivery: input.delivery,
 	});
+	return [...ids, ...upload.messageIds];
 }
 
 async function sendChunks(input: {
 	client: TelegramClient;
 	message: TelegramMessage;
+	replyTo?: number;
 	text: string;
 	approval?: Outbound["approval"];
 	skipFirst?: boolean;
 	logger?: Logger;
 	context?: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
+}): Promise<string[]> {
 	const chunks = telegramChunks(telegramApprovalText(input.text, input.approval), Boolean(input.approval));
+	const ids: string[] = [];
 	for (let index = input.skipFirst ? 1 : 0; index < chunks.length; index++) {
-		await input.delivery.run(
+		const sent = await input.delivery.run(
 			() =>
 				input.client.sendMessage({
 					chat_id: input.message.chat.id,
 					message_thread_id: input.message.message_thread_id,
 					text: chunks[index],
-					reply_to_message_id: input.message.message_id,
+					reply_to_message_id: input.replyTo,
 					reply_markup: index === 0 && input.approval ? approvalMarkup(input.approval) : undefined,
 				}),
 			{ ...input.context, retry: "send" },
 		);
+		ids.push(String(sent.message_id));
 	}
+	return ids;
 }
 
 async function sendTargetChunks(input: {
@@ -893,6 +942,7 @@ function telegramReplyStream(input: {
 	config?: ReplyStreamOption;
 	client: TelegramClient;
 	message: TelegramMessage;
+	replyTo?: number;
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
@@ -923,7 +973,7 @@ function telegramReplyStream(input: {
 							chat_id: input.message.chat.id,
 							message_thread_id: input.message.message_thread_id,
 							text,
-							reply_to_message_id: input.message.message_id,
+							reply_to_message_id: input.replyTo,
 						}),
 					{ ...input.context, retry: "send" },
 				);
@@ -963,6 +1013,7 @@ type TelegramAttachmentUploadResult = {
 	requested: number;
 	resolved: number;
 	uploaded: boolean;
+	messageIds: string[];
 };
 
 async function uploadTelegramAttachments(input: {
@@ -978,7 +1029,7 @@ async function uploadTelegramAttachments(input: {
 	delivery: DeliveryQueue;
 }): Promise<TelegramAttachmentUploadResult> {
 	const requested = input.attachments?.length ?? 0;
-	if (!requested) return { requested, resolved: 0, uploaded: true };
+	if (!requested) return { requested, resolved: 0, uploaded: true, messageIds: [] };
 	const files = await resolveOutboundAttachments({
 		provider: "telegram",
 		store: input.store,
@@ -987,11 +1038,12 @@ async function uploadTelegramAttachments(input: {
 		logger: input.logger,
 		context: input.context,
 	});
-	if (!files.length) return { requested, resolved: 0, uploaded: false };
+	if (!files.length) return { requested, resolved: 0, uploaded: false, messageIds: [] };
 	let uploaded = true;
+	const messageIds: string[] = [];
 	for (const file of files) {
 		try {
-			await input.delivery.run(
+			const sent = await input.delivery.run(
 				() =>
 					input.client.sendDocument({
 						chat_id: input.chatId,
@@ -1001,12 +1053,13 @@ async function uploadTelegramAttachments(input: {
 					}),
 				{ ...input.context, retry: "send" },
 			);
+			messageIds.push(String(sent.message_id));
 		} catch (error) {
 			uploaded = false;
 			input.logger.warn("telegram.attachment_upload_failed", { ...input.context, error: errorMessage(error) });
 		}
 	}
-	return { requested, resolved: files.length, uploaded };
+	return { requested, resolved: files.length, uploaded, messageIds };
 }
 
 async function postTelegramAttachmentUploadNotice(input: {
@@ -1036,11 +1089,36 @@ async function postTelegramAttachmentUploadNotice(input: {
 	);
 }
 
+async function indexTelegramProviderMessages(input: {
+	start: AdapterStart;
+	provider: string;
+	channel: string;
+	thread: string;
+	actor?: string;
+	ids: string[];
+}): Promise<void> {
+	const agent = input.start.app?.agent;
+	const store = input.start.store;
+	if (!agent || !store?.providerMessages || input.ids.length === 0) return;
+	const row = await store.threads.getByKey(agent, input.provider, undefined, input.thread);
+	if (!row) return;
+	for (const id of input.ids) {
+		await store.providerMessages.upsert({
+			agent,
+			provider: input.provider,
+			channel: input.channel,
+			providerMessageId: id,
+			threadId: row.id,
+			actor: input.actor,
+		});
+	}
+}
+
 export function startProgress(input: {
 	client: TelegramClient;
 	chatId: number;
 	threadId?: number;
-	replyTo: number;
+	replyTo?: number;
 	cancelId: string;
 	progress?: TelegramProgress;
 	logger: Logger;
@@ -1214,6 +1292,49 @@ function textOf(msg: TelegramMessage): string {
 
 function threadKey(msg: TelegramMessage): string {
 	return `${msg.chat.id}:${msg.message_thread_id ?? msg.chat.id}`;
+}
+
+async function telegramThreadKey(input: {
+	start: AdapterStart;
+	provider: string;
+	channel: string;
+	actor: string;
+	message: TelegramMessage;
+	response?: TelegramResponseConfig;
+}): Promise<string> {
+	if (telegramDm(input.message) || input.message.message_thread_id !== undefined) return threadKey(input.message);
+	const agent = input.start.app?.agent;
+	const store = input.start.store;
+	if (!agent || !store) return threadKey(input.message);
+	const replyMessageId = input.message.reply_to_message?.message_id;
+	if (replyMessageId !== undefined && store.providerMessages) {
+		const found = await store.providerMessages.get({
+			agent,
+			provider: input.provider,
+			channel: input.channel,
+			providerMessageId: String(replyMessageId),
+		});
+		if (found) return (await store.threads.get(found.threadId))?.key ?? found.threadId;
+	}
+	const continueRecentMs = input.response?.continueRecentMs ?? 300_000;
+	if (continueRecentMs !== false && store.threads.getRecentForActor) {
+		const recent = await store.threads.getRecentForActor({
+			agent,
+			provider: input.provider,
+			channel: input.channel,
+			actor: input.actor,
+			since: Date.now() - continueRecentMs,
+		});
+		if (recent && !(await store.locks?.get(`thread:${recent.id}`))) return recent.key;
+	}
+	return `${input.channel}:${input.message.message_id}`;
+}
+
+function telegramReplyTo(response: TelegramResponseConfig | undefined, msg: TelegramMessage): number | undefined {
+	if (response?.placement === "reply") return msg.message_id;
+	if (response?.placement === "same") return undefined;
+	if (telegramDm(msg) || msg.message_thread_id !== undefined) return undefined;
+	return msg.message_id;
 }
 
 function telegramDm(msg: TelegramMessage): boolean {
@@ -1493,14 +1614,15 @@ class TelegramClient {
 		message_thread_id?: number;
 		reply_to_message_id?: number;
 		document: ResolvedAttachment;
-	}): Promise<void> {
+	}): Promise<TelegramMessage> {
 		const form = new FormData();
 		const data = await readFile(input.document.path);
 		form.set("chat_id", String(input.chat_id));
 		if (input.message_thread_id !== undefined) form.set("message_thread_id", String(input.message_thread_id));
 		if (input.reply_to_message_id !== undefined) form.set("reply_to_message_id", String(input.reply_to_message_id));
 		form.set("document", new Blob([data], { type: input.document.mimeType }), input.document.name);
-		await this.callForm("sendDocument", form);
+		const out = await this.callForm<{ result: TelegramMessage }>("sendDocument", form);
+		return out.result;
 	}
 
 	private get baseFile(): string {
@@ -1519,10 +1641,11 @@ class TelegramClient {
 		return parsed as T;
 	}
 
-	private async callForm(method: string, body: FormData): Promise<void> {
+	private async callForm<T = unknown>(method: string, body: FormData): Promise<T> {
 		const response = await fetch(`${this.base}/${method}`, { method: "POST", body });
-		const parsed = (await response.json()) as TelegramResponse<unknown>;
+		const parsed = (await response.json()) as TelegramResponse<T>;
 		if (!response.ok || !parsed.ok) throw telegramError(parsed, response.status);
+		return parsed as T;
 	}
 }
 
@@ -1574,6 +1697,7 @@ type TelegramBotCommand = {
 type TelegramMessage = {
 	message_id: number;
 	message_thread_id?: number;
+	reply_to_message?: { message_id: number };
 	from?: TelegramUser;
 	chat: { id: number; type?: string; title?: string; username?: string; first_name?: string };
 	text?: string;

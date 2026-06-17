@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { thread } from "../db/schema.js";
 import type { Db } from "./db.js";
 import { clampLimit, clampOffset } from "./paging.js";
@@ -83,6 +83,32 @@ export class ThreadRepo {
 					eq(thread.key, key),
 				),
 			)
+			.limit(1);
+		return rows[0];
+	}
+
+	async getRecentForActor(input: {
+		agent: string;
+		provider: string;
+		team?: string;
+		channel: string;
+		actor: string;
+		since: number;
+	}): Promise<Thread | undefined> {
+		const rows = await this.db
+			.select()
+			.from(thread)
+			.where(
+				and(
+					eq(thread.agent, input.agent),
+					eq(thread.provider, input.provider),
+					eq(thread.team, input.team ?? ""),
+					eq(thread.channel, input.channel),
+					eq(thread.actor, input.actor),
+					gte(thread.updatedAt, input.since),
+				),
+			)
+			.orderBy(desc(thread.updatedAt))
 			.limit(1);
 		return rows[0];
 	}

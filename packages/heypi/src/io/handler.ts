@@ -227,6 +227,17 @@ export function createHandler(input: {
 			actor: msg.actor,
 			key: msg.thread,
 		});
+		if (msg.eventId && input.store.providerMessages) {
+			await input.store.providerMessages.upsert({
+				agent: agentId,
+				provider: msg.provider,
+				team: msg.team,
+				channel: msg.channel,
+				providerMessageId: msg.eventId,
+				threadId: thread.id,
+				actor: msg.actor,
+			});
+		}
 		const turnScope = scopeFor(msg);
 		if (isSecretReply(rawText)) {
 			return completeSecretReply({

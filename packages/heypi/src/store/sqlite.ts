@@ -7,6 +7,7 @@ import { CallRepo } from "./repo-call.js";
 import { JobRepo, JobRunRepo } from "./repo-job.js";
 import { LockRepo } from "./repo-lock.js";
 import { MessageRepo } from "./repo-message.js";
+import { ProviderMessageRepo } from "./repo-provider-message.js";
 import { ThreadRepo } from "./repo-thread.js";
 import { TurnRepo } from "./repo-turn.js";
 import type { Store } from "./types.js";
@@ -21,6 +22,7 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 	const messages = new MessageRepo(db);
 	return {
 		threads: new ThreadRepo(db),
+		providerMessages: new ProviderMessageRepo(db),
 		messages,
 		turns: new TurnRepo(db),
 		calls: new CallRepo(db),

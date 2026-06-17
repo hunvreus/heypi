@@ -146,7 +146,7 @@ slack({
     groups: list("HEYPI_SLACK_GROUPS"),
   },
   trigger: "mention",
-  reply: "thread",
+  response: { placement: "thread" },
   streaming: true,
 });
 ```

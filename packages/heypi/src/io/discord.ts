@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import {
 	ActionRowBuilder,
 	AttachmentBuilder,
@@ -17,7 +18,6 @@ import {
 	SlashCommandBuilder,
 	type TextBasedChannel,
 } from "discord.js";
-import { readFile } from "node:fs/promises";
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
@@ -54,6 +54,7 @@ const DISCORD_CONFIG_KEYS = new Set([
 	"permissions",
 	"trigger",
 	"threadTrigger",
+	"response",
 	"progress",
 	"streaming",
 	"delivery",
@@ -68,12 +69,18 @@ export type DiscordConfig = {
 	permissions?: PermissionsConfig;
 	trigger?: DiscordTrigger;
 	threadTrigger?: DiscordTrigger | false;
+	response?: DiscordResponse;
 	progress?: DiscordProgress | false;
 	streaming?: ReplyStreamOption;
 	delivery?: DeliveryConfig | false;
 };
 
 export type DiscordTrigger = "mention" | "message";
+
+export type DiscordResponse = {
+	placement?: "auto" | "same" | "reply";
+	continueRecentMs?: number | false;
+};
 
 export type DiscordAllow = {
 	channels?: string[];
@@ -229,7 +236,16 @@ async function handleMessage(input: {
 		return;
 	}
 	const progress = discordProgress(input.config.progress);
-	const reply = !isDm(msg);
+	const reply = discordReplyPlacement(input.config.response, msg);
+	const thread = await discordThreadKey({
+		start: input.start,
+		provider: input.provider,
+		team,
+		channel,
+		actor,
+		message: msg,
+		response: input.config.response,
+	});
 	const pending = startDiscordProgress({
 		message: msg,
 		reply,
@@ -276,7 +292,7 @@ async function handleMessage(input: {
 			actorGroups,
 			actorBot: Boolean(bot),
 			actorName: msg.author.username,
-			thread: threadKey(msg),
+			thread,
 			threadName: discordThreadName(msg.channel),
 			text: msg.content,
 			data: {
@@ -289,7 +305,7 @@ async function handleMessage(input: {
 		placement: {
 			fresh: async (out) => {
 				const target = out.private ? await msg.author.createDM() : msg.channel;
-				await sendDiscordOutput({
+				const ids = await sendDiscordOutput({
 					channel: target,
 					store: input.start.attachments,
 					out,
@@ -299,9 +315,18 @@ async function handleMessage(input: {
 					context: context(),
 					delivery: input.delivery,
 				});
+				await indexDiscordProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					team,
+					channel,
+					thread,
+					actor: input.client.user?.id,
+					ids,
+				});
 			},
 			streamed: async (out) => {
-				await uploadDiscordAttachments({
+				const upload = await uploadDiscordAttachments({
 					channel: msg.channel,
 					store: input.start.attachments,
 					attachments: out.attachments,
@@ -310,11 +335,20 @@ async function handleMessage(input: {
 					context: context(),
 					delivery: input.delivery,
 				});
+				await indexDiscordProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					team,
+					channel,
+					thread,
+					actor: input.client.user?.id,
+					ids: [...(stream?.ids?.() ?? []), ...upload.messageIds],
+				});
 			},
 			progress: async (out) => {
 				const edited = await pending.update(out);
 				const target = out.private ? await msg.author.createDM() : msg.channel;
-				await sendDiscordOutput({
+				const ids = await sendDiscordOutput({
 					channel: target,
 					store: input.start.attachments,
 					out,
@@ -323,6 +357,15 @@ async function handleMessage(input: {
 					logger: input.start.logger,
 					context: context(),
 					delivery: input.delivery,
+				});
+				await indexDiscordProviderMessages({
+					start: input.start,
+					provider: input.provider,
+					team,
+					channel,
+					thread,
+					actor: input.client.user?.id,
+					ids,
 				});
 			},
 		},
@@ -653,6 +696,7 @@ type DiscordAttachmentUploadResult = {
 	requested: number;
 	resolved: number;
 	status: "uploaded" | "failed" | "unknown";
+	messageIds: string[];
 };
 
 export async function sendDiscordOutput(input: {
@@ -664,8 +708,8 @@ export async function sendDiscordOutput(input: {
 	logger: Logger;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
-	await sendTextChunks({
+}): Promise<string[]> {
+	const ids = await sendTextChunks({
 		channel: input.channel,
 		text: input.out.text,
 		approval: input.out.approval,
@@ -689,6 +733,7 @@ export async function sendDiscordOutput(input: {
 		context: input.context,
 		delivery: input.delivery,
 	});
+	return [...ids, ...upload.messageIds];
 }
 
 async function sendTextChunks(input: {
@@ -699,10 +744,10 @@ async function sendTextChunks(input: {
 	skipFirst?: boolean;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
-}): Promise<void> {
+}): Promise<string[]> {
 	if (input.approval && !input.skipFirst) {
 		const approval = input.approval;
-		await input.delivery.run(
+		const sent = await input.delivery.run(
 			() =>
 				sendTo(input.channel, input.replyTo, {
 					embeds: [approvalEmbed(approval, "pending")],
@@ -710,18 +755,21 @@ async function sendTextChunks(input: {
 				}),
 			{ ...input.context, retry: "send" },
 		);
-		return;
+		return [sent.id];
 	}
 	const chunks = chunkText(discordMarkdown(input.text), DISCORD_TEXT_LIMIT);
+	const ids: string[] = [];
 	for (let index = input.skipFirst ? 1 : 0; index < chunks.length; index++) {
-		await input.delivery.run(
+		const sent = await input.delivery.run(
 			() =>
 				sendTo(input.channel, input.replyTo, {
 					content: chunks[index],
 				}),
 			{ ...input.context, retry: "send" },
 		);
+		ids.push(sent.id);
 	}
+	return ids;
 }
 
 function discordReplyStream(input: {
@@ -745,10 +793,11 @@ function discordReplyStream(input: {
 					return adopted;
 				}
 				const sent = await input.delivery.run(
-					() => sendTo(input.message.channel, input.reply === false ? undefined : input.message, { content: text }),
+					() =>
+						sendTo(input.message.channel, input.reply === false ? undefined : input.message, { content: text }),
 					{
-					...input.context,
-					retry: "send",
+						...input.context,
+						retry: "send",
 					},
 				);
 				return sent.id;
@@ -932,7 +981,7 @@ async function uploadDiscordAttachments(input: {
 	delivery: DeliveryQueue;
 }): Promise<DiscordAttachmentUploadResult> {
 	const requested = input.attachments?.length ?? 0;
-	if (!requested) return { requested, resolved: 0, status: "uploaded" };
+	if (!requested) return { requested, resolved: 0, status: "uploaded", messageIds: [] };
 	const resolved = await resolveOutboundAttachments({
 		provider: "discord",
 		store: input.store,
@@ -944,9 +993,9 @@ async function uploadDiscordAttachments(input: {
 	const files = await Promise.all(
 		resolved.map(async (file) => new AttachmentBuilder(await readFile(file.path), { name: file.name })),
 	);
-	if (!files.length) return { requested, resolved: 0, status: "failed" };
+	if (!files.length) return { requested, resolved: 0, status: "failed", messageIds: [] };
 	try {
-		await input.delivery.run(
+		const sent = await input.delivery.run(
 			() =>
 				sendTo(input.channel, undefined, {
 					content: attachmentUploadText(resolved.map((file) => file.name)),
@@ -959,14 +1008,41 @@ async function uploadDiscordAttachments(input: {
 			requested,
 			resolved: files.length,
 		});
-		return { requested, resolved: files.length, status: "uploaded" };
+		return { requested, resolved: files.length, status: "uploaded", messageIds: [sent.id] };
 	} catch (error) {
 		const ambiguous = ambiguousDiscordSendError(error);
 		input.logger.warn(ambiguous ? "discord.attachment_upload_ambiguous" : "discord.attachment_upload_failed", {
 			...input.context,
 			error: errorMessage(error),
 		});
-		return { requested, resolved: files.length, status: ambiguous ? "unknown" : "failed" };
+		return { requested, resolved: files.length, status: ambiguous ? "unknown" : "failed", messageIds: [] };
+	}
+}
+
+async function indexDiscordProviderMessages(input: {
+	start: AdapterStart;
+	provider: string;
+	team?: string;
+	channel: string;
+	thread: string;
+	actor?: string;
+	ids: string[];
+}): Promise<void> {
+	const agent = input.start.app?.agent;
+	const store = input.start.store;
+	if (!agent || !store?.providerMessages || input.ids.length === 0) return;
+	const row = await store.threads.getByKey(agent, input.provider, input.team, input.thread);
+	if (!row) return;
+	for (const id of input.ids) {
+		await store.providerMessages.upsert({
+			agent,
+			provider: input.provider,
+			team: input.team,
+			channel: input.channel,
+			providerMessageId: id,
+			threadId: row.id,
+			actor: input.actor,
+		});
 	}
 }
 
@@ -1144,6 +1220,51 @@ function sendTo(
 
 function threadKey(msg: Message): string {
 	return msg.channelId;
+}
+
+async function discordThreadKey(input: {
+	start: AdapterStart;
+	provider: string;
+	team?: string;
+	channel: string;
+	actor: string;
+	message: Message;
+	response?: DiscordResponse;
+}): Promise<string> {
+	if (isDm(input.message) || discordThread(input.message)) return threadKey(input.message);
+	const agent = input.start.app?.agent;
+	const store = input.start.store;
+	if (!agent || !store) return threadKey(input.message);
+	const replyMessageId = input.message.reference?.messageId;
+	if (replyMessageId && store.providerMessages) {
+		const found = await store.providerMessages.get({
+			agent,
+			provider: input.provider,
+			team: input.team,
+			channel: input.channel,
+			providerMessageId: replyMessageId,
+		});
+		if (found) return (await store.threads.get(found.threadId))?.key ?? found.threadId;
+	}
+	const continueRecentMs = input.response?.continueRecentMs ?? 300_000;
+	if (continueRecentMs !== false && store.threads.getRecentForActor) {
+		const recent = await store.threads.getRecentForActor({
+			agent,
+			provider: input.provider,
+			team: input.team,
+			channel: input.channel,
+			actor: input.actor,
+			since: Date.now() - continueRecentMs,
+		});
+		if (recent && !(await store.locks?.get(`thread:${recent.id}`))) return recent.key;
+	}
+	return `${input.channel}:${input.message.id}`;
+}
+
+function discordReplyPlacement(response: DiscordResponse | undefined, msg: Message): boolean {
+	if (response?.placement === "reply") return true;
+	if (response?.placement === "same") return false;
+	return !isDm(msg) && !discordThread(msg);
 }
 
 function discordChannelName(channel: TextBasedChannel): string | undefined {

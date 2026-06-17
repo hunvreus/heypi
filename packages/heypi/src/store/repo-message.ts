@@ -63,6 +63,7 @@ export class MessageRepo {
 			? await this.getByProviderEvent(input.provider, input.threadId, input.providerEventId)
 			: await this.get(id);
 		if (!row) throw new Error("message insert failed");
+		if (row.id === id) await this.db.update(thread).set({ updatedAt: now }).where(eq(thread.id, input.threadId));
 		return { row, inserted: row.id === id };
 	}
 

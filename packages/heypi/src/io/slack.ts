@@ -36,8 +36,7 @@ const SLACK_CONFIG_KEYS = new Set([
 	"permissions",
 	"trigger",
 	"threadTrigger",
-	"reply",
-	"replyBroadcast",
+	"response",
 	"progress",
 	"streaming",
 	"delivery",
@@ -57,8 +56,7 @@ export type SlackConfig = {
 	permissions?: PermissionsConfig;
 	trigger?: SlackTrigger;
 	threadTrigger?: SlackTrigger | false;
-	reply?: SlackReply;
-	replyBroadcast?: boolean;
+	response?: SlackResponse;
 	progress?: SlackProgress | false;
 	streaming?: ReplyStreamOption;
 	delivery?: DeliveryConfig | false;
@@ -79,6 +77,10 @@ export type SlackHttpConfig = {
 };
 
 export type SlackReply = "thread" | "same" | "channel";
+export type SlackResponse = {
+	placement?: "auto" | SlackReply;
+	broadcast?: boolean;
+};
 export type SlackTrigger = "mention" | "message";
 
 export type SlackAllow = {
@@ -246,7 +248,7 @@ export function slack(input: SlackConfig): Adapter {
 				const bot = slackBotSender(msg, botIdentity);
 				const channel = msg.channel ?? "unknown";
 				const team = slackTeam(body) ?? msg.team;
-				const mode = input.reply ?? "thread";
+				const mode = slackPlacement(input.response);
 				const reply = target(mode, msg);
 				const trace = msg.client_msg_id ?? msg.ts;
 				const context = (extra?: Record<string, unknown>) => logCtx({ trace, adapter: name, kind, channel }, extra);
@@ -362,7 +364,7 @@ export function slack(input: SlackConfig): Adapter {
 						actor,
 						actorGroups,
 						actorBot: Boolean(bot),
-						thread: threadKey(input.reply ?? "thread", msg),
+						thread: threadKey(mode, msg),
 						text: msg.text ?? "",
 						data: { channel: msg.channel, ts: msg.ts, thread_ts: msg.thread_ts, files: msg.files },
 					}),
@@ -395,7 +397,7 @@ export function slack(input: SlackConfig): Adapter {
 								text: out.text,
 								approval: out.approval,
 								thread: reply.thread,
-								replyBroadcast: input.replyBroadcast ?? false,
+								replyBroadcast: input.response?.broadcast ?? false,
 								skipFirst: false,
 								logger: log,
 								context: context({ thread: reply.thread }),
@@ -411,7 +413,7 @@ export function slack(input: SlackConfig): Adapter {
 								text: out.text,
 								approval: sent ? undefined : out.approval,
 								thread: reply.thread,
-								replyBroadcast: input.replyBroadcast ?? false,
+								replyBroadcast: input.response?.broadcast ?? false,
 								skipFirst: sent,
 								logger: log,
 								context: context({ thread: reply.thread }),
@@ -427,7 +429,7 @@ export function slack(input: SlackConfig): Adapter {
 							channel,
 							text,
 							thread: reply.thread,
-							replyBroadcast: input.replyBroadcast ?? false,
+							replyBroadcast: input.response?.broadcast ?? false,
 							skipFirst: sent,
 							logger: log,
 							context: context({ thread: reply.thread }),
@@ -482,7 +484,7 @@ export function slack(input: SlackConfig): Adapter {
 				text: out.text,
 				approval: out.approval,
 				thread: target.mode === "channel" ? undefined : target.thread,
-				replyBroadcast: input.replyBroadcast ?? false,
+				replyBroadcast: input.response?.broadcast ?? false,
 				logger: log,
 				context: { adapter: name, kind, channel, thread: target.thread },
 				delivery,
@@ -1157,10 +1159,15 @@ function target(mode: SlackReply, msg: { channel?: string; ts?: string; thread_t
 	return { thread: msg.thread_ts ?? msg.ts };
 }
 
+function slackPlacement(response: SlackResponse | undefined): SlackReply {
+	return response?.placement === "auto" || response?.placement === undefined ? "thread" : response.placement;
+}
+
 function threadKey(mode: SlackReply, msg: { channel?: string; ts?: string; thread_ts?: string }) {
 	const channel = msg.channel ?? "unknown";
 	if (channel.startsWith("D")) return `${channel}:${channel}`;
 	if (mode === "thread") return `${channel}:${msg.thread_ts ?? msg.ts ?? channel}`;
+	if (mode === "same" && msg.thread_ts) return `${channel}:${msg.thread_ts}`;
 	return `${channel}:${channel}`;
 }
 

@@ -76,6 +76,80 @@ test("provider event dedupe is scoped to the thread", async () => {
 	}
 });
 
+test("provider message index resolves provider messages across thread lookup", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-provider-message-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		assert.ok(store.providerMessages);
+		const thread = await store.threads.getOrCreate({
+			agent: "a",
+			provider: "discord",
+			team: "G1",
+			channel: "C1",
+			actor: "U1",
+			key: "C1:M1",
+		});
+
+		await store.providerMessages.upsert({
+			agent: "a",
+			provider: "discord",
+			team: "G1",
+			channel: "C1",
+			providerMessageId: "M2",
+			threadId: thread.id,
+			actor: "BOT",
+		});
+
+		const found = await store.providerMessages.get({
+			agent: "a",
+			provider: "discord",
+			team: "G1",
+			channel: "C1",
+			providerMessageId: "M2",
+		});
+		assert.equal(found?.threadId, thread.id);
+		assert.equal((await store.threads.get(found?.threadId ?? ""))?.key, "C1:M1");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("thread recency follows new messages for same-actor continuation", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-thread-recency-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const row = await store.threads.getOrCreate({
+			agent: "a",
+			provider: "telegram",
+			channel: "C1",
+			actor: "U1",
+			key: "C1:M1",
+		});
+
+		await store.messages.create({
+			threadId: row.id,
+			provider: "telegram",
+			providerEventId: "M1",
+			role: "user",
+			actor: "U1",
+			text: "hello",
+		});
+
+		const recent = await store.threads.getRecentForActor?.({
+			agent: "a",
+			provider: "telegram",
+			channel: "C1",
+			actor: "U1",
+			since: Date.now() - 60_000,
+		});
+		assert.equal(recent?.id, row.id);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("approval bypass adapter scope treats adapter names literally", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-bypass-adapter-"));
 	try {

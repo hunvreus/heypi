@@ -25,6 +25,8 @@ For a runnable example, see [`examples/discord-gondolin`](https://github.com/hun
 | `permissions.admins` | No | Discord user IDs or role IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level channel messages. Defaults to `"mention"` in channels. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for thread replies. Defaults to `"message"` in active threads. |
+| `response.placement` | No | `"auto"`, `"same"`, or `"reply"`. Defaults to `"auto"`: DMs and Discord threads are flat, root channel replies are anchored to the triggering message. |
+| `response.continueRecentMs` | No | Same-actor follow-up window for root channels. Defaults to `300000`; set `false` to require explicit replies for continuation. |
 | `progress` | No | Progress message behavior, or `false`. |
 | `streaming` | No | Draft reply streaming behavior. |
 | `delivery` | No | Discord send pacing/retry behavior, or `false`. |
@@ -114,6 +116,10 @@ createHeypi({
       },
       trigger: "mention",
       threadTrigger: "message",
+      response: {
+        placement: "auto",
+        continueRecentMs: 300_000,
+      },
     }),
   ],
 });

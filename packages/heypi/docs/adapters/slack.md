@@ -49,8 +49,8 @@ https://<host>/slack/ops/events
 | `permissions.admins` | No | Slack user IDs or user group IDs allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 | `trigger` | No | `"mention"` or `"message"` for top-level channel messages. Defaults to `"mention"` in channels. |
 | `threadTrigger` | No | `"message"`, `"mention"`, or `false` for thread replies. Defaults to `"message"` in active threads. |
-| `reply` | No | `"thread"`, `"same"`, or `"channel"`. Controls where normal replies go. |
-| `replyBroadcast` | No | Broadcast thread replies back to the channel. |
+| `response.placement` | No | `"auto"`, `"thread"`, `"same"`, or `"channel"`. Defaults to `"auto"`, which uses Slack threads outside DMs. |
+| `response.broadcast` | No | Broadcast thread replies back to the channel. |
 | `progress` | No | Progress reaction/message behavior, or `false`. |
 | `streaming` | No | Draft reply streaming behavior. |
 | `delivery` | No | Slack send pacing/retry behavior, or `false`. |

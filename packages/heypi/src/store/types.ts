@@ -1,7 +1,18 @@
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { ApprovalBypassScope } from "../config.js";
 import type { CallErrorKind, CallState, TurnState } from "../core/types.js";
-import type { approval, approvalBypass, call, job, jobRun, lock, message, thread, turn } from "../db/schema.js";
+import type {
+	approval,
+	approvalBypass,
+	call,
+	job,
+	jobRun,
+	lock,
+	message,
+	providerMessage,
+	thread,
+	turn,
+} from "../db/schema.js";
 import type { JobState } from "../job.js";
 
 export type StoredMessage = SessionMessageEntry["message"];
@@ -9,6 +20,8 @@ export type StoredMessage = SessionMessageEntry["message"];
 export type Thread = typeof thread.$inferSelect;
 
 export type Message = typeof message.$inferSelect;
+
+export type ProviderMessage = typeof providerMessage.$inferSelect;
 
 export type MessageWithThread = Message & {
 	agent: string;
@@ -48,6 +61,14 @@ export interface Threads {
 	}): Promise<Thread>;
 	get(id: string): Promise<Thread | undefined>;
 	getByKey(agent: string, provider: string, team: string | undefined, key: string): Promise<Thread | undefined>;
+	getRecentForActor?(input: {
+		agent: string;
+		provider: string;
+		team?: string;
+		channel: string;
+		actor: string;
+		since: number;
+	}): Promise<Thread | undefined>;
 	list(input?: {
 		agent?: string;
 		providers?: string[];
@@ -57,6 +78,26 @@ export interface Threads {
 		limit?: number;
 		offset?: number;
 	}): Promise<Thread[]>;
+}
+
+/** Provider message index. Resolves replies to provider messages before transcript dedupe knows the thread. */
+export interface ProviderMessages {
+	upsert(input: {
+		agent: string;
+		provider: string;
+		team?: string;
+		channel: string;
+		providerMessageId: string;
+		threadId: string;
+		actor?: string;
+	}): Promise<ProviderMessage>;
+	get(input: {
+		agent: string;
+		provider: string;
+		team?: string;
+		channel: string;
+		providerMessageId: string;
+	}): Promise<ProviderMessage | undefined>;
 }
 
 /** Message transcript store. Provides append-once semantics for provider retry dedupe. */
@@ -289,6 +330,8 @@ export interface JobRuns {
 /** Complete persistence boundary used by heypi core. Implementations may use SQLite, libSQL, or other stores. */
 export interface Store {
 	threads: Threads;
+	/** Optional index for resolving provider replies to stable heypi threads. */
+	providerMessages?: ProviderMessages;
 	messages: Messages;
 	turns: Turns;
 	calls: Calls;

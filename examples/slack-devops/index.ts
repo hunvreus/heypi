@@ -88,7 +88,7 @@ const app = createHeypi({
 				admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
 			},
 			trigger: "mention",
-			reply: "thread",
+			response: { placement: "thread" },
 			streaming: true,
 		}),
 		// Production HTTP mode:
@@ -106,7 +106,7 @@ const app = createHeypi({
 		// 		admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
 		// 	},
 		// 	trigger: "mention",
-		// 	reply: "thread",
+		// 	response: { placement: "thread" },
 		// 	streaming: true,
 		// }),
 	],

@@ -41,6 +41,32 @@ export const message = sqliteTable(
 	(table) => [uniqueIndex("message_provider_event_idx").on(table.provider, table.threadId, table.providerEventId)],
 );
 
+export const providerMessage = sqliteTable(
+	"provider_message",
+	{
+		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
+		provider: text("provider").notNull(),
+		team: text("team").notNull().default(""),
+		channel: text("channel").notNull(),
+		providerMessageId: text("provider_message_id").notNull(),
+		threadId: text("thread_id").notNull(),
+		actor: text("actor"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		uniqueIndex("provider_message_identity_idx").on(
+			table.agent,
+			table.provider,
+			table.team,
+			table.channel,
+			table.providerMessageId,
+		),
+		index("provider_message_thread_idx").on(table.threadId),
+	],
+);
+
 export const turn = sqliteTable(
 	"turn",
 	{

@@ -16,6 +16,7 @@ export type ReplyStream = {
 	stop(): Promise<void>;
 	sent?(): boolean;
 	complete?(): boolean;
+	ids?(): string[];
 	clear?(): Promise<void>;
 };
 
@@ -101,6 +102,10 @@ export class DraftReplyStream implements ReplyStream {
 
 	complete(): boolean {
 		return this.completed;
+	}
+
+	ids(): string[] {
+		return this.chunks.map((chunk) => chunk.id);
 	}
 
 	private shouldFlush(finalize: boolean): boolean {

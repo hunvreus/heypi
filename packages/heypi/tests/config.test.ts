@@ -7,7 +7,12 @@ import { agentFrom, DEFAULT_SOUL, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
-import { approvalFromMessages, channelContext, renderContextBlock, runtimeSystemPrompt } from "../src/runtime/pi-agent.js";
+import {
+	approvalFromMessages,
+	channelContext,
+	renderContextBlock,
+	runtimeSystemPrompt,
+} from "../src/runtime/pi-agent.js";
 
 test("agentFrom requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
