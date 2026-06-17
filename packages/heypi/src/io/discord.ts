@@ -1060,11 +1060,12 @@ async function postDiscordAttachmentUploadNotice(input: {
 }): Promise<void> {
 	if (!input.upload.requested) return;
 	if (input.upload.status === "uploaded" && input.upload.resolved === input.upload.requested) return;
-	if (input.upload.status === "unknown") return;
 	const text =
-		input.upload.resolved > 0
-			? "I created the file, but Discord did not accept the upload. Check the bot's attachment permissions and server logs."
-			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+		input.upload.status === "unknown"
+			? "I created the file, but Discord did not confirm the upload. If no file appears, retry the upload or check the bot's attachment permissions and server logs."
+			: input.upload.resolved > 0
+				? "I created the file, but Discord did not accept the upload. Check the bot's attachment permissions and server logs."
+				: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
 	await sendTextChunks({
 		channel: input.channel,
 		text,

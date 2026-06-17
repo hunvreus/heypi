@@ -272,7 +272,7 @@ test("Discord attachment upload failure is visible in the channel", async () => 
 	}
 });
 
-test("Discord ambiguous attachment upload aborts do not post false failure notices", async () => {
+test("Discord ambiguous attachment upload aborts post an unconfirmed upload notice", async () => {
 	const sent: unknown[] = [];
 	const file = await testAttachmentFile();
 	const channel = {
@@ -304,10 +304,11 @@ test("Discord ambiguous attachment upload aborts do not post false failure notic
 			delivery: new DeliveryQueue(false),
 		});
 
-		assert.equal(sent.length, 2);
+		assert.equal(sent.length, 3);
 		assert.deepEqual(sent[0], { content: "Attached: report.html" });
 		assert.deepEqual(Object.keys(sent[1] as Record<string, unknown>).sort(), ["content", "files"]);
 		assert.equal((sent[1] as Record<string, unknown>).content, "Attached: report.html");
+		assert.match(JSON.stringify(sent[2]), /Discord did not confirm the upload/);
 	} finally {
 		await file.cleanup();
 	}
