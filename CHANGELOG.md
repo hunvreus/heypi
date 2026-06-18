@@ -11,6 +11,9 @@
 - Added `heypi dev`, `heypi start`, and the loopback-only `local()` adapter for first-run local testing without configuring Slack, Discord, Telegram, or webhook secrets.
 - Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
 - Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
+- Added admin chat compose for sending local dev messages through the same handler path used by adapters.
+- Added typed trace event rows to admin thread inspection.
+- Added trace events when startup recovery marks interrupted turns and calls as failed.
 
 ### Changed
 - Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.

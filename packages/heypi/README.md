@@ -57,6 +57,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
+Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. The same dev server also exposes the loopback-only `/dev/messages` API when `local()` is enabled.
+
 `OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
 
 ## Documentation

@@ -838,6 +838,7 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 		});
 		const call = await store.calls.create({
 			agent: "default",
+			trace: "trace-stale",
 			turnId: turn.id,
 			threadId: thread.id,
 			channel: "slack::C1",
@@ -925,6 +926,10 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 		assert.equal((await store.jobRuns?.lastForJob({ agent: "default", id: "daily" }))?.state, "queued");
 		assert.equal(jobRun?.inserted, true);
 		assert.equal(await store.locks?.get(`thread:${thread.id}`), undefined);
+		assert.deepEqual(
+			(await store.events!.list({ agent: "default", trace: "trace-stale" })).map((row) => row.type).sort(),
+			["message.sent", "tool.failed", "turn.failed"],
+		);
 		const other = (await store.turns.listForThread(otherThread.id)).find((row) => row.id === otherTurn.id);
 		assert.equal(other?.state, "running");
 		assert.equal((await store.calls.get(otherCall.id))?.state, "running");

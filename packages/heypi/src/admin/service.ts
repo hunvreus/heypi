@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ApprovalConfig, PermissionsConfig, TaskConfig } from "../config.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
@@ -7,6 +7,7 @@ import type {
 	Approval,
 	ApprovalBypass,
 	Call,
+	Event,
 	Job,
 	JobRun,
 	Message,
@@ -47,11 +48,24 @@ export type AdminPage<T> = {
 export type AdminService = {
 	overview(): Promise<AdminOverview>;
 	live(): Promise<AdminLiveSummary>;
+	sendMessage(input: AdminSendMessageInput): Promise<AdminSendMessageResult>;
 	threads(input?: AdminPageInput): Promise<AdminPage<AdminThreadRow>>;
 	thread(id: string, input?: { event?: string }): Promise<AdminThreadView | undefined>;
 	approvals(input?: AdminPageInput): Promise<AdminPage<Approval>>;
 	jobs(input?: AdminPageInput): Promise<AdminPage<AdminJob>>;
 	memory(input?: AdminPageInput): Promise<AdminMemory>;
+};
+
+export type AdminSendMessageInput = {
+	text: string;
+	threadId?: string;
+	actor?: string;
+};
+
+export type AdminSendMessageResult = {
+	threadId: string;
+	trace: string;
+	status: "done" | "pending_approval" | "silent";
 };
 
 export type AdminOverview = {
@@ -115,11 +129,12 @@ export type AdminActivityDetail = {
 
 export type AdminActivityRow = {
 	id: string;
-	kind: "approval" | "call" | "message" | "run";
+	kind: "approval" | "call" | "event" | "message" | "run";
 	threadId?: string;
 	title: string;
 	summary: string;
 	state: string;
+	trace?: string;
 	provider?: string;
 	eventType?: string;
 	role?: string;
@@ -127,6 +142,7 @@ export type AdminActivityRow = {
 	actor?: string;
 	time: number;
 	durationMs?: number;
+	seq?: number;
 	details?: AdminActivityDetail[];
 };
 
@@ -249,6 +265,34 @@ export function createAdminService(start: AdapterStart): AdminService {
 				revision,
 				chatsRevision: revisionHash(threadRevisionRows),
 				threadRevisions: threadRevisionMap(threadRevisionRows),
+			};
+		},
+		async sendMessage(input: AdminSendMessageInput): Promise<AdminSendMessageResult> {
+			const text = input.text.trim();
+			if (!text) throw new Error("message text is required");
+			const existing = input.threadId ? await store.threads.get(input.threadId) : undefined;
+			if (input.threadId && (!existing || existing.agent !== app.agent)) throw new Error("thread not found");
+			const key = existing?.key ?? `admin:${randomUUID()}`;
+			const trace = `admin:${randomUUID()}`;
+			const actor = input.actor?.trim() || existing?.actor || "admin";
+			const result = await start.handler({
+				provider: existing?.provider ?? "local",
+				kind: existing?.kind ?? "local",
+				team: existing?.team || undefined,
+				channel: existing?.channel ?? key,
+				actor,
+				thread: key,
+				text,
+				trace,
+				eventId: trace,
+				data: { source: "admin" },
+			});
+			const thread = existing ?? (await store.threads.getByKey(app.agent, "local", undefined, key));
+			if (!thread) throw new Error("admin message did not create a thread");
+			return {
+				threadId: thread.id,
+				trace,
+				status: result?.approval ? "pending_approval" : result?.silent ? "silent" : "done",
 			};
 		},
 		async threads(input: AdminPageInput = {}): Promise<AdminPage<AdminThreadRow>> {
@@ -389,12 +433,13 @@ export function createAdminService(start: AdapterStart): AdminService {
 	}
 
 	async function threadTimeline(thread: Thread): Promise<AdminActivityRow[]> {
-		const [messages, runs, calls, approvals] = await Promise.all([
+		const [messages, runs, calls, approvals, events] = await Promise.all([
 			store.messages.listForThread(thread.id, { limit: 100 }),
 			store.turns.listForThread(thread.id, { limit: 25 }),
 			store.calls.listForThread(thread.id, { agent: app.agent, limit: 25 }),
 			store.approvals.listForThread?.(thread.id, { agent: app.agent, limit: 50 }) ??
 				store.approvals.listPending({ agent: app.agent, threadId: thread.id, limit: 50 }),
+			store.events?.list({ agent: app.agent, threadId: thread.id, limit: 100 }) ?? [],
 		]);
 		const runMessages = await runMessageContexts(runs);
 		const rows = [
@@ -402,6 +447,7 @@ export function createAdminService(start: AdapterStart): AdminService {
 			...runs.map((row) => runActivity(row, runMessages.get(row.id))),
 			...calls.map(callActivity),
 			...approvals.map(approvalActivity),
+			...events.map(eventActivity),
 		];
 		return rows.sort(activitySort);
 	}
@@ -443,6 +489,39 @@ function approvalActivity(row: Approval): AdminActivityRow {
 			row.resolvedBy ? { label: "Resolved by", value: row.resolvedBy } : undefined,
 		]),
 	};
+}
+
+function eventActivity(row: Event): AdminActivityRow {
+	return {
+		id: row.id,
+		kind: "event",
+		threadId: row.threadId ?? undefined,
+		title: row.type,
+		summary: preview(row.data) || `trace ${row.trace}`,
+		state: eventState(row.type),
+		trace: row.trace,
+		time: row.createdAt,
+		seq: row.seq,
+		details: compactDetails([
+			{ label: "Trace", value: row.trace, format: "mono" },
+			{ label: "Sequence", value: String(row.seq), format: "mono" },
+			row.turnId ? { label: "Turn", value: row.turnId, format: "mono" } : undefined,
+			row.callId ? { label: "Call", value: row.callId, format: "mono" } : undefined,
+			row.approvalId ? { label: "Approval", value: row.approvalId, format: "mono" } : undefined,
+			row.jobRunId ? { label: "Job run", value: row.jobRunId, format: "mono" } : undefined,
+			row.data ? { label: "Data", value: row.data, format: "text" } : undefined,
+		]),
+	};
+}
+
+function eventState(type: string): string {
+	const suffix = type.split(".").at(-1);
+	if (suffix === "started" || suffix === "requested") return "running";
+	if (suffix === "failed") return "failed";
+	if (suffix === "cancelled") return "cancelled";
+	if (suffix === "expired") return "expired";
+	if (suffix === "resolved" || suffix === "completed" || suffix === "sent" || suffix === "received") return "done";
+	return "event";
 }
 
 function jobRoute(row: Pick<Job, "scope" | "target">): string | undefined {
@@ -604,13 +683,19 @@ export function activityEvent(row: AdminActivityRow): string {
 }
 
 function activitySort(left: AdminActivityRow, right: AdminActivityRow): number {
-	return right.time - left.time || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
+	return (
+		right.time - left.time ||
+		(right.seq ?? Number.NEGATIVE_INFINITY) - (left.seq ?? Number.NEGATIVE_INFINITY) ||
+		left.kind.localeCompare(right.kind) ||
+		left.id.localeCompare(right.id)
+	);
 }
 
 function kindText(kind: AdminActivityRow["kind"]): string {
 	const labels: Record<AdminActivityRow["kind"], string> = {
 		approval: "Approval",
 		call: "Tool call",
+		event: "Event",
 		message: "Message",
 		run: "Run",
 	};

@@ -240,6 +240,16 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			actor: "U1",
 			trace: "trace-default",
 		});
+		const traceEvent = await store.events?.append({
+			agent: "default",
+			trace: "trace-default",
+			threadId: ownThread.id,
+			turnId: ownTurn.id,
+			type: "turn.started",
+			data: { intent: "ask" },
+			createdAt: now - 1500,
+		});
+		assert.ok(traceEvent);
 		const resultMessage = await store.messages.create({
 			threadId: ownThread.id,
 			provider: "slack",
@@ -373,6 +383,7 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.equal(timeline.has(`message:${inputMessage.id}`), true);
 		assert.equal(timeline.has(`approval:${ownApproval.id}`), true);
 		assert.equal(timeline.has(`call:${ownCall.id}`), true);
+		assert.equal(timeline.has(`event:${traceEvent.id}`), true);
 		assert.equal(timeline.has(`approval:${otherApproval.id}`), false);
 		assert.equal(timeline.has(`call:${otherCall.id}`), false);
 		assert.equal(timeline.has(`message:${otherMessage.id}`), false);
@@ -391,6 +402,14 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.equal(message?.provider, "slack");
 		assert.equal(message?.eventType, "slack");
 		assert.equal(message?.role, "user");
+		const event = thread?.timeline.find((row) => row.id === traceEvent.id);
+		assert.equal(event?.kind, "event");
+		assert.equal(event?.title, "turn.started");
+		assert.equal(event?.trace, "trace-default");
+		assert.deepEqual(
+			event?.details?.map((row) => row.label),
+			["Trace", "Sequence", "Turn", "Data"],
+		);
 
 		const newThread = await store.threads.getOrCreate({
 			agent: "default",
@@ -412,6 +431,75 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		const updatedLive = await service.live();
 		assert.equal(updatedLive.threadRevisions[ownThread.id], ownThreadRevision);
 		assert.notEqual(updatedLive.chatsRevision, live.chatsRevision);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin service sends local messages through the shared handler", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-send-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const service = createAdminService({
+			store,
+			handler: async (input) => {
+				const thread = await store.threads.getOrCreate({
+					agent: "default",
+					provider: input.provider,
+					kind: input.kind,
+					team: input.team,
+					channel: input.channel,
+					actor: input.actor,
+					key: input.thread,
+				});
+				await store.messages.create({
+					threadId: thread.id,
+					provider: input.provider,
+					kind: input.kind,
+					providerEventId: input.eventId,
+					role: "user",
+					actor: input.actor,
+					text: input.text,
+				});
+				await store.messages.create({
+					threadId: thread.id,
+					provider: input.provider,
+					kind: input.kind,
+					role: "assistant",
+					actor: "heypi",
+					text: "local reply",
+				});
+				return { text: "local reply" };
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				startedAt: Date.now(),
+			},
+		} as AdapterStart);
+
+		const created = await service.sendMessage({ text: "hello from admin" });
+		const thread = await service.thread(created.threadId);
+		assert.equal(thread?.thread.provider, "local");
+		assert.equal(
+			thread?.timeline.some((row) => row.kind === "message" && row.title === "hello from admin"),
+			true,
+		);
+		assert.equal(
+			thread?.timeline.some((row) => row.kind === "message" && row.title === "local reply"),
+			true,
+		);
+
+		const continued = await service.sendMessage({ threadId: created.threadId, text: "follow up", actor: "operator" });
+		assert.equal(continued.threadId, created.threadId);
+		const after = await service.thread(created.threadId);
+		const followUp = after?.timeline.find((row) => row.kind === "message" && row.title === "follow up");
+		assert.equal(followUp?.actor, "operator");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -679,6 +767,9 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadsBody, /All actors/);
 	assert.doesNotMatch(threadsBody, />Filter<\/button>/);
 	assert.match(threadsBody, /data-admin-chats-layout/);
+	assert.match(threadsBody, /data-admin-compose/);
+	assert.match(threadsBody, /action="\/admin\/messages"/);
+	assert.match(threadsBody, /aria-label="Send message"/);
 	assert.match(threadsBody, /data-admin-thread-item data-thread-id="thread-1"/);
 	assert.match(threadsBody, /data-admin-thread-channel>C123<\/span>/);
 	assert.match(threadsBody, /data-admin-thread-preview>deploy api<\/span>/);
@@ -737,6 +828,23 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			{ label: "Stdout", value: "tests passed", format: "text" as const },
 		],
 	};
+	const traceEvent = {
+		id: "event-1",
+		kind: "event" as const,
+		threadId: "thread-1",
+		title: "tool.completed",
+		summary: '{"tool":"host_exec","state":"done"}',
+		state: "done",
+		trace: "trace-1",
+		time: now - 750,
+		seq: 4,
+		details: [
+			{ label: "Trace", value: "trace-1", format: "mono" as const },
+			{ label: "Sequence", value: "4", format: "mono" as const },
+			{ label: "Call", value: "call-1", format: "mono" as const },
+			{ label: "Data", value: '{"tool":"host_exec","state":"done"}', format: "text" as const },
+		],
+	};
 	const assistantEvent = {
 		id: "message-2",
 		kind: "message" as const,
@@ -781,7 +889,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			checkedAt: now,
 			selected: {
 				thread: threadRow,
-				timeline: [runEvent, callEvent, event, assistantEvent, emptyEvent],
+				timeline: [runEvent, callEvent, traceEvent, event, assistantEvent, emptyEvent],
 				selected: callEvent,
 				event: "call:call-1",
 			},
@@ -799,6 +907,8 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-selected-event="true"/);
 	assert.match(threadBody, /data-admin-thread-scroll/);
 	assert.match(threadBody, /data-admin-thread-list/);
+	assert.match(threadBody, /name="threadId" value="thread-1"/);
+	assert.match(threadBody, /data-admin-compose-text/);
 	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /data-align="end"/);
@@ -817,6 +927,11 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-admin-context-summary/);
 	assert.match(threadBody, /data-admin-context-details/);
 	assert.match(threadBody, />Runtime<\/span>/);
+	assert.match(threadBody, /data-admin-context-row="event"/);
+	assert.match(threadBody, />Trace<\/span>/);
+	assert.match(threadBody, />Sequence<\/span>/);
+	assert.match(threadBody, />Data<\/span>/);
+	assert.match(threadBody, /tool\.completed/);
 	assert.doesNotMatch(threadBody, />Stdout<\/span>/);
 	assert.doesNotMatch(threadBody, />ID<\/div>/);
 	assert.match(threadBody, /host_exec/);

@@ -97,6 +97,7 @@ const ADMIN_ROUTES = [
 	["GET", "/admin/login"],
 	["POST", "/admin/login"],
 	["POST", "/admin/logout"],
+	["POST", "/admin/messages"],
 	["GET", "/admin/activity"],
 	["GET", "/admin/approvals"],
 	["GET", "/admin/configuration"],
@@ -245,7 +246,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: AdminSta
 			state.sessions.delete(session.hash);
 			return redirect(res, "/admin/login", [clearCookie(state)]);
 		}
-		return await handleReadRoute(req, res, state, session, nonce, url, method);
+		return await handleAdminRoute(req, res, state, session, nonce, url, method);
 	} catch (error) {
 		if (error instanceof AdminHttpError) {
 			return adminError(res, error.status, errorTitle(error.status), errorMessage(error), nonce);
@@ -273,10 +274,10 @@ async function handleWithoutAuth(
 	if (method === "POST" && (url.pathname === "/admin/login" || url.pathname === "/admin/logout")) {
 		return redirect(res, "/admin");
 	}
-	return await handleReadRoute(req, res, state, { csrf: "" }, nonce, url, method);
+	return await handleAdminRoute(req, res, state, { csrf: "" }, nonce, url, method);
 }
 
-async function handleReadRoute(
+async function handleAdminRoute(
 	req: IncomingMessage,
 	res: ServerResponse,
 	state: AdminState,
@@ -285,11 +286,34 @@ async function handleReadRoute(
 	url: URL,
 	method: string,
 ): Promise<void> {
-	if (method !== "GET")
+	if (method === "POST" && url.pathname === "/admin/messages") {
+		return await postMessage(req, res, state, session);
+	}
+	if (method !== "GET") {
 		return adminError(res, 405, "Method not allowed", "This admin route does not accept that HTTP method.", nonce);
+	}
 	if (url.pathname === "/admin/events") return await events(req, res, state);
 	if (url.pathname === "/admin/_pulse") return await pulse(res, state);
 	return await routePage(res, state, session, nonce, url);
+}
+
+async function postMessage(
+	req: IncomingMessage,
+	res: ServerResponse,
+	state: AdminState,
+	session: { csrf: string },
+): Promise<void> {
+	const form = await requireCsrf(req, session);
+	const text = formValue(form, "text").trim();
+	const threadId = formValue(form, "threadId").trim();
+	const actor = formValue(form, "actor").trim();
+	if (!text) throw new AdminHttpError(400, "Message text is required.");
+	const result = await state.service.sendMessage({
+		text,
+		threadId: threadId || undefined,
+		actor: actor || undefined,
+	});
+	redirect(res, `/admin/threads/${encodeURIComponent(result.threadId)}`);
 }
 
 async function loginGet(
@@ -355,7 +379,7 @@ async function routePage(
 			overview,
 			livePage: true,
 			liveThreadId: thread.thread.id,
-			body: threadsView(threads, { checkedAt: overview.live.checkedAt, selected: thread }),
+			body: threadsView(threads, { checkedAt: overview.live.checkedAt, selected: thread, csrf: session.csrf }),
 		});
 	}
 	if (path === "/admin") {
@@ -365,7 +389,7 @@ async function routePage(
 			active: "chats",
 			overview,
 			livePage: true,
-			body: threadsView(threads, { checkedAt: overview.live.checkedAt }),
+			body: threadsView(threads, { checkedAt: overview.live.checkedAt, csrf: session.csrf }),
 		});
 	}
 	if (path === "/admin/configuration") {
@@ -586,7 +610,7 @@ function currentSession(
 	return session;
 }
 
-async function requireCsrf(req: IncomingMessage, session: Session): Promise<URLSearchParams> {
+async function requireCsrf(req: IncomingMessage, session: { csrf: string }): Promise<URLSearchParams> {
 	if (!sameOrigin(req)) throw new AdminHttpError(403, "forbidden");
 	const form = await formBody(req);
 	const header = headerValue(req.headers["x-csrf-token"]);
@@ -616,6 +640,11 @@ async function formBody(req: IncomingMessage): Promise<URLSearchParams> {
 		chunks.push(next);
 	}
 	return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+}
+
+function formValue(form: URLSearchParams, key: string): string {
+	const value = form.get(key);
+	return typeof value === "string" ? value : "";
 }
 
 function cleanup(state: AdminState): void {

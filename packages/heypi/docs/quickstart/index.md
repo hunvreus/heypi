@@ -63,7 +63,7 @@ Edit `agent/AGENTS.md` and `agent/SOUL.md`.
 npm run dev
 ```
 
-The dev server also exposes local testing routes on loopback:
+Open the printed admin URL to send local test messages from Chats. The dev server also exposes local testing routes on loopback:
 
 ```bash
 curl -s http://127.0.0.1:3000/dev/messages \

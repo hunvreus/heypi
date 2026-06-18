@@ -307,7 +307,7 @@ ${card(
 
 export function threadsView(
 	page: AdminPage<AdminThreadRow>,
-	input: { checkedAt?: number; selected?: AdminThreadView } = {},
+	input: { checkedAt?: number; selected?: AdminThreadView; csrf?: string } = {},
 ): string {
 	const selectedId = input.selected?.thread.id;
 	return `<div class="grid h-[calc(100vh-5.5rem)] min-w-0" data-admin-chats>
@@ -322,8 +322,9 @@ export function threadsView(
 		${threadSearch(page)}
 	</header>
 		<div class="scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto" data-admin-thread-list>${threadList(page, selectedId)}</div>
+		${adminComposeForm({ csrf: input.csrf, compact: true })}
 	</aside>
-	<section class="min-h-0 min-w-0 overflow-hidden lg:border-l" data-admin-thread-panel>${threadConversationPanel(input.selected)}</section>
+	<section class="min-h-0 min-w-0 overflow-hidden lg:border-l" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>
 </div>
 </div>`;
@@ -632,18 +633,36 @@ function threadListItem(row: AdminThreadRow, selected: boolean): string {
 	</a>`;
 }
 
-function threadConversationPanel(input?: AdminThreadView): string {
+function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
 	if (!input) {
-		return `<div class="grid h-full place-items-center" data-admin-thread-empty>${emptyState({
+		return `<div class="grid h-full place-items-center p-4" data-admin-thread-empty>${emptyState({
 			title: "Select a thread",
-			message: "Open a thread to inspect its conversation and operational context.",
+			message: "Open a thread or send a local message.",
+			actionHtml: adminComposeForm({ csrf }),
 			variant: "plain",
 		})}</div>`;
 	}
-	return `<div class="scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
+	return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+	<div class="scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
 		<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm" data-admin-thread-sticky-header>${threadHeader(input.thread)}</header>
 	<div class="min-w-0 pb-4">${threadConversation(input)}</div>
+	</div>
+	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
+}
+
+function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: boolean } = {}): string {
+	const compact = input.compact === true;
+	const textareaClass = compact ? "min-h-0 h-16" : "min-h-24";
+	return `<form class="grid min-w-0 gap-2 ${compact ? "border-t pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
+	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
+	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
+	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>
+	<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none text-sm" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
+	<div class="flex min-w-0 items-center justify-end gap-2">
+		<button class="btn-sm-icon" type="submit" aria-label="Send message" data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("send")}</button>
+	</div>
+</form>`;
 }
 
 function threadConversation(input: AdminThreadView): string {
@@ -707,10 +726,14 @@ function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 }
 
 function chatContextDetails(row: AdminActivityRow): string {
+	const detailLabels =
+		row.kind === "event"
+			? ["Trace", "Sequence", "Turn", "Call", "Approval", "Job run", "Data"]
+			: ["Runtime", "Policy", "Expires", "Resolved by"];
 	const details = compactActivityDetails([
 		row.summary && row.summary !== row.title ? { label: "Detail", value: row.summary } : undefined,
 		row.durationMs ? { label: "Duration", value: duration(row.durationMs) } : undefined,
-		...(row.details ?? []).filter((detail) => ["Runtime", "Policy", "Expires", "Resolved by"].includes(detail.label)),
+		...(row.details ?? []).filter((detail) => detailLabels.includes(detail.label)),
 	]);
 	if (!details.length) return "";
 	return `<div class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm" data-admin-context-details>${details
@@ -1283,6 +1306,7 @@ function kindLabel(kind: AdminActivityRow["kind"]): string {
 	const labels: Record<AdminActivityRow["kind"], string> = {
 		approval: "Approval",
 		call: "Tool call",
+		event: "Event",
 		message: "Message",
 		run: "Run",
 	};
@@ -1392,6 +1416,7 @@ function icon(name: string, className?: string): string {
 			'<path d="M21 12a9 9 0 0 0-9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.8 9.8 0 0 0 6.7-2.7L21 16"/><path d="M16 16h5v5"/>',
 		route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
 		search: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+		send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
 		sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
 		warning:
 			'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',

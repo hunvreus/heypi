@@ -670,6 +670,22 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 					state: "failed",
 				});
 				await input.store.turns.finish(turn.id, { state: "failed", resultMessageId: result.id });
+				if (turn.trace) {
+					await appendRecoveryEvent(input, {
+						trace: turn.trace,
+						threadId: turn.threadId,
+						turnId: turn.id,
+						type: "message.sent",
+						data: { messageId: result.id, role: "system", state: "failed", reason: restartMessage },
+					});
+					await appendRecoveryEvent(input, {
+						trace: turn.trace,
+						threadId: turn.threadId,
+						turnId: turn.id,
+						type: "turn.failed",
+						data: { reason: restartMessage, resultMessageId: result.id },
+					});
+				}
 				recoveredThreads.add(turn.threadId);
 			} catch (error) {
 				input.logger.warn("app.recovery_turn_failed", {
@@ -693,9 +709,27 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 		locks += await input.store.locks.clear({ key: `thread:${threadId}` });
 	}
 	if (locks) input.logger.warn("app.recovered_locks", { agent: input.agent, locks });
+	const runningCalls = await (input.store.calls.listRecent?.({
+		agent: input.agent,
+		states: ["running"],
+		limit: 500,
+	}) ?? []);
 	if (input.store.calls.failRunning) {
 		const calls = await input.store.calls.failRunning({ agent: input.agent, error: restartMessage });
-		if (calls) input.logger.warn("app.recovered_calls", { agent: input.agent, calls });
+		if (calls) {
+			for (const call of runningCalls) {
+				if (!call.trace) continue;
+				await appendRecoveryEvent(input, {
+					trace: call.trace,
+					threadId: call.threadId ?? undefined,
+					turnId: call.turnId ?? undefined,
+					callId: call.id,
+					type: "tool.failed",
+					data: { tool: call.tool, state: "failed", reason: restartMessage },
+				});
+			}
+			input.logger.warn("app.recovered_calls", { agent: input.agent, calls });
+		}
 	} else {
 		input.logger.warn("app.recovery_calls_unsupported", { agent: input.agent });
 	}
@@ -709,5 +743,28 @@ async function recoverStartup(input: { store: Store; agent: string; logger: Logg
 		} else {
 			input.logger.warn("app.recovery_job_runs_unsupported", { agent: input.agent });
 		}
+	}
+}
+
+async function appendRecoveryEvent(
+	input: { store: Store; agent: string; logger: Logger },
+	event: {
+		trace: string;
+		type: "message.sent" | "turn.failed" | "tool.failed";
+		data?: unknown;
+		threadId?: string;
+		turnId?: string;
+		callId?: string;
+	},
+): Promise<void> {
+	try {
+		await input.store.events?.append({ agent: input.agent, ...event });
+	} catch (error) {
+		input.logger.warn("app.recovery_event_failed", {
+			agent: input.agent,
+			trace: event.trace,
+			type: event.type,
+			error: message(error),
+		});
 	}
 }
