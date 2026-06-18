@@ -37,15 +37,18 @@ npm install @hunvreus/heypi
 import { pathToFileURL } from "node:url";
 import { createHeypi, defaultTools, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
+const isDev = process.env.HEYPI_DEV === "1";
+const adapters = isDev
+  ? [local()]
+  : [
+      slack({
+        mode: "socket",
+      }),
+    ];
+
 const app = createHeypi({
   state: { root: "./state" },
-  adapters: [
-    ...(process.env.HEYPI_DEV ? [local()] : []),
-    slack({
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      appToken: process.env.SLACK_APP_TOKEN!,
-    }),
-  ],
+  adapters,
   agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
   runtime: { root: workspace("./workspace") },
 });
@@ -57,7 +60,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 }
 ```
 
-Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. The same dev server also exposes the loopback-only `/dev/messages` API when `local()` is enabled, and the admin UI can inspect jobs, approvals, traces, memory, and loaded eval definitions.
+Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. Generated apps start only the loopback `local()` adapter in dev mode, so local testing does not require Slack, Discord, Telegram, or webhook credentials. The same dev server also exposes the loopback-only `/dev/messages` API, and the admin UI can inspect jobs, approvals, traces, memory, and loaded eval definitions.
 
 `OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
 

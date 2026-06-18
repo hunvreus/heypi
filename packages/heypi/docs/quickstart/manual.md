@@ -14,14 +14,18 @@ npm install @hunvreus/heypi
 import { pathToFileURL } from "node:url";
 import { createHeypi, defaultTools, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
+const isDev = process.env.HEYPI_DEV === "1";
+const adapters = isDev
+  ? [local()]
+  : [
+      slack({
+        mode: "socket",
+      }),
+    ];
+
 const app = createHeypi({
   state: { root: "./state" },
-  adapters: [
-    ...(process.env.HEYPI_DEV ? [local()] : []),
-    slack({
-      mode: "socket",
-    }),
-  ],
+  adapters,
   agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
   runtime: { name: "just-bash", root: workspace("./workspace") },
 });
@@ -59,12 +63,13 @@ Use the [Slack setup guide](../adapters/slack.md#setup) to create the app, enabl
 heypi dev
 ```
 
-Mention the bot in a test channel.
+Use the printed admin URL or `POST /dev/messages` to test locally without Slack credentials. Use `heypi start` after filling `.env` and installing the Slack app.
 
 ## Config notes
 
 - `state.root` stores durable heypi state.
-- `slack(...)` registers the Slack adapter.
+- `local()` registers the loopback dev adapter when `HEYPI_DEV=1`.
+- `slack(...)` registers the Slack adapter outside dev mode.
 - `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, bundled skills, app tools, jobs, and evals.
 - `defaultTools()` adds heypi's built-in runtime tools. Discovery does not add them implicitly.
 - `runtime.root` is the workspace for runtime tools, generated files, and scoped runtime state.
