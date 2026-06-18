@@ -8,6 +8,7 @@ import { message as errorMessage, type Logger, userError } from "../core/log.js"
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
+import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
@@ -1361,7 +1362,7 @@ export function telegramAllowed(
 		dimensions: [
 			{ allowlist: allow?.chats?.map(String), value: event.chat, reason: "chat_not_allowed", skip: event.isDm },
 			{
-				allowlist: telegramActorAllowlist(allow),
+				allowlist: actorAllowlist(allow),
 				value: telegramActorValue(allow, event),
 				reason: "user_not_allowed",
 			},
@@ -1369,19 +1370,15 @@ export function telegramAllowed(
 	});
 }
 
-function telegramActorAllowlist(allow: TelegramAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !botAllowConfigured(allow?.bots)) return undefined;
-	return ["allowed"];
-}
-
 function telegramActorValue(
 	allow: TelegramAllow | undefined,
 	event: { user: string; bot?: string; botSelf?: number | string },
 ): string | undefined {
-	if (event.bot) return telegramBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
-	if (!allow?.users?.length) return "allowed";
-	if (allow.users.map(String).includes(event.user)) return "allowed";
-	return undefined;
+	return actorAllowedValue({
+		allow,
+		user: event.user,
+		botAllowed: event.bot ? telegramBotAllowed(allow?.bots, event.bot, event.botSelf) : undefined,
+	});
 }
 
 export function telegramBotAllowed(

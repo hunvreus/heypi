@@ -7,6 +7,7 @@ import { message as errorMessage, type Logger, userError } from "../core/log.js"
 import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
+import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
@@ -1230,25 +1231,21 @@ export function slackAllowed(
 		dmReason: "dm_not_allowed",
 		dimensions: [
 			{ allowlist: allow?.channels, value: event.channel, reason: "channel_not_allowed", skip: event.isDm },
-			{ allowlist: actorAllowlist(allow), value: actorValue(allow, event), reason: "actor_not_allowed" },
+			{ allowlist: actorAllowlist(allow), value: slackActorValue(allow, event), reason: "actor_not_allowed" },
 		],
 	});
 }
 
-function actorAllowlist(allow: SlackAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length && !botAllowConfigured(allow?.bots)) return undefined;
-	return ["allowed"];
-}
-
-function actorValue(
+function slackActorValue(
 	allow: SlackAllow | undefined,
 	event: { user?: string; groups?: string[]; bot?: SlackBotIdentity; botSelf?: SlackBotIdentity },
 ): string | undefined {
-	if (event.bot) return slackBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
-	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
-	if (event.user && allow.users?.includes(event.user)) return "allowed";
-	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
-	return undefined;
+	return actorAllowedValue({
+		allow,
+		user: event.user,
+		groups: event.groups,
+		botAllowed: event.bot ? slackBotAllowed(allow?.bots, event.bot, event.botSelf) : undefined,
+	});
 }
 
 export function slackBotAllowed(

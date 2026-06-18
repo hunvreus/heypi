@@ -25,6 +25,7 @@ import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
+import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
@@ -1432,25 +1433,21 @@ export function discordAllowed(
 		dmReason: "dm disabled",
 		dimensions: [
 			{ allowlist: input?.channels, value: event.channel, reason: "channel not allowed", skip: event.isDm },
-			{ allowlist: actorAllowlist(input), value: actorValue(input, event), reason: "actor not allowed" },
+			{ allowlist: actorAllowlist(input), value: discordActorValue(input, event), reason: "actor not allowed" },
 		],
 	});
 }
 
-function actorAllowlist(allow: DiscordAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length && !botAllowConfigured(allow?.bots)) return undefined;
-	return ["allowed"];
-}
-
-function actorValue(
+function discordActorValue(
 	allow: DiscordAllow | undefined,
 	event: { user?: string; groups?: string[]; bot?: string; botSelf?: string },
 ): string | undefined {
-	if (event.bot) return discordBotAllowed(allow?.bots, event.bot, event.botSelf) ? "allowed" : undefined;
-	if (!allow?.users?.length && !allow?.groups?.length) return "allowed";
-	if (event.user && allow.users?.includes(event.user)) return "allowed";
-	if (allow.groups?.some((group) => event.groups?.includes(group))) return "allowed";
-	return undefined;
+	return actorAllowedValue({
+		allow,
+		user: event.user,
+		groups: event.groups,
+		botAllowed: event.bot ? discordBotAllowed(allow?.bots, event.bot, event.botSelf) : undefined,
+	});
 }
 
 export function discordBotAllowed(
