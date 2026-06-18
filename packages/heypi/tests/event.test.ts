@@ -67,6 +67,36 @@ test("event repo appends monotonic per-trace events", async () => {
 	}
 });
 
+test("event repo redacts secrets in event data centrally", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-event-redact-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const row = await store.events!.append({
+			agent: "a",
+			trace: "trace-secret",
+			type: "tool.completed",
+			data: {
+				token: "sk-testsecret1234567890",
+				nested: {
+					value: "Authorization xoxb-secret-token",
+					list: ["ghp_secretsecretsecret", "safe"],
+				},
+			},
+		});
+
+		assert.doesNotMatch(row.data, /sk-testsecret/);
+		assert.doesNotMatch(row.data, /xoxb-secret-token/);
+		assert.doesNotMatch(row.data, /ghp_secretsecretsecret/);
+		assert.match(row.data, /sk-<redacted>/);
+		assert.match(row.data, /xoxb-<redacted>/);
+		assert.match(row.data, /ghp_<redacted>/);
+		assert.match(row.data, /safe/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("handler emits message and turn timeline events", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-handler-event-"));
 	try {

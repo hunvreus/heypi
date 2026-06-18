@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, type SQL, sql } from "drizzle-orm";
+import { redact } from "../core/log.js";
 import { event } from "../db/schema.js";
 import type { Db } from "./db.js";
 import { clampLimit } from "./paging.js";
@@ -33,7 +34,7 @@ export class EventRepo {
 			jobRunId: input.jobRunId,
 			seq,
 			type: input.type,
-			data: JSON.stringify(input.data ?? {}),
+			data: JSON.stringify(input.data ?? {}, redactEventValue),
 			createdAt: input.createdAt ?? Date.now(),
 		});
 		const row = await this.get(id);
@@ -79,4 +80,8 @@ export class EventRepo {
 			.where(eq(event.trace, trace));
 		return rows[0]?.value ?? 0;
 	}
+}
+
+function redactEventValue(_key: string, value: unknown): unknown {
+	return typeof value === "string" ? redact(value) : value;
 }
