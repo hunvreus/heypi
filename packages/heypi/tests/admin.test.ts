@@ -107,6 +107,7 @@ test("admin evals page renders loaded eval definitions", () => {
 				tags: ["smoke", "approval"],
 				timeoutMs: 30_000,
 				expect: "approval:true",
+				expectDetail: "approval:true\nincludes:deploy",
 			},
 		],
 	});
@@ -116,6 +117,10 @@ test("admin evals page renders loaded eval definitions", () => {
 	assert.match(body, /smoke, approval/);
 	assert.match(body, /approval:true/);
 	assert.match(body, /30s/);
+	assert.match(body, /data-admin-eval-details="deploy smoke"/);
+	assert.match(body, /Eval details/);
+	assert.match(body, /approval:true\nincludes:deploy/);
+	assert.match(body, /Can I deploy prod\?/);
 	assert.match(body, /name="q"[^>]+value="deploy"[^>]+data-admin-filter-search/);
 	assert.match(body, /href="\/admin\/evals"[^>]+data-admin-filter-reset/);
 });
@@ -264,6 +269,7 @@ test("admin service lists loaded eval definitions", async () => {
 		assert.equal(page.rows.length, 1);
 		assert.equal(page.rows[0]?.name, "deploy approval");
 		assert.equal(page.rows[0]?.expect, "approval:true");
+		assert.equal(page.rows[0]?.expectDetail, "approval:true");
 		assert.equal(page.rows[0]?.timeoutMs, 45_000);
 
 		const all = await service.evals();
@@ -272,6 +278,7 @@ test("admin service lists loaded eval definitions", async () => {
 			["deploy approval", "host list"],
 		);
 		assert.equal(all.rows[1]?.expect, "tool:hosts_list, includes:prod");
+		assert.equal(all.rows[1]?.expectDetail, "1. tool:hosts_list\n2. includes:prod");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

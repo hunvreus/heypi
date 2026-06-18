@@ -452,13 +452,14 @@ export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string 
 
 export function evalsView(page: AdminPage<AdminEval>, checkedAt?: number): string {
 	const body = `${tableControls("/admin/evals", page)}${table(
-		["Eval", "Tags", "Expectation", "Timeout", "Prompt"],
-		page.rows.map((row) => [
+		["Eval", "Tags", "Expectation", "Timeout", "Prompt", ""],
+		page.rows.map((row, index) => [
 			mono(row.name),
 			muted(row.tags.length ? row.tags.join(", ") : "-"),
 			muted(row.expect),
 			muted(row.timeoutMs ? duration(row.timeoutMs) : "-"),
 			truncatedText(row.prompt),
+			evalDetails(row, index),
 		]),
 		emptyStateForFilters(page.filters, {
 			title: "No evals configured",
@@ -1372,6 +1373,25 @@ function activityDetail(row: AdminActivityRow, label: string): AdminActivityDeta
 	return row.details?.find((detail) => detail.label === label);
 }
 
+function evalDetails(row: AdminEval, index: number): Cell {
+	const id = `eval-detail-${index}`;
+	const detailRows: Array<[string, Cell]> = [
+		["Name", copyable("eval name", row.name, mono(row.name))],
+		["Tags", row.tags.length ? row.tags.join(", ") : "-"],
+		["Timeout", row.timeoutMs ? duration(row.timeoutMs) : "-"],
+		["Expectation", wrapPre(row.expectDetail)],
+		["Prompt", copyable("prompt", row.prompt, wrapPre(row.prompt))],
+	];
+	return html(`<button type="button" class="btn-sm-ghost" data-admin-dialog-open="${id}" data-admin-eval-details="${escapeHtml(row.name)}">Details</button>
+<dialog id="${id}" class="dialog w-[calc(100vw-2rem)] max-w-[1040px] max-h-[calc(100vh-2rem)] overflow-hidden" aria-labelledby="${id}-title" data-admin-dialog>
+<div class="w-full min-w-0 overflow-hidden">
+<header><h2 id="${id}-title">Eval details</h2></header>
+<section class="min-w-0 overflow-y-auto overflow-x-hidden">${dialogList(detailRows)}</section>
+<button type="button" aria-label="Close dialog" data-admin-dialog-close>${icon("x")}</button>
+</div>
+</dialog>`);
+}
+
 function memoryDetails(entry: AdminMemory["entries"][number], index: number): Cell {
 	const id = `memory-detail-${index}`;
 	const content = `${escapeHtml(entry.text)}${entry.truncated ? "\n..." : ""}`;
@@ -1406,6 +1426,10 @@ function memoryPreview(entry: AdminMemory["entries"][number]): string {
 	const text = entry.text.trim().replace(/\s+/gu, " ");
 	if (!text) return "-";
 	return entry.truncated ? `${text} ...` : text;
+}
+
+function wrapPre(input: string): Cell {
+	return html(`<div class="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${escapeHtml(input)}</div>`);
 }
 
 function relativeTimeHtml(input: number, align?: "end"): string {

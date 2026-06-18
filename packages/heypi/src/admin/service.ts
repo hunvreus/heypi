@@ -135,6 +135,7 @@ export type AdminEval = {
 	tags: string[];
 	timeoutMs?: number;
 	expect: string;
+	expectDetail: string;
 };
 
 export type AdminThreadRow = {
@@ -1046,6 +1047,7 @@ function evalRow(row: EvalConfig): AdminEval {
 		tags: row.tags ?? [],
 		timeoutMs: row.timeoutMs,
 		expect: evalExpectLabel(row.expect),
+		expectDetail: evalExpectDetail(row.expect),
 	};
 }
 
@@ -1053,6 +1055,12 @@ function evalExpectLabel(input: EvalConfig["expect"]): string {
 	if (!input) return "-";
 	const rows = Array.isArray(input) ? input : [input];
 	return rows.map(oneEvalExpectLabel).join(", ");
+}
+
+function evalExpectDetail(input: EvalConfig["expect"]): string {
+	if (!input) return "-";
+	const rows = Array.isArray(input) ? input : [input];
+	return rows.map((row, index) => `${rows.length > 1 ? `${index + 1}. ` : ""}${oneEvalExpectLabel(row)}`).join("\n");
 }
 
 function oneEvalExpectLabel(input: EvalExpect): string {
