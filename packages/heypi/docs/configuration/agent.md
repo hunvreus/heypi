@@ -36,6 +36,7 @@ createHeypi({
 
 | Option | Required | Applies to | Description |
 | --- | --- | --- | --- |
+| `id` | No | `loadAgent`, manual | Durable agent id for threads, jobs, approvals, traces, and app locking. Defaults to `default`; set it explicitly for multi-agent apps or when preserving state from an older id. |
 | `model` | Yes, unless `HEYPI_MODEL` is set | `loadAgent`, manual | Model id. `loadAgent()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
 | `tools` | No | `loadAgent`, manual | Built-in runtime tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
 | `evals` | No | `loadAgent`, manual | Behavior eval definitions. Loaded from `agent/evals/` by convention. |
@@ -67,6 +68,8 @@ For the full lower-level Pi agent contract, see Pi's [coding-agent package](http
 `skills/` loads bundled skills from the agent folder. They ship with the app and are not managed by `skill_*` tools. Runtime-created managed skills are enabled with top-level [`skills`](skills.md) config.
 
 Discovered tools, jobs, and evals are loaded recursively in lexical relative-path order. Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
+
+`loadAgent()` uses `id: "default"` unless you pass `id`. This keeps generated apps, admin filters, CLI status, and persisted eval events on the same default agent id.
 
 If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.
 

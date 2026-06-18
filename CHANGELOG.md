@@ -4,6 +4,7 @@
 
 ### Breaking
 - Changed chat response placement config to use adapter-local `response` objects. Slack `reply` is now `response.placement`, and Slack `replyBroadcast` is now `response.broadcast`; the old keys are not supported.
+- Changed `loadAgent()` to default the durable agent id to `default` instead of the agent folder basename. Apps that relied on the old implicit id, such as `agent`, should pass `id` explicitly to keep using existing persisted state.
 
 ### Added
 - Added the JS-native authoring APIs `loadAgent`, `defaultTools`, `defineTool`, and `approval`, with Zod input schema support for custom tools.

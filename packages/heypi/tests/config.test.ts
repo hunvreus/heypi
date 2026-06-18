@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
+import { agentFrom, DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
@@ -58,6 +58,12 @@ test("loadAgent uses a default SOUL.md fallback", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
 	assert.equal(agent.soul, DEFAULT_SOUL);
+});
+
+test("loadAgent defaults to the canonical agent id", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	assert.equal(loadAgent(root, { model: "openai/gpt-5-mini" }).id, DEFAULT_AGENT_ID);
+	assert.equal(loadAgent(root, { id: "ops", model: "openai/gpt-5-mini" }).id, "ops");
 });
 
 test("loadAgent preserves configured dynamic context providers", () => {

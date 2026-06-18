@@ -13,6 +13,7 @@ export {
 	agentFrom,
 	type BusyBehavior,
 	type CancelPolicy,
+	DEFAULT_AGENT_ID,
 	type HeypiConfig,
 	type HttpConfig,
 	type JustBashConfig,
@@ -43,12 +44,12 @@ export {
 } from "./core-tools.js";
 export {
 	defineEval,
-	evaluateEval,
 	type EvalAssertion,
 	type EvalConfig,
 	type EvalExpect,
 	type EvalReport,
 	type EvalResult,
+	evaluateEval,
 } from "./eval.js";
 export {
 	type DiscordAllow,

@@ -36,6 +36,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `loadEvals(folder)` | Loads default-exported evals recursively from a folder. |
 | `agentFrom(folder, options)` | Compatibility alias for `loadAgent()`. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
+| `DEFAULT_AGENT_ID` | Canonical default durable agent id, currently `default`. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
 | `AgentContextProvider` | Per-turn context callback type. |
 

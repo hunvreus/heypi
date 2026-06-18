@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadAgent, consoleLogger, createHeypi, sqliteStore, workspace } from "@hunvreus/heypi";
+import { consoleLogger, createHeypi, loadAgent, sqliteStore, workspace } from "@hunvreus/heypi";
 import { nextAt } from "../src/core/schedule.js";
 import { createScheduler, enqueueJobRuns } from "../src/core/scheduler.js";
 import type { Adapter, AdapterTarget, Handler, Inbound, Outbound } from "../src/io/handler.js";
@@ -56,13 +56,13 @@ test("createHeypi installs configured jobs", async () => {
 		});
 		await app.start();
 		await app.stop();
-		const job = await store.jobs?.get({ agent: "agent", id: "daily" });
+		const job = await store.jobs?.get({ agent: "default", id: "daily" });
 		assert.equal(job?.kind, "heartbeat");
 		assert.equal(job?.state, "active");
 		assert.equal(job?.idleMs, 8 * 60 * 60 * 1000);
 		assert.equal(job?.scope, JSON.stringify({ test: {} }));
 		assert.ok(job?.nextAt);
-		const cron = await store.jobs?.get({ agent: "agent", id: "cron" });
+		const cron = await store.jobs?.get({ agent: "default", id: "cron" });
 		assert.equal(cron?.target, JSON.stringify({ test: { channels: ["C1"] } }));
 	} finally {
 		await rm(root, { recursive: true, force: true });

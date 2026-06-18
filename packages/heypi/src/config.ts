@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type {
 	BashOptions,
 	CommandName,
@@ -216,10 +216,12 @@ export const DEFAULT_SOUL = [
 	"Use plain language and keep responses focused on the user's goal.",
 ].join("\n");
 
+export const DEFAULT_AGENT_ID = "default";
+
 /** Loads an agent from the heypi folder convention, including prompts, tools, jobs, evals, skills, and extensions. */
 export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentConfig {
 	const directory = resolve(folder);
-	const id = options.id ?? basename(directory) ?? "agent";
+	const id = options.id ?? DEFAULT_AGENT_ID;
 	const selectedModel = options.model ?? process.env.HEYPI_MODEL;
 	if (!selectedModel) throw new Error("agent model is required; pass loadAgent(..., { model }) or set HEYPI_MODEL");
 	const model = modelConfig(selectedModel);
