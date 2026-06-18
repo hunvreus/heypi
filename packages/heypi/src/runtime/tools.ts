@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 import type { CallContext } from "../core/calls.js";
 import { type Logger, logger } from "../core/log.js";
 import type { Confirm, Reply, ReplyAttachment, ToolExecute } from "../core/types.js";
-import { type CoreToolDefinition, type CoreToolName, defaultTools } from "../core-tools.js";
+import { type DefaultToolDefinition, type DefaultToolName, defaultTools } from "../core-tools.js";
 import type { Messages } from "../store/types.js";
 import { toolConfirm, toolPiRunner, toolRunner } from "../tool-internal.js";
 import { booleanParam, numberParam, optionalString, stringParam, text, toolText } from "./tool-util.js";
@@ -33,7 +33,7 @@ export function tools(input: {
 	channel: string;
 	actor: string;
 	context?: CallContext;
-	core?: CoreToolDefinition[];
+	core?: DefaultToolDefinition[];
 	custom?: ToolDefinition[];
 	attachments?: ReplyAttachment[];
 	logger?: Logger;
@@ -121,7 +121,7 @@ function runtimeTools(
 	channel: string,
 	actor: string,
 	context?: CallContext,
-	coreDefinitions?: CoreToolDefinition[],
+	coreDefinitions?: DefaultToolDefinition[],
 	attachments?: ReplyAttachment[],
 ): ToolDefinition[] {
 	const out: ToolDefinition[] = [];
@@ -330,11 +330,11 @@ function runtimeTools(
 	return out;
 }
 
-function coreMap(input: CoreToolDefinition[] | undefined): Map<CoreToolName, CoreToolDefinition> {
+function coreMap(input: DefaultToolDefinition[] | undefined): Map<DefaultToolName, DefaultToolDefinition> {
 	return new Map((input ?? defaultTools()).map((tool) => [tool.name, tool]));
 }
 
-function enabled(core: Map<CoreToolName, CoreToolDefinition>, name: CoreToolName): boolean {
+function enabled(core: Map<DefaultToolName, DefaultToolDefinition>, name: DefaultToolName): boolean {
 	return core.has(name);
 }
 

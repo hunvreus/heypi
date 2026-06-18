@@ -42,6 +42,9 @@ export {
 	type CoreToolsConfig,
 	coreTools,
 	type DefaultToolConfig,
+	type DefaultToolDefinition,
+	type DefaultToolName,
+	type DefaultToolOption,
 	type DefaultToolsConfig,
 	defaultTools,
 } from "./core-tools.js";

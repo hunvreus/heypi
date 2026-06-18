@@ -64,6 +64,7 @@
 - Changed internal runtime code and architecture docs to prefer `loadAgent()`, `defaultTools()`, and `defineTool()` terminology.
 - Changed remaining internal runtime naming to avoid teaching the deprecated `coreTools()` alias outside compatibility docs.
 - Changed the public agent loader options type from `AgentFromOptions` to `LoadAgentOptions`.
+- Added `DefaultToolName`, `DefaultToolOption`, and `DefaultToolDefinition` as the preferred public type names for `defaultTools()`.
 - Changed runtime tests to use `defineTool()` so deprecated `tool()` usage is limited to compatibility coverage.
 - Changed the heypi package test script to accept focused Node test file arguments.
 - Changed generated app README copy to point first-run users at the local admin/dev interaction path.
