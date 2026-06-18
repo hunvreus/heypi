@@ -125,7 +125,7 @@ Host tools:
 - `host_facts_refresh`: probes and persists hostname, OS, architecture, kernel, distro, package manager, service manager, container runtime/version, root disk, memory, ports 80/443, git user, and passwordless sudo availability.
 - `host_exec`: runs commands over SSH from the heypi Node process. Each call includes a human purpose. Risky commands require approval through `approval.command()` and show target/command approval details; blocked commands do not run.
 
-This example uses heypi's default runtime for the local workspace. Core bash/file/search tools operate in the scoped workspace under `./workspace`.
+This example uses heypi's default runtime for the local workspace. Default bash/file/search tools operate in the scoped workspace under `./workspace`.
 
 Memory is enabled with the default channel scope. Memory files are stored under `./workspace/memory/scopes/...` and are gitignored. With no approvers configured, channel users can update memory automatically. When user or group approvers are set, memory writes default to approver-only.
 

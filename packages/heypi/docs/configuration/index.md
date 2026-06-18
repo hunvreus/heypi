@@ -18,7 +18,7 @@ The main keys are:
 | `state` | Yes | Durable app state directory. The default store writes SQLite data under `state.root`: threads, messages, calls, approvals, jobs, admin state, and locks. Runtime workspace files live under `runtime.root`, not `state.root`. |
 | `adapters` | Yes | Chat or HTTP entrypoints. Built-ins cover Slack, Discord, Telegram, and webhook. Custom adapters can be passed here too. See [Adapters](../adapters/index.md). |
 | `agent` | Yes | The Pi agent: model, prompt files, SOUL/system text, dynamic context, tools, skills, and Pi extensions. See [Agent](agent.md). |
-| `runtime` | Yes | Runtime workspace and execution backend. Runtime-backed core tools include `bash`, file tools, and search tools; `attach` and `history` are core tools too, but are documented with the agent tool surface. No default. See [Runtime](runtime.md) and [Agent tools](tools.md#core-tools). |
+| `runtime` | Yes | Runtime workspace and execution backend. Runtime-backed default tools include `bash`, file tools, and search tools; `attach` and `history` are default tools too, but are documented with the agent tool surface. No default. See [Runtime](runtime.md) and [Agent tools](tools.md#default-tools). |
 | `http` | Only for HTTP routes | Shared Node HTTP listener for HTTP adapters, admin, and self-hosted secret pages. Defaults to `127.0.0.1:3000`; use `port: 0` for an OS-assigned local port. See [HTTP listener](http.md). |
 | `scope` | No | Default sharing boundary for runtime files, memory, skills, secrets, and attachments. Defaults to `channel`. See [Scope](scope.md). |
 | `approval` | No | Who can list and resolve approval-gated calls, plus optional expiry. Tool confirmation decides which calls need approval. See [Approvals](approvals.md) and [Agent tools](tools.md#confirmation). |
@@ -27,7 +27,7 @@ The main keys are:
 | `memory` | No | Durable scoped notes the agent can read and update. Disabled by default. See [Memory](memory.md) and [Agent tools](tools.md#managed-tools). |
 | `skills` | No | Scoped procedures and runbooks the agent can create, patch, read, and delete. Disabled by default. See [Skills](skills.md) and [Agent tools](tools.md#managed-tools). |
 | `secrets` | No | Encrypted browser handoff for sensitive values that should become runtime files. Disabled by default. See [Secrets](secrets.md). |
-| `attachments` | No | Inbound files, generated-file delivery, size limits, document conversion, and custom attachment stores. See [Attachments](attachments.md) and the [`attach` tool](tools.md#core-tools). |
+| `attachments` | No | Inbound files, generated-file delivery, size limits, document conversion, and custom attachment stores. See [Attachments](attachments.md) and the [`attach` tool](tools.md#default-tools). |
 | `jobs` | No | Configured cron jobs and heartbeat jobs. Omit to disable scheduling; set `[]` to reconcile and pause previously configured jobs. See [Scheduling](scheduling.md). |
 | `store` | No | Custom durable store. Defaults to SQLite under `state.root`. Needed only when you replace the default state backend, usually for multi-instance deployments. See [Custom integrations](../guides/integrations.md#store). |
 | `scheduler` | No | Scheduler polling and job lock behavior. Defaults: `pollMs: 30_000`, `lockMs: 600_000`. Most apps should keep them. See [Scheduling](scheduling.md#options). |

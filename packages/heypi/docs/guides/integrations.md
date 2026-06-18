@@ -51,7 +51,7 @@ export const provider: RuntimeProvider = {
 };
 ```
 
-Configure it with [`runtime.provider`](../configuration/runtime.md). Providers receive a scoped root and may keep a container, VM, or remote workspace warm per scope. Core tools and `ctx.runtime` use the same provider.
+Configure it with [`runtime.provider`](../configuration/runtime.md). Providers receive a scoped root and may keep a container, VM, or remote workspace warm per scope. Default tools and `ctx.runtime` use the same provider.
 
 ## Attachment store
 

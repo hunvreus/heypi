@@ -18,7 +18,7 @@ This is the full runtime example. It is closer to pi-chat than the Slack and Tel
 - Discord adapter with mention trigger and streaming replies.
 - Top-level `scope: "channel"` so each Discord channel gets its own workspace.
 - `@hunvreus/heypi-runtime-gondolin` keeps one warm VM per channel scope.
-- Core bash, file, search, history, and attach tools run through the VM-backed runtime. Risky bash commands use heypi's default approval policy.
+- Default bash, file, search, history, and attach tools run through the VM-backed runtime. Risky bash commands use heypi's default approval policy.
 - `memory: true` enables durable channel memory.
 - `skills.enabled` enables scoped channel skills. With `HEYPI_DISCORD_APPROVERS` set, skill writes default to approver-only.
 - `secrets` uses the hosted encrypted handoff page by default. Set `HEYPI_SECRET_URL` with a fixed `HEYPI_HTTP_PORT` to self-host it locally.

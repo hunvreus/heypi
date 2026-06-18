@@ -2,7 +2,7 @@
 
 Tools are how the agent reads files, runs commands, sends generated files, and calls trusted app code.
 
-## Core tools
+## Default tools
 
 `defaultTools()` exposes heypi's built-in runtime tools. By default, it returns:
 
@@ -12,7 +12,7 @@ bash, read, write, edit, grep, find, ls, attach, history
 
 These run through the selected runtime when the runtime implements the operation. `attach` marks a generated runtime file for upload with the final chat reply.
 
-Configure core tools with `defaultTools()`:
+Configure default tools with `defaultTools()`:
 
 ```ts
 import { approval, defaultTools, loadAgent } from "@hunvreus/heypi";

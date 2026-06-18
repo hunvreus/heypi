@@ -61,6 +61,6 @@ heypi logs a startup warning for `host-bash` and `guarded-bash`. For shared or t
 
 Custom runtime providers implement `RuntimeProvider` from `@hunvreus/heypi/runtime`. See [Custom integrations](../guides/integrations.md).
 
-Use a provider when you want core tools and `ctx.runtime` calls to share the same backend: Docker, Gondolin, Daytona, E2B, a remote VM manager, or an internal execution service.
+Use a provider when you want default tools and `ctx.runtime` calls to share the same backend: Docker, Gondolin, Daytona, E2B, a remote VM manager, or an internal execution service.
 
-Keep provider-specific features outside the core runtime API unless heypi needs them for common tool behavior. For example, preview URLs, package caches, image templates, and port forwarding can remain provider-specific.
+Keep provider-specific features outside the common runtime API unless heypi needs them for common tool behavior. For example, preview URLs, package caches, image templates, and port forwarding can remain provider-specific.
