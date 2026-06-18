@@ -97,7 +97,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 	const admin = await promptConfirm(
 		"Enable local admin UI",
 		true,
-		"Adds a local browser UI for jobs, approvals, and diagnostics.",
+		"Adds a local browser UI for chats, jobs, approvals, evals, and diagnostics.",
 	);
 	const sampleChoices = flags.samples
 		? ["skills", "tools"]

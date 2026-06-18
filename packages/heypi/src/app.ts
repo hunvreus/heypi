@@ -317,6 +317,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 							kind: item.kind,
 							permissions: item.permissions,
 						})),
+						evals: config.agent.evals ?? [],
 						startedAt: appStartedAt,
 					},
 				} satisfies AdapterStart;

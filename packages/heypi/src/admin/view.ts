@@ -3,6 +3,7 @@ import type { Approval, ApprovalBypass } from "../store/types.js";
 import {
 	type AdminActivityDetail,
 	type AdminActivityRow,
+	type AdminEval,
 	type AdminFilterFacets,
 	type AdminJob,
 	type AdminMemory,
@@ -422,6 +423,24 @@ export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string 
 	return `<div class="grid min-w-0 gap-4">${card("Jobs", checkedAtDescription("Configured scheduled and heartbeat jobs.", checkedAt), body)}</div>`;
 }
 
+export function evalsView(page: AdminPage<AdminEval>, checkedAt?: number): string {
+	const body = `${tableControls("/admin/evals", page)}${table(
+		["Eval", "Tags", "Expectation", "Timeout", "Prompt"],
+		page.rows.map((row) => [
+			mono(row.name),
+			muted(row.tags.length ? row.tags.join(", ") : "-"),
+			muted(row.expect),
+			muted(row.timeoutMs ? duration(row.timeoutMs) : "-"),
+			truncatedText(row.prompt),
+		]),
+		emptyStateForFilters(page.filters, {
+			title: "No evals configured",
+			message: "Add eval definitions under agent/evals/ to inspect behavior checks here.",
+		}),
+	)}${pagination("/admin/evals", page)}`;
+	return `<div class="grid min-w-0 gap-4">${card("Evals", checkedAtDescription("Loaded agent behavior eval definitions.", checkedAt), body)}</div>`;
+}
+
 export function memoryView(memory: AdminMemory, checkedAt?: number): string {
 	if (!memory.enabled) {
 		const body = emptyState({
@@ -488,6 +507,11 @@ function topNav(
 			key: "jobs",
 			count: live.jobs,
 			field: "jobs",
+		},
+		{
+			label: "Evals",
+			href: "/admin/evals",
+			key: "evals",
 		},
 		{
 			label: "Memory",

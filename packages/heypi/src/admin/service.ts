@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ApprovalConfig, PermissionsConfig, TaskConfig } from "../config.js";
+import type { EvalConfig, EvalExpect } from "../eval.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
 import { clampLimit, clampOffset } from "../store/paging.js";
@@ -53,6 +54,7 @@ export type AdminService = {
 	thread(id: string, input?: { event?: string }): Promise<AdminThreadView | undefined>;
 	approvals(input?: AdminPageInput): Promise<AdminPage<Approval>>;
 	jobs(input?: AdminPageInput): Promise<AdminPage<AdminJob>>;
+	evals(input?: AdminPageInput): Promise<AdminPage<AdminEval>>;
 	memory(input?: AdminPageInput): Promise<AdminMemory>;
 };
 
@@ -95,6 +97,14 @@ type AdminLiveSummary = {
 };
 
 export type AdminJob = Job & { route?: string; lastRun?: JobRun | null };
+
+export type AdminEval = {
+	name: string;
+	prompt: string;
+	tags: string[];
+	timeoutMs?: number;
+	expect: string;
+};
 
 export type AdminThreadRow = {
 	id: string;
@@ -378,6 +388,12 @@ export function createAdminService(start: AdapterStart): AdminService {
 			return filtering && scan
 				? toPage(filterRows(withRuns, filters, jobSearchText), page, filters, page.offset, scan.truncated)
 				: toPage(withRuns, page, filters, 0);
+		},
+		async evals(input: AdminPageInput = {}): Promise<AdminPage<AdminEval>> {
+			const page = pageInput(input);
+			const filters = filtersFromInput(input);
+			const rows = (app.evals ?? []).map(evalRow).sort((left, right) => left.name.localeCompare(right.name));
+			return toPage(filterRows(rows, filters, evalSearchText), page, filters);
 		},
 		async memory(input: AdminPageInput = {}): Promise<AdminMemory> {
 			const page = pageInput(input);
@@ -879,6 +895,16 @@ const jobSearchText = {
 	state: (row: AdminJob) => row.state,
 };
 
+const evalSearchText = {
+	search: (row: AdminEval): Array<string | number | null | undefined> => [
+		row.name,
+		row.prompt,
+		row.tags.join(" "),
+		row.timeoutMs,
+		row.expect,
+	],
+};
+
 const threadSearchText = {
 	search: (row: AdminThreadRow): Array<string | number | null | undefined> => [
 		row.id,
@@ -897,6 +923,29 @@ const threadSearchText = {
 	channel: (row: AdminThreadRow) => row.channel,
 	actor: (row: AdminThreadRow) => row.actor,
 };
+
+function evalRow(row: EvalConfig): AdminEval {
+	return {
+		name: row.name,
+		prompt: row.prompt,
+		tags: row.tags ?? [],
+		timeoutMs: row.timeoutMs,
+		expect: evalExpectLabel(row.expect),
+	};
+}
+
+function evalExpectLabel(input: EvalConfig["expect"]): string {
+	if (!input) return "-";
+	const rows = Array.isArray(input) ? input : [input];
+	return rows.map(oneEvalExpectLabel).join(", ");
+}
+
+function oneEvalExpectLabel(input: EvalExpect): string {
+	if (typeof input === "function") return "custom";
+	return Object.entries(input)
+		.map(([key, value]) => `${key}:${value instanceof RegExp ? value.toString() : String(value)}`)
+		.join("+");
+}
 
 const memorySearchText = {
 	search: (row: AdminMemory["entries"][number]): Array<string | number | null | undefined> => [

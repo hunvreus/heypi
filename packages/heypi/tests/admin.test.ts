@@ -14,7 +14,7 @@ import {
 	verifyAdminLoginToken,
 } from "../src/admin/auth.js";
 import { createAdminService } from "../src/admin/service.js";
-import { approvalsView, configurationView, jobsView, memoryView, threadsView } from "../src/admin/view.js";
+import { approvalsView, configurationView, evalsView, jobsView, memoryView, threadsView } from "../src/admin/view.js";
 import type { AdapterStart } from "../src/io/handler.js";
 
 type LogEntry = {
@@ -92,6 +92,32 @@ test("admin jobs page labels future next runs as upcoming", () => {
 	} finally {
 		Date.now = realNow;
 	}
+});
+
+test("admin evals page renders loaded eval definitions", () => {
+	const body = evalsView({
+		limit: 25,
+		offset: 0,
+		hasNext: false,
+		filters: { q: "deploy" },
+		rows: [
+			{
+				name: "deploy smoke",
+				prompt: "Can I deploy prod?",
+				tags: ["smoke", "approval"],
+				timeoutMs: 30_000,
+				expect: "approval:true",
+			},
+		],
+	});
+	assert.match(body, /Evals/);
+	assert.match(body, /Loaded agent behavior eval definitions/);
+	assert.match(body, /deploy smoke/);
+	assert.match(body, /smoke, approval/);
+	assert.match(body, /approval:true/);
+	assert.match(body, /30s/);
+	assert.match(body, /name="q"[^>]+value="deploy"[^>]+data-admin-filter-search/);
+	assert.match(body, /href="\/admin\/evals"[^>]+data-admin-filter-reset/);
 });
 
 test("admin jobs page renders explicit targets and scoped heartbeat routes", async () => {
@@ -194,6 +220,58 @@ test("admin filtered jobs report incomplete scans", async () => {
 		const invalidPage = await service.jobs({ limit: Number.NaN, offset: Number.NaN });
 		assert.equal(invalidPage.limit, 25);
 		assert.equal(invalidPage.offset, 0);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin service lists loaded eval definitions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-evals-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const now = Date.now();
+		const service = createAdminService({
+			store,
+			handler: async () => undefined,
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				evals: [
+					{
+						name: "deploy approval",
+						tags: ["approval"],
+						prompt: "Deploy production",
+						expect: { approval: true },
+						timeoutMs: 45_000,
+					},
+					{
+						name: "host list",
+						tags: ["smoke"],
+						prompt: "List hosts",
+						expect: [{ tool: "hosts_list" }, { includes: "prod" }],
+					},
+				],
+				startedAt: now,
+			},
+		} as AdapterStart);
+
+		const page = await service.evals({ q: "approval" });
+		assert.equal(page.rows.length, 1);
+		assert.equal(page.rows[0]?.name, "deploy approval");
+		assert.equal(page.rows[0]?.expect, "approval:true");
+		assert.equal(page.rows[0]?.timeoutMs, 45_000);
+
+		const all = await service.evals();
+		assert.deepEqual(
+			all.rows.map((row) => row.name),
+			["deploy approval", "host list"],
+		);
+		assert.equal(all.rows[1]?.expect, "tool:hosts_list, includes:prod");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -1041,6 +1119,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /data-admin-nav-link="chats" aria-current="page"/);
 		assert.match(body, /data-admin-nav-link="approvals"/);
 		assert.match(body, /data-admin-nav-link="jobs"/);
+		assert.match(body, /data-admin-nav-link="evals"/);
 		assert.match(body, /data-admin-nav-link="memory"/);
 		assert.match(body, /Approvals<span[^>]+data-live-field="pendingApprovals">0<\/span>/);
 		assert.match(body, /Jobs<span[^>]+data-live-field="jobs">0<\/span>/);
@@ -1134,6 +1213,12 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(jobsBody, /No jobs configured/);
 		assert.match(jobsBody, /Once scheduled or heartbeat jobs are configured/);
 		assert.match(jobsBody, /data-admin-empty-state/);
+
+		const evals = await fetch(`http://127.0.0.1:${port}/admin/evals`, { headers: { cookie } });
+		assert.equal(evals.status, 200);
+		const evalsBody = await evals.text();
+		assert.match(evalsBody, /No evals configured/);
+		assert.match(evalsBody, /agent\/evals/);
 
 		const missing = await fetch(`http://127.0.0.1:${port}/admin/missing`, { headers: { cookie } });
 		assert.equal(missing.status, 404);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
+import type { EvalConfig } from "../eval.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovalBypasses, renderApprovals, renderThreadStatus } from "../core/format.js";
@@ -121,6 +122,7 @@ export type AdapterStart = {
 		memory: NormalizedMemoryConfig;
 		skills?: NormalizedSkillsConfig;
 		adapters: Array<{ name: string; kind: string; permissions?: PermissionsConfig }>;
+		evals?: EvalConfig[];
 		startedAt: number;
 	};
 };

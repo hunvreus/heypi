@@ -21,6 +21,7 @@ import {
 	approvalsView,
 	configurationView,
 	errorPage,
+	evalsView,
 	jobsView,
 	loginPage,
 	memoryView,
@@ -101,6 +102,7 @@ const ADMIN_ROUTES = [
 	["GET", "/admin/activity"],
 	["GET", "/admin/approvals"],
 	["GET", "/admin/configuration"],
+	["GET", "/admin/evals"],
 	["GET", "/admin/jobs"],
 	["GET", "/admin/memory"],
 	["GET", "/admin/summary"],
@@ -423,6 +425,16 @@ async function routePage(
 			overview,
 			livePage: true,
 			body: jobsView(jobs, overview.live.checkedAt),
+		});
+	}
+	if (path === "/admin/evals") {
+		const [overview, evals] = await Promise.all([state.service.overview(), state.service.evals(pageInput(url))]);
+		return renderAdminPage(res, state, session, nonce, {
+			title: "Evals",
+			active: "evals",
+			overview,
+			livePage: true,
+			body: evalsView(evals, overview.live.checkedAt),
 		});
 	}
 	if (path === "/admin/memory") {
