@@ -86,6 +86,24 @@ test("creates an HTTP-mode Slack app", async () => {
 	}
 });
 
+test("creates an app without admin when requested", async () => {
+	const root = await mkdtemp(join(tmpdir(), "create-heypi-no-admin-"));
+	try {
+		const app = join(root, "no-admin-agent");
+		const out = run([app, "--yes", "--no-admin", "--no-install"]);
+		assert.match(out, /POST to \/dev\/messages/);
+		assert.doesNotMatch(out, /printed admin URL/);
+		assert.doesNotMatch(read(app, "index.ts"), /admin: true/);
+		assert.doesNotMatch(read(app, "index.ts"), /HEYPI_HTTP_PORT/);
+		assert.match(read(app, "index.ts"), /const adapters = isDev \? \[local\(\)\] : \[/);
+		assert.match(read(app, "README.md"), /loopback `\/dev\/messages` API/);
+		assert.doesNotMatch(read(app, "README.md"), /prints a local admin URL/);
+		assert.doesNotMatch(read(app, ".env.example"), /HEYPI_HTTP_PORT/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("creates adapter and runtime specific files", async () => {
 	const root = await mkdtemp(join(tmpdir(), "create-heypi-runtime-"));
 	try {

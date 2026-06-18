@@ -14,6 +14,7 @@ type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 type SlackMode = "socket" | "http";
 
 type Flags = {
+	admin?: boolean;
 	adapter?: Adapter;
 	dir?: string;
 	force: boolean;
@@ -62,7 +63,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 	if (flags.yes) {
 		return {
 			adapter: flags.adapter ?? "slack",
-			admin: true,
+			admin: flags.admin ?? true,
 			dir: defaultDir,
 			install: flags.install ?? true,
 			model: flags.model ?? defaultModel,
@@ -94,11 +95,13 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 			: undefined;
 	const runtime = flags.runtime ?? (await promptSelect("Runtime", runtimeOptions(), "just-bash"));
 	const model = flags.model ?? (await promptModel());
-	const admin = await promptConfirm(
-		"Enable local admin UI",
-		true,
-		"Adds a local browser UI for chats, jobs, approvals, evals, and diagnostics.",
-	);
+	const admin =
+		flags.admin ??
+		(await promptConfirm(
+			"Enable local admin UI",
+			true,
+			"Adds a local browser UI for chats, jobs, approvals, evals, and diagnostics.",
+		));
 	const sampleChoices = flags.samples
 		? ["skills", "tools"]
 		: await promptMultiSelect("Samples", [
@@ -363,7 +366,7 @@ ${options.pm} install
 ${options.pm} run dev
 \`\`\`
 
-\`heypi dev\` prints a local admin URL. Use it to send a test message, approve or deny tool calls, inspect chats, and check eval definitions before wiring real team traffic.
+${devReadme(options)}
 
 When you are ready for ${options.adapter}, fill in the adapter env vars and run:
 
@@ -409,6 +412,13 @@ function adapterNotes(options: Options): string {
 		return "Create a Telegram bot with BotFather and set `TELEGRAM_BOT_TOKEN`.";
 	}
 	return "Configure your webhook sender with `WEBHOOK_SECRET` and route events to the heypi webhook endpoint.";
+}
+
+function devReadme(options: Options): string {
+	if (options.admin) {
+		return "`heypi dev` prints a local admin URL. Use it to send a test message, approve or deny tool calls, inspect chats, and check eval definitions before wiring real team traffic.";
+	}
+	return "`heypi dev` starts the loopback `/dev/messages` API for local test messages before wiring real team traffic.";
 }
 
 function runtimeNotes(runtime: Runtime): string {
@@ -550,6 +560,7 @@ export default defineEval({
 function printNextSteps(root: string, options: Options): void {
 	const run = options.pm === "npm" ? "npm run dev" : `${options.pm} run dev`;
 	const start = options.pm === "npm" ? "npm run start" : `${options.pm} run start`;
+	const devSurface = options.admin ? "Open the printed admin URL or POST to /dev/messages." : "POST to /dev/messages.";
 	const install = options.pm === "yarn" ? "yarn" : `${options.pm} install`;
 	const modelVars = modelEnvVars(options.model);
 	const adapterVars = adapterEnvVars(options);
@@ -564,6 +575,7 @@ ${pc.bold("Next steps")}
   For local agent messages, fill in ${pc.bold(".env")}:
 ${modelVars.map((name) => `    ${pc.bold(name)}`).join("\n")}
   ${pc.bold(options.install ? run : `${install} && ${run}`)}
+  ${devSurface}
 
 ${pc.bold("Provider adapter")}
   Before ${pc.bold(start)}, fill in:
@@ -641,6 +653,8 @@ function parseArgs(args: string[]): Flags {
 		else if (arg === "--force") flags.force = true;
 		else if (arg === "--no-install") flags.install = false;
 		else if (arg === "--install") flags.install = true;
+		else if (arg === "--admin") flags.admin = true;
+		else if (arg === "--no-admin") flags.admin = false;
 		else if (arg === "--samples") flags.samples = true;
 		else if (arg === "--no-samples") flags.samples = false;
 		else if (arg === "--dir") flags.dir = requireValue(args, ++i, arg);
@@ -678,6 +692,7 @@ Options:
   --pm npm|pnpm|yarn|bun
   --yes, -y
   --install | --no-install
+  --admin | --no-admin
   --samples | --no-samples
   --force
 `);

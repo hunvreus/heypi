@@ -13,6 +13,7 @@
 - Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
 - Added `evaluateEval()` for reusable text, tool-call, approval, and custom eval assertions.
 - Added `heypi eval run` to run eval assertions against explicit supplied result data.
+- Added `create-heypi --admin` and `--no-admin` flags for non-interactive scaffolding.
 - Added optional eval run trace event persistence through `heypi eval run --db`.
 - Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
 - Added persisted model lifecycle trace events for agent turns and approved continuations.
@@ -30,6 +31,7 @@
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `create-heypi` generated dev mode to start only the loopback `local()` adapter, so first-run local testing does not require production adapter credentials.
 - Changed `create-heypi` generated README and next steps to separate local model setup from production adapter setup.
+- Changed `create-heypi` generated README and next steps to describe `/dev/messages` instead of admin when admin is disabled.
 - Changed README and manual setup examples to use the same local-only dev adapter branch as generated apps.
 - Changed quickstart setup order to make model auth local-first and provider adapter auth production-only.
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
