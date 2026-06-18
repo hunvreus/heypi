@@ -4,6 +4,7 @@ import { migrate } from "./migrate.js";
 import { ApprovalRepo } from "./repo-approval.js";
 import { ApprovalBypassRepo } from "./repo-approval-bypass.js";
 import { CallRepo } from "./repo-call.js";
+import { EventRepo } from "./repo-event.js";
 import { JobRepo, JobRunRepo } from "./repo-job.js";
 import { LockRepo } from "./repo-lock.js";
 import { MessageRepo } from "./repo-message.js";
@@ -23,6 +24,7 @@ function sqliteStoreFromDb(db: ReturnType<typeof openDb>, nested: boolean): Stor
 	return {
 		threads: new ThreadRepo(db),
 		providerMessages: new ProviderMessageRepo(db),
+		events: new EventRepo(db),
 		messages,
 		turns: new TurnRepo(db),
 		calls: new CallRepo(db),

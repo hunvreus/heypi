@@ -2,7 +2,7 @@ import type { ApprovalPolicy } from "../config.js";
 import { runtimeWithEvents } from "../runtime/events.js";
 import type { Queue } from "../runtime/queue.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
-import type { Approval, ApprovalBypasses, Approvals, Calls, Store } from "../store/types.js";
+import type { Approval, ApprovalBypasses, Approvals, Call, Calls, Events, Store } from "../store/types.js";
 import * as approvalBypass from "./approval-bypass.js";
 import { parseApprovalDetails, serializeApprovalDetails } from "./approval-view.js";
 import { actorAllowed, actorLabels, actorMatches, hasActorPolicy } from "./approvers.js";
@@ -60,6 +60,7 @@ export class CallRunner {
 		private readonly messages: AppMessages = DEFAULT_APP_MESSAGES,
 		private readonly agent = "default",
 		private readonly approvalBypasses?: ApprovalBypasses,
+		private readonly events?: Events,
 	) {}
 
 	register(tool: string, execute: ToolExecute): void {
@@ -174,6 +175,17 @@ export class CallRunner {
 			approval: approval.id,
 			reason,
 		});
+		await this.appendEvent(row, {
+			type: "approval.requested",
+			approvalId: approval.id,
+			data: {
+				callId: row.id,
+				command: input.command ?? input.tool,
+				runtime: input.runtime ?? "tool",
+				reason,
+				requestedBy: input.actor,
+			},
+		});
 		return renderCall({
 			callId: row.id,
 			state: row.state,
@@ -188,8 +200,9 @@ export class CallRunner {
 	}
 
 	private async createCall(input: CallBase, state: "running" | "pending_approval" | "blocked") {
-		return await this.calls.create({
+		const row = await this.calls.create({
 			agent: this.contextAgent(input.context),
+			trace: input.context?.trace,
 			turnId: input.context?.turn,
 			threadId: input.context?.thread,
 			messageId: input.context?.message,
@@ -203,6 +216,11 @@ export class CallRunner {
 			state,
 			policyReason: input.policyReason,
 		});
+		await this.appendEvent(row, {
+			type: "tool.requested",
+			data: { tool: row.tool, state, runtime: row.runtime, policyReason: row.policyReason },
+		});
+		return row;
 	}
 
 	private async executeBash(
@@ -223,6 +241,7 @@ export class CallRunner {
 			queue: this.queue,
 			runtime: this.runtimeFor(context.runtimeScope, context[RUNTIME_EVENTS]),
 			calls: this.calls,
+			events: this.events,
 			log: this.log,
 			messages: this.messages,
 		});
@@ -247,6 +266,7 @@ export class CallRunner {
 			signal,
 			runtime: this.runtimeFor(context.runtimeScope, context[RUNTIME_EVENTS]),
 			calls: this.calls,
+			events: this.events,
 			log: this.log,
 			messages: this.messages,
 		});
@@ -344,6 +364,11 @@ export class CallRunner {
 			thread: current.threadId ?? undefined,
 			turn: current.turnId ?? undefined,
 			bypass: bypass?.id,
+		});
+		await this.appendEvent(current, {
+			type: "approval.resolved",
+			approvalId: approval.id,
+			data: { state: "approved", actor: intent.actor, bypass: bypass?.id },
 		});
 		if (onApproved) {
 			try {
@@ -470,6 +495,11 @@ export class CallRunner {
 			tool: current.tool,
 			thread: current.threadId ?? undefined,
 			turn: current.turnId ?? undefined,
+		});
+		await this.appendEvent(current, {
+			type: "approval.resolved",
+			approvalId: approval.id,
+			data: { state: "denied", actor: intent.actor },
 		});
 		return this.approvalSummary(approval, current, "rejected", policy);
 	}
@@ -603,6 +633,13 @@ export class CallRunner {
 			expiresAt: approval.expiresAt ?? undefined,
 		});
 		const current = await this.calls.get(approval.callId, { agent: approval.agent });
+		if (current) {
+			await this.appendEvent(current, {
+				type: "approval.expired",
+				approvalId: approval.id,
+				data: { state: "expired", actor, expiresAt: approval.expiresAt ?? undefined },
+			});
+		}
 		const summary = current ? this.approvalSummary(approval, current, "expired") : undefined;
 		const reply = {
 			...(summary ?? {}),
@@ -668,6 +705,27 @@ export class CallRunner {
 
 	private policy(context?: CallContext): ApprovalPolicy {
 		return context?.approval ?? this.approval;
+	}
+
+	private async appendEvent(
+		call: Call,
+		input: {
+			type: "tool.requested" | "approval.requested" | "approval.resolved" | "approval.expired";
+			approvalId?: string;
+			data: Record<string, unknown>;
+		},
+	): Promise<void> {
+		if (!this.events || !call.trace) return;
+		await this.events.append({
+			agent: call.agent,
+			trace: call.trace,
+			threadId: call.threadId ?? undefined,
+			turnId: call.turnId ?? undefined,
+			callId: call.id,
+			approvalId: input.approvalId,
+			type: input.type,
+			data: input.data,
+		});
 	}
 }
 

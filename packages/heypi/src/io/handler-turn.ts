@@ -39,6 +39,14 @@ export async function finishSilentTurn(input: {
 		await store.turns.finish(input.turn, {
 			state: input.aborted ? "cancelled" : "done",
 		});
+		await store.events?.append({
+			agent: input.base.agent,
+			trace: input.base.trace,
+			threadId: input.base.thread,
+			turnId: input.turn,
+			type: input.aborted ? "turn.cancelled" : "turn.completed",
+			data: { silent: true },
+		});
 	});
 	input.logger.debug("handler.reply", {
 		...input.base,
@@ -85,6 +93,28 @@ export async function finishReplyTurn(input: {
 			state: input.aborted ? "cancelled" : "done",
 			resultMessageId: result.id,
 		});
+		await store.events?.append({
+			agent: input.base.agent,
+			trace: input.base.trace,
+			threadId: input.base.thread,
+			turnId: input.turn,
+			type: "message.sent",
+			data: {
+				messageId: result.id,
+				chars: input.reply.text.length,
+				private: input.reply.private === true,
+				silent: input.reply.silent === true,
+				approval: input.reply.approval?.id,
+			},
+		});
+		await store.events?.append({
+			agent: input.base.agent,
+			trace: input.base.trace,
+			threadId: input.base.thread,
+			turnId: input.turn,
+			type: input.aborted ? "turn.cancelled" : "turn.completed",
+			data: { resultMessageId: result.id },
+		});
 	});
 	input.logger.debug("handler.reply", {
 		...input.base,
@@ -112,6 +142,7 @@ export async function finishSystemTurn(input: {
 	kind: string;
 	text: string;
 	state: "cancelled" | "failed";
+	base?: TurnContext;
 }): Promise<Outbound> {
 	await transaction(input.store, async (store) => {
 		const result = await store.messages.create({
@@ -124,6 +155,24 @@ export async function finishSystemTurn(input: {
 			state: input.state,
 		});
 		if (input.turn) await store.turns.finish(input.turn, { state: input.state, resultMessageId: result.id });
+		if (input.base) {
+			await store.events?.append({
+				agent: input.base.agent,
+				trace: input.base.trace,
+				threadId: input.threadId,
+				turnId: input.turn,
+				type: "message.sent",
+				data: { messageId: result.id, role: "system", chars: input.text.length },
+			});
+			await store.events?.append({
+				agent: input.base.agent,
+				trace: input.base.trace,
+				threadId: input.threadId,
+				turnId: input.turn,
+				type: input.state === "cancelled" ? "turn.cancelled" : "turn.failed",
+				data: { resultMessageId: result.id },
+			});
+		}
 	});
 	return { text: redact(input.text) };
 }

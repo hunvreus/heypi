@@ -140,6 +140,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		messages,
 		config.agent.id,
 		store.approvalBypasses,
+		store.events,
 	);
 	for (const tool of agentTools.custom) {
 		const execute = toolRunner(tool);

@@ -67,6 +67,34 @@ export const providerMessage = sqliteTable(
 	],
 );
 
+export const event = sqliteTable(
+	"event",
+	{
+		id: text("id").primaryKey(),
+		agent: text("agent").notNull(),
+		trace: text("trace").notNull(),
+		threadId: text("thread_id"),
+		turnId: text("turn_id"),
+		callId: text("call_id"),
+		approvalId: text("approval_id"),
+		jobRunId: text("job_run_id"),
+		seq: integer("seq").notNull(),
+		type: text("type").notNull(),
+		data: text("data").notNull(),
+		createdAt: integer("created_at").notNull(),
+	},
+	(table) => [
+		index("event_agent_trace_seq_idx").on(table.agent, table.trace, table.seq),
+		uniqueIndex("event_trace_seq_idx").on(table.trace, table.seq),
+		index("event_thread_created_idx").on(table.threadId, table.createdAt),
+		index("event_turn_seq_idx").on(table.turnId, table.seq),
+		index("event_call_seq_idx").on(table.callId, table.seq),
+		index("event_approval_seq_idx").on(table.approvalId, table.seq),
+		index("event_job_run_seq_idx").on(table.jobRunId, table.seq),
+		index("event_agent_created_idx").on(table.agent, table.createdAt),
+	],
+);
+
 export const turn = sqliteTable(
 	"turn",
 	{
@@ -92,6 +120,7 @@ export const call = sqliteTable(
 	{
 		id: text("id").primaryKey(),
 		agent: text("agent").notNull(),
+		trace: text("trace"),
 		turnId: text("turn_id"),
 		threadId: text("thread_id"),
 		messageId: text("message_id"),
@@ -115,6 +144,7 @@ export const call = sqliteTable(
 	},
 	(table) => [
 		index("call_channel_idx").on(table.channel),
+		index("call_trace_idx").on(table.trace),
 		index("call_turn_idx").on(table.turnId),
 		index("call_agent_channel_idx").on(table.agent, table.channel),
 		index("call_agent_updated_idx").on(table.agent, table.updatedAt),

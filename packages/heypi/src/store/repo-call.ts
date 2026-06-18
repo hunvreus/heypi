@@ -11,6 +11,7 @@ export class CallRepo {
 
 	async create(input: {
 		agent: string;
+		trace?: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -29,6 +30,7 @@ export class CallRepo {
 		await this.db.insert(call).values({
 			id,
 			agent: input.agent,
+			trace: input.trace,
 			turnId: input.turnId,
 			threadId: input.threadId,
 			messageId: input.messageId,

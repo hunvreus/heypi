@@ -11,6 +11,9 @@ import {
 	consoleLogger,
 	coreTools,
 	createHeypi,
+	defineEval,
+	loadEvals,
+	local,
 	runHeypi,
 	slack,
 	sqliteStore,
@@ -52,6 +55,9 @@ test("public package entrypoint supports a minimal app config", async () => {
 		});
 		assert.equal(typeof app.start, "function");
 		assert.equal(typeof app.stop, "function");
+		assert.equal(typeof defineEval, "function");
+		assert.equal(typeof loadEvals, "function");
+		assert.equal(typeof local, "function");
 		assert.equal(typeof runHeypi, "function");
 	} finally {
 		await rm(root, { recursive: true, force: true });

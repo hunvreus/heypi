@@ -5,6 +5,7 @@ import type {
 	approval,
 	approvalBypass,
 	call,
+	event,
 	job,
 	jobRun,
 	lock,
@@ -22,6 +23,31 @@ export type Thread = typeof thread.$inferSelect;
 export type Message = typeof message.$inferSelect;
 
 export type ProviderMessage = typeof providerMessage.$inferSelect;
+
+export type Event = typeof event.$inferSelect;
+
+export type EventType =
+	| "message.received"
+	| "message.sent"
+	| "turn.started"
+	| "turn.completed"
+	| "turn.failed"
+	| "turn.cancelled"
+	| "model.started"
+	| "model.completed"
+	| "model.failed"
+	| "tool.requested"
+	| "tool.started"
+	| "tool.completed"
+	| "tool.failed"
+	| "approval.requested"
+	| "approval.resolved"
+	| "approval.expired"
+	| "job.queued"
+	| "job.started"
+	| "job.completed"
+	| "job.failed"
+	| "runtime.progress";
 
 export type MessageWithThread = Message & {
 	agent: string;
@@ -100,6 +126,32 @@ export interface ProviderMessages {
 	}): Promise<ProviderMessage | undefined>;
 }
 
+/** Append-only event timeline for trace, run, and admin inspection. */
+export interface Events {
+	append(input: {
+		agent: string;
+		trace: string;
+		type: EventType;
+		data?: unknown;
+		threadId?: string;
+		turnId?: string;
+		callId?: string;
+		approvalId?: string;
+		jobRunId?: string;
+		createdAt?: number;
+	}): Promise<Event>;
+	list(input: {
+		agent?: string;
+		trace?: string;
+		threadId?: string;
+		turnId?: string;
+		callId?: string;
+		approvalId?: string;
+		jobRunId?: string;
+		limit?: number;
+	}): Promise<Event[]>;
+}
+
 /** Message transcript store. Provides append-once semantics for provider retry dedupe. */
 export interface Messages {
 	get(id: string): Promise<Message | undefined>;
@@ -164,6 +216,7 @@ export interface Turns {
 export interface Calls {
 	create(input: {
 		agent: string;
+		trace?: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -332,6 +385,8 @@ export interface Store {
 	threads: Threads;
 	/** Optional index for resolving provider replies to stable heypi threads. */
 	providerMessages?: ProviderMessages;
+	/** Optional append-only trace timeline. */
+	events?: Events;
 	messages: Messages;
 	turns: Turns;
 	calls: Calls;

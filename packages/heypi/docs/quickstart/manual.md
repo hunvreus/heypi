@@ -11,11 +11,13 @@ npm install @hunvreus/heypi
 ## Step 2: create `index.ts`
 
 ```ts
-import { createHeypi, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { pathToFileURL } from "node:url";
+import { createHeypi, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
   state: { root: "./state" },
   adapters: [
+    ...(process.env.HEYPI_DEV ? [local()] : []),
     slack({
       botToken: process.env.SLACK_BOT_TOKEN!,
       appToken: process.env.SLACK_APP_TOKEN!,
@@ -25,13 +27,17 @@ const app = createHeypi({
   runtime: { name: "just-bash", root: workspace("./workspace") },
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await runHeypi(app);
+}
 ```
 
 ## Step 3: create agent files
 
 ```bash
-mkdir -p agent/skills agent/tools agent/jobs
+mkdir -p agent/skills agent/tools agent/jobs agent/evals
 printf "You are a concise team assistant.\n" > agent/AGENTS.md
 printf "Answer directly and accurately.\n" > agent/SOUL.md
 ```
@@ -51,7 +57,7 @@ Use the [Slack setup guide](../adapters/slack.md#setup) to create the app, enabl
 ## Step 6: run it
 
 ```bash
-npm run dev
+heypi dev
 ```
 
 Mention the bot in a test channel.

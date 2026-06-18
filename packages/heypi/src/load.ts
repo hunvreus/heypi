@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { basename, extname, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentToolDefinition } from "./core-tools.js";
+import type { EvalConfig } from "./eval.js";
 import type { JobConfig } from "./job.js";
 import { assignDiscoveredToolName } from "./tool.js";
 
@@ -42,6 +43,23 @@ export function loadJobs(folder: string): JobConfig[] {
 		}
 	}
 	return jobs;
+}
+
+/** Loads default-exported evals from a folder. */
+export function loadEvals(folder: string): EvalConfig[] {
+	const evals: EvalConfig[] = [];
+	const seen = new Map<string, string>();
+	for (const file of moduleFiles(folder)) {
+		for (const evaluation of valuesFromModule<EvalConfig>(file, "eval")) {
+			if (!evaluation.name) throw new Error(`eval in ${file} is missing name`);
+			if (seen.has(evaluation.name)) {
+				throw new Error(`duplicate eval name "${evaluation.name}" in ${seen.get(evaluation.name)} and ${file}`);
+			}
+			seen.set(evaluation.name, file);
+			evals.push(evaluation);
+		}
+	}
+	return evals;
 }
 
 function moduleFiles(folder: string): string[] {

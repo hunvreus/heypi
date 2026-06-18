@@ -36,6 +36,20 @@
       "when": 1781692742761,
       "tag": "0004_useful_mimic",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781753629836,
+      "tag": "0005_wild_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1781753736237,
+      "tag": "0006_green_argent",
+      "breakpoints": true
     }
   ]
 }

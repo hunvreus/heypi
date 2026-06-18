@@ -72,7 +72,9 @@ test("migrate creates the current baseline schema", async () => {
 			"created_at",
 			"updated_at",
 			"err_kind",
+			"trace",
 		]);
+		assert.ok((await indexes(db, "call")).includes("call_trace_idx"));
 		assert.deepEqual(await columns(db, "approval"), [
 			"id",
 			"agent",
@@ -115,6 +117,22 @@ test("migrate creates the current baseline schema", async () => {
 			"attempts",
 			"created_at",
 		]);
+		assert.deepEqual(await columns(db, "event"), [
+			"id",
+			"agent",
+			"trace",
+			"thread_id",
+			"turn_id",
+			"call_id",
+			"approval_id",
+			"job_run_id",
+			"seq",
+			"type",
+			"data",
+			"created_at",
+		]);
+		assert.ok((await indexes(db, "event")).includes("event_trace_seq_idx"));
+		assert.ok((await indexes(db, "event")).includes("event_thread_created_idx"));
 		assert.ok((await indexes(db, "lock")).includes("lock_expires_idx"));
 	} finally {
 		await rm(root, { recursive: true, force: true });

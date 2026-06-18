@@ -15,10 +15,11 @@ import type { Logger } from "./core/log.js";
 import type { AppMessagesConfig } from "./core/messages.js";
 import type { SchedulerConfig } from "./core/scheduler.js";
 import type { AgentToolDefinition } from "./core-tools.js";
+import type { EvalConfig } from "./eval.js";
 import type { AttachmentProcessingConfig, AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
 import type { JobConfig } from "./job.js";
-import { loadJobs, loadTools } from "./load.js";
+import { loadEvals, loadJobs, loadTools } from "./load.js";
 import type { RuntimeName, RuntimeProvider } from "./runtime/types.js";
 import type { StateConfig } from "./state.js";
 import type { Store } from "./store/types.js";
@@ -69,6 +70,7 @@ export type AgentConfig = {
 	extensions?: string[];
 	tools?: AgentToolDefinition[];
 	jobs?: JobConfig[];
+	evals?: EvalConfig[];
 };
 
 export type JustBashConfig = {
@@ -225,6 +227,7 @@ export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentCo
 	const explicitTools = options.tools ?? [];
 	const tools = mergeTools(explicitTools, discoveredTools);
 	const jobs = mergeJobs(options.jobs ?? [], loadJobs(resolve(directory, "jobs")));
+	const evals = mergeEvals(options.evals ?? [], loadEvals(resolve(directory, "evals")));
 	return {
 		id,
 		model,
@@ -237,6 +240,7 @@ export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentCo
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),
 		tools,
 		jobs,
+		evals,
 	};
 }
 
@@ -263,14 +267,18 @@ function dirList(path: string): string[] {
 	return stat.isDirectory() ? [path] : [];
 }
 
-function mergeTools(explicit: AgentToolDefinition[], discovered: AgentToolDefinition[]): AgentToolDefinition[] | undefined {
+function mergeTools(
+	explicit: AgentToolDefinition[],
+	discovered: AgentToolDefinition[],
+): AgentToolDefinition[] | undefined {
 	if (!explicit.length && !discovered.length) return undefined;
 	const seen = new Set<string>();
 	for (const tool of explicit) {
 		if ("name" in tool) seen.add(tool.name);
 	}
 	for (const tool of discovered) {
-		if ("name" in tool && seen.has(tool.name)) throw new Error(`duplicate tool name "${tool.name}" in config and discovery`);
+		if ("name" in tool && seen.has(tool.name))
+			throw new Error(`duplicate tool name "${tool.name}" in config and discovery`);
 		if ("name" in tool) seen.add(tool.name);
 	}
 	return [...explicit, ...discovered];
@@ -283,6 +291,18 @@ function mergeJobs(explicit: JobConfig[], discovered: JobConfig[]): JobConfig[] 
 	for (const job of discovered) {
 		if (seen.has(job.id)) throw new Error(`duplicate job id "${job.id}" in config and discovery`);
 		seen.add(job.id);
+	}
+	return [...explicit, ...discovered];
+}
+
+function mergeEvals(explicit: EvalConfig[], discovered: EvalConfig[]): EvalConfig[] | undefined {
+	if (!explicit.length && !discovered.length) return undefined;
+	const seen = new Set<string>();
+	for (const evaluation of explicit) seen.add(evaluation.name);
+	for (const evaluation of discovered) {
+		if (seen.has(evaluation.name))
+			throw new Error(`duplicate eval name "${evaluation.name}" in config and discovery`);
+		seen.add(evaluation.name);
 	}
 	return [...explicit, ...discovered];
 }

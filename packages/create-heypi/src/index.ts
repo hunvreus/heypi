@@ -149,6 +149,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await mkdir(join(root, "agent", "skills"), { recursive: true });
 	await mkdir(join(root, "agent", "tools"), { recursive: true });
 	await mkdir(join(root, "agent", "jobs"), { recursive: true });
+	await mkdir(join(root, "agent", "evals"), { recursive: true });
 	await write(root, "package.json", packageJson(options));
 	await write(root, "tsconfig.json", tsconfigJson());
 	await write(root, "index.ts", indexTs(options));
@@ -161,6 +162,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await write(root, "agent/skills/README.md", skillsReadme());
 	await write(root, "agent/tools/README.md", toolsReadme());
 	await write(root, "agent/jobs/README.md", jobsReadme());
+	await write(root, "agent/evals/README.md", evalsReadme());
 	if (options.adapter === "slack") {
 		await write(root, "setup/slack.manifest.json", slackManifest(options.slackMode ?? "socket"));
 	}
@@ -168,6 +170,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 		await mkdir(join(root, "agent", "skills", "example"), { recursive: true });
 		await write(root, "agent/skills/example/SKILL.md", sampleSkill());
 		await write(root, "agent/tools/now.ts", sampleTool());
+		await write(root, "agent/evals/smoke.ts", sampleEval());
 	}
 }
 
@@ -197,8 +200,8 @@ function packageJson(options: Options): string {
 		private: true,
 		type: "module",
 		scripts: {
-			dev: "tsx watch --conditions development index.ts",
-			start: "tsx --conditions development index.ts",
+			dev: "heypi dev",
+			start: "heypi start",
 			check: "tsc --noEmit",
 		},
 		dependencies: deps,
@@ -233,6 +236,7 @@ function indexTs(options: Options): string {
 		"createHeypi",
 		"defaultTools",
 		"loadAgent",
+		"local",
 		"runHeypi",
 		adapterImport(options.adapter),
 		"workspace",
@@ -243,19 +247,25 @@ function indexTs(options: Options): string {
 			: options.runtime === "gondolin"
 				? 'import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";\n'
 				: "";
-	return `import { ${imports.join(", ")} } from "@hunvreus/heypi";
+	return `import { pathToFileURL } from "node:url";
+import { ${imports.join(", ")} } from "@hunvreus/heypi";
 ${runtimeImport}
 const app = createHeypi({
 	state: { root: "./state" },
 ${httpConfig(options)}
 	adapters: [
+		...(process.env.HEYPI_DEV ? [local()] : []),
 ${adapterConfig(options)}
 	],
 	agent: loadAgent("./agent", { model: "${options.model}", tools: defaultTools() }),
 ${options.admin ? "\tadmin: true,\n" : ""}\truntime: ${runtimeConfig(options.runtime)},
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+	await runHeypi(app);
+}
 `;
 }
 
@@ -272,7 +282,7 @@ function httpConfig(options: Options): string {
 		return "\thttp: { port: Number(process.env.PORT ?? 3000) },\n";
 	}
 	if (options.admin) {
-		return "\thttp: { port: Number(process.env.HEYPI_HTTP_PORT ?? 0) },\n";
+		return "\thttp: { port: Number(process.env.HEYPI_HTTP_PORT ?? (process.env.HEYPI_DEV ? 3000 : 0)) },\n";
 	}
 	return "";
 }
@@ -378,6 +388,7 @@ ${runtimeNotes(options.runtime)}
 - \`agent/skills/\`: reusable skill instructions loaded by \`loadAgent("./agent")\`.
 - \`agent/tools/\`: TypeScript tools discovered by \`loadAgent("./agent")\`.
 - \`agent/jobs/\`: scheduled jobs discovered by \`loadAgent("./agent")\`.
+- \`agent/evals/\`: agent behavior eval definitions discovered by \`loadAgent("./agent")\` and \`heypi eval\`.
 `;
 }
 
@@ -431,6 +442,14 @@ function jobsReadme(): string {
 	return `# Jobs
 
 Add TypeScript job modules here. Export one \`defineJob(...)\` call as the default export.
+`;
+}
+
+function evalsReadme(): string {
+	return `# Evals
+
+Add TypeScript eval modules here. Export one \`defineEval(...)\` call as the default export.
+Use \`heypi eval list\` and \`heypi eval check\` to inspect definitions.
 `;
 }
 
@@ -508,6 +527,18 @@ export default defineTool({
 \tdescription: "Return the current ISO timestamp.",
 \tinput: { type: "object", properties: {}, additionalProperties: false },
 \trun: async () => new Date().toISOString(),
+});
+`;
+}
+
+function sampleEval(): string {
+	return `import { defineEval } from "@hunvreus/heypi";
+
+export default defineEval({
+\tname: "responds to a greeting",
+\ttags: ["smoke"],
+\tprompt: "Say hello in one short sentence.",
+\texpect: { includes: "hello" },
 });
 `;
 }

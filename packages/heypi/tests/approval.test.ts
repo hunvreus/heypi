@@ -986,6 +986,7 @@ class FakeCalls implements Calls {
 
 	async create(input: {
 		agent: string;
+		trace?: string;
 		turnId?: string;
 		threadId?: string;
 		messageId?: string;
@@ -1003,6 +1004,7 @@ class FakeCalls implements Calls {
 		const row: Call = {
 			id: `call-${this.rows.length + 1}`,
 			agent: input.agent,
+			trace: input.trace ?? null,
 			turnId: input.turnId ?? null,
 			threadId: input.threadId ?? null,
 			messageId: input.messageId ?? null,

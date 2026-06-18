@@ -7,13 +7,13 @@ import { agentFrom, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.j
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
-import { defineTool } from "../src/tool.js";
 import {
 	approvalFromMessages,
 	channelContext,
 	renderContextBlock,
 	runtimeSystemPrompt,
 } from "../src/runtime/pi-agent.js";
+import { defineTool } from "../src/tool.js";
 
 test("loadAgent requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
@@ -71,11 +71,12 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	mkdirSync(join(root, "tools"), { recursive: true });
 	mkdirSync(join(root, "jobs"), { recursive: true });
+	mkdirSync(join(root, "evals"), { recursive: true });
 	writeFileSync(
 		join(root, "tools", "lookup.ts"),
 		[
 			`import { defineTool } from ${JSON.stringify(modulePath("src/tool.ts"))};`,
-			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, run: async ({ name }) => `name=${name}` });',
+			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, run: async ({ name }) => "name=" + name });',
 		].join("\n"),
 	);
 	writeFileSync(
@@ -85,10 +86,18 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 			'export default defineJob({ id: "daily", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "check" });',
 		].join("\n"),
 	);
+	writeFileSync(
+		join(root, "evals", "smoke.ts"),
+		[
+			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
+			'export default defineEval({ name: "smoke", prompt: "say hello", expect: { includes: "hello" } });',
+		].join("\n"),
+	);
 
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
 	assert.equal(agent.tools?.[0]?.name, "lookup");
 	assert.equal(agent.jobs?.[0]?.id, "daily");
+	assert.equal(agent.evals?.[0]?.name, "smoke");
 });
 
 test("loadAgent rejects duplicate discovered and explicit tool names", () => {
@@ -109,6 +118,27 @@ test("loadAgent rejects duplicate discovered and explicit tool names", () => {
 				tools: [defineTool({ name: "lookup", description: "Explicit.", input: {}, run: async () => "ok" })],
 			}),
 		/duplicate tool name "lookup"/,
+	);
+});
+
+test("loadAgent rejects duplicate discovered and explicit eval names", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	mkdirSync(join(root, "evals"), { recursive: true });
+	writeFileSync(
+		join(root, "evals", "smoke.ts"),
+		[
+			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
+			'export default defineEval({ name: "smoke", prompt: "say hello" });',
+		].join("\n"),
+	);
+
+	assert.throws(
+		() =>
+			loadAgent(root, {
+				model: "openai/gpt-5-mini",
+				evals: [{ name: "smoke", prompt: "explicit" }],
+			}),
+		/duplicate eval name "smoke"/,
 	);
 });
 

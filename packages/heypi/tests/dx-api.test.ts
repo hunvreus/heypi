@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approval, defaultTools } from "../src/api.js";
+import { approval, defaultTools, defineEval } from "../src/api.js";
 import { coreTools } from "../src/core-tools.js";
 
 test("defaultTools preserves the existing coreTools behavior", () => {
@@ -34,4 +34,16 @@ test("approval.command delegates to command policy confirmation", () => {
 		policyReason: "approval by /deploy/",
 		details: [{ label: "Command", value: "deploy prod", format: "code" }],
 	});
+});
+
+test("defineEval preserves behavior eval definitions", () => {
+	const evaluation = defineEval({
+		name: "lists hosts",
+		tags: ["smoke"],
+		prompt: "List configured hosts.",
+		expect: { tool: "hosts_list" },
+	});
+	assert.equal(evaluation.name, "lists hosts");
+	assert.deepEqual(evaluation.tags, ["smoke"]);
+	assert.deepEqual(evaluation.expect, { tool: "hosts_list" });
 });

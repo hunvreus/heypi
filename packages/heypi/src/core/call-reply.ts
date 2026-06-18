@@ -38,6 +38,8 @@ export function approvalSummary(
 }
 
 export function callContext(call: {
+	agent?: string | null;
+	trace?: string | null;
 	threadId: string | null;
 	turnId: string | null;
 	messageId: string | null;
@@ -46,6 +48,8 @@ export function callContext(call: {
 }) {
 	const parsed = parseCallArgs(call.args ?? null);
 	return {
+		...(call.agent ? { agent: call.agent } : {}),
+		...(call.trace ? { trace: call.trace } : {}),
 		thread: call.threadId ?? undefined,
 		turn: call.turnId ?? undefined,
 		message: call.messageId ?? undefined,

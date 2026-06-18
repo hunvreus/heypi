@@ -8,10 +8,14 @@
 ### Added
 - Added the JS-native authoring APIs `loadAgent`, `defaultTools`, `defineTool`, and `approval`, with Zod input schema support for custom tools.
 - Added `loadTools`, `loadJobs`, and `defineJob`, with `loadAgent()` discovery for `agent/tools/` and `agent/jobs/`.
+- Added `heypi dev`, `heypi start`, and the loopback-only `local()` adapter for first-run local testing without configuring Slack, Discord, Telegram, or webhook secrets.
+- Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
+- Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
 
 ### Changed
 - Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
+- Changed `create-heypi` generated apps to export the app by default so `heypi dev` and `heypi start` can load the same config used by direct execution.
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 

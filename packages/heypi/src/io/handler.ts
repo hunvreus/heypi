@@ -497,6 +497,31 @@ export function createHandler(input: {
 					actor: msg.actor,
 					trace,
 				});
+				await store.events?.append({
+					agent: agentId,
+					trace,
+					threadId: thread.id,
+					turnId: turn.id,
+					type: "message.received",
+					data: {
+						messageId: inbound.row.id,
+						provider: msg.provider,
+						kind: msg.kind ?? msg.provider,
+						providerEventId: msg.eventId,
+						actor: msg.actor,
+						chars: messageText.length,
+						attachments: msg.attachments?.length ?? 0,
+						model: msg.model,
+					},
+				});
+				await store.events?.append({
+					agent: agentId,
+					trace,
+					threadId: thread.id,
+					turnId: turn.id,
+					type: "turn.started",
+					data: { intent: intent.kind },
+				});
 				return { inbound, turn };
 			});
 			const inbound = created.inbound;
@@ -629,6 +654,7 @@ export function createHandler(input: {
 					kind: msg.kind ?? msg.provider,
 					text: cancelText(messages, run?.cancelledBy()),
 					state: "cancelled",
+					base,
 				});
 			}
 			await stream?.stop();
@@ -651,6 +677,7 @@ export function createHandler(input: {
 				kind: msg.kind ?? msg.provider,
 				text: userError(messages.error),
 				state: "failed",
+				base,
 			});
 		} finally {
 			if (lock) await input.store.locks?.release({ key: lockKey, owner: lockOwner });

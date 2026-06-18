@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
+import { pathToFileURL } from "node:url";
 import { cac } from "cac";
 import pc from "picocolors";
 import {
@@ -12,8 +14,10 @@ import {
 	readAdminSecret,
 	readAdminServerDescriptors,
 } from "./admin/auth.js";
+import type { HeypiApp } from "./app.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
+import type { EvalConfig, EvalExpect } from "./eval.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -21,6 +25,7 @@ import {
 	discordObserve as observeDiscord,
 } from "./io/discord-discovery.js";
 import { slackChannels, slackUsers } from "./io/slack-discovery.js";
+import { loadEvals } from "./load.js";
 import { openDb } from "./store/db.js";
 import { migrate, migrationStatus } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
@@ -70,6 +75,12 @@ function buildCli() {
 	cli.command("help", "Show help").action(() => line(helpText()));
 	cli.command("version", "Show version").action(() => line(VERSION));
 	cli.command("init", "Create a new heypi app").action(init);
+	cli.command("start [file]", "Start a heypi app")
+		.option("--env <path>", "Load env file")
+		.action((file: string | undefined, flags: Flags) => withEnv((input) => startApp(file, input))(flags));
+	cli.command("dev [file]", "Start a heypi app in local dev mode")
+		.option("--env <path>", "Load env file")
+		.action((file: string | undefined, flags: Flags) => withEnv((input) => dev(file, input))(flags));
 	cli.command("check", "Run local setup checks")
 		.option("--env <path>", "Load env file")
 		.option("--db <path>", "SQLite database path")
@@ -171,6 +182,19 @@ function buildCli() {
 				throw new Error(`Unknown command: jobs ${action}`);
 			})(flags),
 		);
+	cli.command("eval <action> [name]", "Eval commands: list, show, check")
+		.option("--agent <path>", "Agent folder")
+		.option("--tag <tag>", "Filter by tag")
+		.option("--json", "Print JSON")
+		.action((action: string, name: string | undefined, flags: Flags) =>
+			withEnv((input) => {
+				if (action === "list") return evalsList(input);
+				if (action === "check") return evalsCheck(input);
+				if (!name) throw new Error(`Missing eval name for eval ${action}`);
+				if (action === "show") return evalsShow(input, name);
+				throw new Error(`Unknown command: eval ${action}`);
+			})(flags),
+		);
 	cli.command("approvals <action> [id]", "Approval commands: list, show, bypasses")
 		.option("--db <path>", "SQLite database path")
 		.option("--agent <id>", "Filter approvals or bypasses for one agent")
@@ -199,6 +223,65 @@ function loadEnv(flags: Flags): void {
 	const raw = stringFlag(flags, "env") ?? ".env";
 	const path = isAbsolute(raw) ? raw : resolve(invocationRoot(), raw);
 	if (existsSync(path)) loadEnvFile(path);
+}
+
+async function startApp(file: string | undefined, _flags: Flags): Promise<void> {
+	if (!process.env.HEYPI_CLI_CHILD) return await spawnWithTsx("start", file, {});
+	const app = await loadApp(file);
+	const { runHeypi } = await import("./app.js");
+	await runHeypi(app);
+}
+
+async function dev(file: string | undefined, _flags: Flags): Promise<void> {
+	if (!process.env.HEYPI_CLI_CHILD) return await spawnWithTsx("dev", file, { HEYPI_DEV: "1" });
+	const app = await loadApp(file);
+	const { runHeypi } = await import("./app.js");
+	await runHeypi(app);
+	line(`dev: http://127.0.0.1:${process.env.HEYPI_HTTP_PORT ?? process.env.PORT ?? "3000"}/admin`);
+	line('dev: POST JSON to /dev/messages with { "text": "hello", "sync": true }');
+}
+
+async function spawnWithTsx(command: "start" | "dev", file: string | undefined, env: NodeJS.ProcessEnv): Promise<void> {
+	const cli = process.argv[1];
+	if (!cli) throw new Error("cannot resolve heypi CLI entrypoint");
+	const args = ["--conditions", "development", cli, command];
+	if (file) args.push(file);
+	const child = spawn("tsx", args, {
+		cwd: invocationRoot(),
+		env: { ...process.env, ...env, HEYPI_CLI_CHILD: "1" },
+		stdio: "inherit",
+	});
+	await new Promise<void>((resolve, reject) => {
+		child.once("error", reject);
+		child.once("exit", (code, signal) => {
+			if (signal) {
+				process.exitCode = 128;
+				resolve();
+				return;
+			}
+			process.exitCode = code ?? 0;
+			resolve();
+		});
+	});
+}
+
+async function loadApp(file: string | undefined): Promise<HeypiApp> {
+	const target = resolve(invocationRoot(), file ?? "index.ts");
+	const mod = (await import(pathToFileURL(target).href)) as { default?: unknown; app?: unknown };
+	const app = mod.default ?? mod.app;
+	if (!isHeypiApp(app)) {
+		throw new Error(`heypi ${target} must export a default app from createHeypi(...)`);
+	}
+	return app;
+}
+
+function isHeypiApp(input: unknown): input is HeypiApp {
+	return (
+		typeof input === "object" &&
+		input !== null &&
+		typeof (input as { start?: unknown }).start === "function" &&
+		typeof (input as { stop?: unknown }).stop === "function"
+	);
 }
 
 async function check(flags: Flags): Promise<void> {
@@ -682,6 +765,93 @@ async function jobsRun(flags: Flags, id: string): Promise<void> {
 	);
 }
 
+function evalsList(flags: Flags): void {
+	const rows = filterEvals(loadCliEvals(flags), flags);
+	if (booleanFlag(flags, "json")) {
+		line(JSON.stringify(rows.map(evalSummary), null, 2));
+		return;
+	}
+	if (!rows.length) {
+		line("No evals found.");
+		return;
+	}
+	line(
+		table(
+			["name", "tags", "expect"],
+			rows.map((row) => [row.name, row.tags?.join(",") || "-", expectLabel(row.expect)]),
+		),
+	);
+}
+
+function evalsShow(flags: Flags, name: string): void {
+	const evaluation = loadCliEvals(flags).find((row) => row.name === name);
+	if (!evaluation) throw new Error(`eval not found: ${name}`);
+	if (booleanFlag(flags, "json")) {
+		line(JSON.stringify(evalSummary(evaluation), null, 2));
+		return;
+	}
+	line(
+		[
+			`name: ${evaluation.name}`,
+			`tags: ${evaluation.tags?.join(",") || "-"}`,
+			`timeout_ms: ${evaluation.timeoutMs ?? "-"}`,
+			`prompt: ${evaluation.prompt}`,
+			`expect: ${expectLabel(evaluation.expect)}`,
+		].join("\n"),
+	);
+}
+
+function evalsCheck(flags: Flags): void {
+	const rows = filterEvals(loadCliEvals(flags), flags);
+	const invalid = rows.filter((row) => !row.prompt.trim());
+	if (invalid.length) throw new Error(`evals missing prompt: ${invalid.map((row) => row.name).join(", ")}`);
+	const body = { ok: true, evals: rows.length };
+	line(booleanFlag(flags, "json") ? JSON.stringify(body, null, 2) : ok(`${rows.length} eval(s) valid`));
+}
+
+function loadCliEvals(flags: Flags): EvalConfig[] {
+	const agent = stringFlag(flags, "agent") ?? "./agent";
+	return loadEvals(resolve(invocationRoot(), agent, "evals"));
+}
+
+function filterEvals(rows: EvalConfig[], flags: Flags): EvalConfig[] {
+	const tag = stringFlag(flags, "tag");
+	if (!tag) return rows;
+	return rows.filter((row) => row.tags?.includes(tag));
+}
+
+function evalSummary(input: EvalConfig): Record<string, unknown> {
+	return {
+		name: input.name,
+		prompt: input.prompt,
+		tags: input.tags ?? [],
+		timeoutMs: input.timeoutMs,
+		expect: expectSummary(input.expect),
+	};
+}
+
+function expectSummary(input: EvalConfig["expect"]): unknown {
+	if (!input) return undefined;
+	if (typeof input === "function") return "custom";
+	if (Array.isArray(input)) return input.map(expectSummary);
+	return Object.fromEntries(
+		Object.entries(input).map(([key, value]) => [key, value instanceof RegExp ? value.toString() : value]),
+	);
+}
+
+function expectLabel(input: EvalConfig["expect"]): string {
+	if (!input) return "-";
+	const rows = Array.isArray(input) ? input : [input];
+	return rows.map(oneExpectLabel).join(",");
+}
+
+function oneExpectLabel(input: EvalExpect): string {
+	if (typeof input === "function") return "custom";
+	return Object.entries(input)
+		.map(([key, value]) => `${key}:${value instanceof RegExp ? value.toString() : String(value)}`)
+		.join("+");
+}
+
 async function approvalsList(flags: Flags): Promise<void> {
 	const approvals = approvalRepo(flags);
 	const rows = await approvals.listPending({
@@ -868,6 +1038,8 @@ function helpText(): string {
 
 Usage:
   heypi init
+  heypi dev [index.ts]
+  heypi start [index.ts]
   heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
   heypi status --db ./state/heypi.db [--agent <id>] [--runtime-root ./workspace] [--json]
   heypi db check --db ./state/heypi.db
@@ -893,7 +1065,10 @@ Usage:
   heypi jobs show <id> --db ./state/heypi.db [--agent <id>] [--json]
   heypi jobs run <id> --db ./state/heypi.db [--agent <id>]
   heypi jobs pause <id> --db ./state/heypi.db [--agent <id>]
-  heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]`;
+  heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
+  heypi eval list [--agent ./agent] [--tag smoke] [--json]
+  heypi eval show <name> [--agent ./agent] [--json]
+  heypi eval check [--agent ./agent] [--tag smoke] [--json]`;
 }
 
 function numberFlag(flags: Flags, name: string, fallback: number): number {

@@ -42,12 +42,23 @@ export {
 	defaultTools,
 } from "./core-tools.js";
 export {
+	defineEval,
+	type EvalConfig,
+	type EvalExpect,
+	type EvalResult,
+} from "./eval.js";
+export {
 	type DiscordAllow,
 	type DiscordConfig,
 	type DiscordProgress,
 	type DiscordTrigger,
 	discord,
 } from "./io/discord.js";
+export {
+	type LocalConfig,
+	type LocalMessage,
+	local,
+} from "./io/local.js";
 export {
 	type SlackAllow,
 	type SlackConfig,
@@ -77,7 +88,7 @@ export {
 	type JobTarget,
 	type JobTargets,
 } from "./job.js";
-export { loadJobs, loadTools } from "./load.js";
+export { loadEvals, loadJobs, loadTools } from "./load.js";
 export { workspace } from "./runtime/index.js";
 export { sqliteStore } from "./store/sqlite.js";
 export {

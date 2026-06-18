@@ -30,9 +30,10 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 | Export | Purpose |
 | --- | --- |
-| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, `tools/`, `jobs/`, `skills/`, and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, `tools/`, `jobs/`, `evals/`, `skills/`, and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
 | `loadTools(folder)` | Loads default-exported tools from a folder. File stems become tool names when omitted. |
 | `loadJobs(folder)` | Loads default-exported jobs from a folder. |
+| `loadEvals(folder)` | Loads default-exported evals from a folder. |
 | `agentFrom(folder, options)` | Compatibility alias for `loadAgent()`. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
@@ -46,6 +47,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `discord(config)` | Discord adapter. See [Discord](../adapters/discord.md). |
 | `telegram(config)` | Telegram adapter. See [Telegram](../adapters/telegram.md). |
 | `webhook(config)` | JSON HTTP webhook adapter. See [Webhook](../adapters/webhook.md). |
+| `local(config)` | Loopback-only dev adapter. Used by generated apps when `HEYPI_DEV=1`; registers `/dev/messages` routes for local testing. |
 
 Adapter configs own channel-specific approval identity through `permissions.approvers` and `permissions.admins`.
 
@@ -58,6 +60,7 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. See [Agent tools](../configuration/tools.md). |
 | `tool(definition)` | Compatibility API for custom tools using `parameters` and `execute`. |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
+| `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |
 | `approval` | Helpers for common confirmation policies: `always`, `never`, `when`, and `command`. |
 | `commandConfirm(config)` | Builds bash confirmation policy from allow/approve/block patterns. |
 | `classifyCommand(command, config)` | Classifies a command against command policy. |

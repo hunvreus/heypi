@@ -47,6 +47,7 @@ my-agent/
 |-- agent/
 |   |-- AGENTS.md
 |   |-- SOUL.md
+|   |-- evals/
 |   |-- jobs/
 |   |-- skills/
 |   `-- tools/
@@ -62,4 +63,12 @@ Edit `agent/AGENTS.md` and `agent/SOUL.md`.
 npm run dev
 ```
 
-Mention the bot in a test channel.
+The dev server also exposes local testing routes on loopback:
+
+```bash
+curl -s http://127.0.0.1:3000/dev/messages \
+  -H 'content-type: application/json' \
+  -d '{"text":"hello","sync":true}'
+```
+
+Mention the bot in a test channel when the provider app is configured.

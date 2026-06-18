@@ -109,6 +109,29 @@ test("cli resolves env paths from original invocation root", async () => {
 	}
 });
 
+test("cli eval commands inspect discovered eval definitions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-evals-"));
+	try {
+		await mkdir(join(root, "agent", "evals"), { recursive: true });
+		await writeFile(
+			join(root, "agent", "evals", "smoke.ts"),
+			[
+				`import { defineEval } from ${JSON.stringify(resolve("src/eval.ts"))};`,
+				'export default defineEval({ name: "smoke", tags: ["smoke"], prompt: "say hello", expect: { includes: "hello" } });',
+			].join("\n"),
+			"utf8",
+		);
+		const listed = cli(["eval", "list", "--agent", "agent", "--json"], { cwd: root });
+		const rows = JSON.parse(listed) as Array<{ name: string; expect: { includes: string } }>;
+		assert.equal(rows[0]?.name, "smoke");
+		assert.equal(rows[0]?.expect.includes, "hello");
+		assert.match(cli(["eval", "show", "smoke", "--agent", "agent"], { cwd: root }), /prompt: say hello/);
+		assert.match(cli(["eval", "check", "--agent", "agent"], { cwd: root }), /ok: 1 eval\(s\) valid/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("cli status summarizes persisted operator state", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-status-"));
 	try {

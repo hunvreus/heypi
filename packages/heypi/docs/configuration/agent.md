@@ -1,6 +1,6 @@
 # Agent configuration
 
-The `agent` config defines the Pi agent heypi runs for each accepted turn: model, prompts, tools, dynamic context, skills, and Pi extensions.
+The `agent` config defines the Pi agent heypi runs for each accepted turn: model, prompts, tools, jobs, evals, dynamic context, skills, and Pi extensions.
 
 ## Config
 
@@ -38,6 +38,7 @@ createHeypi({
 | --- | --- | --- | --- |
 | `model` | Yes, unless `HEYPI_MODEL` is set | `loadAgent`, manual | Model id. `loadAgent()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
 | `tools` | No | `loadAgent`, manual | Core tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
+| `evals` | No | `loadAgent`, manual | Behavior eval definitions. Loaded from `agent/evals/` by convention. |
 | `context` | No | `loadAgent`, manual | Per-turn context blocks added before the model chooses tools. |
 | `systemPrompt` | No | `loadAgent` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |
 | `prompt` | No | manual | Main prompt text for the Pi agent. |
@@ -59,6 +60,7 @@ For the full lower-level Pi agent contract, see Pi's [coding-agent package](http
 | `AGENTS.md` | Main app instructions. No default. |
 | `tools/` | Trusted TypeScript tools default-exported from module files. File stems become tool names when omitted. |
 | `jobs/` | Scheduled jobs default-exported from module files. |
+| `evals/` | Behavior evals default-exported from module files. |
 | `skills/` | Bundled skills loaded with the agent. Empty when absent. |
 | `extensions/` | Explicit Pi extensions loaded with the agent. Empty when absent. |
 
@@ -67,6 +69,8 @@ For the full lower-level Pi agent contract, see Pi's [coding-agent package](http
 Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
 
 If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.
+
+Evals discovered under `agent/evals/` are definition files for `heypi eval list`, `heypi eval show`, and `heypi eval check`. They are not executed during normal chat turns. Model-scored eval execution will build on these definitions after heypi has a typed trace timeline.
 
 Prompt order is: `SYSTEM.md` or heypi's generated system prompt, then `SOUL.md`, `AGENTS.md`, and dynamic context blocks.
 

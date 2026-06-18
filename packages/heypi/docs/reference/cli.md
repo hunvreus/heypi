@@ -27,6 +27,8 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | Command | Use for |
 | --- | --- |
 | [`heypi init`](#heypi-init) | Print app scaffolding commands. |
+| [`heypi dev`](#heypi-dev) | Start an exported app with local dev endpoints enabled. |
+| [`heypi start`](#heypi-start) | Start an exported app. |
 | [`heypi check`](#heypi-check) | Validate Node, env, database, and runtime paths. |
 | [`heypi status`](#heypi-status) | Inspect persisted app status for operators. |
 | [`heypi db`](#heypi-db) | Check or migrate the SQLite store. |
@@ -36,6 +38,7 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | [`heypi admin`](#heypi-admin) | Mint local admin login links. |
 | [`heypi approvals`](#heypi-approvals) | Inspect pending approval requests and active approval bypasses. |
 | [`heypi jobs`](#heypi-jobs) | Inspect and change scheduled jobs. |
+| [`heypi eval`](#heypi-eval) | Inspect and validate authored eval definitions. |
 | [`heypi help`](#help-and-version) | Print CLI help. |
 | [`heypi version`](#help-and-version) | Print the installed package version. |
 
@@ -51,6 +54,38 @@ Prints the recommended app creation commands:
 npm create heypi@latest
 npm create heypi@latest my-agent -- --yes
 ```
+
+## heypi dev
+
+```bash
+heypi dev [index.ts] [--env .env]
+```
+
+Loads the app module with `tsx`, sets `HEYPI_DEV=1`, and starts the default export from `createHeypi(...)`. Generated apps add `local()` only when `HEYPI_DEV` is set, so local testing does not change production adapter wiring.
+
+The local adapter registers:
+
+```bash
+POST /dev/messages
+POST /dev/threads/:threadId/messages
+GET /dev/threads/:threadId/runs/:runId
+```
+
+Example:
+
+```bash
+curl -s http://127.0.0.1:3000/dev/messages \
+  -H 'content-type: application/json' \
+  -d '{"text":"hello","sync":true}'
+```
+
+## heypi start
+
+```bash
+heypi start [index.ts] [--env .env]
+```
+
+Loads the app module with `tsx` and starts the default export from `createHeypi(...)` without setting `HEYPI_DEV`.
 
 ## heypi check
 
@@ -93,6 +128,16 @@ Inspects persisted operator state for one agent. It opens the database without a
 heypi db check --db ./state/heypi.db
 heypi db migrate --db ./state/heypi.db
 ```
+
+## heypi eval
+
+```bash
+heypi eval list [--agent ./agent] [--tag smoke] [--json]
+heypi eval show <name> [--agent ./agent] [--json]
+heypi eval check [--agent ./agent] [--tag smoke] [--json]
+```
+
+Loads `agent/evals/*.ts` and inspects `defineEval(...)` definitions. `check` validates discovery and basic shape only; it does not run model behavior yet.
 
 | Subcommand | Description |
 | --- | --- |

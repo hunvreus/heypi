@@ -24,9 +24,17 @@ test("creates a default Slack app non-interactively", async () => {
 		const out = run([app, "--yes", "--no-install"]);
 		assert.match(out, /Created /);
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi"/);
+		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
+		assert.match(read(app, "package.json"), /"start": "heypi start"/);
 		assert.match(read(app, "index.ts"), /slack\(\{/);
+		assert.match(read(app, "index.ts"), /local\(\)/);
+		assert.match(read(app, "index.ts"), /export default app/);
+		assert.match(read(app, "index.ts"), /pathToFileURL/);
 		assert.match(read(app, "index.ts"), /mode: "socket"/);
-		assert.match(read(app, "index.ts"), /http: \{ port: Number\(process\.env\.HEYPI_HTTP_PORT \?\? 0\) \}/);
+		assert.match(
+			read(app, "index.ts"),
+			/http: \{ port: Number\(process\.env\.HEYPI_HTTP_PORT \?\? \(process\.env\.HEYPI_DEV \? 3000 : 0\)\) \}/,
+		);
 		assert.match(read(app, "index.ts"), /name: "just-bash"/);
 		assert.match(read(app, "index.ts"), /openai\/gpt-5\.4-mini/);
 		assert.match(read(app, ".env"), /OPENAI_API_KEY=/);
@@ -38,6 +46,7 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
 		assert.match(read(app, "agent/tools/README.md"), /# Tools/);
+		assert.match(read(app, "agent/evals/README.md"), /# Evals/);
 		assert.match(read(app, "setup/slack.manifest.json"), /socket_mode_enabled/);
 		assert.match(read(app, "setup/slack.manifest.json"), /channels:read/);
 		assert.doesNotMatch(read(app, "setup/slack.manifest.json"), /groups:history/);
@@ -92,6 +101,7 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, ".env.example"), /DISCORD_BOT_TOKEN=/);
 		assert.match(read(app, "agent/skills/example/SKILL.md"), /name: example/);
 		assert.match(read(app, "agent/tools/now.ts"), /defineTool/);
+		assert.match(read(app, "agent/evals/smoke.ts"), /defineEval/);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		execFileSync(resolve(ROOT, "node_modules/.bin/tsc"), ["--noEmit"], { cwd: app, stdio: "pipe" });
 	} finally {

@@ -34,11 +34,13 @@ npm install @hunvreus/heypi
 ## Minimal app
 
 ```ts
-import { createHeypi, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { pathToFileURL } from "node:url";
+import { createHeypi, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
   state: { root: "./state" },
   adapters: [
+    ...(process.env.HEYPI_DEV ? [local()] : []),
     slack({
       botToken: process.env.SLACK_BOT_TOKEN!,
       appToken: process.env.SLACK_APP_TOKEN!,
@@ -48,7 +50,11 @@ const app = createHeypi({
   runtime: { root: workspace("./workspace") },
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await runHeypi(app);
+}
 ```
 
 `OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
