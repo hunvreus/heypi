@@ -55,6 +55,7 @@
 - Changed generated app README copy to point first-run users at the local admin/dev interaction path.
 - Changed admin trace rows to render model lifecycle events with readable titles and summaries.
 - Changed API and tools docs to keep deprecated aliases out of the main authoring path.
+- Changed the Slack DevOps example to use `approval.command()` instead of deprecated `commandConfirm()`.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.

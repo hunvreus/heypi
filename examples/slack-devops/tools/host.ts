@@ -5,8 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import {
 	type AgentContextProvider,
 	type CommandPolicyConfig,
+	approval,
 	classifyCommand,
-	commandConfirm,
 	defineTool,
 } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
@@ -70,7 +70,7 @@ const MAX_OUTPUT = 64 * 1024;
 export function createHostTools(options: HostToolOptions) {
 	const store = new HostStore(options.root);
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	const remoteConfirm = commandConfirm(options.commandPolicy);
+	const remoteConfirm = approval.command(options.commandPolicy);
 	return [
 		defineTool({
 			name: "host_key_ensure",

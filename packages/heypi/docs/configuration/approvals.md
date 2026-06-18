@@ -73,7 +73,7 @@ In chat, `/approvals` lists pending approvals for the current channel. Use the a
 
 `approval` does not make every tool call require approval. Tool confirmation does that:
 
-- [`commandConfirm()`](tools.md#confirmation) controls bash risk policy.
+- [`approval.command()`](tools.md#confirmation) controls bash risk policy.
 - Custom tools can return a confirmation object from [`confirm`](tools.md#confirmation).
 - Managed tools such as memory and skills use their own write policies.
 

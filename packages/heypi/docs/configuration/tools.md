@@ -35,7 +35,7 @@ loadAgent("./agent", {
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `bash` | `{ confirm: commandConfirm() }` | Run shell commands through the selected runtime. Pass `true` to remove default confirmation, `false` to disable, or `{ confirm }` to customize approval. |
+| `bash` | `{ confirm: approval.command() }` | Run shell commands through the selected runtime. Pass `true` to remove default confirmation, `false` to disable, or `{ confirm }` to customize approval. |
 | `read` | `true` | Read runtime files. |
 | `write` | `true` | Write runtime files. |
 | `edit` | `true` | Edit runtime files. |
