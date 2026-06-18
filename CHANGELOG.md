@@ -26,6 +26,7 @@
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 
 ### Fixed
+- Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.
 - Fixed `heypi dev` printing a guessed admin URL when the HTTP listener binds to a dynamic port.
 - Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.
 - Fixed approval controls being recorded as fresh user turns, which could make an approved action trigger a second approval.

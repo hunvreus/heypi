@@ -12,7 +12,7 @@ npm install @hunvreus/heypi
 
 ```ts
 import { pathToFileURL } from "node:url";
-import { createHeypi, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, defaultTools, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
   state: { root: "./state" },
@@ -23,7 +23,7 @@ const app = createHeypi({
       appToken: process.env.SLACK_APP_TOKEN!,
     }),
   ],
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
   runtime: { name: "just-bash", root: workspace("./workspace") },
 });
 
@@ -66,5 +66,6 @@ Mention the bot in a test channel.
 
 - `state.root` stores durable heypi state.
 - `slack(...)` registers the Slack adapter.
-- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, bundled skills, tools, and jobs.
+- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, bundled skills, app tools, jobs, and evals.
+- `defaultTools()` adds heypi's built-in runtime tools. Discovery does not add them implicitly.
 - `runtime.root` is the workspace for runtime tools, generated files, and scoped runtime state.

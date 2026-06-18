@@ -6,7 +6,7 @@ heypi apps are configured in TypeScript with `createHeypi()`. The config object 
 createHeypi({
   state: { root: "./state" },
   adapters: [slack({ botToken, appToken })],
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
   runtime: { root: workspace("./workspace") },
 });
 ```
