@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approval, defaultTools, defineEval } from "../src/api.js";
+import { approval, defaultTools, defineEval, evaluateEval } from "../src/api.js";
 import { coreTools } from "../src/core-tools.js";
 
 test("defaultTools preserves the existing coreTools behavior", () => {
@@ -46,4 +46,62 @@ test("defineEval preserves behavior eval definitions", () => {
 	assert.equal(evaluation.name, "lists hosts");
 	assert.deepEqual(evaluation.tags, ["smoke"]);
 	assert.deepEqual(evaluation.expect, { tool: "hosts_list" });
+});
+
+test("evaluateEval checks text, tool, and approval assertions", async () => {
+	const report = await evaluateEval(
+		{
+			expect: [
+				{ includes: "prod", tool: "hosts_list" },
+				{ text: /deployed/i, approval: "approval-1" },
+			],
+		},
+		{
+			text: "prod deployed.",
+			tools: ["hosts_list"],
+			approvals: ["approval-1"],
+		},
+	);
+	assert.equal(report.ok, true);
+	assert.deepEqual(
+		report.assertions.map((row) => [row.label, row.ok]),
+		[
+			["includes", true],
+			["tool", true],
+			["text", true],
+			["approval", true],
+		],
+	);
+});
+
+test("evaluateEval reports failed assertions without throwing", async () => {
+	const report = await evaluateEval(
+		{ expect: [{ text: "done", tool: "deploy", approval: false }] },
+		{ text: "blocked", tools: ["plan"], approvals: ["approval-1"] },
+	);
+	assert.equal(report.ok, false);
+	assert.deepEqual(
+		report.assertions.map((row) => [row.label, row.ok]),
+		[
+			["text", false],
+			["tool", false],
+			["approval", false],
+		],
+	);
+	assert.match(report.assertions[0]?.message ?? "", /expected text/);
+});
+
+test("evaluateEval converts custom assertion failures into reports", async () => {
+	const report = await evaluateEval(
+		{
+			expect: async () => {
+				throw new Error("missing fixture");
+			},
+		},
+		{ text: "", tools: [], approvals: [] },
+	);
+	assert.deepEqual(report, {
+		ok: false,
+		assertions: [{ ok: false, label: "custom", message: "missing fixture" }],
+	});
 });

@@ -43,8 +43,11 @@ export {
 } from "./core-tools.js";
 export {
 	defineEval,
+	evaluateEval,
+	type EvalAssertion,
 	type EvalConfig,
 	type EvalExpect,
+	type EvalReport,
 	type EvalResult,
 } from "./eval.js";
 export {

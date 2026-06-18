@@ -13,6 +13,17 @@ export type EvalResult = {
 	approvals: string[];
 };
 
+export type EvalAssertion = {
+	ok: boolean;
+	label: string;
+	message?: string;
+};
+
+export type EvalReport = {
+	ok: boolean;
+	assertions: EvalAssertion[];
+};
+
 export type EvalConfig = {
 	name: string;
 	prompt: string;
@@ -24,6 +35,16 @@ export type EvalConfig = {
 /** Defines an agent behavior eval loaded from `agent/evals/` or explicit config. */
 export function defineEval(input: EvalConfig): EvalConfig {
 	return input;
+}
+
+/** Evaluates a result against text, tool, approval, and custom assertions. */
+export async function evaluateEval(input: Pick<EvalConfig, "expect">, result: EvalResult): Promise<EvalReport> {
+	const expectations = expectList(input.expect);
+	const assertions: EvalAssertion[] = [];
+	for (const expect of expectations) {
+		assertions.push(...(await evaluateOne(expect, result)));
+	}
+	return { ok: assertions.every((row) => row.ok), assertions };
 }
 
 /** Returns human-readable validation errors for an eval definition. */
@@ -82,6 +103,63 @@ function evalLabel(input: EvalConfig): string {
 	return stringNonEmpty(input.name) ? `eval ${input.name}` : "eval";
 }
 
+function expectList(input: EvalConfig["expect"]): EvalExpect[] {
+	if (!input) return [];
+	return Array.isArray(input) ? input : [input];
+}
+
+async function evaluateOne(expect: EvalExpect, result: EvalResult): Promise<EvalAssertion[]> {
+	if (typeof expect === "function") {
+		try {
+			await expect(result);
+			return [{ ok: true, label: "custom" }];
+		} catch (error) {
+			return [{ ok: false, label: "custom", message: errorMessage(error) }];
+		}
+	}
+	const assertions: EvalAssertion[] = [];
+	if (expect.text !== undefined) {
+		const ok = expect.text instanceof RegExp ? expect.text.test(result.text) : result.text === expect.text;
+		assertions.push({
+			ok,
+			label: "text",
+			message: ok
+				? undefined
+				: `expected text ${expect.text instanceof RegExp ? expect.text.toString() : JSON.stringify(expect.text)}`,
+		});
+	}
+	if (expect.includes !== undefined) {
+		const ok = result.text.includes(expect.includes);
+		assertions.push({
+			ok,
+			label: "includes",
+			message: ok ? undefined : `expected text to include ${JSON.stringify(expect.includes)}`,
+		});
+	}
+	if (expect.tool !== undefined) {
+		const ok = result.tools.includes(expect.tool);
+		assertions.push({ ok, label: "tool", message: ok ? undefined : `expected tool ${expect.tool}` });
+	}
+	if (expect.approval !== undefined) {
+		if (typeof expect.approval === "boolean") {
+			const ok = expect.approval ? result.approvals.length > 0 : result.approvals.length === 0;
+			assertions.push({
+				ok,
+				label: "approval",
+				message: ok ? undefined : expect.approval ? "expected an approval request" : "expected no approval requests",
+			});
+		} else {
+			const ok = result.approvals.includes(expect.approval);
+			assertions.push({ ok, label: "approval", message: ok ? undefined : `expected approval ${expect.approval}` });
+		}
+	}
+	return assertions;
+}
+
 function stringNonEmpty(input: unknown): input is string {
 	return typeof input === "string" && input.trim().length > 0;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
