@@ -7,7 +7,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { callArgs, callArgsForStorage, callContext } from "../src/core/call-reply.js";
 import { CallRunner } from "../src/core/calls.js";
 import { normalizeMessages } from "../src/core/messages.js";
-import { commandConfirm } from "../src/core/policy.js";
+import { commandApproval } from "../src/core/policy.js";
 import type { ToolContinuation } from "../src/core/types.js";
 import { createHandler, createStatus } from "../src/io/handler.js";
 import type { ReplyStream } from "../src/io/reply-stream.js";
@@ -42,7 +42,7 @@ function createRestartBashHandler(store: Store, out: string) {
 			{ approvers: ["U_ALLOWED"] },
 			undefined,
 			store.transaction,
-			commandConfirm(),
+			commandApproval(),
 		),
 		agent: {
 			ask: async () => ({ text: "ok" }),
@@ -608,7 +608,7 @@ test("handler scopes approvals by provider team and channel", async () => {
 				{ approvers: ["U_ALLOWED"] },
 				undefined,
 				store.transaction,
-				commandConfirm(),
+				commandApproval(),
 			),
 			agent: {
 				ask: async () => ({ text: "ok" }),
@@ -774,7 +774,7 @@ test("handler lets expired denials replace the original approval surface", async
 				{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
 				undefined,
 				store.transaction,
-				commandConfirm(),
+				commandApproval(),
 			),
 			agent: {
 				ask: async () => ({ text: "ok" }),
@@ -843,7 +843,7 @@ test("approvals command lists pending approvals for approvers only", async () =>
 				approval,
 				undefined,
 				store.transaction,
-				commandConfirm(),
+				commandApproval(),
 			),
 			agent: {
 				ask: async () => ({ text: "ok" }),
@@ -947,7 +947,7 @@ test("bypasses command lists active approval bypasses for approvers only", async
 				approval,
 				undefined,
 				store.transaction,
-				commandConfirm(),
+				commandApproval(),
 				undefined,
 				"a",
 				store.approvalBypasses,
@@ -1035,7 +1035,7 @@ test("bot actors cannot list approvals through zero-config fallback", async () =
 				{},
 				undefined,
 				store.transaction,
-				commandConfirm(),
+				commandApproval(),
 			),
 			agent: {
 				ask: async () => ({ text: "ok" }),

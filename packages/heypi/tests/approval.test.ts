@@ -4,7 +4,7 @@ import * as approvalBypass from "../src/core/approval-bypass.js";
 import { CallRunner } from "../src/core/calls.js";
 import type { Logger } from "../src/core/log.js";
 import { normalizeMessages } from "../src/core/messages.js";
-import { commandConfirm } from "../src/core/policy.js";
+import { commandApproval } from "../src/core/policy.js";
 import type { CallErrorKind, CallState } from "../src/core/types.js";
 import { RUNTIME_STARTUP_ERROR_KIND, RuntimeStartupError } from "../src/runtime/errors.js";
 import { Queue } from "../src/runtime/queue.js";
@@ -33,7 +33,7 @@ test("approval approvers reject unauthorized actors and keep approval pending", 
 		},
 		captureLogger(events),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	const requested = await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -69,7 +69,7 @@ test("authorized approval executes the pending command", async () => {
 		},
 		captureLogger(events),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -101,7 +101,7 @@ test("bot actors cannot approve through zero-config fallback", async () => {
 		{},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -132,7 +132,7 @@ test("explicit bot approvers can approve", async () => {
 		{ approvers: ["B_DEPLOY"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -166,7 +166,7 @@ test("approval bypass skips confirmation in matching thread until revoked", asyn
 		},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 		normalizeMessages(),
 		"default",
 		bypasses,
@@ -301,7 +301,7 @@ test("approval admins inherit approver permissions", async () => {
 		},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -331,7 +331,7 @@ test("approval requester can approve when self approval is enabled by default", 
 		},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -361,7 +361,7 @@ test("approval requester cannot approve when self approval is disabled", async (
 		},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -391,7 +391,7 @@ test("group approver executes the pending command", async () => {
 		},
 		undefined,
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -450,7 +450,7 @@ test("approval resolution is scoped by agent", async () => {
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com", { agent: "agent-b" });
@@ -494,7 +494,7 @@ test("command confirmation allow pattern bypasses default approval pattern", asy
 		{},
 		noLogger(),
 		undefined,
-		commandConfirm({ allow: [/^curl -I /] }),
+		commandApproval({ allow: [/^curl -I /] }),
 	);
 
 	const reply = await callRunner.bash("C1", "U_REQUESTER", "curl -I https://example.com");
@@ -604,7 +604,7 @@ test("malformed persisted approval details are ignored", async () => {
 		{},
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -632,7 +632,7 @@ test("authorized denial logs approval.denied", async () => {
 		{ approvers: ["U_ALLOWED"] },
 		captureLogger(events),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -664,7 +664,7 @@ test("approval requester can deny their own pending action", async () => {
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -692,7 +692,7 @@ test("approval denial rejects actors who are neither approvers nor requesters", 
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -721,7 +721,7 @@ test("expired approval logs approval.expired", async () => {
 		{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
 		captureLogger(events),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -752,7 +752,7 @@ test("expired approval can replace the original approval surface", async () => {
 		{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -791,7 +791,7 @@ test("expired denial can replace the original approval surface", async () => {
 		{ approvers: ["U_ALLOWED"], expiresInMs: -1 },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -830,7 +830,7 @@ test("approval acknowledgement preserves the approved action summary", async () 
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -866,7 +866,7 @@ test("resolved approval logs approval.already_resolved", async () => {
 		{ approvers: ["U_ALLOWED"] },
 		captureLogger(events),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	await callRunner.bash("C1", "U_REQUESTER", "curl https://example.com");
@@ -901,7 +901,7 @@ test("missing approval asks adapters to replace stale approval surfaces", async 
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 	);
 
 	const missing = await callRunner.handle({
@@ -925,7 +925,7 @@ test("missing approval uses configured system copy", async () => {
 		{ approvers: ["U_ALLOWED"] },
 		noLogger(),
 		undefined,
-		commandConfirm(),
+		commandApproval(),
 		normalizeMessages({ approvalUnavailable: "That approval is gone." }),
 	);
 

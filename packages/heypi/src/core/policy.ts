@@ -58,7 +58,7 @@ function classifySegment(command: string, config: CommandPolicyConfig): CommandR
 }
 
 /** Builds a confirmation policy from command risk classification. */
-export function commandConfirm(config: CommandPolicyConfig = {}): ConfirmFunction {
+export function commandApproval(config: CommandPolicyConfig = {}): ConfirmFunction {
 	return (input) => {
 		const command = typeof input.command === "string" ? input.command : "";
 		const risk = classifyCommand(command, config);

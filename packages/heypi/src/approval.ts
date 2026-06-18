@@ -1,4 +1,4 @@
-import { commandConfirm } from "./core/policy.js";
+import { commandApproval } from "./core/policy.js";
 import type { CommandPolicyConfig, Confirm, ConfirmFunction } from "./core/types.js";
 
 type ApprovalInput = Record<string, unknown>;
@@ -16,6 +16,6 @@ export const approval = {
 		return (input) => (predicate(input as T) ? { message } : false);
 	},
 	command(config: CommandPolicyConfig = {}): ConfirmFunction {
-		return commandConfirm(config);
+		return commandApproval(config);
 	},
 };
