@@ -99,6 +99,7 @@ const ADMIN_ROUTES = [
 	["POST", "/admin/login"],
 	["POST", "/admin/logout"],
 	["POST", "/admin/messages"],
+	["POST", "/admin/approvals"],
 	["GET", "/admin/activity"],
 	["GET", "/admin/approvals"],
 	["GET", "/admin/configuration"],
@@ -291,6 +292,9 @@ async function handleAdminRoute(
 	if (method === "POST" && url.pathname === "/admin/messages") {
 		return await postMessage(req, res, state, session);
 	}
+	if (method === "POST" && url.pathname === "/admin/approvals") {
+		return await postApproval(req, res, state, session);
+	}
 	if (method !== "GET") {
 		return adminError(res, 405, "Method not allowed", "This admin route does not accept that HTTP method.", nonce);
 	}
@@ -316,6 +320,29 @@ async function postMessage(
 		actor: actor || undefined,
 	});
 	redirect(res, `/admin/threads/${encodeURIComponent(result.threadId)}`);
+}
+
+async function postApproval(
+	req: IncomingMessage,
+	res: ServerResponse,
+	state: AdminState,
+	session: { csrf: string },
+): Promise<void> {
+	const form = await requireCsrf(req, session);
+	const id = formValue(form, "id").trim();
+	const rawAction = formValue(form, "action").trim();
+	const actor = formValue(form, "actor").trim();
+	if (!id) throw new AdminHttpError(400, "Approval id is required.");
+	if (rawAction !== "approve" && rawAction !== "deny") throw new AdminHttpError(400, "Approval action is invalid.");
+	const result = await state.service.resolveApproval({
+		id,
+		action: rawAction,
+		actor: actor || undefined,
+	});
+	const target = result.threadId
+		? `/admin/threads/${encodeURIComponent(result.threadId)}?event=${encodeURIComponent(`approval:${id}`)}`
+		: "/admin/approvals";
+	redirect(res, target);
 }
 
 async function loginGet(
@@ -414,7 +441,7 @@ async function routePage(
 			active: "approvals",
 			overview,
 			livePage: true,
-			body: approvalsView(approvals, overview.live.checkedAt),
+			body: approvalsView(approvals, overview.live.checkedAt, { csrf: session.csrf }),
 		});
 	}
 	if (path === "/admin/jobs") {

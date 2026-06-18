@@ -50,6 +50,7 @@ export type AdminService = {
 	overview(): Promise<AdminOverview>;
 	live(): Promise<AdminLiveSummary>;
 	sendMessage(input: AdminSendMessageInput): Promise<AdminSendMessageResult>;
+	resolveApproval(input: AdminResolveApprovalInput): Promise<AdminResolveApprovalResult>;
 	threads(input?: AdminPageInput): Promise<AdminPage<AdminThreadRow>>;
 	thread(id: string, input?: { event?: string }): Promise<AdminThreadView | undefined>;
 	approvals(input?: AdminPageInput): Promise<AdminPage<Approval>>;
@@ -66,6 +67,18 @@ export type AdminSendMessageInput = {
 
 export type AdminSendMessageResult = {
 	threadId: string;
+	trace: string;
+	status: "done" | "pending_approval" | "silent";
+};
+
+export type AdminResolveApprovalInput = {
+	id: string;
+	action: "approve" | "deny";
+	actor?: string;
+};
+
+export type AdminResolveApprovalResult = {
+	threadId?: string;
 	trace: string;
 	status: "done" | "pending_approval" | "silent";
 };
@@ -305,6 +318,39 @@ export function createAdminService(start: AdapterStart): AdminService {
 				status: result?.approval ? "pending_approval" : result?.silent ? "silent" : "done",
 			};
 		},
+		async resolveApproval(input: AdminResolveApprovalInput): Promise<AdminResolveApprovalResult> {
+			const approval = await store.approvals.get(input.id, { agent: app.agent });
+			if (!approval || approval.state !== "pending") throw new Error("approval not found");
+			const actor = input.actor?.trim() || "admin";
+			const trace = `admin:${randomUUID()}`;
+			const thread = approval.threadId ? await store.threads.get(approval.threadId) : undefined;
+			const route = thread
+				? {
+						provider: thread.provider,
+						kind: thread.kind,
+						team: thread.team ?? undefined,
+						channel: thread.channel,
+						thread: thread.key,
+					}
+				: approvalRoute(approval);
+			const result = await start.handler({
+				provider: route.provider,
+				kind: route.kind,
+				team: route.team,
+				channel: route.channel,
+				actor,
+				thread: route.thread,
+				text: `/${input.action} ${approval.id}`,
+				trace,
+				eventId: trace,
+				data: { source: "admin", approvalId: approval.id, action: input.action },
+			});
+			return {
+				threadId: thread?.id,
+				trace,
+				status: result?.approval ? "pending_approval" : result?.silent ? "silent" : "done",
+			};
+		},
 		async threads(input: AdminPageInput = {}): Promise<AdminPage<AdminThreadRow>> {
 			const page = pageInput(input);
 			const filters = filtersFromInput(input);
@@ -504,6 +550,24 @@ function approvalActivity(row: Approval): AdminActivityRow {
 			row.expiresAt ? { label: "Expires", value: new Date(row.expiresAt).toLocaleString() } : undefined,
 			row.resolvedBy ? { label: "Resolved by", value: row.resolvedBy } : undefined,
 		]),
+	};
+}
+
+function approvalRoute(row: Approval): {
+	provider: string;
+	kind: string;
+	team?: string;
+	channel: string;
+	thread: string;
+} {
+	const [provider, team = "", channel = row.channel] = row.channel.split(":", 3);
+	if (!provider || !channel) throw new Error("approval route is unavailable");
+	return {
+		provider,
+		kind: provider,
+		team: team || undefined,
+		channel,
+		thread: row.threadId ?? `admin:${row.id}`,
 	};
 }
 

@@ -342,7 +342,7 @@ function threadSearch(page: AdminPage<AdminThreadRow>): string {
 </form>${scanNotice(page)}`;
 }
 
-export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): string {
+export function approvalsView(page: AdminPage<Approval>, checkedAt?: number, input: { csrf?: string } = {}): string {
 	const body = `${tableControls("/admin/approvals", page, {
 		comboboxes: [
 			{
@@ -359,7 +359,7 @@ export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): st
 			},
 		],
 	})}${table(
-		["State", "Command", "Channel", "Runtime", "Reason", "Requested", "Expires"],
+		["State", "Command", "Channel", "Runtime", "Reason", "Requested", "Expires", "Actions"],
 		page.rows.map((row) => [
 			statusBadge(row.state),
 			{
@@ -370,6 +370,7 @@ export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): st
 			muted(row.reason),
 			mutedHtml(relativeTimeHtml(row.requestedAt)),
 			mutedHtml(futureTimeHtml(row.expiresAt)),
+			{ html: approvalActions(row, input.csrf) },
 		]),
 		emptyStateForFilters(page.filters, {
 			title: "No pending approvals",
@@ -377,6 +378,19 @@ export function approvalsView(page: AdminPage<Approval>, checkedAt?: number): st
 		}),
 	)}${pagination("/admin/approvals", page)}`;
 	return `<div class="grid min-w-0 gap-4">${card("Approvals", checkedAtDescription("Pending human decisions for approval-gated tool calls.", checkedAt), body)}</div>`;
+}
+
+function approvalActions(row: Approval, csrf?: string): string {
+	if (csrf === undefined) return cellHtml(muted("-"));
+	const actor = "admin";
+	return `<form method="post" action="/admin/approvals" class="flex min-w-max items-center gap-1.5" data-admin-approval-actions="${escapeHtml(row.id)}">
+	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+	<input type="hidden" name="id" value="${escapeHtml(row.id)}">
+	<label class="sr-only" for="approval-actor-${escapeHtml(row.id)}">Approval actor</label>
+	<input id="approval-actor-${escapeHtml(row.id)}" class="input h-8 w-[9rem] text-sm" name="actor" value="${escapeHtml(actor)}" aria-label="Approval actor">
+	<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" name="action" value="approve" aria-label="Approve ${escapeHtml(row.id)}" data-tooltip="Approve" data-side="top">${icon("check")}</button>
+	<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" name="action" value="deny" aria-label="Deny ${escapeHtml(row.id)}" data-tooltip="Deny" data-side="top">${icon("x")}</button>
+</form>`;
 }
 
 export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string {

@@ -583,6 +583,78 @@ test("admin service sends local messages through the shared handler", async () =
 	}
 });
 
+test("admin service resolves approvals through the shared handler", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-approval-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const handlerInputs: Array<Parameters<AdapterStart["handler"]>[0]> = [];
+		const service = createAdminService({
+			store,
+			handler: async (input) => {
+				handlerInputs.push(input);
+				return { text: "approved" };
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				startedAt: Date.now(),
+			},
+		} as AdapterStart);
+		const thread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "slack",
+			kind: "slack",
+			team: "T1",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			key: "thread-key",
+		});
+		const approval = await store.approvals.create({
+			agent: "default",
+			callId: "call-1",
+			channel: "slack:T1:C1",
+			threadId: thread.id,
+			turnId: "turn-1",
+			command: "deploy prod",
+			runtime: "host-bash",
+			reason: "Production deploy",
+			requestedBy: "U_REQUESTER",
+		});
+
+		const result = await service.resolveApproval({ id: approval.id, action: "approve", actor: "U_APPROVER" });
+
+		assert.equal(result.threadId, thread.id);
+		assert.equal(handlerInputs.length, 1);
+		assert.deepEqual(
+			{
+				provider: handlerInputs[0]?.provider,
+				kind: handlerInputs[0]?.kind,
+				team: handlerInputs[0]?.team,
+				channel: handlerInputs[0]?.channel,
+				thread: handlerInputs[0]?.thread,
+				actor: handlerInputs[0]?.actor,
+				text: handlerInputs[0]?.text,
+			},
+			{
+				provider: "slack",
+				kind: "slack",
+				team: "T1",
+				channel: "C1",
+				thread: "thread-key",
+				actor: "U_APPROVER",
+				text: `/approve ${approval.id}`,
+			},
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("admin configuration summarizes essentials with adapter icons", () => {
 	const now = Date.now();
 	const body = configurationView(
@@ -686,35 +758,44 @@ test("admin configuration summarizes essentials with adapter icons", () => {
 
 test("admin approvals expiry uses duration labels", () => {
 	const now = Date.now();
-	const body = approvalsView({
-		limit: 25,
-		offset: 0,
-		hasNext: false,
-		rows: [
-			{
-				id: "approval-1",
-				agent: "default",
-				callId: "call-1",
-				channel: "slack::C123",
-				threadId: null,
-				turnId: null,
-				requestMessageId: null,
-				command: "systemctl restart api",
-				runtime: "host-bash",
-				reason: "Run command",
-				details: null,
-				state: "pending",
-				requestedBy: "U123",
-				requestedAt: now - 30_000,
-				expiresAt: now + (3 * 24 * 60 + 60) * 60 * 1000,
-				resolvedAt: null,
-				resolvedBy: null,
-			},
-		],
-	});
+	const body = approvalsView(
+		{
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [
+				{
+					id: "approval-1",
+					agent: "default",
+					callId: "call-1",
+					channel: "slack::C123",
+					threadId: null,
+					turnId: null,
+					requestMessageId: null,
+					command: "systemctl restart api",
+					runtime: "host-bash",
+					reason: "Run command",
+					details: null,
+					state: "pending",
+					requestedBy: "U123",
+					requestedAt: now - 30_000,
+					expiresAt: now + (3 * 24 * 60 + 60) * 60 * 1000,
+					resolvedAt: null,
+					resolvedBy: null,
+				},
+			],
+		},
+		undefined,
+		{ csrf: "csrf-1" },
+	);
 	assert.match(body, />3d(?: \d+h)?</);
 	assert.doesNotMatch(body, />in 3d</);
 	assert.doesNotMatch(body, />3d ago</);
+	assert.match(body, /action="\/admin\/approvals"/);
+	assert.match(body, /name="id" value="approval-1"/);
+	assert.match(body, /name="actor" value="admin"/);
+	assert.match(body, /name="action" value="approve"/);
+	assert.match(body, /name="action" value="deny"/);
 });
 
 test("admin memory empty state explains saved memory files", () => {
