@@ -961,12 +961,23 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		runningRuns: 1,
 		latestEvent: "message:message-1",
 	};
+	const discordThreadRow = {
+		...threadRow,
+		id: "thread-2",
+		provider: "discord",
+		kind: "discord",
+		channel: "D123",
+		actor: "U456",
+		title: "D123 · U456",
+		summary: "Message: check logs",
+		latestEvent: "message:message-2",
+	};
 	const threadsBody = threadsView(
 		{
 			limit: 25,
 			offset: 0,
 			hasNext: false,
-			rows: [threadRow],
+			rows: [threadRow, discordThreadRow],
 		},
 		{ checkedAt: now },
 	);
@@ -990,6 +1001,11 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadsBody, /data-admin-compose/);
 	assert.match(threadsBody, /action="\/admin\/messages"/);
 	assert.match(threadsBody, /aria-label="Send message"/);
+	assert.match(threadsBody, /data-admin-thread-groups/);
+	assert.match(threadsBody, /data-admin-thread-group="slack"/);
+	assert.match(threadsBody, /data-admin-thread-group="discord"/);
+	assert.match(threadsBody, /data-admin-thread-group-header[\s\S]*Slack/);
+	assert.match(threadsBody, /data-admin-thread-group-header[\s\S]*Discord/);
 	assert.match(threadsBody, /data-admin-thread-item data-thread-id="thread-1"/);
 	assert.match(threadsBody, /data-admin-thread-channel>C123<\/span>/);
 	assert.match(threadsBody, /data-admin-thread-preview>deploy api<\/span>/);
