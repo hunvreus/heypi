@@ -31,6 +31,7 @@
 - Changed `create-heypi` generated dev mode to start only the loopback `local()` adapter, so first-run local testing does not require production adapter credentials.
 - Changed `create-heypi` generated README and next steps to separate local model setup from production adapter setup.
 - Changed README and manual setup examples to use the same local-only dev adapter branch as generated apps.
+- Changed quickstart setup order to make model auth local-first and provider adapter auth production-only.
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
