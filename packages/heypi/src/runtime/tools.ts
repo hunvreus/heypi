@@ -121,11 +121,11 @@ function runtimeTools(
 	channel: string,
 	actor: string,
 	context?: CallContext,
-	coreTools?: CoreToolDefinition[],
+	coreDefinitions?: CoreToolDefinition[],
 	attachments?: ReplyAttachment[],
 ): ToolDefinition[] {
 	const out: ToolDefinition[] = [];
-	const core = coreMap(coreTools);
+	const core = coreMap(coreDefinitions);
 	if (enabled(core, "history") && messages && context?.thread) {
 		out.push({
 			name: "history",

@@ -4,7 +4,7 @@ import { approval, defaultTools, defineEval, evaluateEval } from "../src/api.js"
 import { coreTools } from "../src/core-tools.js";
 import { evalExpectDetail, evalExpectLabel, evalExpectSummary } from "../src/eval.js";
 
-test("defaultTools preserves the existing coreTools behavior", () => {
+test("coreTools remains a compatibility alias for defaultTools", () => {
 	assert.deepEqual(
 		defaultTools().map((tool) => tool.name),
 		coreTools().map((tool) => tool.name),
