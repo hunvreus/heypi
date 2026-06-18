@@ -80,7 +80,7 @@ The main `@hunvreus/heypi` entrypoint also exports the authoring helpers for dir
 
 ## Deprecated compatibility exports
 
-These names still work for beta migration, but new apps should not use them.
+These names still work temporarily for compatibility, but new apps should not use them.
 
 | Export | Use instead |
 | --- | --- |

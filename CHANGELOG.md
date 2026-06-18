@@ -8,6 +8,7 @@
 
 ### Added
 - Added the JS-native authoring APIs `loadAgent`, `defaultTools`, `defineTool`, and `approval`, with Zod input schema support for custom tools.
+- Added the `@hunvreus/heypi/authoring` entrypoint for lightweight authored modules under `agent/tools/`, `agent/jobs/`, and `agent/evals/`.
 - Added `loadTools`, `loadJobs`, and `defineJob`, with `loadAgent()` discovery for `agent/tools/` and `agent/jobs/`.
 - Added `heypi dev`, `heypi start`, and the loopback-only `local()` adapter for first-run local testing without configuring Slack, Discord, Telegram, or webhook secrets.
 - Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
@@ -40,6 +41,7 @@
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
+- Changed the Slack DevOps and Telegram Workout examples to load custom tools from `agent/tools/` discovery instead of wiring authored tools in `index.ts`.
 - Changed example READMEs to distinguish local dev adapter testing from production provider adapter startup.
 - Changed the `tool()` helper documentation to mark it as a deprecated compatibility API in favor of `defineTool()`.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.

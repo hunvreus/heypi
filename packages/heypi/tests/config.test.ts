@@ -139,6 +139,14 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 	);
 });
 
+test("loadAgent discovers Telegram example tools from agent/tools", () => {
+	const agent = loadAgent("../../examples/telegram-workout/agent", { model: "openai/gpt-5-mini" });
+	assert.deepEqual(
+		agent.tools?.map((tool) => tool.name),
+		["get_profile", "save_profile", "log_workout"],
+	);
+});
+
 test("loadAgent rejects duplicate discovered and explicit tool names", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	mkdirSync(join(root, "tools"), { recursive: true });

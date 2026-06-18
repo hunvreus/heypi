@@ -146,7 +146,7 @@ The classifier is a guardrail, not a sandbox. Use `just-bash`, Docker, Gondolin,
 
 ## Deprecated compatibility APIs
 
-These names still work for beta migration, but new apps should use the JS-native API above.
+These names still work temporarily for compatibility, but new apps should use the JS-native API above.
 
 | Old API | Use instead |
 | --- | --- |
