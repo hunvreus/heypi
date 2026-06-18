@@ -67,6 +67,31 @@ test("event repo appends monotonic per-trace events", async () => {
 	}
 });
 
+test("event repo retries trace sequence conflicts under concurrent appends", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-event-concurrent-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const rows = await Promise.all(
+			Array.from({ length: 16 }, (_, index) =>
+				store.events!.append({
+					agent: "a",
+					trace: "trace-concurrent",
+					type: "runtime.progress",
+					data: { index },
+				}),
+			),
+		);
+
+		assert.deepEqual(
+			rows.map((row) => row.seq).sort((a, b) => a - b),
+			Array.from({ length: 16 }, (_, index) => index),
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("event repo redacts secrets in event data centrally", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-event-redact-"));
 	try {

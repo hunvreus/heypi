@@ -21,25 +21,36 @@ export class EventRepo {
 		jobRunId?: string;
 		createdAt?: number;
 	}): Promise<Event> {
-		const seq = await this.nextSeq(input.trace);
-		const id = randomUUID();
-		await this.db.insert(event).values({
-			id,
-			agent: input.agent,
-			trace: input.trace,
-			threadId: input.threadId,
-			turnId: input.turnId,
-			callId: input.callId,
-			approvalId: input.approvalId,
-			jobRunId: input.jobRunId,
-			seq,
-			type: input.type,
-			data: JSON.stringify(input.data ?? {}, redactEventValue),
-			createdAt: input.createdAt ?? Date.now(),
-		});
-		const row = await this.get(id);
-		if (!row) throw new Error("event insert failed");
-		return row;
+		for (let attempt = 0; attempt < 50; attempt++) {
+			const seq = await this.nextSeq(input.trace);
+			const id = randomUUID();
+			try {
+				await this.db.insert(event).values({
+					id,
+					agent: input.agent,
+					trace: input.trace,
+					threadId: input.threadId,
+					turnId: input.turnId,
+					callId: input.callId,
+					approvalId: input.approvalId,
+					jobRunId: input.jobRunId,
+					seq,
+					type: input.type,
+					data: JSON.stringify(input.data ?? {}, redactEventValue),
+					createdAt: input.createdAt ?? Date.now(),
+				});
+			} catch (error) {
+				if (isTraceSeqConflict(error)) {
+					await delay(Math.min(attempt, 10));
+					continue;
+				}
+				throw error;
+			}
+			const row = await this.get(id);
+			if (!row) throw new Error("event insert failed");
+			return row;
+		}
+		throw new Error(`event sequence allocation conflict for trace ${input.trace}`);
 	}
 
 	async list(input: {
@@ -80,6 +91,23 @@ export class EventRepo {
 			.where(eq(event.trace, trace));
 		return rows[0]?.value ?? 0;
 	}
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTraceSeqConflict(error: unknown): boolean {
+	let current: unknown = error;
+	for (let depth = 0; current && depth < 4; depth++) {
+		const record = current as { code?: unknown; extendedCode?: unknown; message?: unknown; cause?: unknown };
+		const code = [record.code, record.extendedCode].filter((value): value is string => typeof value === "string");
+		if (code.includes("SQLITE_CONSTRAINT_UNIQUE")) return true;
+		const message = typeof record.message === "string" ? record.message : String(current);
+		if (/unique/i.test(message) && /event.*trace.*seq|event_trace_seq_idx/i.test(message)) return true;
+		current = record.cause;
+	}
+	return false;
 }
 
 function redactEventValue(_key: string, value: unknown): unknown {
