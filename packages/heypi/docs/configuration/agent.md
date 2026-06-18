@@ -37,7 +37,7 @@ createHeypi({
 | Option | Required | Applies to | Description |
 | --- | --- | --- | --- |
 | `model` | Yes, unless `HEYPI_MODEL` is set | `loadAgent`, manual | Model id. `loadAgent()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
-| `tools` | No | `loadAgent`, manual | Core tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
+| `tools` | No | `loadAgent`, manual | Built-in runtime tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
 | `evals` | No | `loadAgent`, manual | Behavior eval definitions. Loaded from `agent/evals/` by convention. |
 | `context` | No | `loadAgent`, manual | Per-turn context blocks added before the model chooses tools. |
 | `systemPrompt` | No | `loadAgent` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |

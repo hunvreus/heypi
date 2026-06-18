@@ -361,6 +361,8 @@ ${options.pm} install
 ${options.pm} run dev
 \`\`\`
 
+\`heypi dev\` prints a local admin URL. Use it to send a test message, approve or deny tool calls, inspect chats, and check eval definitions before wiring real team traffic.
+
 ## Adapter
 
 Adapter: \`${options.adapter}\`
@@ -381,6 +383,7 @@ ${runtimeNotes(options.runtime)}
 - \`agent/tools/\`: TypeScript tools discovered by \`loadAgent("./agent")\`.
 - \`agent/jobs/\`: scheduled jobs discovered by \`loadAgent("./agent")\`.
 - \`agent/evals/\`: agent behavior eval definitions discovered by \`loadAgent("./agent")\` and \`heypi eval\`.
+- \`index.ts\`: operational wiring for adapters, state, runtime, and admin.
 `;
 }
 
