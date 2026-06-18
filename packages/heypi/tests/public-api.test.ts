@@ -6,18 +6,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Logger } from "@hunvreus/heypi";
 import {
-	loadAgent,
-	commandConfirm,
+	approval,
 	consoleLogger,
-	defaultTools,
 	createHeypi,
+	defaultTools,
 	defineEval,
+	defineTool,
+	loadAgent,
 	loadEvals,
 	local,
 	runHeypi,
 	slack,
 	sqliteStore,
-	tool,
 	workspace,
 } from "@hunvreus/heypi";
 import type { Adapter } from "@hunvreus/heypi/adapter";
@@ -33,11 +33,11 @@ test("public package entrypoint supports a minimal app config", async () => {
 			start: async () => undefined,
 			stop: async () => undefined,
 		};
-		const lookup = tool<{ name: string }>({
+		const lookup = defineTool<{ name: string }>({
 			name: "lookup",
 			description: "Lookup a value",
-			parameters: Type.Object({ name: Type.String() }),
-			execute: async ({ name }) => `name=${name}`,
+			input: Type.Object({ name: Type.String() }),
+			run: async ({ name }) => `name=${name}`,
 		});
 		const app = createHeypi({
 			store: sqliteStore({ path: join(root, "heypi.db") }),
@@ -46,7 +46,7 @@ test("public package entrypoint supports a minimal app config", async () => {
 			adapters: [adapter],
 			agent: loadAgent("../../examples/slack-devops/agent", {
 				model: "openai/gpt-5-mini",
-				tools: [...defaultTools({ bash: { confirm: commandConfirm({ allow: [/^curl -I /] }) } }), lookup],
+				tools: [...defaultTools({ bash: { confirm: approval.command({ allow: [/^curl -I /] }) } }), lookup],
 			}),
 			runtime: {
 				name: "just-bash",
