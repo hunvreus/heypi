@@ -44,7 +44,7 @@ const TELEGRAM_CONFIG_KEYS = new Set([
 
 export type TelegramConfig = {
 	name?: string;
-	token: string;
+	token?: string;
 	apiUrl?: { override: string };
 	mode?: "polling" | "webhook";
 	webhook?: TelegramWebhookConfig;
@@ -87,7 +87,8 @@ export type TelegramProgress = {
 };
 
 /** Creates a Telegram long-polling adapter. */
-export function telegram(input: TelegramConfig): Adapter {
+export function telegram(config: TelegramConfig = {}): Adapter {
+	const input = resolveTelegramConfig(config);
 	const name = input.name ?? "telegram";
 	assertRouteName(name);
 	const configValidation = validateAdapterConfig(name, input, TELEGRAM_CONFIG_KEYS);
@@ -1008,6 +1009,26 @@ function telegramReplyStream(input: {
 function telegramProgress(input: TelegramConfig["progress"]): TelegramProgress | undefined {
 	if (input === false) return undefined;
 	return input ?? { delayMs: 0 };
+}
+
+function resolveTelegramConfig(input: TelegramConfig): TelegramConfig & { token: string } {
+	return {
+		...input,
+		token: input.token ?? requiredEnv("TELEGRAM_BOT_TOKEN", "Telegram bot token"),
+		webhook:
+			input.mode === "webhook" || input.webhook
+				? {
+						...input.webhook,
+						secretToken: input.webhook?.secretToken ?? process.env.TELEGRAM_WEBHOOK_SECRET,
+					}
+				: input.webhook,
+	};
+}
+
+function requiredEnv(name: string, label: string): string {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
+	return value;
 }
 
 type TelegramAttachmentUploadResult = {

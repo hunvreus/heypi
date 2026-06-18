@@ -19,7 +19,7 @@ import { assertRouteName } from "./name.js";
 
 export type WebhookConfig = {
 	name?: string;
-	secret: string;
+	secret?: string;
 	port?: number;
 	host?: string;
 	path?: string;
@@ -58,8 +58,11 @@ const WEBHOOK_CONFIG_KEYS = new Set([
 	"permissions",
 ]);
 
+type ResolvedWebhookConfig = WebhookConfig & { secret: string };
+
 /** Creates an HTTP webhook adapter for generic, async-first integrations. */
-export function webhook(config: WebhookConfig): Adapter {
+export function webhook(input: WebhookConfig = {}): Adapter {
+	const config = resolveWebhookConfig(input);
 	const name = config.name ?? "webhook";
 	assertRouteName(name);
 	const configValidation = validateAdapterConfig(name, config, WEBHOOK_CONFIG_KEYS);
@@ -140,6 +143,22 @@ export function webhook(config: WebhookConfig): Adapter {
 	}
 }
 
+function resolveWebhookConfig(input: WebhookConfig): ResolvedWebhookConfig {
+	return {
+		...input,
+		secret:
+			input.secret ??
+			process.env.HEYPI_WEBHOOK_SECRET?.trim() ??
+			requiredEnv("WEBHOOK_SECRET", "Webhook secret"),
+	};
+}
+
+function requiredEnv(name: string, label: string): string {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
+	return value;
+}
+
 function registerWebhookRoutes(
 	start: AdapterStart,
 	input: {
@@ -169,7 +188,7 @@ function registerWebhookRoutes(
 type RouteInput = {
 	req: IncomingMessage;
 	res: ServerResponse;
-	config: WebhookConfig;
+	config: ResolvedWebhookConfig;
 	base: string;
 	name: string;
 	kind: string;

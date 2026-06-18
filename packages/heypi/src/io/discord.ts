@@ -63,7 +63,7 @@ const DISCORD_CONFIG_KEYS = new Set([
 
 export type DiscordConfig = {
 	name?: string;
-	token: string;
+	token?: string;
 	clientId?: string;
 	registerCommands?: boolean;
 	allow?: DiscordAllow;
@@ -97,7 +97,8 @@ export type DiscordProgress = {
 };
 
 /** Creates a Discord gateway adapter. Requires Message Content Intent for non-mention message text. */
-export function discord(input: DiscordConfig): Adapter {
+export function discord(config: DiscordConfig = {}): Adapter {
+	const input = resolveDiscordConfig(config);
 	const name = input.name ?? "discord";
 	const configValidation = validateAdapterConfig(name, input, DISCORD_CONFIG_KEYS);
 	const kind = "discord";
@@ -1409,6 +1410,20 @@ function discordThread(msg: Message): boolean {
 function discordProgress(input: DiscordConfig["progress"]): DiscordProgress | undefined {
 	if (input === false) return undefined;
 	return input ?? { delayMs: 0 };
+}
+
+function resolveDiscordConfig(input: DiscordConfig): DiscordConfig & { token: string } {
+	return {
+		...input,
+		token: input.token ?? requiredEnv("DISCORD_BOT_TOKEN", "Discord bot token"),
+		clientId: input.clientId ?? process.env.DISCORD_CLIENT_ID,
+	};
+}
+
+function requiredEnv(name: string, label: string): string {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
+	return value;
 }
 
 export function discordAllowed(

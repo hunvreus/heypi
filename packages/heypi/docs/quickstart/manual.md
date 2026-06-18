@@ -19,8 +19,7 @@ const app = createHeypi({
   adapters: [
     ...(process.env.HEYPI_DEV ? [local()] : []),
     slack({
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      appToken: process.env.SLACK_APP_TOKEN!,
+      mode: "socket",
     }),
   ],
   agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),

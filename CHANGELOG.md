@@ -19,9 +19,11 @@
 - Added an admin Evals page for inspecting loaded `agent/evals/` definitions.
 - Added typed trace event rows to admin thread inspection.
 - Added trace events when startup recovery marks interrupted turns and calls as failed.
+- Added conventional env defaults for Slack, Discord, Telegram, and webhook adapter credentials.
 
 ### Changed
 - Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
+- Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.

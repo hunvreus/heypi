@@ -50,7 +50,7 @@ const SLACK_CONFIG_KEYS = new Set([
 
 export type SlackConfig = {
 	name?: string;
-	botToken: string;
+	botToken?: string;
 	command?: string;
 	allow?: SlackAllow;
 	permissions?: PermissionsConfig;
@@ -64,13 +64,13 @@ export type SlackConfig = {
 
 export type SlackSocketConfig = {
 	mode?: "socket";
-	appToken: string;
+	appToken?: string;
 	signingSecret?: string;
 };
 
 export type SlackHttpConfig = {
 	mode: "http";
-	signingSecret: string;
+	signingSecret?: string;
 	port?: number | string;
 	path?: string | string[];
 	unsafePathOverride?: boolean;
@@ -97,8 +97,11 @@ export type SlackProgress = {
 	delayMs?: number;
 };
 
+type ResolvedSlackConfig = SlackConfig & { botToken: string; appToken?: string; signingSecret?: string };
+
 /** Creates the Slack adapter using Socket Mode or Slack's HTTP receiver. */
-export function slack(input: SlackConfig): Adapter {
+export function slack(config: SlackConfig = {}): Adapter {
+	const input = resolveSlackConfig(config);
 	const name = input.name ?? "slack";
 	assertRouteName(name);
 	const configValidation = validateAdapterConfig(name, input, SLACK_CONFIG_KEYS);
@@ -515,6 +518,15 @@ export function slack(input: SlackConfig): Adapter {
 	};
 }
 
+function resolveSlackConfig(input: SlackConfig): ResolvedSlackConfig {
+	return {
+		...input,
+		botToken: input.botToken ?? requiredEnv("SLACK_BOT_TOKEN", "Slack bot token"),
+		appToken: ("appToken" in input ? input.appToken : undefined) ?? process.env.SLACK_APP_TOKEN,
+		signingSecret: input.signingSecret ?? process.env.SLACK_SIGNING_SECRET,
+	};
+}
+
 type SlackCommand = {
 	text: string;
 	user_id: string;
@@ -682,6 +694,7 @@ function slackSetup(
 		}
 		return { mode: "http", endpoints: input.path ?? `/slack/${name}/events`, port: input.port };
 	}
+	if (!input.appToken) throw new Error("Slack socket mode requires appToken");
 	return { mode: "socket", appToken: input.appToken };
 }
 
@@ -722,6 +735,12 @@ function createSlackReceiver(
 		});
 	}
 	return receiver;
+}
+
+function requiredEnv(name: string, label: string): string {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
+	return value;
 }
 
 function requiredSlackApp(app: App | undefined): App {

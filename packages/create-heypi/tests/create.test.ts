@@ -27,7 +27,7 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "package.json"), /"zod"/);
 		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
 		assert.match(read(app, "package.json"), /"start": "heypi start"/);
-		assert.match(read(app, "index.ts"), /slack\(\{/);
+		assert.match(read(app, "index.ts"), /slack\(\{\s*mode: "socket",\s*\}\)/);
 		assert.match(read(app, "index.ts"), /local\(\)/);
 		assert.match(read(app, "index.ts"), /export default app/);
 		assert.match(read(app, "index.ts"), /pathToFileURL/);
@@ -62,7 +62,7 @@ test("creates an HTTP-mode Slack app", async () => {
 		const app = join(root, "http-agent");
 		run([app, "--yes", "--adapter", "slack", "--slack-mode", "http", "--no-install"]);
 		assert.match(read(app, "index.ts"), /mode: "http"/);
-		assert.match(read(app, "index.ts"), /SLACK_SIGNING_SECRET/);
+		assert.doesNotMatch(read(app, "index.ts"), /SLACK_SIGNING_SECRET/);
 		assert.match(read(app, "index.ts"), /http: \{ port: Number\(process\.env\.PORT \?\? 3000\) \}/);
 		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
 		assert.match(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
@@ -96,7 +96,7 @@ test("creates adapter and runtime specific files", async () => {
 			"--no-install",
 		]);
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi-runtime-docker"/);
-		assert.match(read(app, "index.ts"), /discord\(\{/);
+		assert.match(read(app, "index.ts"), /discord\(\)/);
 		assert.match(read(app, "index.ts"), /dockerRuntime\(\)/);
 		assert.match(read(app, "index.ts"), /openai\/custom/);
 		assert.match(read(app, ".env.example"), /DISCORD_BOT_TOKEN=/);

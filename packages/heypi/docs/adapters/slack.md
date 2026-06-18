@@ -32,10 +32,10 @@ https://<host>/slack/ops/events
 | Option | Required | Description |
 | --- | --- | --- |
 | `mode` | No | `"socket"` or `"http"`. Defaults to `"socket"`. |
-| `botToken` | Yes | Slack bot token, usually `xoxb-...`. |
+| `botToken` | Yes, unless `SLACK_BOT_TOKEN` is set | Slack bot token, usually `xoxb-...`. |
 | `command` | No | Slack slash command name. Defaults to `/heypi`. Must be unique in the Slack workspace. |
-| `appToken` | Socket mode | Slack app-level token, usually `xapp-...`. |
-| `signingSecret` | HTTP mode | Slack signing secret for HTTP request verification. |
+| `appToken` | Socket mode, unless `SLACK_APP_TOKEN` is set | Slack app-level token, usually `xapp-...`. |
+| `signingSecret` | HTTP mode, unless `SLACK_SIGNING_SECRET` is set | Slack signing secret for HTTP request verification. |
 | `name` | No | Adapter name. Also controls the default HTTP route. Defaults to `slack`. |
 | `port` | HTTP mode | Route port constraint or standalone receiver port when not using top-level `http`. |
 | `path` | HTTP mode | Custom HTTP route path. Requires `unsafePathOverride: true`. |
@@ -154,8 +154,6 @@ createHeypi({
   adapters: [
     slack({
       mode: "socket",
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      appToken: process.env.SLACK_APP_TOKEN!,
       allow: { channels: ["C123"], bots: ["B_TEST"], dms: true },
       trigger: "mention",
       threadTrigger: "message",
@@ -173,8 +171,6 @@ createHeypi({
   adapters: [
     slack({
       mode: "http",
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      signingSecret: process.env.SLACK_SIGNING_SECRET!,
       allow: { channels: ["C123"], dms: true },
       trigger: "mention",
       threadTrigger: "message",

@@ -12,14 +12,14 @@ For a runnable example, see [`examples/telegram-workout`](https://github.com/hun
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `token` | Yes | Telegram bot token from BotFather. |
+| `token` | Yes, unless `TELEGRAM_BOT_TOKEN` is set | Telegram bot token from BotFather. |
 | `name` | No | Adapter name. Defaults to `telegram`. |
 | `apiUrl` | No | Telegram API URL override. Only use for custom Telegram-compatible gateways. |
 | `mode` | No | `"polling"` or `"webhook"`. Defaults to `"polling"`. |
 | `pollTimeoutSeconds` | No | Long-poll timeout. Defaults to `25`. |
 | `webhook.path` | No | HTTP path for Telegram updates. Defaults to `/telegram/<adapter-name>/webhook`. |
 | `webhook.unsafePathOverride` | No | Required when overriding `webhook.path`. |
-| `webhook.secretToken` | Webhook mode | Telegram webhook secret token checked against `X-Telegram-Bot-Api-Secret-Token`. |
+| `webhook.secretToken` | Webhook mode, unless `TELEGRAM_WEBHOOK_SECRET` is set | Telegram webhook secret token checked against `X-Telegram-Bot-Api-Secret-Token`. |
 | `webhook.port` | No | HTTP listener port name/number when the app exposes multiple HTTP listeners. |
 | `webhook.maxBodyBytes` | No | Maximum webhook request body size. Defaults to `1000000`. |
 | `allow.chats` | No | Telegram chat IDs where the bot may respond. Applies to groups, supergroups, and forum topics. |
@@ -108,7 +108,6 @@ createHeypi({
   state: { root: "./state" },
   adapters: [
     telegram({
-      token: process.env.TELEGRAM_BOT_TOKEN!,
       mode: "polling",
       allow: {
         chats: ["-1001234567890"],
@@ -135,11 +134,7 @@ createHeypi({
   http: { port: Number(process.env.PORT ?? 3000) },
   adapters: [
     telegram({
-      token: process.env.TELEGRAM_BOT_TOKEN!,
       mode: "webhook",
-      webhook: {
-        secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
-      },
       allow: {
         chats: ["-1001234567890"],
         users: ["8734062810"],

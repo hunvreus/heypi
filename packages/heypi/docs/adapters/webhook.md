@@ -12,7 +12,7 @@ For a runnable advanced example, see [`examples/webhook-github-docker`](https://
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `secret` | Yes | Shared secret required for request auth. |
+| `secret` | Yes, unless `HEYPI_WEBHOOK_SECRET` or `WEBHOOK_SECRET` is set | Shared secret required for request auth. |
 | `name` | No | Adapter name. Also controls the default route prefix: `/webhook/{name}`. Defaults to `webhook`. |
 | `path` | No | Custom route base. Requires `unsafePathOverride: true`. |
 | `unsafePathOverride` | No | Required when overriding the default path. |
@@ -45,7 +45,6 @@ Use adapter-level `host` and `port` only when the webhook should own its own HTT
 
 ```ts
 webhook({
-  secret: process.env.HEYPI_WEBHOOK_SECRET!,
   host: "127.0.0.1",
   port: 3000,
 });
@@ -62,7 +61,6 @@ createHeypi({
   adapters: [
     webhook({
       name: "internal",
-      secret: process.env.HEYPI_WEBHOOK_SECRET!,
       replyHosts: ["internal.example.com"],
     }),
   ],
@@ -73,7 +71,7 @@ Common environment variables:
 
 | Variable | Required when | Description |
 | --- | --- | --- |
-| `HEYPI_WEBHOOK_SECRET` | Always | Shared secret checked against `authorization: Bearer ...` or `x-heypi-secret`. |
+| `HEYPI_WEBHOOK_SECRET` | Always | Shared secret checked against `authorization: Bearer ...` or `x-heypi-secret`. `WEBHOOK_SECRET` is also accepted for generated apps. |
 
 For app-wide config such as `http`, `state`, `runtime`, and `agent`, see [Configuration](../configuration/index.md).
 

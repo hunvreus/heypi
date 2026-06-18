@@ -292,30 +292,21 @@ function adapterConfig(options: Options): string {
 	if (options.adapter === "slack" && options.slackMode === "http") {
 		return `\t\tslack({
 \t\t\tmode: "http",
-\t\t\tbotToken: process.env.SLACK_BOT_TOKEN!,
-\t\t\tsigningSecret: process.env.SLACK_SIGNING_SECRET!,
 \t\t}),`;
 	}
 	if (options.adapter === "slack") {
 		return `\t\tslack({
 \t\t\tmode: "socket",
-\t\t\tbotToken: process.env.SLACK_BOT_TOKEN!,
-\t\t\tappToken: process.env.SLACK_APP_TOKEN!,
 \t\t}),`;
 	}
 	if (options.adapter === "discord") {
-		return `\t\tdiscord({
-\t\t\ttoken: process.env.DISCORD_BOT_TOKEN!,
-\t\t}),`;
+		return "\t\tdiscord(),";
 	}
 	if (options.adapter === "telegram") {
-		return `\t\ttelegram({
-\t\t\ttoken: process.env.TELEGRAM_BOT_TOKEN!,
-\t\t}),`;
+		return "\t\ttelegram(),";
 	}
 	return `\t\twebhook({
 \t\t\tname: "default",
-\t\t\tsecret: process.env.WEBHOOK_SECRET!,
 \t\t}),`;
 }
 

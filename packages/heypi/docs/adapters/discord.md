@@ -12,8 +12,8 @@ For a runnable example, see [`examples/discord-gondolin`](https://github.com/hun
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `token` | Yes | Discord bot token. |
-| `clientId` | Native commands | Discord application client ID. When set, heypi registers global application commands at startup. |
+| `token` | Yes, unless `DISCORD_BOT_TOKEN` is set | Discord bot token. |
+| `clientId` | Native commands, unless `DISCORD_CLIENT_ID` is set | Discord application client ID. When set, heypi registers global application commands at startup. |
 | `registerCommands` | No | Whether to register native commands when `clientId` is set. Defaults to `true`. |
 | `name` | No | Adapter name. Defaults to `discord`. |
 | `allow.channels` | No | Discord channel IDs where the bot may respond. Thread channels use their own channel ID. |
@@ -105,8 +105,6 @@ createHeypi({
   state: { root: "./state" },
   adapters: [
     discord({
-      token: process.env.DISCORD_BOT_TOKEN!,
-      clientId: process.env.DISCORD_CLIENT_ID!,
       allow: {
         channels: ["234567890123456789"],
         users: ["345678901234567890"],
