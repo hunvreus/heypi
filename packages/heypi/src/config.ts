@@ -206,7 +206,7 @@ export type HeypiConfig = {
 	logger?: Logger;
 };
 
-export type AgentFromOptions = Partial<Omit<AgentConfig, "directory" | "model">> & {
+export type LoadAgentOptions = Partial<Omit<AgentConfig, "directory" | "model">> & {
 	model?: string | ModelConfig;
 };
 
@@ -219,7 +219,7 @@ export const DEFAULT_SOUL = [
 export const DEFAULT_AGENT_ID = "default";
 
 /** Loads an agent from the heypi folder convention, including prompts, tools, jobs, evals, skills, and extensions. */
-export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentConfig {
+export function loadAgent(folder = ".", options: LoadAgentOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? DEFAULT_AGENT_ID;
 	const selectedModel = options.model ?? process.env.HEYPI_MODEL;

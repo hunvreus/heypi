@@ -37,6 +37,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `DEFAULT_AGENT_ID` | Canonical default durable agent id, currently `default`. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
+| `LoadAgentOptions` | Options accepted by `loadAgent()`, including model, id, tools, jobs, evals, context, skills, and extensions. |
 | `AgentContextProvider` | Per-turn context callback type. |
 
 ## Adapters

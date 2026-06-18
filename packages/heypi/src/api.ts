@@ -18,6 +18,7 @@ export {
 	type HttpConfig,
 	type JustBashConfig,
 	loadAgent,
+	type LoadAgentOptions,
 	type MemoryConfig,
 	type MemoryWritePolicy,
 	type ModelConfig,
