@@ -589,6 +589,7 @@ function pageInput(url: URL): {
 	limit: number;
 	offset: number;
 	q?: string;
+	provider?: string;
 	type?: string;
 	state?: string;
 	channel?: string;
@@ -599,6 +600,7 @@ function pageInput(url: URL): {
 		limit: numberParam(url.searchParams.get("limit"), 25),
 		offset: numberParam(url.searchParams.get("offset"), 0),
 		q: stringParam(url.searchParams.get("q")),
+		provider: stringParam(url.searchParams.get("provider")),
 		type: stringParam(url.searchParams.get("type")),
 		state: stringParam(url.searchParams.get("state")),
 		channel: stringParam(url.searchParams.get("channel")),

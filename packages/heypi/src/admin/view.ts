@@ -333,11 +333,20 @@ export function threadsView(
 
 function threadSearch(page: AdminPage<AdminThreadRow>): string {
 	const q = page.filters?.q ?? "";
+	const provider = page.filters?.provider ?? "";
 	return `<form class="min-w-0" method="get" action="/admin" data-admin-chat-search>
 	<input type="hidden" name="limit" value="${page.limit}">
-	<div class="relative">
+	<div class="flex min-w-0 items-center gap-2">
+	<div class="relative min-w-0 flex-1">
 			<input type="search" name="q" class="input h-8 pr-9 text-sm" placeholder="Search..." value="${escapeHtml(q)}" aria-label="Search query" data-admin-chat-search-input>
 			<button class="absolute right-1.5 top-1/2 -translate-y-1/2 btn-icon-ghost text-muted-foreground hover:text-accent-foreground size-6" type="submit" aria-label="Search chats" data-admin-chat-search-submit data-tooltip="Search chats" data-side="top" data-align="end">${icon("search")}</button>
+	</div>
+	<select class="select h-8 w-[8.5rem] shrink-0 py-1 text-sm" name="provider" aria-label="Adapter" data-admin-chat-provider-filter>
+		<option value="">All adapters</option>
+		${(page.facets?.providers ?? [])
+			.map((value) => `<option value="${escapeHtml(value)}"${value === provider ? " selected" : ""}>${escapeHtml(adapterLabel(value))}</option>`)
+			.join("")}
+	</select>
 	</div>
 </form>${scanNotice(page)}`;
 }

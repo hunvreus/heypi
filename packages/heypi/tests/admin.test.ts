@@ -299,6 +299,13 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			actor: "U2",
 			key: "C2",
 		});
+		const localThread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "local",
+			channel: "admin:local",
+			actor: "operator",
+			key: "admin:local",
+		});
 		const inputMessage = await store.messages.create({
 			threadId: ownThread.id,
 			provider: "slack",
@@ -448,11 +455,17 @@ test("admin service scopes approvals and calls to the current agent", async () =
 
 		const threads = await service.threads();
 		assert.deepEqual(
-			threads.rows.map((row) => row.id),
+			threads.rows.map((row) => row.id).sort(),
+			[localThread.id, ownThread.id].sort(),
+		);
+		assert.deepEqual(threads.facets?.providers, ["local", "slack"]);
+		const slackThreads = await service.threads({ provider: "slack" });
+		assert.deepEqual(
+			slackThreads.rows.map((row) => row.id),
 			[ownThread.id],
 		);
-		assert.equal(threads.rows[0]?.summary, "deployment started");
-		assert.equal(threads.rows[0]?.runningRuns, 0);
+		assert.equal(slackThreads.rows[0]?.summary, "deployment started");
+		assert.equal(slackThreads.rows[0]?.runningRuns, 0);
 		const thread = await service.thread(ownThread.id, { event: `message:${inputMessage.id}` });
 		assert.equal(thread?.selected?.id, inputMessage.id);
 		const timeline = new Set(thread?.timeline.map((row) => `${row.kind}:${row.id}`));
@@ -978,6 +991,8 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			offset: 0,
 			hasNext: false,
 			rows: [threadRow, discordThreadRow],
+			filters: { provider: "discord" },
+			facets: { providers: ["discord", "slack"], channels: [], actors: [], scopes: [] },
 		},
 		{ checkedAt: now },
 	);
@@ -991,6 +1006,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadsBody, /type="search" name="q"[^>]+data-admin-chat-search-input/);
 	assert.match(threadsBody, /aria-label="Search query"/);
 	assert.match(threadsBody, /aria-label="Search chats"[^>]+data-admin-chat-search-submit/);
+	assert.match(threadsBody, /name="provider"[^>]+data-admin-chat-provider-filter/);
+	assert.match(threadsBody, /<option value="">All adapters<\/option>/);
+	assert.match(threadsBody, /<option value="discord" selected>Discord<\/option>/);
+	assert.match(threadsBody, /<option value="slack">Slack<\/option>/);
 	assert.doesNotMatch(threadsBody, /pl-8/);
 	assert.doesNotMatch(threadsBody, /absolute left-2\.5/);
 	assert.doesNotMatch(threadsBody, /All states/);

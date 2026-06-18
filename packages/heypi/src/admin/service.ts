@@ -21,6 +21,7 @@ type AdminPageInput = {
 	limit?: number;
 	offset?: number;
 	q?: string;
+	provider?: string;
 	type?: string;
 	state?: string;
 	channel?: string;
@@ -28,9 +29,13 @@ type AdminPageInput = {
 	scope?: string;
 };
 
-export type AdminPageFilters = Pick<AdminPageInput, "q" | "type" | "state" | "channel" | "actor" | "scope">;
+export type AdminPageFilters = Pick<
+	AdminPageInput,
+	"q" | "provider" | "type" | "state" | "channel" | "actor" | "scope"
+>;
 
 export type AdminFilterFacets = {
+	providers: string[];
 	channels: string[];
 	actors: string[];
 	scopes: string[];
@@ -397,6 +402,7 @@ export function createAdminService(start: AdapterStart): AdminService {
 			]);
 			const summaries = threadSummaries(threads, recent);
 			const facets = rowFacets(summaries, {
+				provider: (row) => row.provider,
 				channel: (row) => row.channel,
 				actor: (row) => row.actor,
 			});
@@ -510,6 +516,7 @@ export function createAdminService(start: AdapterStart): AdminService {
 	async function knownFacets(): Promise<AdminFilterFacets> {
 		const rows = await store.threads.list({ agent: app.agent, limit: 1000 });
 		return rowFacets(rows, {
+			provider: (row) => row.provider,
 			channel: (row) => row.channel,
 			actor: (row) => row.actor ?? undefined,
 		});
@@ -879,6 +886,7 @@ async function listPage<T>(
 function filtersFromInput(input: AdminPageInput): AdminPageFilters {
 	return compactFilters({
 		q: cleanFilter(input.q),
+		provider: cleanFilter(input.provider),
 		type: cleanFilter(input.type),
 		state: cleanFilter(input.state),
 		channel: cleanFilter(input.channel),
@@ -889,7 +897,7 @@ function filtersFromInput(input: AdminPageInput): AdminPageFilters {
 
 function compactFilters(input: AdminPageFilters): AdminPageFilters {
 	const out: AdminPageFilters = {};
-	for (const key of ["q", "type", "state", "channel", "actor", "scope"] as const) {
+	for (const key of ["q", "provider", "type", "state", "channel", "actor", "scope"] as const) {
 		if (input[key]) out[key] = input[key];
 	}
 	return out;
@@ -905,6 +913,7 @@ function filterRows<T>(
 	filters: AdminPageFilters,
 	input: {
 		search: (row: T) => Array<string | number | null | undefined>;
+		provider?: (row: T) => string | undefined;
 		type?: (row: T) => string | undefined;
 		state?: (row: T) => string | undefined;
 		channel?: (row: T) => string | undefined;
@@ -913,6 +922,7 @@ function filterRows<T>(
 	},
 ): T[] {
 	return rows.filter((row) => {
+		if (filters.provider && input.provider?.(row) !== filters.provider) return false;
 		if (filters.type && input.type?.(row) !== filters.type) return false;
 		if (filters.state && input.state?.(row) !== filters.state) return false;
 		if (!includesFilter(input.channel?.(row), filters.channel)) return false;
@@ -939,12 +949,14 @@ function filtersActive(filters: AdminPageFilters): boolean {
 function rowFacets<T>(
 	rows: T[],
 	input: {
+		provider?: (row: T) => string | undefined;
 		channel?: (row: T) => string | undefined;
 		actor?: (row: T) => string | undefined;
 		scope?: (row: T) => string | undefined;
 	},
 ): AdminFilterFacets {
 	return {
+		providers: sortedValues(rows.map((row) => input.provider?.(row))),
 		channels: sortedValues(rows.map((row) => input.channel?.(row))),
 		actors: sortedValues(rows.map((row) => input.actor?.(row))),
 		scopes: sortedValues(rows.map((row) => input.scope?.(row))),
@@ -953,6 +965,7 @@ function rowFacets<T>(
 
 function mergeFacets(...facets: AdminFilterFacets[]): AdminFilterFacets {
 	return {
+		providers: sortedValues(facets.flatMap((facet) => facet.providers)),
 		channels: sortedValues(facets.flatMap((facet) => facet.channels)),
 		actors: sortedValues(facets.flatMap((facet) => facet.actors)),
 		scopes: sortedValues(facets.flatMap((facet) => facet.scopes)),
@@ -1020,6 +1033,7 @@ const threadSearchText = {
 		row.pendingApprovals,
 		row.runningRuns,
 	],
+	provider: (row: AdminThreadRow) => row.provider,
 	state: (row: AdminThreadRow) => row.state,
 	channel: (row: AdminThreadRow) => row.channel,
 	actor: (row: AdminThreadRow) => row.actor,
