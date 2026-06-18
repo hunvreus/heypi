@@ -11,8 +11,7 @@ import {
 	slack,
 	workspace,
 } from "@hunvreus/heypi";
-import { createHostContext, createHostTools } from "./tools/host.js";
-import { createRunbookTools } from "./tools/runbook.js";
+import { createHostContext } from "./agent/tools/host.js";
 
 loadEnv(".env");
 
@@ -39,31 +38,7 @@ function list(name: string): string[] {
 		.filter(Boolean);
 }
 
-const commandPolicy = {
-	allow: [
-		/^\s*curl\s+-I\b[^;&|]*\bhttps?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|\b)\s*(?:\|\|\s*true\s*)?$/i,
-		/^\s*curl\s+[^;&|]*--head\b[^;&|]*\bhttps?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|\b)\s*(?:\|\|\s*true\s*)?$/i,
-	],
-	approve: [
-		/\bsystemctl\s+(restart|stop|start|reload|enable|disable|mask|unmask)\b/i,
-		/\bdocker\s+(restart|stop|rm|compose\s+up|compose\s+down|prune)\b/i,
-		/\bapt(?:-get)?\s+(install|remove|purge|upgrade|dist-upgrade|autoremove)\b/i,
-		/\byum\s+(install|remove|update|upgrade)\b/i,
-		/\bufw\s+(allow|deny|delete|enable|disable|reload|reset)\b/i,
-		/\bfirewall-cmd\b/i,
-		/\biptables\b/i,
-		/\bnft\s+(add|delete|flush|insert|replace)\b/i,
-	],
-	block: [/\bcat\s+.*(?:\.env|id_rsa|id_ed25519)\b/i, /\bchmod\s+777\b/i],
-};
-
 const stateRoot = "./state";
-const hostTools = createHostTools({
-	root: stateRoot,
-	commandPolicy,
-	timeoutMs: 60_000,
-});
-const runbookTools = createRunbookTools({ root: "./agent/runbooks" });
 const hostContext = createHostContext({ root: stateRoot });
 const log = consoleLogger({ level: "debug", format: "pretty" });
 const jobChannel = isDev ? undefined : optional("HEYPI_SLACK_JOB_CHANNEL");
@@ -111,7 +86,7 @@ const app = createHeypi({
 		id: "slack-devops",
 		model: "openai/gpt-5-mini",
 		context: [hostContext],
-		tools: [...defaultTools(), ...runbookTools, ...hostTools],
+		tools: defaultTools(),
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,

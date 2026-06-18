@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { createHostContext, createHostTools, HostStore } from "../../../examples/slack-devops/tools/host.js";
+import { defaultTools, loadAgent } from "../src/api.js";
+import { createHostContext, createHostTools, HostStore } from "../../../examples/slack-devops/agent/tools/host.js";
 
 async function tempRoot(): Promise<{ path: string; cleanup: () => Promise<void> }> {
 	const path = await mkdtemp(join(tmpdir(), "heypi-host-tools-"));
@@ -135,6 +136,17 @@ test("host context includes cached facts", async () => {
 	} finally {
 		await root.cleanup();
 	}
+});
+
+test("Slack example tools are discovered from agent/tools", () => {
+	const agent = loadAgent(resolve("../..", "examples/slack-devops/agent"), {
+		model: "openai/gpt-5-mini",
+		tools: defaultTools(),
+	});
+	const names = (agent.tools ?? []).map((tool) => ("name" in tool ? tool.name : ""));
+	assert.ok(names.includes("host_exec"));
+	assert.ok(names.includes("hosts_list"));
+	assert.ok(names.includes("runbook_search"));
 });
 
 function requiredTool(tools: ToolDefinition[], name: string): ToolDefinition {

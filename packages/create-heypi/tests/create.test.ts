@@ -127,9 +127,11 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, ".env.example"), /DISCORD_BOT_TOKEN=/);
 		assert.match(read(app, "agent/skills/example/SKILL.md"), /name: example/);
 		assert.match(read(app, "agent/tools/now.ts"), /defineTool/);
+		assert.match(read(app, "agent/tools/now.ts"), /@hunvreus\/heypi\/authoring/);
 		assert.match(read(app, "agent/tools/now.ts"), /from "zod"/);
 		assert.match(read(app, "agent/tools/now.ts"), /z\.object/);
 		assert.match(read(app, "agent/evals/smoke.ts"), /defineEval/);
+		assert.match(read(app, "agent/evals/smoke.ts"), /@hunvreus\/heypi\/authoring/);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		runTsc(app);
 	} finally {

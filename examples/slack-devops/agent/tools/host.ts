@@ -8,7 +8,7 @@ import {
 	approval,
 	classifyCommand,
 	defineTool,
-} from "@hunvreus/heypi";
+} from "@hunvreus/heypi/authoring";
 import { Type } from "@sinclair/typebox";
 
 type Host = {
@@ -66,6 +66,24 @@ type ProcessResult = {
 const DEFAULT_KEY = "default";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT = 64 * 1024;
+
+const commandPolicy: CommandPolicyConfig = {
+	allow: [
+		/^\s*curl\s+-I\b[^;&|]*\bhttps?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|\b)\s*(?:\|\|\s*true\s*)?$/i,
+		/^\s*curl\s+[^;&|]*--head\b[^;&|]*\bhttps?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|\b)\s*(?:\|\|\s*true\s*)?$/i,
+	],
+	approve: [
+		/\bsystemctl\s+(restart|stop|start|reload|enable|disable|mask|unmask)\b/i,
+		/\bdocker\s+(restart|stop|rm|compose\s+up|compose\s+down|prune)\b/i,
+		/\bapt(?:-get)?\s+(install|remove|purge|upgrade|dist-upgrade|autoremove)\b/i,
+		/\byum\s+(install|remove|update|upgrade)\b/i,
+		/\bufw\s+(allow|deny|delete|enable|disable|reload|reset)\b/i,
+		/\bfirewall-cmd\b/i,
+		/\biptables\b/i,
+		/\bnft\s+(add|delete|flush|insert|replace)\b/i,
+	],
+	block: [/\bcat\s+.*(?:\.env|id_rsa|id_ed25519)\b/i, /\bchmod\s+777\b/i],
+};
 
 export function createHostTools(options: HostToolOptions) {
 	const store = new HostStore(options.root);
@@ -719,3 +737,9 @@ function clip(input: string): string {
 function isNotFound(error: unknown): boolean {
 	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
+
+export default createHostTools({
+	root: "./state",
+	commandPolicy,
+	timeoutMs: DEFAULT_TIMEOUT_MS,
+});

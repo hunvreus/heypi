@@ -54,7 +54,7 @@ The public config type is `DefaultToolsConfig`.
 Custom tools run as trusted JavaScript in the Node app process:
 
 ```ts
-import { defineTool } from "@hunvreus/heypi";
+import { defineTool } from "@hunvreus/heypi/authoring";
 import { z } from "zod";
 
 const inspectWorkspace = defineTool({
@@ -68,6 +68,8 @@ const inspectWorkspace = defineTool({
 ```
 
 When a tool is default-exported from `agent/tools/inspect_workspace.ts` and loaded by `loadAgent("./agent")`, the filename becomes the tool name. Tools passed directly in `agent.tools` must set `name`.
+
+Use `@hunvreus/heypi/authoring` inside discovered `agent/` modules. App entrypoints such as `index.ts` should keep importing runtime config helpers from `@hunvreus/heypi`.
 
 Use `ctx.runtime` when a custom tool wants command or file work to follow the selected runtime.
 

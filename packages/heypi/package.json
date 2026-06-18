@@ -26,6 +26,11 @@
 			"types": "./dist/attachments/index.d.ts",
 			"import": "./dist/attachments/index.js"
 		},
+		"./authoring": {
+			"development": "./src/authoring.ts",
+			"types": "./dist/authoring.d.ts",
+			"import": "./dist/authoring.js"
+		},
 		"./runtime": {
 			"development": "./src/runtime/public.ts",
 			"types": "./dist/runtime/public.d.ts",

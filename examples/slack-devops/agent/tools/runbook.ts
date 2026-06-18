@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { defineTool } from "@hunvreus/heypi";
+import { defineTool } from "@hunvreus/heypi/authoring";
 import { Type } from "@sinclair/typebox";
 
 type Hit = { file: string; line: number; text: string };
@@ -49,6 +49,8 @@ export function createRunbookTools(options: RunbookToolOptions) {
 		}),
 	];
 }
+
+export default createRunbookTools({ root: "./agent/runbooks" });
 
 async function listMd(dir: string): Promise<string[]> {
 	const out: string[] = [];

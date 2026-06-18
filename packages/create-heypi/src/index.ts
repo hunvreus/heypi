@@ -447,6 +447,7 @@ function toolsReadme(): string {
 	return `# Tools
 
 Add TypeScript tool modules here. Export one \`defineTool(...)\` call as the default export.
+Import authoring helpers from \`@hunvreus/heypi/authoring\` in files under \`agent/\`.
 The filename becomes the tool name when the tool does not set \`name\`.
 `;
 }
@@ -455,6 +456,7 @@ function jobsReadme(): string {
 	return `# Jobs
 
 Add TypeScript job modules here. Export one \`defineJob(...)\` call as the default export.
+Import authoring helpers from \`@hunvreus/heypi/authoring\` in files under \`agent/\`.
 `;
 }
 
@@ -462,6 +464,7 @@ function evalsReadme(): string {
 	return `# Evals
 
 Add TypeScript eval modules here. Export one \`defineEval(...)\` call as the default export.
+Import authoring helpers from \`@hunvreus/heypi/authoring\` in files under \`agent/\`.
 Use \`heypi eval list\` and \`heypi eval check\` to inspect and validate definitions.
 `;
 }
@@ -534,7 +537,7 @@ Summarize the current state in three bullets: what is known, what is uncertain, 
 }
 
 function sampleTool(): string {
-	return `import { defineTool } from "@hunvreus/heypi";
+	return `import { defineTool } from "@hunvreus/heypi/authoring";
 import { z } from "zod";
 
 export default defineTool({
@@ -546,7 +549,7 @@ export default defineTool({
 }
 
 function sampleEval(): string {
-	return `import { defineEval } from "@hunvreus/heypi";
+	return `import { defineEval } from "@hunvreus/heypi/authoring";
 
 export default defineEval({
 \tname: "responds to a greeting",

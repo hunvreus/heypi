@@ -22,6 +22,12 @@ import {
 } from "@hunvreus/heypi";
 import type { Adapter } from "@hunvreus/heypi/adapter";
 import type { AttachmentStore } from "@hunvreus/heypi/attachments";
+import {
+	approval as authoringApproval,
+	defineEval as authoringDefineEval,
+	defineJob as authoringDefineJob,
+	defineTool as authoringDefineTool,
+} from "@hunvreus/heypi/authoring";
 import { Type } from "@sinclair/typebox";
 
 test("public package entrypoint supports a minimal app config", async () => {
@@ -62,6 +68,13 @@ test("public package entrypoint supports a minimal app config", async () => {
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
+});
+
+test("public authoring entrypoint exports lightweight authored module helpers", () => {
+	assert.equal(typeof authoringDefineTool, "function");
+	assert.equal(typeof authoringDefineJob, "function");
+	assert.equal(typeof authoringDefineEval, "function");
+	assert.equal(typeof authoringApproval.command, "function");
 });
 
 test("createHeypi requires state.root", async () => {

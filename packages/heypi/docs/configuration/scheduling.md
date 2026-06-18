@@ -34,7 +34,7 @@ createHeypi({
 For file-based apps, jobs can also live under `agent/jobs/` and be loaded by `loadAgent("./agent")`:
 
 ```ts
-import { defineJob } from "@hunvreus/heypi";
+import { defineJob } from "@hunvreus/heypi/authoring";
 
 export default defineJob({
   id: "weekly-ops",

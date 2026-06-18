@@ -68,6 +68,8 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | `classifyCommand(command, config)` | Classifies a command against command policy. |
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |
 
+Discovered files under `agent/tools/`, `agent/jobs/`, and `agent/evals/` should import these authoring helpers from `@hunvreus/heypi/authoring`. That entrypoint is intentionally lightweight so `loadAgent()` can load authored modules without pulling in the app runtime.
+
 ## Deprecated compatibility exports
 
 These names still work for beta migration, but new apps should not use them.
