@@ -10,6 +10,11 @@ type AgentLiveSession = {
 	followUp(text: string, attachments?: Attachment[]): Promise<void>;
 };
 
+export type AgentLifecycleEvent = {
+	type: "model.started" | "model.completed" | "model.failed";
+	data?: Record<string, unknown>;
+};
+
 export type AgentReq = {
 	threadId: string;
 	sessionId: string;
@@ -32,6 +37,7 @@ export type AgentReq = {
 	signal?: AbortSignal;
 	stream?: ReplyStream;
 	runtimeEvents?: RuntimeEventHandler;
+	lifecycleEvents?: (event: AgentLifecycleEvent) => void | Promise<void>;
 	approval?: ApprovalPolicy;
 	onLiveSession?: (session: AgentLiveSession | undefined) => void;
 };

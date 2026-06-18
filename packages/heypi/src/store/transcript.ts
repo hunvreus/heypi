@@ -2,7 +2,7 @@ import type { ApprovalConfig } from "../config.js";
 import type { TurnScope } from "../core/scope.js";
 import type { Reply, ToolContinuation } from "../core/types.js";
 import type { ReplyStream } from "../io/reply-stream.js";
-import type { Agent, AgentRes } from "../runtime/agent.js";
+import type { Agent, AgentLifecycleEvent, AgentRes } from "../runtime/agent.js";
 import type { RuntimeEventHandler } from "../runtime/types.js";
 import type { Message, Store } from "./types.js";
 
@@ -18,6 +18,7 @@ export type ContinueInput = {
 	scope?: TurnScope;
 	stream?: ReplyStream;
 	runtimeEvents?: RuntimeEventHandler;
+	lifecycleEvents?: (event: AgentLifecycleEvent) => void | Promise<void>;
 	approval?: ApprovalConfig;
 };
 
@@ -45,6 +46,7 @@ export async function continueTool(input: ContinueInput): Promise<AgentRes> {
 		scope: input.scope,
 		stream: input.stream,
 		runtimeEvents: input.runtimeEvents,
+		lifecycleEvents: input.lifecycleEvents,
 		approval: input.approval,
 		continuation: input.continuation,
 	});

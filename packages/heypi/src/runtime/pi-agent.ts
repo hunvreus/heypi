@@ -22,7 +22,7 @@ import { splitTools } from "../core-tools.js";
 import { type AttachmentProcessingConfig, attachmentInput } from "../io/attachments.js";
 import type { ReplyStream } from "../io/reply-stream.js";
 import type { Messages, StoredMessage } from "../store/types.js";
-import type { Agent, AgentReq, AgentRes } from "./agent.js";
+import type { Agent, AgentLifecycleEvent, AgentReq, AgentRes } from "./agent.js";
 import { runtimeWithEvents } from "./events.js";
 import { memoryTools, secretTools, skillTools } from "./managed-tools.js";
 import { tools } from "./tools.js";
@@ -128,6 +128,16 @@ export class PiAgent implements Agent {
 			history: generatedAt,
 			tools: session.getActiveToolNames().join(","),
 		});
+		const activeTools = session.getActiveToolNames();
+		await emitLifecycle(req, {
+			type: "model.started",
+			data: {
+				mode,
+				history: generatedAt,
+				tools: activeTools,
+				model: req.model,
+			},
+		});
 		let out = "";
 		const unsub = session.subscribe((event) => {
 			if (event.type === "tool_execution_start") {
@@ -217,12 +227,21 @@ export class PiAgent implements Agent {
 				);
 				await session.prompt(prompt.text, { expandPromptTemplates: false, images: prompt.images });
 			}
+		} catch (error) {
+			await emitLifecycle(req, {
+				type: "model.failed",
+				data: { mode, error: error instanceof Error ? error.message : String(error) },
+			});
+			throw error;
 		} finally {
 			req.onLiveSession?.(undefined);
 			req.signal?.removeEventListener("abort", abort);
 			unsub();
 		}
-		if (req.signal?.aborted) return { text: "cancelled" };
+		if (req.signal?.aborted) {
+			await emitLifecycle(req, { type: "model.failed", data: { mode, reason: "cancelled" } });
+			return { text: "cancelled" };
+		}
 		const error = lastAssistantError(session);
 		if (error) {
 			logError(log, "model", {
@@ -235,6 +254,7 @@ export class PiAgent implements Agent {
 				actor: req.actor,
 				error,
 			});
+			await emitLifecycle(req, { type: "model.failed", data: { mode, error } });
 			return { text: userError(this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
 		}
 		if (!out.trim()) out = lastAssistantText(session);
@@ -251,11 +271,22 @@ export class PiAgent implements Agent {
 				actor: req.actor,
 				error: "empty model response",
 			});
+			await emitLifecycle(req, { type: "model.failed", data: { mode, reason: "empty_response" } });
 			return { text: userError(this.input.appMessages?.error ?? DEFAULT_APP_MESSAGES.error) };
 		}
 		const text = out.trim();
 		const silent = silentReply(text);
 		const approval = approvalFromMessages(messages);
+		await emitLifecycle(req, {
+			type: "model.completed",
+			data: {
+				mode,
+				chars: text.length,
+				silent: Boolean(silent),
+				approval: Boolean(approval),
+				attachments: input.attachments.length,
+			},
+		});
 		log.debug("agent.end", {
 			agent: this.input.agent.id,
 			trace: req.trace,
@@ -449,6 +480,10 @@ export function applyModelPayloadConfig(payload: unknown, model: ModelConfig): u
 
 function plainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function emitLifecycle(req: AgentReq, event: AgentLifecycleEvent): Promise<void> {
+	await req.lifecycleEvents?.(event);
 }
 
 async function resourceLoader(

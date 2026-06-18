@@ -65,7 +65,7 @@ Loads the app module with `tsx`, sets `HEYPI_DEV=1`, and starts the default expo
 
 When admin is enabled, dev mode prints a one-time admin login link after startup. This uses the actual bound HTTP port, including `http: { port: 0 }`.
 
-The admin Chats view includes a compose box for sending local dev messages through the same handler path used by adapters. Thread detail pages show messages, calls, approvals, and typed trace events.
+The admin Chats view includes a compose box for sending local dev messages through the same handler path used by adapters. Thread detail pages show messages, model lifecycle events, calls, approvals, and typed trace events.
 
 If heypi restarts mid-turn, startup recovery marks interrupted turns and calls failed and records recovery events in the trace timeline. This is inspection and cleanup, not exact workflow replay.
 

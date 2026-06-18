@@ -103,7 +103,11 @@ test("handler emits message and turn timeline events", async () => {
 		const store = sqliteStore({ path: join(root, "heypi.db") });
 		await store.setup();
 		const agent: Agent = {
-			ask: async () => ({ text: "pong" }),
+			ask: async (req) => {
+				await req.lifecycleEvents?.({ type: "model.started", data: { mode: "prompt" } });
+				await req.lifecycleEvents?.({ type: "model.completed", data: { chars: 4 } });
+				return { text: "pong" };
+			},
 			continue: async () => ({ text: "continued" }),
 		};
 		const callRunner = new CallRunner(
@@ -134,6 +138,8 @@ test("handler emits message and turn timeline events", async () => {
 		assert.deepEqual((await store.events!.list({ trace: "trace-1" })).map((row) => row.type).reverse(), [
 			"message.received",
 			"turn.started",
+			"model.started",
+			"model.completed",
 			"message.sent",
 			"turn.completed",
 		]);

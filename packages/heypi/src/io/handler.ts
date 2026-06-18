@@ -13,7 +13,7 @@ import type { ScopedKey } from "../core/scope.js";
 import { isSecretReply, type Secrets } from "../core/secrets.js";
 import type { NormalizedSkillsConfig } from "../core/skills.js";
 import type { ApprovalPrompt, ApprovalResolution, ReplyAttachment } from "../core/types.js";
-import type { Agent } from "../runtime/agent.js";
+import type { Agent, AgentLifecycleEvent } from "../runtime/agent.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import { transaction } from "../store/transaction.js";
 import { continueTool } from "../store/transcript.js";
@@ -587,6 +587,13 @@ export function createHandler(input: {
 								signal: currentRun.signal,
 								stream,
 								runtimeEvents,
+								lifecycleEvents: modelLifecycleEvents(input.store, {
+									trace,
+									agent: agentId,
+									threadId: thread.id,
+									turnId: currentTurn.id,
+									logger: log,
+								}),
 								approval: input.approval,
 								onLiveSession: (session) => {
 									if (session) currentRun.attach(session);
@@ -616,6 +623,13 @@ export function createHandler(input: {
 					scope: turnScope,
 					stream,
 					runtimeEvents,
+					lifecycleEvents: modelLifecycleEvents(input.store, {
+						trace,
+						agent: agentId,
+						threadId: targetThreadId ?? thread.id,
+						turnId: currentTurn.id,
+						logger: log,
+					}),
 					approval: input.approval,
 				});
 			}
@@ -731,6 +745,31 @@ function runtimeProgressEvents(progress: RuntimeProgress, text: string): Runtime
 		if (text === last) return;
 		last = text;
 		void Promise.resolve(progress.update(text)).catch(() => undefined);
+	};
+}
+
+function modelLifecycleEvents(
+	store: Store,
+	input: { agent: string; trace: string; threadId: string; turnId: string; logger: Logger },
+): (event: AgentLifecycleEvent) => Promise<void> {
+	return async (event) => {
+		try {
+			await store.events?.append({
+				agent: input.agent,
+				trace: input.trace,
+				threadId: input.threadId,
+				turnId: input.turnId,
+				type: event.type,
+				data: event.data,
+			});
+		} catch (error) {
+			input.logger.warn("handler.model_event_failed", {
+				agent: input.agent,
+				trace: input.trace,
+				type: event.type,
+				error: message(error),
+			});
+		}
 	};
 }
 

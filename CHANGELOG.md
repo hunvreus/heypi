@@ -13,6 +13,7 @@
 - Added `evaluateEval()` for reusable text, tool-call, approval, and custom eval assertions.
 - Added `heypi eval run` to run eval assertions against explicit supplied result data.
 - Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
+- Added persisted model lifecycle trace events for agent turns and approved continuations.
 - Added admin chat compose for sending local dev messages through the same handler path used by adapters.
 - Added admin approval actions that submit approve/deny decisions through the shared handler path.
 - Added admin thread actions for submitting cancel/status controls through the shared handler path.
