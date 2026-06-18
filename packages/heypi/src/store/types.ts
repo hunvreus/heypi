@@ -36,6 +36,8 @@ export type EventType =
 	| "model.started"
 	| "model.completed"
 	| "model.failed"
+	| "eval.completed"
+	| "eval.failed"
 	| "tool.requested"
 	| "tool.started"
 	| "tool.completed"

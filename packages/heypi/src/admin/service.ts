@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ApprovalConfig, PermissionsConfig, TaskConfig } from "../config.js";
-import { evalExpectDetail, evalExpectLabel, type EvalConfig } from "../eval.js";
+import { type EvalConfig, evalExpectDetail, evalExpectLabel } from "../eval.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
 import { clampLimit, clampOffset } from "../store/paging.js";
@@ -647,6 +647,8 @@ function eventTitle(type: string): string {
 		"model.started": "Model started",
 		"model.completed": "Model completed",
 		"model.failed": "Model failed",
+		"eval.completed": "Eval passed",
+		"eval.failed": "Eval failed",
 	};
 	return labels[type] ?? type;
 }
@@ -661,13 +663,21 @@ function eventSummary(row: Event, data: Record<string, unknown> | undefined): st
 		const reason = typeof data.reason === "string" ? data.reason : undefined;
 		return [mode, chars, tools, error, reason].filter(Boolean).join(" / ") || `trace ${row.trace}`;
 	}
+	if (row.type.startsWith("eval.")) {
+		const name = typeof data.eval === "string" ? data.eval : undefined;
+		const assertions = Array.isArray(data.assertions) ? `${data.assertions.length} assertions` : undefined;
+		return [name, assertions].filter(Boolean).join(" / ") || `trace ${row.trace}`;
+	}
 	return preview(row.data) || `trace ${row.trace}`;
 }
 
 function eventDataDetails(data: Record<string, unknown> | undefined): AdminActivityDetail[] {
 	if (!data) return [];
 	const tools = Array.isArray(data.tools) ? data.tools.filter((tool): tool is string => typeof tool === "string") : [];
+	const assertions = Array.isArray(data.assertions) ? data.assertions.length : undefined;
 	return compactDetails([
+		typeof data.eval === "string" ? { label: "Eval", value: data.eval } : undefined,
+		assertions !== undefined ? { label: "Assertions", value: String(assertions) } : undefined,
 		typeof data.mode === "string" ? { label: "Mode", value: data.mode } : undefined,
 		typeof data.chars === "number" ? { label: "Characters", value: String(data.chars) } : undefined,
 		tools.length ? { label: "Tools", value: tools.join(", ") } : undefined,

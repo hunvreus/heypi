@@ -141,10 +141,10 @@ heypi db migrate --db ./state/heypi.db
 heypi eval list [--agent ./agent] [--tag smoke] [--json]
 heypi eval show <name> [--agent ./agent] [--json]
 heypi eval check [--agent ./agent] [--tag smoke] [--json]
-heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--json]
+heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--db ./state/heypi.db] [--agent-id default] [--json]
 ```
 
-Loads `defineEval(...)` definitions recursively from `agent/evals/`. `run` evaluates assertions against an explicit result supplied by `--result` or inline flags. It does not execute the model or agent loop yet.
+Loads `defineEval(...)` definitions recursively from `agent/evals/`. `run` evaluates assertions against an explicit result supplied by `--result` or inline flags. It does not execute the model or agent loop yet. When `--db` is supplied, `run` appends an `eval.completed` or `eval.failed` trace event for admin and trace inspection.
 
 | Subcommand | Description |
 | --- | --- |
@@ -161,6 +161,8 @@ Loads `defineEval(...)` definitions recursively from `agent/evals/`. `run` evalu
 | `--text <text>` | Inline assistant text for `run`. |
 | `--tools <names>` | Comma-separated tool names for `run`. |
 | `--approvals <ids>` | Comma-separated approval ids for `run`. |
+| `--db <path>` | Persists an eval trace event for `run` in a migrated SQLite database. |
+| `--agent-id <id>` | Agent id for persisted eval trace events. Defaults to `default`. |
 | `--json` | Prints machine-readable output. |
 
 Run migrations during deploy before starting the app:

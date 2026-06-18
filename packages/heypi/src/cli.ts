@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
@@ -17,7 +18,7 @@ import {
 import type { HeypiApp } from "./app.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
-import type { EvalConfig, EvalResult } from "./eval.js";
+import type { EvalConfig, EvalReport, EvalResult } from "./eval.js";
 import { evalExpectLabel, evalExpectSummary, evaluateEval, validateEval } from "./eval.js";
 import {
 	discordCheck as checkDiscord,
@@ -32,6 +33,7 @@ import { migrate, migrationStatus } from "./store/migrate.js";
 import { ApprovalRepo } from "./store/repo-approval.js";
 import { ApprovalBypassRepo } from "./store/repo-approval-bypass.js";
 import { CallRepo } from "./store/repo-call.js";
+import { EventRepo } from "./store/repo-event.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 import { LockRepo } from "./store/repo-lock.js";
 import { ThreadRepo } from "./store/repo-thread.js";
@@ -190,6 +192,8 @@ function buildCli() {
 		.option("--text <text>", "Assistant text for eval run")
 		.option("--tools <names>", "Comma-separated tool names for eval run")
 		.option("--approvals <ids>", "Comma-separated approval ids for eval run")
+		.option("--db <path>", "SQLite database path for persisted eval run events")
+		.option("--agent-id <id>", "Agent id for persisted eval run events")
 		.option("--json", "Print JSON")
 		.action((action: string, name: string | undefined, flags: Flags) =>
 			withEnv((input) => {
@@ -848,21 +852,58 @@ async function evalsRun(flags: Flags, name: string): Promise<void> {
 	if (invalid.length) throw new Error(`invalid eval:\n${invalid.join("\n")}`);
 	const result = evalResult(flags);
 	const report = await evaluateEval(evaluation, result);
-	const body = { ok: report.ok, eval: evaluation.name, result, assertions: report.assertions };
+	const trace = stringFlag(flags, "db") ? `eval:${randomUUID()}` : undefined;
+	if (trace) await persistEvalRunEvent(flags, { trace, evaluation, result, report });
+	const body = {
+		ok: report.ok,
+		eval: evaluation.name,
+		...(trace ? { trace } : {}),
+		result,
+		assertions: report.assertions,
+	};
 	if (booleanFlag(flags, "json")) {
 		line(JSON.stringify(body, null, 2));
 	} else {
 		line(
 			[
 				report.ok ? ok(`eval ${evaluation.name} passed`) : fail(`eval ${evaluation.name} failed`),
+				trace ? `trace: ${trace}` : "",
 				table(
 					["assertion", "ok", "message"],
 					report.assertions.map((row) => [row.label, row.ok ? "yes" : "no", row.message ?? "-"]),
 				),
-			].join("\n"),
+			]
+				.filter(Boolean)
+				.join("\n"),
 		);
 	}
 	if (!report.ok) process.exitCode = 1;
+}
+
+async function persistEvalRunEvent(
+	flags: Flags,
+	input: { trace: string; evaluation: EvalConfig; result: EvalResult; report: EvalReport },
+): Promise<void> {
+	const dbPath = requiredFlag(flags, "db");
+	const repo = new EventRepo(dbFor(dbPath));
+	await repo.append({
+		agent: stringFlag(flags, "agent-id") ?? "default",
+		trace: input.trace,
+		type: input.report.ok ? "eval.completed" : "eval.failed",
+		data: {
+			eval: input.evaluation.name,
+			prompt: input.evaluation.prompt,
+			tags: input.evaluation.tags ?? [],
+			expect: evalExpectSummary(input.evaluation.expect),
+			ok: input.report.ok,
+			assertions: input.report.assertions,
+			result: {
+				textChars: input.result.text.length,
+				tools: input.result.tools,
+				approvals: input.result.approvals,
+			},
+		},
+	});
 }
 
 function loadCliEvals(flags: Flags): EvalConfig[] {

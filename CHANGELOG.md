@@ -12,6 +12,7 @@
 - Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
 - Added `evaluateEval()` for reusable text, tool-call, approval, and custom eval assertions.
 - Added `heypi eval run` to run eval assertions against explicit supplied result data.
+- Added optional eval run trace event persistence through `heypi eval run --db`.
 - Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
 - Added persisted model lifecycle trace events for agent turns and approved continuations.
 - Added retry handling for trace event sequence conflicts during concurrent event appends.

@@ -171,6 +171,45 @@ test("cli eval commands inspect discovered eval definitions", async () => {
 		) as { ok: boolean; assertions: Array<{ label: string; ok: boolean }> };
 		assert.equal(run.ok, true);
 		assert.deepEqual(run.assertions, [{ ok: true, label: "includes" }]);
+		assert.equal("trace" in run, false);
+		const db = join(root, "heypi.db");
+		assert.match(cli(["db", "migrate", "--db", db]), /ok: database migrated/);
+		const persisted = JSON.parse(
+			cli(
+				[
+					"eval",
+					"run",
+					"smoke",
+					"--agent",
+					"agent",
+					"--text",
+					"well hello",
+					"--db",
+					db,
+					"--agent-id",
+					"test",
+					"--json",
+				],
+				{ cwd: root },
+			),
+		) as { ok: boolean; trace: string };
+		assert.equal(persisted.ok, true);
+		assert.match(persisted.trace, /^eval:/);
+		const store = sqliteStore({ path: db });
+		await store.setup();
+		const eventRepo = store.events;
+		assert.ok(eventRepo);
+		const events = await eventRepo.list({ agent: "test", trace: persisted.trace });
+		assert.equal(events.length, 1);
+		assert.equal(events[0]?.type, "eval.completed");
+		const data = JSON.parse(events[0]?.data ?? "{}") as {
+			eval?: string;
+			ok?: boolean;
+			result?: { textChars?: number };
+		};
+		assert.equal(data.eval, "smoke");
+		assert.equal(data.ok, true);
+		assert.equal(data.result?.textChars, "well hello".length);
 		const failed = spawnSync(process.execPath, [CLI, "eval", "run", "smoke", "--agent", "agent", "--text", "bye"], {
 			cwd: root,
 			encoding: "utf8",

@@ -352,6 +352,16 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			createdAt: now - 1200,
 		});
 		assert.ok(modelEvent);
+		const evalEvent = await store.events?.append({
+			agent: "default",
+			trace: "trace-default",
+			threadId: ownThread.id,
+			turnId: ownTurn.id,
+			type: "eval.completed",
+			data: { eval: "smoke", assertions: [{ label: "includes", ok: true }] },
+			createdAt: now - 1100,
+		});
+		assert.ok(evalEvent);
 		const resultMessage = await store.messages.create({
 			threadId: ownThread.id,
 			provider: "slack",
@@ -493,6 +503,7 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.equal(timeline.has(`call:${ownCall.id}`), true);
 		assert.equal(timeline.has(`event:${traceEvent.id}`), true);
 		assert.equal(timeline.has(`event:${modelEvent.id}`), true);
+		assert.equal(timeline.has(`event:${evalEvent.id}`), true);
 		assert.equal(timeline.has(`approval:${otherApproval.id}`), false);
 		assert.equal(timeline.has(`call:${otherCall.id}`), false);
 		assert.equal(timeline.has(`message:${otherMessage.id}`), false);
@@ -527,6 +538,15 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.deepEqual(
 			model?.details?.map((row) => row.label),
 			["Trace", "Sequence", "Turn", "Mode", "Characters", "Tools", "Data"],
+		);
+		const evalRow = thread?.timeline.find((row) => row.id === evalEvent.id);
+		assert.equal(evalRow?.kind, "event");
+		assert.equal(evalRow?.title, "Eval passed");
+		assert.equal(evalRow?.eventType, "eval.completed");
+		assert.equal(evalRow?.summary, "smoke / 1 assertions");
+		assert.deepEqual(
+			evalRow?.details?.map((row) => row.label),
+			["Trace", "Sequence", "Turn", "Eval", "Assertions", "Data"],
 		);
 
 		const newThread = await store.threads.getOrCreate({
