@@ -49,7 +49,7 @@ export function defineTool(input: DefineTool<ToolParams, ToolSchema>): ToolDefin
 	});
 }
 
-/** Creates a heypi custom tool while keeping raw Pi tools supported. */
+/** @deprecated Use `defineTool()` for authored heypi tools. */
 export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDefinition {
 	return createTool(input);
 }

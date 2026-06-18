@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Logger } from "@hunvreus/heypi";
 import {
-	agentFrom,
+	loadAgent,
 	commandConfirm,
 	consoleLogger,
-	coreTools,
+	defaultTools,
 	createHeypi,
 	defineEval,
 	loadEvals,
@@ -44,9 +44,9 @@ test("public package entrypoint supports a minimal app config", async () => {
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
-			agent: agentFrom("../../examples/slack-devops/agent", {
+			agent: loadAgent("../../examples/slack-devops/agent", {
 				model: "openai/gpt-5-mini",
-				tools: [...coreTools({ bash: { confirm: commandConfirm({ allow: [/^curl -I /] }) } }), lookup],
+				tools: [...defaultTools({ bash: { confirm: commandConfirm({ allow: [/^curl -I /] }) } }), lookup],
 			}),
 			runtime: {
 				name: "just-bash",
@@ -75,7 +75,7 @@ test("createHeypi requires state.root", async () => {
 			createHeypi({
 				logger: consoleLogger({ level: "error", format: "pretty" }),
 				adapters: [adapter],
-				agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+				agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 				runtime: { name: "host-bash", root: workspace("./workspace") },
 			} as unknown as Parameters<typeof createHeypi>[0]),
 		/state\.root is required/,
@@ -97,7 +97,7 @@ test("createHeypi rejects legacy root approval actors", async () => {
 					logger: consoleLogger({ level: "error", format: "pretty" }),
 					approval: { approvers: ["U_OLD"] },
 					adapters: [adapter],
-					agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+					agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 					runtime: {
 						name: "host-bash",
 						root: workspace(join(root, "workspace")),
@@ -124,7 +124,7 @@ test("createHeypi warns about unknown shallow config keys", async () => {
 			logger: fakeLogger(warnings),
 			approval: { expiresInMs: 60_000, legacy: true },
 			adapters: [adapter],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -157,7 +157,7 @@ test("createHeypi uses state.root for the default SQLite store", async () => {
 			state: { root: "./state" },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
-			agent: agentFrom(join(root, "agent"), { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent(join(root, "agent"), { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -183,7 +183,7 @@ test("createHeypi warns about risky startup security posture", async () => {
 			http: { host: "0.0.0.0", port: 0 },
 			logger: fakeLogger(warnings),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -207,7 +207,7 @@ test("createHeypi treats adapter approval admins as configured approval actors",
 			state: { root: join(root, "state") },
 			logger: fakeLogger(warnings),
 			adapters: [{ name: "test", kind: "test", permissions: { admins: ["U_ADMIN"] }, start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -231,7 +231,7 @@ test("createHeypi warns when bot input is enabled without approval actors", asyn
 			state: { root: join(root, "state") },
 			logger: fakeLogger(warnings),
 			adapters: [{ name: "test", kind: "test", acceptsBots: true, start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -266,7 +266,7 @@ test("createHeypi passes adapter approval permissions to the adapter handler", a
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			approval: { expiresInMs: 60_000 },
 			adapters: [adapter],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -305,7 +305,7 @@ test("createHeypi passes injected attachment store to adapters", async () => {
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
 			attachments: { store: attachments },
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -346,7 +346,7 @@ test("createHeypi stops started adapters when a later adapter fails to start", a
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [first, second],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -375,7 +375,7 @@ test("createHeypi rejects duplicate adapter names", async () => {
 						{ name: "same", kind: "test", start: async () => undefined },
 						{ name: "same", kind: "test", start: async () => undefined },
 					],
-					agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+					agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 					runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 				}),
 			/duplicate adapter name: same/,
@@ -410,7 +410,7 @@ test("createHeypi rejects admin as a user adapter name", async () => {
 						state: { root: join(root, "state") },
 						logger: consoleLogger({ level: "error", format: "pretty" }),
 						adapters: [{ name: "admin", kind, start: async () => undefined }],
-						agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+						agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 						runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 					}),
 				/adapter name is reserved: admin/,
@@ -432,7 +432,7 @@ test("createHeypi de-dupes internal admin adapter names", async () => {
 			http: { port: 0 },
 			admin: { auth: false },
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await app.start();
@@ -479,7 +479,7 @@ test("createHeypi serves HTTP routes from multiple adapters on one listener", as
 					},
 				},
 			],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await app.start();
@@ -532,7 +532,7 @@ test("createHeypi rejects duplicate HTTP routes", async () => {
 					},
 				},
 			],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await assert.rejects(() => app.start(), /duplicate HTTP route: GET \/same/);
@@ -565,7 +565,7 @@ test("createHeypi rejects non-admin HTTP routes under /admin", async () => {
 					},
 				},
 			],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await assert.rejects(() => app.start(), /HTTP route uses reserved path: \/admin\/status/);
@@ -612,7 +612,7 @@ test("createHeypi rejects structurally conflicting HTTP routes", async () => {
 					},
 				},
 			],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await assert.rejects(
@@ -635,7 +635,7 @@ test("admin registers reserved routes", async () => {
 			http: { port },
 			admin: true,
 			adapters: [],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await app.start();
@@ -675,7 +675,7 @@ test("createHeypi does not register admin routes by default", async () => {
 					},
 				},
 			],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		});
 		await app.start();
@@ -702,7 +702,7 @@ test("createHeypi refuses to start when another app instance holds the lock", as
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -727,7 +727,7 @@ test("createHeypi clears stale app locks owned by a dead same-host pid", async (
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -752,7 +752,7 @@ test("createHeypi releases the app lock on stop", async () => {
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -789,7 +789,7 @@ test("createHeypi stops when app lock refresh loses ownership", async () => {
 				},
 			],
 			appLock: { ttlMs: 30, drainMs: 10 },
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -910,7 +910,7 @@ test("createHeypi recovers stale running turns and thread locks on startup", asy
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [adapter],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),
@@ -979,7 +979,7 @@ test("createHeypi warns when store recovery capabilities are unsupported", async
 			state: { root: join(root, "state") },
 			logger: fakeLogger(warnings),
 			adapters: [adapter],
-			agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: {
 				name: "host-bash",
 				root: workspace(join(root, "workspace")),

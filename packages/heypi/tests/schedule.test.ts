@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, consoleLogger, createHeypi, sqliteStore, workspace } from "@hunvreus/heypi";
+import { loadAgent, consoleLogger, createHeypi, sqliteStore, workspace } from "@hunvreus/heypi";
 import { nextAt } from "../src/core/schedule.js";
 import { createScheduler, enqueueJobRuns } from "../src/core/scheduler.js";
 import type { Adapter, AdapterTarget, Handler, Inbound, Outbound } from "../src/io/handler.js";
@@ -35,7 +35,7 @@ test("createHeypi installs configured jobs", async () => {
 			state: { root: join(root, "state") },
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			adapters: [appAdapter],
-			agent: agentFrom("../../examples/telegram-workout/agent", { model: "openai/gpt-5-mini" }),
+			agent: loadAgent("../../examples/telegram-workout/agent", { model: "openai/gpt-5-mini" }),
 			runtime: { name: "just-bash", root: workspace(join(root, "workspace")) },
 			jobs: [
 				{

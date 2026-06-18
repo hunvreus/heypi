@@ -41,29 +41,29 @@ test("modelConfig preserves explicit verbosity", () => {
 	});
 });
 
-test("agentFrom loads SOUL.md separately from AGENTS.md and SYSTEM.md", () => {
+test("loadAgent loads SOUL.md separately from AGENTS.md and SYSTEM.md", () => {
 	const root = join(tmpdir(), `heypi-agent-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 	mkdirSync(root, { recursive: true });
 	writeFileSync(join(root, "SOUL.md"), "voice");
 	writeFileSync(join(root, "AGENTS.md"), "ops");
 	writeFileSync(join(root, "SYSTEM.md"), "runtime");
 
-	const agent = agentFrom(root, { model: "openai/gpt-5-mini" });
+	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
 	assert.equal(agent.soul, "voice");
 	assert.equal(agent.prompt, "ops");
 	assert.equal(agent.systemPrompt, "runtime");
 });
 
-test("agentFrom uses a default SOUL.md fallback", () => {
+test("loadAgent uses a default SOUL.md fallback", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
-	const agent = agentFrom(root, { model: "openai/gpt-5-mini" });
+	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
 	assert.equal(agent.soul, DEFAULT_SOUL);
 });
 
-test("agentFrom preserves configured dynamic context providers", () => {
+test("loadAgent preserves configured dynamic context providers", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	const provider = async () => ({ title: "Request context", text: "channel=C1" });
-	const agent = agentFrom(root, { model: "openai/gpt-5-mini", context: [provider] });
+	const agent = loadAgent(root, { model: "openai/gpt-5-mini", context: [provider] });
 	assert.equal(agent.context?.[0], provider);
 });
 

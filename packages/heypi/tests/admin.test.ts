@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, consoleLogger, createHeypi, type Logger, sqliteStore, workspace } from "@hunvreus/heypi";
+import { loadAgent, consoleLogger, createHeypi, type Logger, sqliteStore, workspace } from "@hunvreus/heypi";
 import type { Adapter } from "@hunvreus/heypi/adapter";
 import {
 	adminLoginUrl,
@@ -111,7 +111,7 @@ test("admin jobs page renders explicit targets and scoped heartbeat routes", asy
 		http: { port },
 		admin: { auth: false },
 		adapters: [adapter],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 		jobs: [
 			{
@@ -955,7 +955,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		http: { port },
 		admin: true,
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1190,7 +1190,7 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 		http: { port },
 		admin: { auth: false },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1226,7 +1226,7 @@ test("admin thread routes render timelines and reject bad thread paths", async (
 		http: { port },
 		admin: { auth: false },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1281,7 +1281,7 @@ test("admin state signs fresh one-time login links", async () => {
 		http: { port: 0 },
 		admin: true,
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1360,7 +1360,7 @@ test("admin manual secret signs links without generated state secret", async () 
 		http: { port: 0 },
 		admin: { secret },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1388,7 +1388,7 @@ test("admin manual secret must be strong even on loopback", async () => {
 		http: { port: 0 },
 		admin: { secret: "weak" },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1409,7 +1409,7 @@ test("admin login tokens are scoped to the state root", async () => {
 		http: { port: 0 },
 		admin: { secret },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "a", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "a", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "a-workspace")) },
 	});
 	const appB = createHeypi({
@@ -1419,7 +1419,7 @@ test("admin login tokens are scoped to the state root", async () => {
 		http: { port: 0 },
 		admin: { secret },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "b", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "b", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "b-workspace")) },
 	});
 	try {
@@ -1472,7 +1472,7 @@ test("admin memory page renders memory as escaped read-only text", async () => {
 		admin: true,
 		adapters: [],
 		memory: true,
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(runtimeRoot) },
 	});
 	try {
@@ -1504,7 +1504,7 @@ test("admin non-loopback binding can use generated signed link access", async ()
 		http: { host: "0.0.0.0", port },
 		admin: { secureCookies: true },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1531,7 +1531,7 @@ test("admin non-loopback binding requires secure cookies", async () => {
 		http: { host: "0.0.0.0", port },
 		admin: true,
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
@@ -1552,7 +1552,7 @@ test("admin auth disabled rejects non-loopback binding", async () => {
 		http: { host: "0.0.0.0", port },
 		admin: { auth: false },
 		adapters: [],
-		agent: agentFrom("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+		agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 		runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
 	});
 	try {
