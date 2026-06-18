@@ -9,6 +9,7 @@ import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
+import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
 import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
@@ -111,7 +112,7 @@ export function slack(config: SlackConfig = {}): Adapter {
 		name,
 		kind,
 		permissions: input.permissions,
-		acceptsBots: botsConfigured(input.allow?.bots),
+		acceptsBots: botAllowConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			const { handler, logger: log } = start;
 			activeLogger = log;
@@ -1210,7 +1211,7 @@ function slackAllowConfigured(allow: SlackAllow | undefined): boolean {
 		allow?.channels?.length ||
 			allow?.users?.length ||
 			allow?.groups?.length ||
-			botsConfigured(allow?.bots) ||
+			botAllowConfigured(allow?.bots) ||
 			allow?.dms === false,
 	);
 }
@@ -1238,7 +1239,7 @@ export function slackAllowed(
 }
 
 function actorAllowlist(allow: SlackAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length && !botsConfigured(allow?.bots)) return undefined;
+	if (!allow?.users?.length && !allow?.groups?.length && !botAllowConfigured(allow?.bots)) return undefined;
 	return ["allowed"];
 }
 
@@ -1258,20 +1259,11 @@ export function slackBotAllowed(
 	bot: SlackBotIdentity,
 	self: SlackBotIdentity | undefined,
 ): boolean {
-	if (!slackBotSelfKnown(self)) return false;
-	if (slackSameBot(bot, self)) return false;
-	if (allow === true) return true;
-	if (!Array.isArray(allow) || allow.length === 0) return false;
-	const ids = [bot.botId, bot.appId, bot.userId].filter((id): id is string => Boolean(id));
-	return ids.some((id) => allow.includes(id));
-}
-
-function botsConfigured(bots: SlackAllow["bots"] | undefined): boolean {
-	return bots === true || (Array.isArray(bots) && bots.length > 0);
-}
-
-function slackBotSelfKnown(self: SlackBotIdentity | undefined): self is SlackBotIdentity {
-	return Boolean(self?.botId || self?.appId || self?.userId);
+	return botIdentityAllowed({
+		allow,
+		botIds: [bot.botId, bot.appId, bot.userId],
+		selfIds: [self?.botId, self?.appId, self?.userId],
+	});
 }
 
 function slackBotSender(
@@ -1285,14 +1277,6 @@ function slackBotSender(
 ): SlackBotIdentity | undefined {
 	if (msg.subtype !== "bot_message" && !msg.bot_id && !msg.app_id && msg.user !== self.userId) return undefined;
 	return { botId: msg.bot_id, appId: msg.app_id, userId: msg.user };
-}
-
-function slackSameBot(input: SlackBotIdentity, other: SlackBotIdentity): boolean {
-	return Boolean(
-		(input.botId && input.botId === other.botId) ||
-			(input.appId && input.appId === other.appId) ||
-			(input.userId && input.userId === other.userId),
-	);
 }
 
 function slackActor(msg: { user?: string }, bot?: SlackBotIdentity): string {
@@ -1986,7 +1970,11 @@ function labeledBlock(label: string, value: string): SlackBlock[] {
 
 function metadataBlock(rows: ReturnType<typeof approvalViewRows>): SlackBlock {
 	const metadata = rows.filter(
-		(row) => row.label === "Approval ID" || row.label === "Requested by" || row.label.endsWith(" by") || row.label === "Status",
+		(row) =>
+			row.label === "Approval ID" ||
+			row.label === "Requested by" ||
+			row.label.endsWith(" by") ||
+			row.label === "Status",
 	);
 	const lines = metadata.map((row) =>
 		row.label === "Approval ID" ? `*${row.label}* \`${row.value}\`` : `*${row.label}* ${row.value}`,

@@ -10,6 +10,7 @@ import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
+import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
 import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type ControlAction, type ControlActionTokens, parseControlAction } from "./control-action.js";
@@ -98,7 +99,7 @@ export function telegram(config: TelegramConfig = {}): Adapter {
 		name,
 		kind,
 		permissions: input.permissions,
-		acceptsBots: botsConfigured(input.allow?.bots),
+		acceptsBots: botAllowConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
@@ -207,7 +208,9 @@ function telegramTargetChat(target: AdapterTarget): number {
 }
 
 function telegramAllowConfigured(allow: TelegramAllow | undefined): boolean {
-	return Boolean(allow?.chats?.length || allow?.users?.length || botsConfigured(allow?.bots) || allow?.dms === false);
+	return Boolean(
+		allow?.chats?.length || allow?.users?.length || botAllowConfigured(allow?.bots) || allow?.dms === false,
+	);
 }
 
 function telegramSetup(
@@ -1370,7 +1373,7 @@ export function telegramAllowed(
 }
 
 function telegramActorAllowlist(allow: TelegramAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !botsConfigured(allow?.bots)) return undefined;
+	if (!allow?.users?.length && !botAllowConfigured(allow?.bots)) return undefined;
 	return ["allowed"];
 }
 
@@ -1389,16 +1392,7 @@ export function telegramBotAllowed(
 	bot: string | number,
 	self: string | number | undefined,
 ): boolean {
-	if (self === undefined) return false;
-	const id = String(bot);
-	if (id === String(self)) return false;
-	if (allow === true) return true;
-	if (!Array.isArray(allow) || allow.length === 0) return false;
-	return allow.map(String).includes(id);
-}
-
-function botsConfigured(bots: TelegramAllow["bots"] | undefined): boolean {
-	return bots === true || (Array.isArray(bots) && bots.length > 0);
+	return botIdentityAllowed({ allow, botIds: [bot], selfIds: [self] });
 }
 
 export function telegramTriggered(

@@ -27,13 +27,14 @@ import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
+import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
 import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import {
-	controlActionText,
-	parseControlAction,
 	type ControlAction,
 	type ControlActionTokens,
+	controlActionText,
+	parseControlAction,
 } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
@@ -119,7 +120,7 @@ export function discord(config: DiscordConfig = {}): Adapter {
 		name,
 		kind,
 		permissions: input.permissions,
-		acceptsBots: botsConfigured(input.allow?.bots),
+		acceptsBots: botAllowConfigured(input.allow?.bots),
 		async start(start: AdapterStart): Promise<void> {
 			activeLogger = start.logger;
 			delivery = new DeliveryQueue(input.delivery, start.logger);
@@ -1015,7 +1016,13 @@ async function uploadDiscordAttachments(input: {
 	const names = resolved.map((file) => file.name);
 	const method = input.token ? "rest" : "channel";
 	try {
-		const sent = await sendDiscordAttachmentUpload(input.channel, input.token, resolved, input.delivery, input.context);
+		const sent = await sendDiscordAttachmentUpload(
+			input.channel,
+			input.token,
+			resolved,
+			input.delivery,
+			input.context,
+		);
 		input.logger.debug("discord.attachment_upload_done", {
 			...input.context,
 			method,
@@ -1046,7 +1053,13 @@ async function uploadDiscordAttachments(input: {
 			}
 			// Sending files is not idempotent; retrying favors visible delivery over silent loss.
 			try {
-				const sent = await sendDiscordAttachmentUpload(input.channel, input.token, resolved, input.delivery, input.context);
+				const sent = await sendDiscordAttachmentUpload(
+					input.channel,
+					input.token,
+					resolved,
+					input.delivery,
+					input.context,
+				);
 				input.logger.debug("discord.attachment_upload_retry_done", {
 					...input.context,
 					method,
@@ -1134,7 +1147,10 @@ function discordRestError(message: string, retryAfter: unknown): Error {
 	return error;
 }
 
-async function findRecentDiscordAttachmentUpload(channel: TextBasedChannel, names: string[]): Promise<string | undefined> {
+async function findRecentDiscordAttachmentUpload(
+	channel: TextBasedChannel,
+	names: string[],
+): Promise<string | undefined> {
 	if (!("messages" in channel)) return undefined;
 	const messages = await channel.messages.fetch({ limit: 10 });
 	const expected = attachmentUploadText(names);
@@ -1387,7 +1403,7 @@ function discordAllowConfigured(allow: DiscordAllow | undefined): boolean {
 		allow?.channels?.length ||
 			allow?.users?.length ||
 			allow?.groups?.length ||
-			botsConfigured(allow?.bots) ||
+			botAllowConfigured(allow?.bots) ||
 			allow?.dms === false,
 	);
 }
@@ -1425,7 +1441,7 @@ export function discordAllowed(
 }
 
 function actorAllowlist(allow: DiscordAllow | undefined): string[] | undefined {
-	if (!allow?.users?.length && !allow?.groups?.length && !botsConfigured(allow?.bots)) return undefined;
+	if (!allow?.users?.length && !allow?.groups?.length && !botAllowConfigured(allow?.bots)) return undefined;
 	return ["allowed"];
 }
 
@@ -1445,15 +1461,7 @@ export function discordBotAllowed(
 	bot: string,
 	self: string | undefined,
 ): boolean {
-	if (!self) return false;
-	if (bot === self) return false;
-	if (allow === true) return true;
-	if (!Array.isArray(allow) || allow.length === 0) return false;
-	return allow.includes(bot);
-}
-
-function botsConfigured(bots: DiscordAllow["bots"] | undefined): boolean {
-	return bots === true || (Array.isArray(bots) && bots.length > 0);
+	return botIdentityAllowed({ allow, botIds: [bot], selfIds: [self] });
 }
 
 const DISCORD_GROUP_CACHE_MS = 60_000;
