@@ -2,7 +2,7 @@
 
 Advanced webhook automation for GitHub issue diagnosis.
 
-This example receives an issue request over HTTP, uses GitHub API tools for issue context and controlled writeback, and runs repo inspection inside a Docker-backed heypi runtime. `GITHUB_TOKEN` is used only by host-side custom tools; it is not passed into Docker.
+This example receives an issue request over HTTP, uses GitHub API tools from `agent/tools/github.ts` for issue context and controlled writeback, and runs repo inspection inside a Docker-backed heypi runtime. `GITHUB_TOKEN` is used only by host-side custom tools; it is not passed into Docker.
 
 ## Requirements
 

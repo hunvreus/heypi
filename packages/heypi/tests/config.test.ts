@@ -147,6 +147,21 @@ test("loadAgent discovers Telegram example tools from agent/tools", () => {
 	);
 });
 
+test("loadAgent discovers webhook GitHub example tools from agent/tools", () => {
+	const previous = process.env.HEYPI_DEV;
+	process.env.HEYPI_DEV = "1";
+	try {
+		const agent = loadAgent("../../examples/webhook-github-docker/agent", { model: "openai/gpt-5-mini" });
+		assert.deepEqual(
+			agent.tools?.map((tool) => tool.name),
+			["github_issue_get", "github_issue_search", "github_issue_comment", "github_issue_close_duplicate"],
+		);
+	} finally {
+		if (previous === undefined) delete process.env.HEYPI_DEV;
+		else process.env.HEYPI_DEV = previous;
+	}
+});
+
 test("loadAgent rejects duplicate discovered and explicit tool names", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	mkdirSync(join(root, "tools"), { recursive: true });

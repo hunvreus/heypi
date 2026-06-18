@@ -41,7 +41,7 @@
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
-- Changed the Slack DevOps and Telegram Workout examples to load custom tools from `agent/tools/` discovery instead of wiring authored tools in `index.ts`.
+- Changed the Slack DevOps, Telegram Workout, and Webhook GitHub Docker examples to load custom tools from `agent/tools/` discovery instead of wiring authored tools in `index.ts`.
 - Changed example READMEs to distinguish local dev adapter testing from production provider adapter startup.
 - Changed the `tool()` helper documentation to mark it as a deprecated compatibility API in favor of `defineTool()`.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
