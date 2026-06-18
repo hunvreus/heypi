@@ -12,6 +12,10 @@ export type ApprovalViewRow = {
 	format?: "code" | "text";
 };
 
+export function approvalViewTitle(state: ApprovalViewState): string {
+	return approvalStateTitle(state === "pending" ? undefined : state);
+}
+
 export function approvalViewRows(input: {
 	approval?: ApprovalPrompt;
 	state: ApprovalViewState;
@@ -33,6 +37,35 @@ export function approvalViewRows(input: {
 	const resolution = approvalResolutionRow(input.state, input.actor, input.formatActor);
 	if (resolution) rows.push(resolution);
 	return rows;
+}
+
+export function approvalViewText(input: {
+	text: string;
+	approval?: ApprovalPrompt;
+	state?: ApprovalResolution;
+	actor?: string;
+	formatActor?: (actor: string) => string;
+	formatTitle?: (title: string) => string;
+	formatLabel?: (label: string) => string;
+	formatCode?: (value: string) => string;
+	formatRow?: (row: ApprovalViewRow) => string;
+	separator?: string;
+}): string {
+	if (!input.approval) return input.text;
+	const state = input.state ?? "pending";
+	const title = input.formatTitle?.(approvalViewTitle(state)) ?? approvalViewTitle(state);
+	const rows = approvalViewRows({
+		approval: input.approval,
+		state,
+		actor: input.actor,
+		formatActor: input.formatActor,
+	}).map((row) => {
+		if (input.formatRow) return input.formatRow(row);
+		const label = input.formatLabel?.(row.label) ?? row.label;
+		const value = row.format === "code" ? (input.formatCode?.(row.value) ?? row.value) : row.value;
+		return [label, value].join("\n");
+	});
+	return [title, ...rows].filter(Boolean).join(input.separator ?? "\n\n");
 }
 
 export function normalizeApprovalDetails(input: unknown): ApprovalDetail[] | undefined {

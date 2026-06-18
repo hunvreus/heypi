@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PermissionsConfig } from "../config.js";
-import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { approvalViewText, codeFence } from "../core/approval-view.js";
 import { COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
 import type { AppMessages } from "../core/messages.js";
@@ -1482,27 +1482,23 @@ export function telegramApprovalText(
 	state?: Outbound["approvalResolution"],
 	actor?: string,
 ): string {
-	if (!approval) return text;
-	return [
-		approvalTitleText(state),
-		approval.reason ? ["Reason:", approval.reason].join("\n") : undefined,
-		...(approval.details ?? []).map((detail) =>
-			[`${detail.label}:`, detail.format === "code" ? codeFence(detail.value) : detail.value].join("\n"),
-		),
-		`Approval ID: ${approval.id}`,
-		approval.requestedBy ? `Requested by: ${approval.requestedBy}` : undefined,
-		state ? approvalResolutionText(state, actor) : undefined,
-	]
-		.filter((line): line is string => typeof line === "string")
-		.join("\n\n");
+	return approvalViewText({
+		text,
+		approval,
+		state,
+		actor,
+		formatTitle: (title) => `*${title}*`,
+		formatCode: codeFence,
+		formatRow: (row) => telegramApprovalRow(row),
+	});
 }
 
-function approvalResolutionText(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
-	return approvalStateLine(state, actor);
-}
-
-function approvalTitleText(state?: Outbound["approvalResolution"]): string {
-	return `*${approvalStateTitle(state)}*`;
+function telegramApprovalRow(row: { label: string; value: string; format?: "code" | "text" }): string {
+	const value = row.format === "code" ? codeFence(row.value) : row.value;
+	if (row.label === "Approval ID" || row.label === "Requested by") return `${row.label}: ${value}`;
+	if (row.label === "Approved by" || row.label === "Rejected by") return `${row.label} ${value}`;
+	if (row.label === "Status") return value;
+	return `${row.label}:\n${value}`;
 }
 
 function progressMarkup(id: string): TelegramReplyMarkup {

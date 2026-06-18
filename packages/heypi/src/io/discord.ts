@@ -19,7 +19,7 @@ import {
 	type TextBasedChannel,
 } from "discord.js";
 import type { PermissionsConfig } from "../config.js";
-import { approvalStateTitle, approvalViewRows, codeFence, type ApprovalViewState } from "../core/approval-view.js";
+import { approvalViewRows, approvalViewTitle, codeFence, type ApprovalViewState } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -1296,7 +1296,7 @@ function approvedFallbackText(actor: string, text: string, id?: string): string 
 }
 
 function approvalTitle(state: ApprovalViewState): string {
-	return approvalStateTitle(state === "pending" ? undefined : state);
+	return approvalViewTitle(state);
 }
 
 function codeValue(value: string): string {

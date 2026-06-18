@@ -1,6 +1,6 @@
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
 import type { PermissionsConfig } from "../config.js";
-import { approvalStateLine, approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { approvalStateLine, approvalViewRows, approvalViewTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { commandText } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -1888,13 +1888,18 @@ export function approvalBlocks(
 	actor?: string,
 ): SlackBlock[] | undefined {
 	if (!approval) return undefined;
+	const rows = approvalViewRows({
+		approval,
+		state: state ?? "pending",
+		actor,
+		formatActor: (id) => `<@${id}>`,
+	});
 	const blocks: SlackBlock[] = [
 		{ type: "section", text: { type: "mrkdwn", text: approvalTitleText(state) } },
-		...(approval.reason ? labeledBlock("Reason", approval.reason) : []),
-		...(approval.details ?? []).flatMap((detail) =>
-			labeledBlock(detail.label, detail.format === "code" ? codeFence(detail.value) : detail.value),
-		),
-		metadataBlock(approval, state, actor),
+		...rows
+			.filter((row) => row.label !== "Approval ID" && row.label !== "Requested by" && !row.label.endsWith(" by"))
+			.flatMap((row) => labeledBlock(row.label, row.format === "code" ? codeFence(row.value) : row.value)),
+		metadataBlock(rows),
 	];
 	return blocks;
 }
@@ -1981,33 +1986,24 @@ function stripSlackBlockId(block: SlackBlock): SlackBlock {
 }
 
 function approvalTitleText(state?: Outbound["approvalResolution"]): string {
-	return `*${approvalStateTitle(state)}*`;
+	return `*${approvalViewTitle(state ?? "pending")}*`;
 }
 
 function labeledBlock(label: string, value: string): SlackBlock[] {
 	return [{ type: "section", text: { type: "mrkdwn", text: `*${label}*\n${value}` } }];
 }
 
-function metadataBlock(
-	approval: NonNullable<Outbound["approval"]>,
-	state?: Outbound["approvalResolution"],
-	actor?: string,
-): SlackBlock {
-	const lines = [
-		`*Approval ID* \`${approval.id}\``,
-		approval.requestedBy ? `*Requested by* <@${approval.requestedBy}>` : undefined,
-		state ? approvalMetadataStatus(state, actor) : undefined,
-	].filter((line): line is string => Boolean(line));
+function metadataBlock(rows: ReturnType<typeof approvalViewRows>): SlackBlock {
+	const metadata = rows.filter(
+		(row) => row.label === "Approval ID" || row.label === "Requested by" || row.label.endsWith(" by") || row.label === "Status",
+	);
+	const lines = metadata.map((row) =>
+		row.label === "Approval ID" ? `*${row.label}* \`${row.value}\`` : `*${row.label}* ${row.value}`,
+	);
 	return {
 		type: "section",
 		text: { type: "mrkdwn", text: lines.join("\n") },
 	};
-}
-
-function approvalMetadataStatus(state: NonNullable<Outbound["approvalResolution"]>, actor?: string): string {
-	if (state === "approved") return `*Approved by* ${actor ? `<@${actor}>` : "Approved"}`;
-	if (state === "rejected") return `*Rejected by* ${actor ? `<@${actor}>` : "Rejected"}`;
-	return "*Status* Expired";
 }
 
 function contextBlock(text: string): SlackBlock[] {
