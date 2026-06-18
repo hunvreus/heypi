@@ -90,7 +90,7 @@
 		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "^0.75.5",
+		"@earendil-works/pi-coding-agent": "^0.79.6",
 		"@libsql/client": "^0.17.3",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
