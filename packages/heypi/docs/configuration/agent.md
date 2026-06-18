@@ -4,13 +4,13 @@ The `agent` config defines the Pi agent heypi runs for each accepted turn: model
 
 ## Config
 
-Use `agentFrom()` for folder-based agents:
+Use `loadAgent()` for folder-based agents:
 
 ```ts
 createHeypi({
-  agent: agentFrom("./agent", {
+  agent: loadAgent("./agent", {
     model: "openai/gpt-5.4-mini",
-    tools: [...coreTools()],
+    tools: [...defaultTools()],
   }),
   // ...state, adapters, runtime
 });
@@ -26,7 +26,7 @@ createHeypi({
     model: { provider: "openai", name: "gpt-5.4-mini" },
     prompt: "You are a concise operations assistant.",
     soul: "Answer directly. Ask when blocked.",
-    tools: [...coreTools()],
+    tools: [...defaultTools()],
   },
   // ...state, adapters, runtime
 });
@@ -36,31 +36,37 @@ createHeypi({
 
 | Option | Required | Applies to | Description |
 | --- | --- | --- | --- |
-| `model` | Yes, unless `HEYPI_MODEL` is set | `agentFrom`, manual | Model id. `agentFrom()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
-| `tools` | No | `agentFrom`, manual | Core tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
-| `context` | No | `agentFrom`, manual | Per-turn context blocks added before the model chooses tools. |
-| `systemPrompt` | No | `agentFrom` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |
+| `model` | Yes, unless `HEYPI_MODEL` is set | `loadAgent`, manual | Model id. `loadAgent()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
+| `tools` | No | `loadAgent`, manual | Core tools, managed tools, and custom trusted JS tools exposed to the agent. See [Tools](tools.md). |
+| `context` | No | `loadAgent`, manual | Per-turn context blocks added before the model chooses tools. |
+| `systemPrompt` | No | `loadAgent` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |
 | `prompt` | No | manual | Main prompt text for the Pi agent. |
 | `soul` | No | manual | Voice and behavior text for the Pi agent. |
 | `directory` | Yes | manual | Agent working directory and base path for relative Pi skill or extension paths. |
-| `skills` | No | `agentFrom`, manual | Explicit Pi-native skill paths. Bundled folder skills are loaded from `agent/skills/` when using `agentFrom()`. |
-| `extensions` | No | `agentFrom`, manual | Explicit Pi extension paths. Folder extensions are loaded from `agent/extensions/` when using `agentFrom()`. |
+| `skills` | No | `loadAgent`, manual | Explicit Pi-native skill paths. Bundled folder skills are loaded from `agent/skills/` when using `loadAgent()`. |
+| `extensions` | No | `loadAgent`, manual | Explicit Pi extension paths. Folder extensions are loaded from `agent/extensions/` when using `loadAgent()`. |
 
 For the full lower-level Pi agent contract, see Pi's [coding-agent package](https://github.com/earendil-works/pi/tree/main/packages/coding-agent).
 
 ## Prompt files
 
-`agentFrom("./agent", ...)` loads these files:
+`loadAgent("./agent", ...)` loads these files and folders:
 
 | Path | Description |
 | --- | --- |
 | `SYSTEM.md` | System-level operating rules. Replaces heypi's generated system prompt when present. |
 | `SOUL.md` | Voice and behavior. Uses heypi's concise fallback when omitted. |
 | `AGENTS.md` | Main app instructions. No default. |
+| `tools/` | Trusted TypeScript tools default-exported from module files. File stems become tool names when omitted. |
+| `jobs/` | Scheduled jobs default-exported from module files. |
 | `skills/` | Bundled skills loaded with the agent. Empty when absent. |
 | `extensions/` | Explicit Pi extensions loaded with the agent. Empty when absent. |
 
 `skills/` loads bundled skills from the agent folder. They ship with the app and are not managed by `skill_*` tools. Runtime-created managed skills are enabled with top-level [`skills`](skills.md) config.
+
+Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
+
+If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.
 
 Prompt order is: `SYSTEM.md` or heypi's generated system prompt, then `SOUL.md`, `AGENTS.md`, and dynamic context blocks.
 
@@ -91,7 +97,7 @@ OPENAI_API_KEY=sk-... npx tsx index.ts
 ```
 
 ```ts
-agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" });
+agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" });
 ```
 
 Common provider env vars:
@@ -112,7 +118,7 @@ This list is intentionally partial. The canonical provider list belongs to Pi's 
 Use `context` for compact facts that change per turn: current deployment, tenant id, configured hosts, channel metadata, or request actor.
 
 ```ts
-agentFrom("./agent", {
+loadAgent("./agent", {
   model: "openai/gpt-5.4-mini",
   context: [
     async ({ channel, actor }) => ({

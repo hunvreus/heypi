@@ -1,12 +1,12 @@
 # Configuration
 
-heypi apps are configured in TypeScript with `createHeypi()`. The config object wires together app state, adapters, the Pi agent, runtime tools, optional features, and operational controls. Most apps use [`agentFrom()`](agent.md) to load the agent prompt, model, tools, context, and Pi extensions from a local folder.
+heypi apps are configured in TypeScript with `createHeypi()`. The config object wires together app state, adapters, the Pi agent, runtime tools, optional features, and operational controls. Most apps use [`loadAgent()`](agent.md) to load the agent prompt, model, tools, context, and Pi extensions from a local folder.
 
 ```ts
 createHeypi({
   state: { root: "./state" },
   adapters: [slack({ botToken, appToken })],
-  agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { root: workspace("./workspace") },
 });
 ```

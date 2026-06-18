@@ -11,7 +11,7 @@ npm install @hunvreus/heypi
 ## Step 2: create `index.ts`
 
 ```ts
-import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
   state: { root: "./state" },
@@ -21,7 +21,7 @@ const app = createHeypi({
       appToken: process.env.SLACK_APP_TOKEN!,
     }),
   ],
-  agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { name: "just-bash", root: workspace("./workspace") },
 });
 
@@ -31,7 +31,7 @@ await runHeypi(app);
 ## Step 3: create agent files
 
 ```bash
-mkdir -p agent/skills tools
+mkdir -p agent/skills agent/tools agent/jobs
 printf "You are a concise team assistant.\n" > agent/AGENTS.md
 printf "Answer directly and accurately.\n" > agent/SOUL.md
 ```
@@ -60,5 +60,5 @@ Mention the bot in a test channel.
 
 - `state.root` stores durable heypi state.
 - `slack(...)` registers the Slack adapter.
-- `agentFrom("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, and bundled skills.
+- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, bundled skills, tools, and jobs.
 - `runtime.root` is the workspace for runtime tools, generated files, and scoped runtime state.

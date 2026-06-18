@@ -47,8 +47,9 @@ my-agent/
 |-- agent/
 |   |-- AGENTS.md
 |   |-- SOUL.md
-|   `-- skills/
-|-- tools/
+|   |-- jobs/
+|   |-- skills/
+|   `-- tools/
 `-- setup/
     `-- slack.manifest.json
 ```

@@ -5,7 +5,13 @@
 ### Breaking
 - Changed chat response placement config to use adapter-local `response` objects. Slack `reply` is now `response.placement`, and Slack `replyBroadcast` is now `response.broadcast`; the old keys are not supported.
 
+### Added
+- Added the JS-native authoring APIs `loadAgent`, `defaultTools`, `defineTool`, and `approval`, with Zod input schema support for custom tools.
+- Added `loadTools`, `loadJobs`, and `defineJob`, with `loadAgent()` discovery for `agent/tools/` and `agent/jobs/`.
+
 ### Changed
+- Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
+- Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 

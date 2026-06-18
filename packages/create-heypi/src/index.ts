@@ -147,7 +147,8 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await mkdir(root, { recursive: true });
 	await mkdir(join(root, "agent"), { recursive: true });
 	await mkdir(join(root, "agent", "skills"), { recursive: true });
-	await mkdir(join(root, "tools"), { recursive: true });
+	await mkdir(join(root, "agent", "tools"), { recursive: true });
+	await mkdir(join(root, "agent", "jobs"), { recursive: true });
 	await write(root, "package.json", packageJson(options));
 	await write(root, "tsconfig.json", tsconfigJson());
 	await write(root, "index.ts", indexTs(options));
@@ -158,14 +159,15 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await write(root, "agent/AGENTS.md", agentPrompt());
 	await write(root, "agent/SOUL.md", soul());
 	await write(root, "agent/skills/README.md", skillsReadme());
-	await write(root, "tools/README.md", toolsReadme());
+	await write(root, "agent/tools/README.md", toolsReadme());
+	await write(root, "agent/jobs/README.md", jobsReadme());
 	if (options.adapter === "slack") {
 		await write(root, "setup/slack.manifest.json", slackManifest(options.slackMode ?? "socket"));
 	}
 	if (options.samples) {
 		await mkdir(join(root, "agent", "skills", "example"), { recursive: true });
 		await write(root, "agent/skills/example/SKILL.md", sampleSkill());
-		await write(root, "tools/index.ts", sampleTool());
+		await write(root, "agent/tools/now.ts", sampleTool());
 	}
 }
 
@@ -222,12 +224,19 @@ function tsconfigJson(): string {
 			skipLibCheck: true,
 			noEmit: true,
 		},
-		include: ["index.ts", "tools/**/*.ts"],
+		include: ["index.ts", "agent/**/*.ts"],
 	});
 }
 
 function indexTs(options: Options): string {
-	const imports = ["agentFrom", "createHeypi", "runHeypi", adapterImport(options.adapter), "workspace"];
+	const imports = [
+		"createHeypi",
+		"defaultTools",
+		"loadAgent",
+		"runHeypi",
+		adapterImport(options.adapter),
+		"workspace",
+	];
 	const runtimeImport =
 		options.runtime === "docker"
 			? 'import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";\n'
@@ -242,7 +251,7 @@ ${httpConfig(options)}
 	adapters: [
 ${adapterConfig(options)}
 	],
-	agent: agentFrom("./agent", { model: "${options.model}" }),
+	agent: loadAgent("./agent", { model: "${options.model}", tools: defaultTools() }),
 ${options.admin ? "\tadmin: true,\n" : ""}\truntime: ${runtimeConfig(options.runtime)},
 });
 
@@ -366,8 +375,9 @@ ${runtimeNotes(options.runtime)}
 
 - \`agent/AGENTS.md\`: behavioral instructions.
 - \`agent/SOUL.md\`: voice and style.
-- \`agent/skills/\`: reusable skill instructions loaded by \`agentFrom("./agent")\`.
-- \`tools/\`: TypeScript helper modules you can import from \`index.ts\`.
+- \`agent/skills/\`: reusable skill instructions loaded by \`loadAgent("./agent")\`.
+- \`agent/tools/\`: TypeScript tools discovered by \`loadAgent("./agent")\`.
+- \`agent/jobs/\`: scheduled jobs discovered by \`loadAgent("./agent")\`.
 `;
 }
 
@@ -412,7 +422,15 @@ Add skill folders here. Each skill should include a \`SKILL.md\` file with a sho
 function toolsReadme(): string {
 	return `# Tools
 
-Add TypeScript helper modules here and import them from \`index.ts\` when you want to expose custom tools to the agent.
+Add TypeScript tool modules here. Export one \`defineTool(...)\` call as the default export.
+The filename becomes the tool name when the tool does not set \`name\`.
+`;
+}
+
+function jobsReadme(): string {
+	return `# Jobs
+
+Add TypeScript job modules here. Export one \`defineJob(...)\` call as the default export.
 `;
 }
 
@@ -484,9 +502,13 @@ Summarize the current state in three bullets: what is known, what is uncertain, 
 }
 
 function sampleTool(): string {
-	return `export function now(): string {
-\treturn new Date().toISOString();
-}
+	return `import { defineTool } from "@hunvreus/heypi";
+
+export default defineTool({
+\tdescription: "Return the current ISO timestamp.",
+\tinput: { type: "object", properties: {}, additionalProperties: false },
+\trun: async () => new Date().toISOString(),
+});
 `;
 }
 

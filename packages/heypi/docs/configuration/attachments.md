@@ -86,8 +86,8 @@ Converter options:
 The `attach` core tool marks a runtime file for upload with the final reply. Files must stay inside the active runtime scope.
 
 ```ts
-agentFrom("./agent", {
-  tools: [...coreTools({ attach: true })],
+loadAgent("./agent", {
+  tools: [...defaultTools({ attach: true })],
 });
 ```
 

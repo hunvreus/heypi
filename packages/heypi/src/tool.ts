@@ -1,12 +1,16 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { toJSONSchema, type ZodType, type z } from "zod";
 import { textContent } from "./core/content.js";
 import type { Confirm, ToolExecutionContext } from "./core/types.js";
 import type { Runtime } from "./runtime/types.js";
 import { type ConfirmableToolDefinition, TOOL_EXECUTE, TOOL_PI_EXECUTE } from "./tool-internal.js";
 
+const INFERRED_TOOL_NAME = Symbol.for("@hunvreus/heypi/inferred-tool-name");
+
 export type ToolParams = Record<string, unknown>;
 export type ToolResult = string | Awaited<ReturnType<ToolDefinition["execute"]>>;
 export type ToolContext = ToolExecutionContext;
+export type ToolSchema = ToolDefinition["parameters"] | ZodType;
 
 export type Tool<T extends ToolParams = ToolParams> = {
 	name: string;
@@ -17,8 +21,40 @@ export type Tool<T extends ToolParams = ToolParams> = {
 	execute(input: T, context: ToolContext): ToolResult | Promise<ToolResult>;
 };
 
+export type DefineTool<T extends ToolParams = ToolParams, TSchema extends ToolSchema = ToolDefinition["parameters"]> = {
+	name?: string;
+	description: string;
+	input: TSchema;
+	label?: string;
+	confirm?: Confirm;
+	run(input: T, context: ToolContext): ToolResult | Promise<ToolResult>;
+};
+
+type DefineZodTool<TSchema extends ZodType> = DefineTool<z.output<TSchema> & ToolParams, TSchema>;
+
+/** Defines a trusted heypi custom tool from an input schema and run handler. */
+export function defineTool<T extends ToolParams = ToolParams>(
+	input: DefineTool<T, ToolDefinition["parameters"]>,
+): ToolDefinition;
+export function defineTool<TSchema extends ZodType>(input: DefineZodTool<TSchema>): ToolDefinition;
+export function defineTool(input: DefineTool<ToolParams, ToolSchema>): ToolDefinition {
+	return createTool({
+		name: input.name ?? "",
+		description: input.description,
+		parameters: normalizeSchema(input.input),
+		label: input.label,
+		confirm: input.confirm,
+		execute: input.run,
+	});
+}
+
 /** Creates a heypi custom tool while keeping raw Pi tools supported. */
 export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDefinition {
+	return createTool(input);
+}
+
+function createTool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDefinition {
+	const inferredName = !input.name;
 	const execute = async (params: Record<string, unknown>, context: ToolContext): Promise<{ out: string }> => {
 		const result = await input.execute(params as T, context);
 		return { out: resultText(result) };
@@ -46,7 +82,35 @@ export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDef
 			});
 		},
 	};
+	if (inferredName) markInferredToolName(out);
 	return out;
+}
+
+export function assignDiscoveredToolName(tool: ToolDefinition, name: string): ToolDefinition {
+	if (!needsDiscoveredToolName(tool)) return tool;
+	return { ...tool, name, label: (tool as ConfirmableToolDefinition).label || name };
+}
+
+export function validateToolName(tool: ToolDefinition): void {
+	if (!needsDiscoveredToolName(tool)) return;
+	throw new Error("tool name is required unless the tool is loaded with loadTools()");
+}
+
+function markInferredToolName(tool: ToolDefinition): void {
+	Object.defineProperty(tool, INFERRED_TOOL_NAME, { value: true });
+}
+
+function needsDiscoveredToolName(tool: ToolDefinition): boolean {
+	return Boolean((tool as { [INFERRED_TOOL_NAME]?: boolean })[INFERRED_TOOL_NAME]);
+}
+
+function normalizeSchema(input: ToolSchema): ToolDefinition["parameters"] {
+	if (!isZodSchema(input)) return input as ToolDefinition["parameters"];
+	return toJSONSchema(input) as ToolDefinition["parameters"];
+}
+
+function isZodSchema(input: ToolSchema): input is ZodType {
+	return Boolean(input && typeof input === "object" && "_zod" in input);
 }
 
 const unboundRuntime: Runtime = {

@@ -30,7 +30,10 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 | Export | Purpose |
 | --- | --- |
-| `agentFrom(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, `skills/`, and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, `tools/`, `jobs/`, `skills/`, and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadTools(folder)` | Loads default-exported tools from a folder. File stems become tool names when omitted. |
+| `loadJobs(folder)` | Loads default-exported jobs from a folder. |
+| `agentFrom(folder, options)` | Compatibility alias for `loadAgent()`. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
 | `AgentContextProvider` | Per-turn context callback type. |
@@ -50,8 +53,12 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 
 | Export | Purpose |
 | --- | --- |
-| `coreTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
-| `tool(definition)` | Defines a trusted custom TypeScript tool. See [Agent tools](../configuration/tools.md). |
+| `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
+| `coreTools(config)` | Compatibility alias for `defaultTools()`. |
+| `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. See [Agent tools](../configuration/tools.md). |
+| `tool(definition)` | Compatibility API for custom tools using `parameters` and `execute`. |
+| `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
+| `approval` | Helpers for common confirmation policies: `always`, `never`, `when`, and `command`. |
 | `commandConfirm(config)` | Builds bash confirmation policy from allow/approve/block patterns. |
 | `classifyCommand(command, config)` | Classifies a command against command policy. |
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |

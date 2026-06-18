@@ -17,6 +17,8 @@ import type { SchedulerConfig } from "./core/scheduler.js";
 import type { AgentToolDefinition } from "./core-tools.js";
 import type { AttachmentProcessingConfig, AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
+import type { JobConfig } from "./job.js";
+import { loadJobs, loadTools } from "./load.js";
 import type { RuntimeName, RuntimeProvider } from "./runtime/types.js";
 import type { StateConfig } from "./state.js";
 import type { Store } from "./store/types.js";
@@ -66,6 +68,7 @@ export type AgentConfig = {
 	skills?: string[];
 	extensions?: string[];
 	tools?: AgentToolDefinition[];
+	jobs?: JobConfig[];
 };
 
 export type JustBashConfig = {
@@ -212,12 +215,16 @@ export const DEFAULT_SOUL = [
 ].join("\n");
 
 /** Loads an agent from a folder convention: SOUL.md, AGENTS.md, SYSTEM.md, skills/, extensions/. */
-export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentConfig {
+export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? basename(directory) ?? "agent";
 	const selectedModel = options.model ?? process.env.HEYPI_MODEL;
-	if (!selectedModel) throw new Error("agent model is required; pass agentFrom(..., { model }) or set HEYPI_MODEL");
+	if (!selectedModel) throw new Error("agent model is required; pass loadAgent(..., { model }) or set HEYPI_MODEL");
 	const model = modelConfig(selectedModel);
+	const discoveredTools = loadTools(resolve(directory, "tools"));
+	const explicitTools = options.tools ?? [];
+	const tools = mergeTools(explicitTools, discoveredTools);
+	const jobs = mergeJobs(options.jobs ?? [], loadJobs(resolve(directory, "jobs")));
 	return {
 		id,
 		model,
@@ -228,9 +235,13 @@ export function agentFrom(folder = ".", options: AgentFromOptions = {}): AgentCo
 		context: options.context,
 		skills: options.skills ?? dirList(resolve(directory, "skills")),
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),
-		tools: options.tools,
+		tools,
+		jobs,
 	};
 }
+
+/** @deprecated Use `loadAgent()` instead. */
+export const agentFrom = loadAgent;
 
 export function modelConfig(input: string | ModelConfig): ModelConfig {
 	if (typeof input !== "string") return input;
@@ -250,4 +261,28 @@ function dirList(path: string): string[] {
 	if (!existsSync(path)) return [];
 	const stat = statSync(path);
 	return stat.isDirectory() ? [path] : [];
+}
+
+function mergeTools(explicit: AgentToolDefinition[], discovered: AgentToolDefinition[]): AgentToolDefinition[] | undefined {
+	if (!explicit.length && !discovered.length) return undefined;
+	const seen = new Set<string>();
+	for (const tool of explicit) {
+		if ("name" in tool) seen.add(tool.name);
+	}
+	for (const tool of discovered) {
+		if ("name" in tool && seen.has(tool.name)) throw new Error(`duplicate tool name "${tool.name}" in config and discovery`);
+		if ("name" in tool) seen.add(tool.name);
+	}
+	return [...explicit, ...discovered];
+}
+
+function mergeJobs(explicit: JobConfig[], discovered: JobConfig[]): JobConfig[] | undefined {
+	if (!explicit.length && !discovered.length) return undefined;
+	const seen = new Set<string>();
+	for (const job of explicit) seen.add(job.id);
+	for (const job of discovered) {
+		if (seen.has(job.id)) throw new Error(`duplicate job id "${job.id}" in config and discovery`);
+		seen.add(job.id);
+	}
+	return [...explicit, ...discovered];
 }

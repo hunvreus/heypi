@@ -4,7 +4,7 @@ Tools are how the agent reads files, runs commands, sends generated files, and c
 
 ## Core tools
 
-`coreTools()` exposes heypi's built-in runtime tools. By default, it returns:
+`defaultTools()` exposes heypi's built-in runtime tools. By default, it returns:
 
 ```text
 bash, read, write, edit, grep, find, ls, attach, history
@@ -12,16 +12,16 @@ bash, read, write, edit, grep, find, ls, attach, history
 
 These run through the selected runtime when the runtime implements the operation. `attach` marks a generated runtime file for upload with the final chat reply.
 
-Configure core tools with `coreTools()`:
+Configure core tools with `defaultTools()`:
 
 ```ts
-import { commandConfirm, coreTools } from "@hunvreus/heypi";
+import { approval, defaultTools, loadAgent } from "@hunvreus/heypi";
 
-agentFrom("./agent", {
+loadAgent("./agent", {
   model: "openai/gpt-5.4-mini",
   tools: [
-    ...coreTools({
-      bash: { confirm: commandConfirm() },
+    ...defaultTools({
+      bash: { confirm: approval.command() },
       write: false,
       edit: false,
     }),
@@ -47,24 +47,27 @@ agentFrom("./agent", {
 
 Each option accepts `false`, `true`, or `{ confirm }`. Only `bash` has a confirmation policy by default.
 
+`coreTools()` remains as a compatibility alias for existing apps.
+
 ## Custom tools
 
 Custom tools run as trusted JavaScript in the Node app process:
 
 ```ts
-import { tool } from "@hunvreus/heypi";
-import { Type } from "@sinclair/typebox";
+import { defineTool } from "@hunvreus/heypi";
+import { z } from "zod";
 
-const inspectWorkspace = tool({
-  name: "inspect_workspace",
+const inspectWorkspace = defineTool({
   description: "List files in the active runtime workspace.",
-  parameters: Type.Object({}),
-  execute: async (_params, ctx) => {
+  input: z.object({}),
+  run: async (_params, ctx) => {
     const result = await ctx.runtime.bash?.({ command: "find . -maxdepth 2 -type f", signal: ctx.signal });
     return result?.out ?? "runtime does not support bash";
   },
 });
 ```
+
+When a tool is default-exported from `agent/tools/inspect_workspace.ts` and loaded by `loadAgent("./agent")`, the filename becomes the tool name. Tools passed directly in `agent.tools` must set `name`.
 
 Use `ctx.runtime` when a custom tool wants command or file work to follow the selected runtime.
 
@@ -72,12 +75,14 @@ Use `ctx.runtime` when a custom tool wants command or file work to follow the se
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `name` | Yes | Tool name exposed to the model. Use stable, lowercase names such as `inspect_workspace`. |
+| `name` | Only for direct config | Tool name exposed to the model. May be omitted for default-exported tools loaded from `agent/tools/`; the file stem becomes the name. |
 | `description` | Yes | Short model-facing description of when to use the tool. |
-| `parameters` | Yes | Pi-compatible parameter schema, commonly a TypeBox schema. |
-| `execute` | Yes | Trusted JavaScript handler. Receives parsed input and `{ runtime, runtimeScope, signal }`. |
+| `input` | Yes | Tool input schema. Zod, TypeBox, and raw JSON Schema are supported. |
+| `run` | Yes | Trusted JavaScript handler. Receives parsed input and `{ runtime, runtimeScope, signal }`. |
 | `label` | No | Human label for approvals and logs. Defaults to `name`. |
 | `confirm` | No | Confirmation policy for this tool. See [Confirmation](#confirmation). |
+
+`tool({ parameters, execute })` remains as a compatibility API for existing apps.
 
 ## Trust boundary
 
@@ -90,15 +95,15 @@ Use `ctx.runtime` when shell or file work should go through the selected runtime
 `confirm` controls whether a tool call needs approval:
 
 ```ts
-const pageService = tool({
+const pageService = defineTool({
   name: "page_service",
   description: "Record a service page request.",
-  parameters: Type.Object({
-    service: Type.String(),
-    reason: Type.String(),
+  input: z.object({
+    service: z.string(),
+    reason: z.string(),
   }),
   confirm: ({ service }) => ({ message: `Page ${service}.` }),
-  execute: async ({ service, reason }) => `page recorded: service=${service} reason=${reason}`,
+  run: async ({ service, reason }) => `page recorded: service=${service} reason=${reason}`,
 });
 ```
 
@@ -121,12 +126,12 @@ confirm: ({ command }) => ({
 })
 ```
 
-`commandConfirm()` classifies bash commands. It blocks destructive commands, asks for approval for risky commands, and allows low-risk commands.
+`approval.command()` classifies bash commands. It blocks destructive commands, asks for approval for risky commands, and allows low-risk commands.
 
 ```ts
-coreTools({
+defaultTools({
   bash: {
-    confirm: commandConfirm({
+    confirm: approval.command({
       allow: [/^curl -I https:\/\/status\.example\.com\b/],
       approve: [/\bmake deploy\b/],
       block: [/\bgh repo delete\b/],
@@ -137,9 +142,11 @@ coreTools({
 
 The classifier is a guardrail, not a sandbox. Use `just-bash`, Docker, Gondolin, or another runtime provider for isolation.
 
+`commandConfirm()` remains as a compatibility alias for command approval policy.
+
 ## Managed tools
 
-Some top-level feature config adds tools automatically. These tools are not returned by `coreTools()` and do not need to be listed manually in `agent.tools`.
+Some top-level feature config adds tools automatically. These tools are not returned by `defaultTools()` and do not need to be listed manually in `agent.tools`.
 
 | Feature config | Added tools | What they do |
 | --- | --- | --- |

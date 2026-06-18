@@ -34,7 +34,7 @@ npm install @hunvreus/heypi
 ## Minimal app
 
 ```ts
-import { agentFrom, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
 
 const app = createHeypi({
   state: { root: "./state" },
@@ -44,7 +44,7 @@ const app = createHeypi({
       appToken: process.env.SLACK_APP_TOKEN!,
     }),
   ],
-  agent: agentFrom("./agent", { model: "openai/gpt-5.4-mini" }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { root: workspace("./workspace") },
 });
 

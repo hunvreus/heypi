@@ -17,4 +17,4 @@ The wizard asks for:
 - model: curated defaults plus a custom `provider/model` input
 - admin UI, sample skill/tool files, and dependency install
 
-Generated apps include `agent/AGENTS.md`, `agent/SOUL.md`, `agent/skills/`, `tools/`, `.env.example`, and `.env`. Existing `.env` files are never overwritten.
+Generated apps include `agent/AGENTS.md`, `agent/SOUL.md`, `agent/skills/`, `agent/tools/`, `agent/jobs/`, `.env.example`, and `.env`. Existing `.env` files are never overwritten.

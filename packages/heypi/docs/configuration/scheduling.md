@@ -31,6 +31,21 @@ createHeypi({
 });
 ```
 
+For file-based apps, jobs can also live under `agent/jobs/` and be loaded by `loadAgent("./agent")`:
+
+```ts
+import { defineJob } from "@hunvreus/heypi";
+
+export default defineJob({
+  id: "weekly-ops",
+  schedule: { cron: "0 9 * * 1", timezone: "America/Los_Angeles" },
+  targets: { slack: { channels: ["C123"] } },
+  prompt: "Run the weekly ops review.",
+});
+```
+
+Top-level `jobs` in `createHeypi()` remains the explicit override. Set `jobs: []` to reconcile and pause configured jobs.
+
 ## Options
 
 | Option | Required | Default | Description |

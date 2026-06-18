@@ -28,3 +28,8 @@ export type JobConfig = {
 	prompt: string;
 	state?: JobState;
 };
+
+/** Defines a scheduled heypi job. */
+export function defineJob(input: JobConfig): JobConfig {
+	return input;
+}

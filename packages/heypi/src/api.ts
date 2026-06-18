@@ -1,4 +1,5 @@
 export { createHeypi, type HeypiApp, runHeypi } from "./app.js";
+export { approval } from "./approval.js";
 export {
 	type AdminConfig,
 	type AgentConfig,
@@ -15,6 +16,7 @@ export {
 	type HeypiConfig,
 	type HttpConfig,
 	type JustBashConfig,
+	loadAgent,
 	type MemoryConfig,
 	type MemoryWritePolicy,
 	type ModelConfig,
@@ -37,6 +39,7 @@ export {
 	type CoreToolName,
 	type CoreToolsConfig,
 	coreTools,
+	defaultTools,
 } from "./core-tools.js";
 export {
 	type DiscordAllow,
@@ -63,7 +66,27 @@ export {
 	telegram,
 } from "./io/telegram.js";
 export { type WebhookConfig, type WebhookMessage, webhook } from "./io/webhook.js";
-export type { JobConfig, JobKind, JobRoute, JobSchedule, JobScope, JobState, JobTarget, JobTargets } from "./job.js";
+export {
+	defineJob,
+	type JobConfig,
+	type JobKind,
+	type JobRoute,
+	type JobSchedule,
+	type JobScope,
+	type JobState,
+	type JobTarget,
+	type JobTargets,
+} from "./job.js";
+export { loadJobs, loadTools } from "./load.js";
 export { workspace } from "./runtime/index.js";
 export { sqliteStore } from "./store/sqlite.js";
-export { type Tool, type ToolContext, type ToolParams, type ToolResult, tool } from "./tool.js";
+export {
+	type DefineTool,
+	defineTool,
+	type Tool,
+	type ToolContext,
+	type ToolParams,
+	type ToolResult,
+	type ToolSchema,
+	tool,
+} from "./tool.js";

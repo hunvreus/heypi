@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, DEFAULT_SOUL, modelConfig } from "../src/config.js";
+import { agentFrom, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
+import { defineTool } from "../src/tool.js";
 import {
 	approvalFromMessages,
 	channelContext,
@@ -14,15 +15,22 @@ import {
 	runtimeSystemPrompt,
 } from "../src/runtime/pi-agent.js";
 
-test("agentFrom requires an explicit model or HEYPI_MODEL", () => {
+test("loadAgent requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
 	delete process.env.HEYPI_MODEL;
 	try {
-		assert.throws(() => agentFrom("../../examples/slack-devops/agent"), /model is required/);
+		assert.throws(() => loadAgent("../../examples/slack-devops/agent"), /model is required/);
 	} finally {
 		if (previous === undefined) delete process.env.HEYPI_MODEL;
 		else process.env.HEYPI_MODEL = previous;
 	}
+});
+
+test("agentFrom remains a compatibility alias for loadAgent", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	const viaLoad = loadAgent(root, { model: "openai/gpt-5-mini" });
+	const viaAlias = agentFrom(root, { model: "openai/gpt-5-mini" });
+	assert.deepEqual(viaAlias, viaLoad);
 });
 
 test("modelConfig preserves explicit verbosity", () => {
@@ -58,6 +66,55 @@ test("agentFrom preserves configured dynamic context providers", () => {
 	const agent = agentFrom(root, { model: "openai/gpt-5-mini", context: [provider] });
 	assert.equal(agent.context?.[0], provider);
 });
+
+test("loadAgent discovers tools and jobs from agent folders", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	mkdirSync(join(root, "tools"), { recursive: true });
+	mkdirSync(join(root, "jobs"), { recursive: true });
+	writeFileSync(
+		join(root, "tools", "lookup.ts"),
+		[
+			`import { defineTool } from ${JSON.stringify(modulePath("src/tool.ts"))};`,
+			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, run: async ({ name }) => `name=${name}` });',
+		].join("\n"),
+	);
+	writeFileSync(
+		join(root, "jobs", "daily.ts"),
+		[
+			`import { defineJob } from ${JSON.stringify(modulePath("src/job.ts"))};`,
+			'export default defineJob({ id: "daily", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "check" });',
+		].join("\n"),
+	);
+
+	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
+	assert.equal(agent.tools?.[0]?.name, "lookup");
+	assert.equal(agent.jobs?.[0]?.id, "daily");
+});
+
+test("loadAgent rejects duplicate discovered and explicit tool names", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	mkdirSync(join(root, "tools"), { recursive: true });
+	writeFileSync(
+		join(root, "tools", "lookup.ts"),
+		[
+			`import { defineTool } from ${JSON.stringify(modulePath("src/tool.ts"))};`,
+			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: {} }, run: async () => "ok" });',
+		].join("\n"),
+	);
+
+	assert.throws(
+		() =>
+			loadAgent(root, {
+				model: "openai/gpt-5-mini",
+				tools: [defineTool({ name: "lookup", description: "Explicit.", input: {}, run: async () => "ok" })],
+			}),
+		/duplicate tool name "lookup"/,
+	);
+});
+
+function modulePath(path: string): string {
+	return join(process.cwd(), path);
+}
 
 test("runtimeSystemPrompt generates core tool guidance from active tools", () => {
 	assert.match(runtimeSystemPrompt(["bash", "read", "grep"]), /prefer them over shell commands/i);

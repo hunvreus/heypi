@@ -71,6 +71,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	const cwd = process.cwd();
 	const log = config.logger ?? logger;
 	validateConfigShape(config, log);
+	const jobs = config.jobs ?? config.agent.jobs;
 	config.runtime.provider?.setLogger?.(log);
 	const messages = normalizeMessages(config.messages);
 	const httpConfig = normalizeHttpConfig(config.http);
@@ -186,7 +187,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		adapters: config.adapters,
 		starts,
 		logger: log,
-		config: { ...(config.scheduler ?? {}), jobs: config.jobs },
+		config: { ...(config.scheduler ?? {}), jobs },
 	});
 	const appLock = appLockState(config.agent.id, config.appLock);
 	const http = createHttpServerRegistry({ logger: log, listen: httpConfig });
@@ -241,7 +242,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 				runtime: appRuntime.name,
 				adapters: config.adapters.length,
 				admin: adminAdapter !== undefined,
-				jobs: config.jobs?.length ?? 0,
+				jobs: jobs?.length ?? 0,
 			});
 			appStartedAt = Date.now();
 			if (memoryConfig.enabled) {

@@ -2,7 +2,7 @@
 
 Skills are small durable procedures for one scope. They are useful for runbooks, repeated channel workflows, service-specific investigation steps, and local conventions that should survive future turns.
 
-**This page covers managed skills: scoped skills the agent can create and update at runtime. Bundled skills in `agent/skills/` ship with the app and are loaded by `agentFrom()`; see [Agent configuration](agent.md#prompt-files).**
+**This page covers managed skills: scoped skills the agent can create and update at runtime. Bundled skills in `agent/skills/` ship with the app and are loaded by `loadAgent()`; see [Agent configuration](agent.md#prompt-files).**
 
 ## Config
 

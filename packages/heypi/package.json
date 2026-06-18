@@ -100,7 +100,8 @@
 		"drizzle-orm": "^0.45.2",
 		"just-bash": "^3.0.1",
 		"picocolors": "^1.1.1",
-		"unbash": "3.0.0"
+		"unbash": "3.0.0",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

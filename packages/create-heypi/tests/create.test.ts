@@ -37,7 +37,7 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "agent/AGENTS.md"), /concise team assistant/);
 		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
-		assert.match(read(app, "tools/README.md"), /# Tools/);
+		assert.match(read(app, "agent/tools/README.md"), /# Tools/);
 		assert.match(read(app, "setup/slack.manifest.json"), /socket_mode_enabled/);
 		assert.match(read(app, "setup/slack.manifest.json"), /channels:read/);
 		assert.doesNotMatch(read(app, "setup/slack.manifest.json"), /groups:history/);
@@ -91,7 +91,7 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, "index.ts"), /openai\/custom/);
 		assert.match(read(app, ".env.example"), /DISCORD_BOT_TOKEN=/);
 		assert.match(read(app, "agent/skills/example/SKILL.md"), /name: example/);
-		assert.match(read(app, "tools/index.ts"), /function now/);
+		assert.match(read(app, "agent/tools/now.ts"), /defineTool/);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		execFileSync(resolve(ROOT, "node_modules/.bin/tsc"), ["--noEmit"], { cwd: app, stdio: "pipe" });
 	} finally {
