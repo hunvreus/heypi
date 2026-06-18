@@ -20,6 +20,7 @@ import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
+import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 import { warnMissingChatAllow } from "./security-warning.js";
@@ -968,27 +969,8 @@ export function startProgress(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }) {
-	let active = true;
 	let reacted = false;
-	let placeholder: string | undefined;
-	let placeholderTask: Promise<void> | undefined;
-	let placeholderTimer: ReturnType<typeof setTimeout> | undefined;
-	let resolvePlaceholderTask: (() => void) | undefined;
 	const reaction = input.progress ? (input.progress.reaction ?? "eyes") : false;
-	let message = input.progress ? (input.progress.message ?? "Working...") : false;
-
-	const finishPlaceholderTask = () => {
-		const resolve = resolvePlaceholderTask;
-		resolvePlaceholderTask = undefined;
-		placeholderTask = undefined;
-		resolve?.();
-	};
-	const cancelPlaceholderTimer = () => {
-		if (!placeholderTimer) return;
-		clearTimeout(placeholderTimer);
-		placeholderTimer = undefined;
-		finishPlaceholderTask();
-	};
 	const removeReaction = async () => {
 		if (reacted && reaction && input.source) {
 			const source = input.source;
@@ -1019,60 +1001,43 @@ export function startProgress(input: {
 			})
 			.catch((error) => {
 				input.logger.warn("slack.progress.reaction_failed", { ...input.context, error: errorMessage(error) });
-			});
-	}
-
-	const delay = input.progress?.delayMs ?? 750;
-	if (message) {
-		placeholderTask = new Promise((resolve) => {
-			resolvePlaceholderTask = resolve;
-			placeholderTimer = setTimeout(() => {
-				placeholderTimer = undefined;
-				if (!active) {
-					finishPlaceholderTask();
-					return;
-				}
-				const progressText = message;
-				if (progressText === false) {
-					finishPlaceholderTask();
-					return;
-				}
-				input.delivery
-					.run(
-						() =>
-							input.client.chat.postMessage(
-								input.cancelId
-									? {
-											channel: input.channel,
-											text: progressText,
-											thread_ts: input.target,
-											blocks: cancelBlocks(progressText, input.cancelId),
-										}
-									: {
-											channel: input.channel,
-											text: progressText,
-											thread_ts: input.target,
-										},
-							),
-						{ ...input.context, delivery: "progress", retry: "send" },
-					)
-					.then((out) => {
-						placeholder = out.ts;
-					})
-					.catch((error) => {
-						input.logger.warn("slack.progress.message_failed", { ...input.context, error: errorMessage(error) });
-					})
-					.finally(finishPlaceholderTask);
-			}, delay);
 		});
 	}
 
+	const placeholder = delayedProgressPlaceholder({
+		message: input.progress ? (input.progress.message ?? "Working...") : false,
+		delayMs: input.progress?.delayMs ?? 750,
+		send: async (progressText) => {
+			const out = await input.delivery.run(
+				() =>
+					input.client.chat.postMessage(
+						input.cancelId
+							? {
+									channel: input.channel,
+									text: progressText,
+									thread_ts: input.target,
+									blocks: cancelBlocks(progressText, input.cancelId),
+								}
+							: {
+									channel: input.channel,
+									text: progressText,
+									thread_ts: input.target,
+								},
+					),
+				{ ...input.context, delivery: "progress", retry: "send" },
+			);
+			if (typeof out.ts !== "string") throw new Error("Slack progress message missing ts");
+			return out.ts;
+		},
+		onError: (error) => {
+			input.logger.warn("slack.progress.message_failed", { ...input.context, error: errorMessage(error) });
+		},
+	});
+
 	return {
 		async notify(text: string): Promise<void> {
-			if (message === false) return;
-			message = text;
-			if (!placeholder) return;
-			const ts = placeholder;
+			const ts = placeholder.setText(text);
+			if (!ts) return;
 			await input.delivery
 				.run(
 					() =>
@@ -1097,12 +1062,8 @@ export function startProgress(input: {
 				});
 		},
 		async update(text: string, approval?: Outbound["approval"]): Promise<boolean> {
-			active = false;
-			cancelPlaceholderTimer();
-			await placeholderTask;
-			if (!placeholder) return false;
-			const ts = placeholder;
-			placeholder = undefined;
+			const ts = await placeholder.take();
+			if (!ts) return false;
 			try {
 				const chunks = slackChunks(text, Boolean(approval));
 				const first = chunks[0] ?? "";
@@ -1129,21 +1090,13 @@ export function startProgress(input: {
 			}
 		},
 		async takeover(): Promise<string | undefined> {
-			active = false;
-			cancelPlaceholderTimer();
-			await placeholderTask;
-			const ts = placeholder;
-			placeholder = undefined;
+			const ts = await placeholder.take();
 			await removeReaction();
 			return ts;
 		},
 		async stop(): Promise<void> {
-			active = false;
-			cancelPlaceholderTimer();
-			await placeholderTask;
-			if (placeholder) {
-				const ts = placeholder;
-				placeholder = undefined;
+			const ts = await placeholder.clear();
+			if (ts) {
 				await input.delivery
 					.run(() => input.client.chat.delete({ channel: input.channel, ts }), {
 						...input.context,

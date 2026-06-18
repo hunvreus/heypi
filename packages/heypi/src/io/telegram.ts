@@ -27,6 +27,7 @@ import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
+import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 import { warnMissingChatAllow } from "./security-warning.js";
@@ -1141,74 +1142,40 @@ export function startProgress(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }) {
-	let active = true;
-	let placeholder: number | undefined;
-	let task: Promise<void> | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let resolveTask: (() => void) | undefined;
-	let message = input.progress ? (input.progress.message ?? "Working...") : false;
-	const finishTask = () => {
-		const resolve = resolveTask;
-		resolveTask = undefined;
-		task = undefined;
-		resolve?.();
-	};
-	const cancelTimer = () => {
-		if (!timer) return;
-		clearTimeout(timer);
-		timer = undefined;
-		finishTask();
-	};
-	if (message) {
-		task = new Promise((resolve) => {
-			resolveTask = resolve;
-			timer = setTimeout(() => {
-				timer = undefined;
-				if (!active) {
-					finishTask();
-					return;
-				}
-				const progressText = message;
-				if (progressText === false) {
-					finishTask();
-					return;
-				}
-				input.delivery
-					.run(
-						() =>
-							input.client.sendMessage({
-								chat_id: input.chatId,
-								message_thread_id: input.threadId,
-								reply_to_message_id: input.replyTo,
-								text: progressText,
-								reply_markup: progressMarkup(input.cancelId),
-							}),
-						{ ...input.context, delivery: "progress", retry: "send" },
-					)
-					.then((out) => {
-						placeholder = out.message_id;
-					})
-					.catch((error) => {
-						input.logger.warn("telegram.progress.message_failed", {
-							...input.context,
-							error: errorMessage(error),
-						});
-					})
-					.finally(finishTask);
-			}, input.progress?.delayMs ?? 750);
-		});
-	}
+	const placeholder = delayedProgressPlaceholder({
+		message: input.progress ? (input.progress.message ?? "Working...") : false,
+		delayMs: input.progress?.delayMs ?? 750,
+		send: async (text) => {
+			const out = await input.delivery.run(
+				() =>
+					input.client.sendMessage({
+						chat_id: input.chatId,
+						message_thread_id: input.threadId,
+						reply_to_message_id: input.replyTo,
+						text,
+						reply_markup: progressMarkup(input.cancelId),
+					}),
+				{ ...input.context, delivery: "progress", retry: "send" },
+			);
+			return out.message_id;
+		},
+		onError: (error) => {
+			input.logger.warn("telegram.progress.message_failed", {
+				...input.context,
+				error: errorMessage(error),
+			});
+		},
+	});
 	return {
 		async notify(text: string): Promise<void> {
-			if (message === false) return;
-			message = text;
-			if (!placeholder) return;
+			const messageId = placeholder.setText(text);
+			if (!messageId) return;
 			await input.delivery
 				.run(
 					() =>
 						input.client.editMessageText({
 							chat_id: input.chatId,
-							message_id: placeholder as number,
+							message_id: messageId,
 							text,
 							reply_markup: progressMarkup(input.cancelId),
 						}),
@@ -1219,15 +1186,11 @@ export function startProgress(input: {
 						...input.context,
 						error: errorMessage(error),
 					});
-				});
+			});
 		},
 		async update(out: Outbound): Promise<boolean> {
-			active = false;
-			cancelTimer();
-			await task;
-			if (!placeholder) return false;
-			const messageId = placeholder;
-			placeholder = undefined;
+			const messageId = await placeholder.take();
+			if (!messageId) return false;
 			try {
 				await input.delivery.run(
 					() =>
@@ -1246,20 +1209,12 @@ export function startProgress(input: {
 			}
 		},
 		async takeover(): Promise<string | undefined> {
-			active = false;
-			cancelTimer();
-			await task;
-			const messageId = placeholder;
-			placeholder = undefined;
+			const messageId = await placeholder.take();
 			return messageId === undefined ? undefined : String(messageId);
 		},
 		async stop(): Promise<void> {
-			active = false;
-			cancelTimer();
-			await task;
-			if (!placeholder) return;
-			const messageId = placeholder;
-			placeholder = undefined;
+			const messageId = await placeholder.clear();
+			if (!messageId) return;
 			await input.delivery
 				.run(() => input.client.deleteMessage({ chat_id: input.chatId, message_id: messageId }), {
 					...input.context,

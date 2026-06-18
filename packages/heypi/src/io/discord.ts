@@ -44,6 +44,7 @@ import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
+import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 import { warnMissingChatAllow } from "./security-warning.js";
@@ -847,19 +848,11 @@ export function startDiscordProgress(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }) {
-	let id: string | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let send: Promise<void> | undefined;
-	let text = input.progress?.message === false ? undefined : (input.progress?.message ?? "Working...");
-	const cancelTimer = () => {
-		if (!timer) return;
-		clearTimeout(timer);
-		timer = undefined;
-	};
-	if (text) {
-		timer = setTimeout(() => {
-			timer = undefined;
-			send = input.delivery
+	const placeholder = delayedProgressPlaceholder({
+		message: input.progress?.message === false ? false : (input.progress?.message ?? "Working..."),
+		delayMs: input.progress?.delayMs ?? 1000,
+		send: async (text) => {
+			const msg = await input.delivery
 				.run(
 					() =>
 						sendTo(input.message.channel, input.reply === false ? undefined : input.message, {
@@ -870,19 +863,15 @@ export function startDiscordProgress(input: {
 						...input.context,
 						retry: "send",
 					},
-				)
-				.then((msg) => {
-					id = msg.id;
-				})
-				.catch((error) =>
-					input.logger.warn("discord.progress.message_failed", { ...input.context, error: errorMessage(error) }),
 				);
-		}, input.progress?.delayMs ?? 1000);
-	}
+			return msg.id;
+		},
+		onError: (error) =>
+			input.logger.warn("discord.progress.message_failed", { ...input.context, error: errorMessage(error) }),
+	});
 	return {
 		async notify(next: string): Promise<void> {
-			if (text === undefined) return;
-			text = next;
+			const id = placeholder.setText(next);
 			if (!id) return;
 			try {
 				const msg = await input.message.channel.messages.fetch(id);
@@ -898,10 +887,8 @@ export function startDiscordProgress(input: {
 			}
 		},
 		async update(out: Outbound): Promise<boolean> {
-			cancelTimer();
-			await send;
-			if (!id) return false;
-			const messageId = id;
+			const messageId = await placeholder.take();
+			if (!messageId) return false;
 			try {
 				const msg = await input.message.channel.messages.fetch(messageId);
 				await input.delivery.run(
@@ -913,7 +900,6 @@ export function startDiscordProgress(input: {
 						}),
 					input.context,
 				);
-				id = undefined;
 				return true;
 			} catch (error) {
 				input.logger.warn("discord.progress.update_failed", { ...input.context, error: errorMessage(error) });
@@ -921,18 +907,11 @@ export function startDiscordProgress(input: {
 			}
 		},
 		async takeover(): Promise<string | undefined> {
-			cancelTimer();
-			await send;
-			const messageId = id;
-			id = undefined;
-			return messageId;
+			return await placeholder.take();
 		},
 		async stop(): Promise<void> {
-			cancelTimer();
-			await send;
-			if (!id) return;
-			const messageId = id;
-			id = undefined;
+			const messageId = await placeholder.clear();
+			if (!messageId) return;
 			try {
 				const msg = await input.message.channel.messages.fetch(messageId);
 				await input.delivery.run(() => msg.delete(), input.context);
