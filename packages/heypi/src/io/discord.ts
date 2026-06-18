@@ -34,6 +34,8 @@ import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from 
 import {
 	type ControlAction,
 	type ControlActionTokens,
+	controlActionCallback,
+	controlActionLabel,
 	controlActionText,
 	parseControlAction,
 } from "./control-action.js";
@@ -1224,8 +1226,14 @@ function ambiguousDiscordSendError(error: unknown): boolean {
 function approvalComponents(approval: NonNullable<Outbound["approval"]>) {
 	return [
 		new ActionRowBuilder<ButtonBuilder>().addComponents(
-			new ButtonBuilder().setCustomId(`${APPROVE}:${approval.id}`).setLabel("Approve").setStyle(ButtonStyle.Success),
-			new ButtonBuilder().setCustomId(`${DENY}:${approval.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger),
+			new ButtonBuilder()
+				.setCustomId(controlActionCallback({ kind: "approve", id: approval.id }, DISCORD_ACTIONS))
+				.setLabel(controlActionLabel("approve"))
+				.setStyle(ButtonStyle.Success),
+			new ButtonBuilder()
+				.setCustomId(controlActionCallback({ kind: "deny", id: approval.id }, DISCORD_ACTIONS))
+				.setLabel(controlActionLabel("deny"))
+				.setStyle(ButtonStyle.Danger),
 		),
 	];
 }
@@ -1233,9 +1241,15 @@ function approvalComponents(approval: NonNullable<Outbound["approval"]>) {
 function progressComponents(cancelId?: string) {
 	const buttons = [
 		cancelId
-			? new ButtonBuilder().setCustomId(`${CANCEL}:${cancelId}`).setLabel("Cancel").setStyle(ButtonStyle.Danger)
+			? new ButtonBuilder()
+					.setCustomId(controlActionCallback({ kind: "cancel", id: cancelId }, DISCORD_ACTIONS))
+					.setLabel(controlActionLabel("cancel"))
+					.setStyle(ButtonStyle.Danger)
 			: undefined,
-		new ButtonBuilder().setCustomId(STATUS).setLabel("Status").setStyle(ButtonStyle.Secondary),
+		new ButtonBuilder()
+			.setCustomId(controlActionCallback({ kind: "status" }, DISCORD_ACTIONS))
+			.setLabel(controlActionLabel("status"))
+			.setStyle(ButtonStyle.Secondary),
 	].filter((button): button is ButtonBuilder => Boolean(button));
 	return buttons.length ? [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)] : [];
 }

@@ -13,6 +13,7 @@ import { type Attachment, type AttachmentStore, responseBytes } from "./attachme
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
 import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { controlActionLabel } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
@@ -1768,14 +1769,14 @@ function cancelBlocks(text: string, id: string): SlackBlock[] {
 			elements: [
 				{
 					type: "button",
-					text: { type: "plain_text", text: "Cancel" },
+					text: { type: "plain_text", text: controlActionLabel("cancel") },
 					style: "danger",
 					action_id: CANCEL,
 					value: id,
 				},
 				{
 					type: "button",
-					text: { type: "plain_text", text: "Status" },
+					text: { type: "plain_text", text: controlActionLabel("status") },
 					action_id: STATUS,
 					value: "thread",
 				},
@@ -1879,14 +1880,14 @@ function approvalActionsBlock(approval: NonNullable<Outbound["approval"]>): Slac
 		elements: [
 			{
 				type: "button",
-				text: { type: "plain_text", text: "Approve" },
+				text: { type: "plain_text", text: controlActionLabel("approve") },
 				style: "primary",
 				action_id: APPROVE,
 				value: approval.id,
 			},
 			{
 				type: "button",
-				text: { type: "plain_text", text: "Reject" },
+				text: { type: "plain_text", text: controlActionLabel("deny") },
 				style: "danger",
 				action_id: DENY,
 				value: approval.id,

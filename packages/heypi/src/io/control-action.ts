@@ -6,6 +6,19 @@ export type ControlAction =
 
 export type ControlActionTokens = Record<ControlActionKind, string>;
 
+export function controlActionCallback(action: ControlAction, tokens: ControlActionTokens): string {
+	const token = tokens[action.kind];
+	if (action.kind === "status" && !action.id) return token;
+	return `${token}:${action.id}`;
+}
+
+export function controlActionLabel(kind: ControlActionKind): string {
+	if (kind === "approve") return "Approve";
+	if (kind === "deny") return "Reject";
+	if (kind === "cancel") return "Cancel";
+	return "Status";
+}
+
 export function parseControlAction(input: string | undefined, tokens: ControlActionTokens): ControlAction | undefined {
 	if (!input) return undefined;
 	if (input === tokens.status) return { kind: "status" };

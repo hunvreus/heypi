@@ -14,7 +14,13 @@ import { type Attachment, type AttachmentStore, type ResolvedAttachment, respons
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
 import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
-import { type ControlAction, type ControlActionTokens, parseControlAction } from "./control-action.js";
+import {
+	type ControlAction,
+	type ControlActionTokens,
+	controlActionCallback,
+	controlActionLabel,
+	parseControlAction,
+} from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
@@ -1478,8 +1484,11 @@ function progressMarkup(id: string): TelegramReplyMarkup {
 	return {
 		inline_keyboard: [
 			[
-				{ text: "Cancel", callback_data: `${CANCEL}:${id}` },
-				{ text: "Status", callback_data: STATUS },
+				{
+					text: controlActionLabel("cancel"),
+					callback_data: controlActionCallback({ kind: "cancel", id }, TELEGRAM_ACTIONS),
+				},
+				{ text: controlActionLabel("status"), callback_data: controlActionCallback({ kind: "status" }, TELEGRAM_ACTIONS) },
 			],
 		],
 	};
@@ -1489,8 +1498,14 @@ function approvalMarkup(approval: NonNullable<Outbound["approval"]>): TelegramRe
 	return {
 		inline_keyboard: [
 			[
-				{ text: "Approve", callback_data: `${APPROVE}:${approval.id}` },
-				{ text: "Reject", callback_data: `${DENY}:${approval.id}` },
+				{
+					text: controlActionLabel("approve"),
+					callback_data: controlActionCallback({ kind: "approve", id: approval.id }, TELEGRAM_ACTIONS),
+				},
+				{
+					text: controlActionLabel("deny"),
+					callback_data: controlActionCallback({ kind: "deny", id: approval.id }, TELEGRAM_ACTIONS),
+				},
 			],
 		],
 	};

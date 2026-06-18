@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { controlActionText, parseControlAction } from "../src/io/control-action.js";
+import {
+	controlActionCallback,
+	controlActionLabel,
+	controlActionText,
+	parseControlAction,
+} from "../src/io/control-action.js";
 
 const tokens = {
 	approve: "heypi_approve",
@@ -37,4 +42,19 @@ test("control action text maps canonical actions to slash commands", () => {
 	assert.equal(controlActionText({ kind: "cancel", id: "trace-1" }), "/cancel trace-1");
 	assert.equal(controlActionText({ kind: "status" }), "/status");
 	assert.equal(controlActionText({ kind: "status", id: "trace-1" }), "/status trace-1");
+});
+
+test("control action callbacks format provider payloads", () => {
+	assert.equal(controlActionCallback({ kind: "approve", id: "approval-1" }, tokens), "heypi_approve:approval-1");
+	assert.equal(controlActionCallback({ kind: "deny", id: "approval-1" }, tokens), "heypi_deny:approval-1");
+	assert.equal(controlActionCallback({ kind: "cancel", id: "trace-1" }, tokens), "heypi_cancel:trace-1");
+	assert.equal(controlActionCallback({ kind: "status" }, tokens), "heypi_status");
+	assert.equal(controlActionCallback({ kind: "status", id: "trace-1" }, tokens), "heypi_status:trace-1");
+});
+
+test("control action labels are provider-neutral", () => {
+	assert.equal(controlActionLabel("approve"), "Approve");
+	assert.equal(controlActionLabel("deny"), "Reject");
+	assert.equal(controlActionLabel("cancel"), "Cancel");
+	assert.equal(controlActionLabel("status"), "Status");
 });
