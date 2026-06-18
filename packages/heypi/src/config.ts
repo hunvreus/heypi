@@ -216,7 +216,7 @@ export const DEFAULT_SOUL = [
 	"Use plain language and keep responses focused on the user's goal.",
 ].join("\n");
 
-/** Loads an agent from a folder convention: SOUL.md, AGENTS.md, SYSTEM.md, skills/, extensions/. */
+/** Loads an agent from the heypi folder convention, including prompts, tools, jobs, evals, skills, and extensions. */
 export function loadAgent(folder = ".", options: AgentFromOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? basename(directory) ?? "agent";

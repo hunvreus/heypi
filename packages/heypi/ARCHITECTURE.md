@@ -41,18 +41,21 @@ The app-level lock prevents two processes with the same store from running the s
 
 ### Config
 
-`src/config.ts` defines the public config API and `agentFrom()` folder convention:
+`src/config.ts` defines the public config API and `loadAgent()` folder convention:
 
 ```text
 agent/
   SOUL.md
   SYSTEM.md
   AGENTS.md
+  tools/
+  jobs/
+  evals/
   skills/
   extensions/
 ```
 
-`SOUL.md` sets identity and voice. `AGENTS.md` sets operating rules. `SYSTEM.md` is a full runtime-prompt override. Missing `SOUL.md` falls back to a concise built-in identity. The model must be passed explicitly or through `HEYPI_MODEL`.
+`SOUL.md` sets identity and voice. `AGENTS.md` sets operating rules. `SYSTEM.md` is a full runtime-prompt override. Missing `SOUL.md` falls back to a concise built-in identity. `tools/`, `jobs/`, and `evals/` are discovered recursively in deterministic lexical order. The model must be passed explicitly or through `HEYPI_MODEL`.
 
 Programmatic `context` providers run once per turn and append compact dynamic prompt blocks. The handler also injects provider/channel/thread/sender context when available.
 
@@ -111,7 +114,7 @@ Pi tool call
   -> optional Pi continuation
 ```
 
-Core tools and custom `tool()` definitions use the same confirmation path. Text commands and provider-native buttons resolve to the same approval path. Custom `tool()` code runs as trusted host-side JavaScript; tools use the selected runtime explicitly through their execution context when they need command or file work.
+Built-in tools from `defaultTools()` and custom `defineTool()` definitions use the same confirmation path. Text commands and provider-native buttons resolve to the same approval path. Custom `defineTool()` code runs as trusted host-side JavaScript; tools use the selected runtime explicitly through their execution context when they need command or file work.
 
 `src/runtime/` owns command and file access. One runtime backend or runtime provider is configured per app, and each turn resolves a scoped workspace root:
 

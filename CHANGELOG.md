@@ -44,6 +44,7 @@
 - Changed built-in adapter env var resolution to use one shared helper.
 - Changed CLI and admin eval expectation display to use shared formatting helpers.
 - Changed Slack, Discord, and Telegram approval presentation to share provider-neutral title, row, and text helpers.
+- Changed internal runtime code and architecture docs to prefer `loadAgent()`, `defaultTools()`, and `defineTool()` terminology.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.

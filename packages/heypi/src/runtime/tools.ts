@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 import type { CallContext } from "../core/calls.js";
 import { type Logger, logger } from "../core/log.js";
 import type { Confirm, Reply, ReplyAttachment, ToolExecute } from "../core/types.js";
-import { type CoreToolDefinition, type CoreToolName, coreTools } from "../core-tools.js";
+import { type CoreToolDefinition, type CoreToolName, defaultTools } from "../core-tools.js";
 import type { Messages } from "../store/types.js";
 import { toolConfirm, toolPiRunner, toolRunner } from "../tool-internal.js";
 import { booleanParam, numberParam, optionalString, stringParam, text, toolText } from "./tool-util.js";
@@ -331,7 +331,7 @@ function runtimeTools(
 }
 
 function coreMap(input: CoreToolDefinition[] | undefined): Map<CoreToolName, CoreToolDefinition> {
-	return new Map((input ?? coreTools()).map((tool) => [tool.name, tool]));
+	return new Map((input ?? defaultTools()).map((tool) => [tool.name, tool]));
 }
 
 function enabled(core: Map<CoreToolName, CoreToolDefinition>, name: CoreToolName): boolean {
