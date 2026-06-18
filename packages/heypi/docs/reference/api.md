@@ -58,6 +58,9 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | --- | --- |
 | `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
 | `DefaultToolsConfig` | Config shape accepted by `defaultTools()`. |
+| `DefaultToolName` | String union of built-in runtime tool names accepted by `defaultTools()`. |
+| `DefaultToolOption` | Per-tool boolean or config entry accepted by `DefaultToolsConfig`. |
+| `DefaultToolDefinition` | Descriptor returned by `defaultTools()` before heypi binds the runtime implementation. |
 | `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. Zod inputs are parsed before `confirm` and `run`. See [Agent tools](../configuration/tools.md). |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
 | `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |

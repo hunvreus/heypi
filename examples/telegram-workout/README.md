@@ -14,7 +14,7 @@ This is the simpler boilerplate example. It shows the normal heypi shape without
 
 - Telegram long polling adapter.
 - `SOUL.md` / `AGENTS.md` prompt files. `SYSTEM.md` is only for advanced runtime-prompt overrides.
-- Default core runtime tools through `defaultTools()`.
+- Default runtime tools through `defaultTools()`.
 - Three small custom tools for local Markdown memory: `get_profile`, `save_profile`, and `log_workout`.
 - A heartbeat job for daily check-ins.
 - Optional chat/user allowlists.

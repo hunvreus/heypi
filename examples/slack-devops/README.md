@@ -14,7 +14,7 @@ The agent loads:
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
 - Channel-scoped memory, so the agent can keep small durable notes for each Slack channel.
 - Custom host tools from `tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
-- Core runtime tools through `defaultTools()`. Risky local workspace commands use heypi's default approval policy; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
+- Default runtime tools through `defaultTools()`. Risky local workspace commands use heypi's default approval policy; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
 
 Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
