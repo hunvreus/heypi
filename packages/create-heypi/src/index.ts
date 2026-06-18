@@ -103,7 +103,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 		? ["skills", "tools"]
 		: await promptMultiSelect("Samples", [
 				{ label: "Starter skill", value: "skills", hint: "agent/skills/example/SKILL.md" },
-				{ label: "Starter tool module", value: "tools", hint: "tools/index.ts" },
+				{ label: "Starter tool module", value: "tools", hint: "agent/tools/now.ts" },
 			]);
 	const pm = flags.pm ?? inferPackageManager();
 	const installDeps =
@@ -192,6 +192,7 @@ function install(root: string, pm: PackageManager): void {
 function packageJson(options: Options): string {
 	const deps: Record<string, string> = {
 		"@hunvreus/heypi": "^0.2.0-beta.0",
+		zod: "^4.4.3",
 	};
 	if (options.runtime === "docker") deps["@hunvreus/heypi-runtime-docker"] = "^0.2.0-beta.0";
 	if (options.runtime === "gondolin") deps["@hunvreus/heypi-runtime-gondolin"] = "^0.2.0-beta.0";
@@ -522,10 +523,11 @@ Summarize the current state in three bullets: what is known, what is uncertain, 
 
 function sampleTool(): string {
 	return `import { defineTool } from "@hunvreus/heypi";
+import { z } from "zod";
 
 export default defineTool({
 \tdescription: "Return the current ISO timestamp.",
-\tinput: { type: "object", properties: {}, additionalProperties: false },
+\tinput: z.object({}),
 \trun: async () => new Date().toISOString(),
 });
 `;

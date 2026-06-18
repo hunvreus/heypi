@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,6 +24,7 @@ test("creates a default Slack app non-interactively", async () => {
 		const out = run([app, "--yes", "--no-install"]);
 		assert.match(out, /Created /);
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi"/);
+		assert.match(read(app, "package.json"), /"zod"/);
 		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
 		assert.match(read(app, "package.json"), /"start": "heypi start"/);
 		assert.match(read(app, "index.ts"), /slack\(\{/);
@@ -101,9 +102,11 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, ".env.example"), /DISCORD_BOT_TOKEN=/);
 		assert.match(read(app, "agent/skills/example/SKILL.md"), /name: example/);
 		assert.match(read(app, "agent/tools/now.ts"), /defineTool/);
+		assert.match(read(app, "agent/tools/now.ts"), /from "zod"/);
+		assert.match(read(app, "agent/tools/now.ts"), /z\.object/);
 		assert.match(read(app, "agent/evals/smoke.ts"), /defineEval/);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
-		execFileSync(resolve(ROOT, "node_modules/.bin/tsc"), ["--noEmit"], { cwd: app, stdio: "pipe" });
+		runTsc(app);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -158,8 +161,17 @@ async function linkLocalDeps(app: string, packages: string[]): Promise<void> {
 		await symlink(resolve(ROOT, "packages", short), join(app, "node_modules", "@hunvreus", short));
 	}
 	await symlink(resolve(ROOT, "node_modules", "@types", "node"), join(app, "node_modules", "@types", "node"));
+	await symlink(resolve(ROOT, "packages", "heypi", "node_modules", "zod"), join(app, "node_modules", "zod"));
 }
 
 function read(root: string, path: string): string {
 	return readFileSync(join(root, path), "utf8");
+}
+
+function runTsc(cwd: string): void {
+	const result = spawnSync(resolve(ROOT, "node_modules/.bin/tsc"), ["--noEmit"], {
+		cwd,
+		encoding: "utf8",
+	});
+	assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join("\n"));
 }
