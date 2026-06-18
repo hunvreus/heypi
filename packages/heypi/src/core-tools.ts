@@ -7,13 +7,22 @@ const CORE_TOOL = Symbol("core-tool");
 
 export type CoreToolName = "history" | "bash" | "read" | "write" | "edit" | "grep" | "find" | "ls" | "attach";
 
-export type CoreToolConfig = {
+export type DefaultToolConfig = {
 	confirm?: Confirm;
 };
 
-export type CoreToolOption = boolean | CoreToolConfig;
+export type DefaultToolOption = boolean | DefaultToolConfig;
 
-export type CoreToolsConfig = Partial<Record<CoreToolName, CoreToolOption>>;
+export type DefaultToolsConfig = Partial<Record<CoreToolName, DefaultToolOption>>;
+
+/** @deprecated Use `DefaultToolConfig` instead. */
+export type CoreToolConfig = DefaultToolConfig;
+
+/** @deprecated Use `DefaultToolOption` instead. */
+export type CoreToolOption = DefaultToolOption;
+
+/** @deprecated Use `DefaultToolsConfig` instead. */
+export type CoreToolsConfig = DefaultToolsConfig;
 
 export type CoreToolDefinition = {
 	readonly [CORE_TOOL]: true;
@@ -23,7 +32,7 @@ export type CoreToolDefinition = {
 
 export type AgentToolDefinition = ToolDefinition | CoreToolDefinition;
 
-const DEFAULT_CORE: Required<CoreToolsConfig> = {
+const DEFAULT_CORE: Required<DefaultToolsConfig> = {
 	history: true,
 	bash: { confirm: approval.command() },
 	read: true,
@@ -36,7 +45,7 @@ const DEFAULT_CORE: Required<CoreToolsConfig> = {
 };
 
 /** Returns heypi's default runtime tools, including approval-gated bash by default. */
-export function defaultTools(config: CoreToolsConfig = {}): CoreToolDefinition[] {
+export function defaultTools(config: DefaultToolsConfig = {}): CoreToolDefinition[] {
 	const merged = { ...DEFAULT_CORE, ...config };
 	const out: CoreToolDefinition[] = [];
 	for (const name of Object.keys(DEFAULT_CORE) as CoreToolName[]) {

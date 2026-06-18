@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { DefaultToolConfig, DefaultToolsConfig } from "../src/api.js";
 import { approval, defaultTools, defineEval, evaluateEval } from "../src/api.js";
 import { coreTools } from "../src/core-tools.js";
 import { evalExpectDetail, evalExpectLabel, evalExpectSummary } from "../src/eval.js";
@@ -10,6 +11,15 @@ test("coreTools remains a compatibility alias for defaultTools", () => {
 		coreTools().map((tool) => tool.name),
 	);
 	assert.equal(defaultTools().find((tool) => tool.name === "bash")?.confirm !== undefined, true);
+});
+
+test("defaultTools exports preferred config type names", () => {
+	const tool: DefaultToolConfig = { confirm: approval.never() };
+	const config: DefaultToolsConfig = { bash: tool, write: false };
+	assert.deepEqual(
+		defaultTools(config).map((row) => row.name),
+		["history", "bash", "read", "edit", "grep", "find", "ls", "attach"],
+	);
 });
 
 test("approval helpers create common confirmation policies", () => {

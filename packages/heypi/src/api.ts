@@ -17,8 +17,8 @@ export {
 	type HeypiConfig,
 	type HttpConfig,
 	type JustBashConfig,
-	loadAgent,
 	type LoadAgentOptions,
+	loadAgent,
 	type MemoryConfig,
 	type MemoryWritePolicy,
 	type ModelConfig,
@@ -41,6 +41,8 @@ export {
 	type CoreToolName,
 	type CoreToolsConfig,
 	coreTools,
+	type DefaultToolConfig,
+	type DefaultToolsConfig,
 	defaultTools,
 } from "./core-tools.js";
 export {

@@ -47,6 +47,8 @@ loadAgent("./agent", {
 
 Each option accepts `false`, `true`, or `{ confirm }`. Only `bash` has a confirmation policy by default.
 
+The public config type is `DefaultToolsConfig`.
+
 ## Custom tools
 
 Custom tools run as trusted JavaScript in the Node app process:

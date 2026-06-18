@@ -63,6 +63,7 @@
 - Changed example app scripts to use `heypi dev` and `heypi start` with default-exported apps.
 - Changed examples to mount the loopback `local()` adapter under `HEYPI_DEV` so `heypi dev` works without production adapter credentials.
 - Changed `defaultTools()` to use the public `approval.command()` helper internally.
+- Added `DefaultToolConfig` and `DefaultToolsConfig` as the preferred public type names for `defaultTools()` config.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.
