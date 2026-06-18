@@ -57,6 +57,7 @@
 - Changed API and tools docs to keep deprecated aliases out of the main authoring path.
 - Changed the Slack DevOps example to use `approval.command()` instead of deprecated `commandConfirm()`.
 - Changed example app scripts to use `heypi dev` and `heypi start` with default-exported apps.
+- Changed `defaultTools()` to use the public `approval.command()` helper internally.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.

@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { commandConfirm } from "./core/policy.js";
+import { approval } from "./approval.js";
 import type { Confirm } from "./core/types.js";
 import { validateToolName } from "./tool.js";
 
@@ -25,7 +25,7 @@ export type AgentToolDefinition = ToolDefinition | CoreToolDefinition;
 
 const DEFAULT_CORE: Required<CoreToolsConfig> = {
 	history: true,
-	bash: { confirm: commandConfirm() },
+	bash: { confirm: approval.command() },
 	read: true,
 	write: true,
 	edit: true,
