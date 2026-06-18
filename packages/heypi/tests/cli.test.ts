@@ -58,6 +58,45 @@ function cliAsync(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: strin
 	});
 }
 
+function spawnCliUntil(
+	args: string[],
+	input: { cwd: string; env?: NodeJS.ProcessEnv; match: RegExp; timeoutMs?: number },
+): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const env = { ...process.env, ...(input.env ?? {}), INIT_CWD: input.cwd };
+		const child = spawn(process.execPath, [CLI, ...args], {
+			cwd: input.cwd,
+			env,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let out = "";
+		let done = false;
+		const finish = (error?: Error) => {
+			if (done) return;
+			done = true;
+			clearTimeout(timeout);
+			child.kill("SIGTERM");
+			if (error) reject(error);
+			else resolve(out);
+		};
+		const collect = (chunk: Buffer) => {
+			out += chunk.toString("utf8");
+			if (input.match.test(out)) finish();
+		};
+		const timeout = setTimeout(
+			() => finish(new Error(`timed out waiting for ${input.match}: ${out}`)),
+			input.timeoutMs ?? 10_000,
+		);
+		child.stdout.on("data", collect);
+		child.stderr.on("data", collect);
+		child.once("error", finish);
+		child.once("exit", (code, signal) => {
+			if (done) return;
+			finish(new Error(`CLI exited before expected output: code=${code} signal=${signal}\n${out}`));
+		});
+	});
+}
+
 test("cli prints help and version", () => {
 	const help = cli(["help"]);
 	assert.match(help, new RegExp(`heypi ${escapeRegExp(PACKAGE_VERSION)}`));
@@ -457,6 +496,70 @@ test("cli admin link signs a URL from admin state", async () => {
 		} finally {
 			await closeServer(probe.server);
 		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli dev prints an exact admin login link for dynamic ports", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-"));
+	try {
+		await mkdir(join(root, "agent"), { recursive: true });
+		await writeFile(join(root, "agent", "AGENTS.md"), "Reply briefly.\n", "utf8");
+		await writeFile(
+			join(root, "index.mjs"),
+			[
+				'import { mkdirSync, writeFileSync } from "node:fs";',
+				'import { createServer } from "node:http";',
+				"let server;",
+				'const instanceId = "dev-cli-test-instance";',
+				'const secret = "admin-signing-secret-with-enough-length-123";',
+				"export default {",
+				"  async start() {",
+				'    mkdirSync("state/admin", { recursive: true });',
+				'    writeFileSync("state/admin/secret", secret + "\\n", { mode: 0o600 });',
+				"    server = createServer((_req, res) => {",
+				'      res.setHeader("x-heypi-admin-instance", instanceId);',
+				'      res.end("ok");',
+				"    });",
+				'    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));',
+				"    const address = server.address();",
+				'    const port = typeof address === "object" && address ? address.port : 0;',
+				"    writeFileSync(",
+				'      "state/admin/server." + process.pid + ".json",',
+				"      JSON.stringify({",
+				"        version: 1,",
+				"        pid: process.pid,",
+				"        instanceId,",
+				'        hostname: "test",',
+				'        url: "http://127.0.0.1:" + port,',
+				'        agent: "test",',
+				"        project: process.cwd(),",
+				"        startedAt: new Date().toISOString(),",
+				'        adminPath: "/admin",',
+				"      }),",
+				"    );",
+				"  },",
+				"  async stop() {",
+				"    if (server) await new Promise((resolve) => server.close(resolve));",
+				"  },",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+		const out = await spawnCliUntil(["dev", "index.mjs"], {
+			cwd: root,
+			env: { HEYPI_CLI_CHILD: "1" },
+			match: /dev: POST JSON/u,
+		});
+		const adminLine = out.split("\n").find((row) => row.startsWith("dev: admin "));
+		assert.ok(adminLine);
+		const url = new URL(adminLine.replace("dev: admin ", ""));
+		assert.equal(url.hostname, "127.0.0.1");
+		assert.notEqual(url.port, "0");
+		assert.equal(url.pathname, "/admin/login");
+		assert.ok(url.searchParams.get("t"));
+		assert.match(out, /POST JSON to \/dev\/messages/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

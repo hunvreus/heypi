@@ -24,6 +24,7 @@
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 
 ### Fixed
+- Fixed `heypi dev` printing a guessed admin URL when the HTTP listener binds to a dynamic port.
 - Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.
 - Fixed approval controls being recorded as fresh user turns, which could make an approved action trigger a second approval.
 - Fixed Discord approval cards keeping the pending color after approval, denial, or expiry.
