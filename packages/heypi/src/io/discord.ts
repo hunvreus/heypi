@@ -41,6 +41,7 @@ const CANCEL = "heypi_cancel";
 const STATUS = "heypi_status";
 const DISCORD_TEXT_LIMIT = 2000;
 const DISCORD_EMBED_FIELD_LIMIT = 1024;
+const DISCORD_ATTACHMENT_UPLOAD_TIMEOUT_MS = 15_000;
 const APPROVAL_PENDING_COLOR = 0xf59e0b;
 const APPROVAL_APPROVED_COLOR = 0x22c55e;
 const APPROVAL_REJECTED_COLOR = 0xef4444;
@@ -158,6 +159,7 @@ export function discord(input: DiscordConfig): Adapter {
 			const channel = await discordTargetChannel(client, target);
 			await sendDiscordOutput({
 				channel,
+				token: input.token,
 				store: start?.attachments,
 				out,
 				logger: log ?? noopLogger,
@@ -308,6 +310,7 @@ async function handleMessage(input: {
 				const target = out.private ? await msg.author.createDM() : msg.channel;
 				const ids = await sendDiscordOutput({
 					channel: target,
+					token: input.config.token,
 					store: input.start.attachments,
 					out,
 					replyTo: !reply || out.private ? undefined : msg,
@@ -329,6 +332,7 @@ async function handleMessage(input: {
 			streamed: async (out) => {
 				const upload = await uploadDiscordAttachments({
 					channel: msg.channel,
+					token: input.config.token,
 					store: input.start.attachments,
 					attachments: out.attachments,
 					scope: out.attachmentScope,
@@ -345,12 +349,19 @@ async function handleMessage(input: {
 					actor: input.client.user?.id,
 					ids: [...(stream?.ids?.() ?? []), ...upload.messageIds],
 				});
+				await postDiscordAttachmentUploadNotice({
+					channel: msg.channel,
+					upload,
+					context: context(),
+					delivery: input.delivery,
+				});
 			},
 			progress: async (out) => {
 				const edited = await pending.update(out);
 				const target = out.private ? await msg.author.createDM() : msg.channel;
 				const ids = await sendDiscordOutput({
 					channel: target,
+					token: input.config.token,
 					store: input.start.attachments,
 					out,
 					replyTo: !reply || out.private ? undefined : msg,
@@ -484,6 +495,7 @@ async function handleInteraction(input: {
 			const edited = progress ? await progress.update(out) : false;
 			await sendDiscordOutput({
 				channel: target,
+				token: input.config.token,
 				store: input.start.attachments,
 				out,
 				skipFirst: edited,
@@ -512,6 +524,7 @@ async function handleInteraction(input: {
 			});
 			await sendDiscordOutput({
 				channel: target,
+				token: input.config.token,
 				store: input.start.attachments,
 				out: rendered,
 				skipFirst: true,
@@ -523,6 +536,7 @@ async function handleInteraction(input: {
 		}
 		await sendDiscordOutput({
 			channel: target,
+			token: input.config.token,
 			store: input.start.attachments,
 			out: rendered,
 			logger: input.start.logger,
@@ -600,6 +614,7 @@ async function handleCommandInteraction(input: {
 		await interaction.editReply({ content: "Posted to channel." });
 		await sendDiscordOutput({
 			channel: interaction.channel,
+			token: input.config.token,
 			store: input.start.attachments,
 			out,
 			logger: input.start.logger,
@@ -702,6 +717,7 @@ type DiscordAttachmentUploadResult = {
 
 export async function sendDiscordOutput(input: {
 	channel: TextBasedChannel;
+	token?: string;
 	store?: AttachmentStore;
 	out: Outbound;
 	replyTo?: Message;
@@ -721,6 +737,7 @@ export async function sendDiscordOutput(input: {
 	});
 	const upload = await uploadDiscordAttachments({
 		channel: input.channel,
+		token: input.token,
 		store: input.store,
 		attachments: input.out.attachments,
 		scope: input.out.attachmentScope,
@@ -974,6 +991,7 @@ export function assertDiscordAttachmentUrl(input: string): void {
 
 async function uploadDiscordAttachments(input: {
 	channel: TextBasedChannel;
+	token?: string;
 	store?: AttachmentStore;
 	attachments?: Array<{ path: string; name?: string; mimeType?: string }>;
 	scope?: ScopedKey;
@@ -991,33 +1009,140 @@ async function uploadDiscordAttachments(input: {
 		logger: input.logger,
 		context: input.context,
 	});
-	const files = await Promise.all(
-		resolved.map(async (file) => new AttachmentBuilder(await readFile(file.path), { name: file.name })),
-	);
-	if (!files.length) return { requested, resolved: 0, status: "failed", messageIds: [] };
+	if (!resolved.length) return { requested, resolved: 0, status: "failed", messageIds: [] };
+	const names = resolved.map((file) => file.name);
+	const method = input.token ? "rest" : "channel";
 	try {
-		const sent = await input.delivery.run(
-			() =>
-				sendTo(input.channel, undefined, {
-					content: attachmentUploadText(resolved.map((file) => file.name)),
-					files,
-				}),
-			{ ...input.context, retry: "send" },
-		);
+		const sent = await sendDiscordAttachmentUpload(input.channel, input.token, resolved, input.delivery, input.context);
 		input.logger.debug("discord.attachment_upload_done", {
 			...input.context,
+			method,
 			requested,
-			resolved: files.length,
+			resolved: resolved.length,
 		});
-		return { requested, resolved: files.length, status: "uploaded", messageIds: [sent.id] };
+		return { requested, resolved: resolved.length, status: "uploaded", messageIds: [sent.id] };
 	} catch (error) {
 		const ambiguous = ambiguousDiscordSendError(error);
+		if (ambiguous) {
+			const found = await findRecentDiscordAttachmentUpload(input.channel, names).catch((lookupError) => {
+				input.logger.debug("discord.attachment_upload_lookup_failed", {
+					...input.context,
+					method,
+					error: errorMessage(lookupError),
+				});
+				return undefined;
+			});
+			if (found) {
+				input.logger.debug("discord.attachment_upload_found_after_abort", {
+					...input.context,
+					method,
+					requested,
+					resolved: resolved.length,
+					message: found,
+				});
+				return { requested, resolved: resolved.length, status: "uploaded", messageIds: [found] };
+			}
+			// Sending files is not idempotent; retrying favors visible delivery over silent loss.
+			try {
+				const sent = await sendDiscordAttachmentUpload(input.channel, input.token, resolved, input.delivery, input.context);
+				input.logger.debug("discord.attachment_upload_retry_done", {
+					...input.context,
+					method,
+					requested,
+					resolved: resolved.length,
+				});
+				return { requested, resolved: resolved.length, status: "uploaded", messageIds: [sent.id] };
+			} catch (retryError) {
+				input.logger.warn("discord.attachment_upload_retry_failed", {
+					...input.context,
+					method,
+					error: errorMessage(retryError),
+				});
+			}
+		}
 		input.logger.warn(ambiguous ? "discord.attachment_upload_ambiguous" : "discord.attachment_upload_failed", {
 			...input.context,
+			method,
 			error: errorMessage(error),
 		});
-		return { requested, resolved: files.length, status: ambiguous ? "unknown" : "failed", messageIds: [] };
+		return { requested, resolved: resolved.length, status: ambiguous ? "unknown" : "failed", messageIds: [] };
 	}
+}
+
+async function sendDiscordAttachmentUpload(
+	channel: TextBasedChannel,
+	token: string | undefined,
+	files: Array<{ path: string; name: string }>,
+	delivery: DeliveryQueue,
+	context: Record<string, unknown>,
+): Promise<{ id: string }> {
+	return await delivery.run(
+		async () =>
+			token
+				? await sendDiscordAttachmentUploadViaRest(channel, token, files)
+				: await sendDiscordAttachmentUploadViaChannel(channel, files),
+		{ ...context, retry: "send" },
+	);
+}
+
+async function sendDiscordAttachmentUploadViaChannel(
+	channel: TextBasedChannel,
+	files: Array<{ path: string; name: string }>,
+): Promise<Message> {
+	const attachments = await Promise.all(
+		files.map(async (file) => new AttachmentBuilder(await readFile(file.path), { name: file.name })),
+	);
+	return await sendTo(channel, undefined, {
+		content: attachmentUploadText(files.map((file) => file.name)),
+		files: attachments,
+	});
+}
+
+async function sendDiscordAttachmentUploadViaRest(
+	channel: TextBasedChannel,
+	token: string,
+	files: Array<{ path: string; name: string }>,
+): Promise<{ id: string }> {
+	const form = new FormData();
+	form.append("payload_json", JSON.stringify({ content: attachmentUploadText(files.map((file) => file.name)) }));
+	for (const [index, file] of files.entries()) {
+		const bytes = await readFile(file.path);
+		form.append(`files[${index}]`, new Blob([bytes]), file.name);
+	}
+	const response = await fetch(`https://discord.com/api/v10/channels/${channel.id}/messages`, {
+		method: "POST",
+		headers: { Authorization: `Bot ${token}` },
+		body: form,
+		signal: AbortSignal.timeout(DISCORD_ATTACHMENT_UPLOAD_TIMEOUT_MS),
+	});
+	const json = (await response.json().catch(() => undefined)) as
+		| { id?: unknown; message?: unknown; retry_after?: unknown }
+		| undefined;
+	if (!response.ok) {
+		const message = typeof json?.message === "string" ? json.message : response.statusText;
+		throw discordRestError(`Discord attachment upload failed: ${response.status} ${message}`, json?.retry_after);
+	}
+	if (typeof json?.id !== "string") throw new Error("Discord attachment upload returned no message id");
+	return { id: json.id };
+}
+
+function discordRestError(message: string, retryAfter: unknown): Error {
+	const error = new Error(message) as Error & { retryAfter?: number };
+	if (typeof retryAfter === "number" && Number.isFinite(retryAfter)) error.retryAfter = retryAfter;
+	return error;
+}
+
+async function findRecentDiscordAttachmentUpload(channel: TextBasedChannel, names: string[]): Promise<string | undefined> {
+	if (!("messages" in channel)) return undefined;
+	const messages = await channel.messages.fetch({ limit: 10 });
+	const expected = attachmentUploadText(names);
+	for (const message of messages.values()) {
+		if (message.author.id !== message.client.user?.id) continue;
+		if (message.content !== expected) continue;
+		const attached = [...message.attachments.values()].map((item) => item.name);
+		if (names.every((name) => attached.includes(name))) return message.id;
+	}
+	return undefined;
 }
 
 async function indexDiscordProviderMessages(input: {

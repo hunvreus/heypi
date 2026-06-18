@@ -304,11 +304,274 @@ test("Discord ambiguous attachment upload aborts post an unconfirmed upload noti
 			delivery: new DeliveryQueue(false),
 		});
 
-		assert.equal(sent.length, 3);
+		assert.equal(sent.length, 4);
 		assert.deepEqual(sent[0], { content: "Attached: report.html" });
 		assert.deepEqual(Object.keys(sent[1] as Record<string, unknown>).sort(), ["content", "files"]);
 		assert.equal((sent[1] as Record<string, unknown>).content, "Attached: report.html");
-		assert.match(JSON.stringify(sent[2]), /Discord did not confirm the upload/);
+		assert.deepEqual(Object.keys(sent[2] as Record<string, unknown>).sort(), ["content", "files"]);
+		assert.equal((sent[2] as Record<string, unknown>).content, "Attached: report.html");
+		assert.match(JSON.stringify(sent[3]), /Discord did not confirm the upload/);
+	} finally {
+		await file.cleanup();
+	}
+});
+
+test("Discord ambiguous attachment upload retries once with fresh files", async () => {
+	const sent: unknown[] = [];
+	const file = await testAttachmentFile();
+	const channel = {
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			if (payload.files && sent.filter((item) => Boolean((item as Record<string, unknown>).files)).length === 1) {
+				throw new DOMException("This operation was aborted", "AbortError");
+			}
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	try {
+		await sendDiscordOutput({
+			channel,
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.equal(sent.length, 3);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.deepEqual(Object.keys(sent[1] as Record<string, unknown>).sort(), ["content", "files"]);
+		assert.deepEqual(Object.keys(sent[2] as Record<string, unknown>).sort(), ["content", "files"]);
+	} finally {
+		await file.cleanup();
+	}
+});
+
+test("Discord attachment upload uses REST when a bot token is available", async () => {
+	const sent: unknown[] = [];
+	const requests: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+	const originalFetch = globalThis.fetch;
+	const file = await testAttachmentFile();
+	const channel = {
+		id: "1508274676458066022",
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			if (payload.files) throw new Error("channel.send files should not be used when token is available");
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	globalThis.fetch = (async (input, init) => {
+		requests.push({ input, init });
+		return new Response(JSON.stringify({ id: "rest-message-1" }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	}) as typeof fetch;
+	try {
+		await sendDiscordOutput({
+			channel,
+			token: "bot-token",
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.equal(sent.length, 1);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.equal(requests.length, 1);
+		assert.equal(String(requests[0]?.input), "https://discord.com/api/v10/channels/1508274676458066022/messages");
+		assert.equal(requests[0]?.init?.method, "POST");
+		assert.equal((requests[0]?.init?.headers as Record<string, string>).Authorization, "Bot bot-token");
+		assert.ok(requests[0]?.init?.signal instanceof AbortSignal);
+		const body = requests[0]?.init?.body;
+		assert.ok(body instanceof FormData);
+		assert.equal(body.get("payload_json"), JSON.stringify({ content: "Attached: report.html" }));
+		const uploaded = body.get("files[0]");
+		assert.ok(uploaded instanceof File);
+		assert.equal(uploaded.name, "report.html");
+	} finally {
+		globalThis.fetch = originalFetch;
+		await file.cleanup();
+	}
+});
+
+test("Discord REST attachment upload failure is visible in the channel", async () => {
+	const sent: unknown[] = [];
+	const originalFetch = globalThis.fetch;
+	const file = await testAttachmentFile();
+	const channel = {
+		id: "1508274676458066022",
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	globalThis.fetch = (async () =>
+		new Response(JSON.stringify({ message: "Missing Permissions" }), {
+			status: 403,
+			headers: { "content-type": "application/json" },
+		})) as typeof fetch;
+	try {
+		await sendDiscordOutput({
+			channel,
+			token: "bot-token",
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.equal(sent.length, 2);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.match(JSON.stringify(sent[1]), /Discord did not accept the upload/);
+	} finally {
+		globalThis.fetch = originalFetch;
+		await file.cleanup();
+	}
+});
+
+test("Discord REST attachment upload retries 429 responses", async () => {
+	const sent: unknown[] = [];
+	const responses = [
+		new Response(JSON.stringify({ message: "You are being rate limited.", retry_after: 0 }), {
+			status: 429,
+			headers: { "content-type": "application/json" },
+		}),
+		new Response(JSON.stringify({ id: "rest-message-1" }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}),
+	];
+	const originalFetch = globalThis.fetch;
+	const file = await testAttachmentFile();
+	const channel = {
+		id: "1508274676458066022",
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			return { id: `message-${sent.length}` };
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	globalThis.fetch = (async () => responses.shift() ?? new Response("unexpected", { status: 500 })) as typeof fetch;
+	try {
+		const ids = await sendDiscordOutput({
+			channel,
+			token: "bot-token",
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue({ intervalMs: 0, retries: 1, baseMs: 1000 }),
+		});
+
+		assert.equal(responses.length, 0);
+		assert.deepEqual(ids, ["message-1", "rest-message-1"]);
+		assert.equal(sent.length, 1);
+	} finally {
+		globalThis.fetch = originalFetch;
+		await file.cleanup();
+	}
+});
+
+test("Discord ambiguous attachment upload uses a matching recent upload instead of retrying", async () => {
+	const sent: unknown[] = [];
+	const file = await testAttachmentFile();
+	const channel = {
+		send: async (payload: Record<string, unknown>) => {
+			sent.push(payload);
+			if (payload.files) throw new DOMException("This operation was aborted", "AbortError");
+			return { id: `message-${sent.length}` };
+		},
+		messages: {
+			fetch: async () => ({
+				values: function* () {
+					yield {
+						id: "found-upload",
+						author: { id: "bot-1" },
+						client: { user: { id: "bot-1" } },
+						content: "Attached: report.html",
+						attachments: new Map([["file-1", { name: "report.html" }]]),
+					};
+				},
+			}),
+		},
+	} as unknown as TextBasedChannel;
+	const store: AttachmentStore = {
+		async save() {
+			throw new Error("unused");
+		},
+		async resolve() {
+			return { path: file.path, name: "report.html", mimeType: "text/html", size: 42 };
+		},
+	};
+
+	try {
+		const ids = await sendDiscordOutput({
+			channel,
+			store,
+			out: {
+				text: "Attached: report.html",
+				attachments: [{ path: "report.html", name: "report.html", mimeType: "text/html" }],
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			context: {},
+			delivery: new DeliveryQueue(false),
+		});
+
+		assert.deepEqual(ids, ["message-1", "found-upload"]);
+		assert.equal(sent.length, 2);
+		assert.deepEqual(sent[0], { content: "Attached: report.html" });
+		assert.deepEqual(Object.keys(sent[1] as Record<string, unknown>).sort(), ["content", "files"]);
 	} finally {
 		await file.cleanup();
 	}
