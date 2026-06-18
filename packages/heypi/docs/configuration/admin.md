@@ -1,8 +1,8 @@
 # Admin
 
-Admin is a local web panel for inspecting a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, memory files, configuration, approval policy, active approval bypasses, calls, runs, adapters, and activity.
+Admin is a local web panel for inspecting and operating a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, memory files, configuration, approval policy, active approval bypasses, calls, runs, adapters, and activity.
 
-In dev workflows, the Chats view can send local test messages through the same handler path used by adapters.
+In dev workflows, the Chats view can send local test messages through the same handler path used by adapters. The Chats sidebar also shows a live pulse for pending approvals, running runs, jobs, and refresh time.
 
 Admin is disabled by default and is served under `/admin/*` when enabled.
 
@@ -66,7 +66,7 @@ Notes:
 - `state.root` is the admin auth boundary. Use a separate state root when admin access should be separated.
 - Admin state is stored under `<state.root>/admin/`.
 - `/admin` is a reserved route prefix. User adapters cannot register routes under it.
-- Admin does not edit config, edit secrets, execute approvals, or provide shell access. Its write surface is limited to local chat messages for dev testing.
+- Admin does not edit config, edit secrets, or provide shell access. Its write surface is limited to local chat messages for dev testing, approval approve/deny actions, and thread cancel/status controls.
 
 ## CLI
 
