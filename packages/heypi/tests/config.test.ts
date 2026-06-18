@@ -70,13 +70,23 @@ test("agentFrom preserves configured dynamic context providers", () => {
 test("loadAgent discovers tools and jobs from agent folders", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	mkdirSync(join(root, "tools"), { recursive: true });
+	mkdirSync(join(root, "tools", "github"), { recursive: true });
 	mkdirSync(join(root, "jobs"), { recursive: true });
+	mkdirSync(join(root, "jobs", "ops"), { recursive: true });
 	mkdirSync(join(root, "evals"), { recursive: true });
+	mkdirSync(join(root, "evals", "smoke"), { recursive: true });
 	writeFileSync(
 		join(root, "tools", "lookup.ts"),
 		[
 			`import { defineTool } from ${JSON.stringify(modulePath("src/tool.ts"))};`,
 			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, run: async ({ name }) => "name=" + name });',
+		].join("\n"),
+	);
+	writeFileSync(
+		join(root, "tools", "github", "repos.ts"),
+		[
+			`import { defineTool } from ${JSON.stringify(modulePath("src/tool.ts"))};`,
+			'export default defineTool({ description: "Repos.", input: { type: "object", properties: {} }, run: async () => "repos" });',
 		].join("\n"),
 	);
 	writeFileSync(
@@ -87,17 +97,40 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 		].join("\n"),
 	);
 	writeFileSync(
+		join(root, "jobs", "ops", "hourly.ts"),
+		[
+			`import { defineJob } from ${JSON.stringify(modulePath("src/job.ts"))};`,
+			'export default defineJob({ id: "hourly", everyMs: 3_600_000, targets: { test: { channels: ["C1"] } }, prompt: "hourly" });',
+		].join("\n"),
+	);
+	writeFileSync(
 		join(root, "evals", "smoke.ts"),
 		[
 			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
 			'export default defineEval({ name: "smoke", prompt: "say hello", expect: { includes: "hello" } });',
 		].join("\n"),
 	);
+	writeFileSync(
+		join(root, "evals", "smoke", "tools.ts"),
+		[
+			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
+			'export default defineEval({ name: "uses tools", prompt: "use a tool", expect: { tool: "lookup" } });',
+		].join("\n"),
+	);
 
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
-	assert.equal(agent.tools?.[0]?.name, "lookup");
-	assert.equal(agent.jobs?.[0]?.id, "daily");
-	assert.equal(agent.evals?.[0]?.name, "smoke");
+	assert.deepEqual(
+		agent.tools?.map((tool) => tool.name),
+		["repos", "lookup"],
+	);
+	assert.deepEqual(
+		agent.jobs?.map((job) => job.id),
+		["daily", "hourly"],
+	);
+	assert.deepEqual(
+		agent.evals?.map((evaluation) => evaluation.name),
+		["smoke", "uses tools"],
+	);
 });
 
 test("loadAgent rejects duplicate discovered and explicit tool names", () => {

@@ -58,15 +58,15 @@ For the full lower-level Pi agent contract, see Pi's [coding-agent package](http
 | `SYSTEM.md` | System-level operating rules. Replaces heypi's generated system prompt when present. |
 | `SOUL.md` | Voice and behavior. Uses heypi's concise fallback when omitted. |
 | `AGENTS.md` | Main app instructions. No default. |
-| `tools/` | Trusted TypeScript tools default-exported from module files. File stems become tool names when omitted. |
-| `jobs/` | Scheduled jobs default-exported from module files. |
-| `evals/` | Behavior evals default-exported from module files. |
+| `tools/` | Trusted TypeScript tools default-exported from module files under this folder. File stems become tool names when omitted. |
+| `jobs/` | Scheduled jobs default-exported from module files under this folder. |
+| `evals/` | Behavior evals default-exported from module files under this folder. |
 | `skills/` | Bundled skills loaded with the agent. Empty when absent. |
 | `extensions/` | Explicit Pi extensions loaded with the agent. Empty when absent. |
 
 `skills/` loads bundled skills from the agent folder. They ship with the app and are not managed by `skill_*` tools. Runtime-created managed skills are enabled with top-level [`skills`](skills.md) config.
 
-Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
+Discovered tools, jobs, and evals are loaded recursively in lexical relative-path order. Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
 
 If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.
 

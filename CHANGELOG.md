@@ -17,6 +17,7 @@
 
 ### Changed
 - Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
+- Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed `create-heypi` generated sample tools to use Zod input schemas and declare `zod` as an app dependency.
 - Changed `defineTool()` to parse Zod input before custom `confirm` and `run` handlers.

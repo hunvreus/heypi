@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, extname, resolve } from "node:path";
+import { basename, extname, relative, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentToolDefinition } from "./core-tools.js";
 import type { EvalConfig } from "./eval.js";
@@ -66,11 +66,20 @@ function moduleFiles(folder: string): string[] {
 	const root = resolve(folder);
 	if (!existsSync(root)) return [];
 	if (!statSync(root).isDirectory()) throw new Error(`load folder is not a directory: ${root}`);
-	return readdirSync(root)
-		.map((entry) => resolve(root, entry))
-		.filter((path) => statSync(path).isFile())
+	return collectModuleFiles(root)
 		.filter((path) => MODULE_EXTENSIONS.has(extname(path)) && !path.endsWith(".d.ts"))
-		.sort((a, b) => a.localeCompare(b));
+		.sort((a, b) => relative(root, a).localeCompare(relative(root, b)));
+}
+
+function collectModuleFiles(root: string): string[] {
+	const files: string[] = [];
+	for (const entry of readdirSync(root)) {
+		const path = resolve(root, entry);
+		const stat = statSync(path);
+		if (stat.isDirectory()) files.push(...collectModuleFiles(path));
+		else if (stat.isFile()) files.push(path);
+	}
+	return files;
 }
 
 function valuesFromModule<T>(file: string, kind: string): T[] {
