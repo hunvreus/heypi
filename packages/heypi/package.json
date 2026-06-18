@@ -87,7 +87,7 @@
 		"fmt": "biome format --write .",
 		"typecheck": "pnpm run build && tsc --noEmit",
 		"db:generate": "drizzle-kit generate",
-		"test": "pnpm run build && node --import tsx --test tests/*.test.ts"
+		"test": "pnpm run build && node --import tsx --test"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",

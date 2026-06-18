@@ -52,6 +52,7 @@
 - Changed remaining internal runtime naming to avoid teaching the deprecated `coreTools()` alias outside compatibility docs.
 - Changed the public agent loader options type from `AgentFromOptions` to `LoadAgentOptions`.
 - Changed runtime tests to use `defineTool()` so deprecated `tool()` usage is limited to compatibility coverage.
+- Changed the heypi package test script to accept focused Node test file arguments.
 - Changed generated app README copy to point first-run users at the local admin/dev interaction path.
 - Changed admin trace rows to render model lifecycle events with readable titles and summaries.
 - Changed API and tools docs to keep deprecated aliases out of the main authoring path.
