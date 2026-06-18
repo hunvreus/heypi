@@ -11,8 +11,8 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
-import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
-import { parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
+import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { type ControlAction, type ControlActionTokens, parseControlAction } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
@@ -34,22 +34,7 @@ const TELEGRAM_ACTIONS = {
 } satisfies ControlActionTokens;
 const TELEGRAM_TEXT_LIMIT = 4096;
 const TELEGRAM_CALLBACK_LIMIT = 200;
-const TELEGRAM_CONFIG_KEYS = new Set([
-	"name",
-	"token",
-	"apiUrl",
-	"mode",
-	"webhook",
-	"pollTimeoutSeconds",
-	"allow",
-	"permissions",
-	"trigger",
-	"threadTrigger",
-	"response",
-	"progress",
-	"streaming",
-	"delivery",
-]);
+const TELEGRAM_CONFIG_KEYS = chatAdapterConfigKeys("token", "apiUrl", "mode", "webhook", "pollTimeoutSeconds");
 
 export type TelegramConfig = {
 	name?: string;

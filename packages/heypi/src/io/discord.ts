@@ -19,7 +19,7 @@ import {
 	type TextBasedChannel,
 } from "discord.js";
 import type { PermissionsConfig } from "../config.js";
-import { approvalViewRows, approvalViewTitle, codeFence, type ApprovalViewState } from "../core/approval-view.js";
+import { type ApprovalViewState, approvalViewRows, approvalViewTitle, codeFence } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -28,8 +28,13 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
-import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
-import { controlActionText, parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
+import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import {
+	controlActionText,
+	parseControlAction,
+	type ControlAction,
+	type ControlActionTokens,
+} from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
@@ -55,20 +60,7 @@ const APPROVAL_PENDING_COLOR = 0xf59e0b;
 const APPROVAL_APPROVED_COLOR = 0x22c55e;
 const APPROVAL_REJECTED_COLOR = 0xef4444;
 const APPROVAL_EXPIRED_COLOR = 0x64748b;
-const DISCORD_CONFIG_KEYS = new Set([
-	"name",
-	"token",
-	"clientId",
-	"registerCommands",
-	"allow",
-	"permissions",
-	"trigger",
-	"threadTrigger",
-	"response",
-	"progress",
-	"streaming",
-	"delivery",
-]);
+const DISCORD_CONFIG_KEYS = chatAdapterConfigKeys("token", "clientId", "registerCommands");
 
 export type DiscordConfig = {
 	name?: string;

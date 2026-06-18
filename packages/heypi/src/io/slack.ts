@@ -10,7 +10,7 @@ import { chunkText } from "../render/chunk.js";
 import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
-import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { chatAdapterConfigKeys, validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
@@ -30,25 +30,16 @@ const APPROVAL_PENDING_COLOR = "#f2c744";
 const APPROVAL_APPROVED_COLOR = "#2eb67d";
 const APPROVAL_REJECTED_COLOR = "#e01e5a";
 const APPROVAL_EXPIRED_COLOR = "#868686";
-const SLACK_CONFIG_KEYS = new Set([
-	"name",
+const SLACK_CONFIG_KEYS = chatAdapterConfigKeys(
 	"botToken",
 	"command",
-	"allow",
-	"permissions",
-	"trigger",
-	"threadTrigger",
-	"response",
-	"progress",
-	"streaming",
-	"delivery",
 	"mode",
 	"appToken",
 	"signingSecret",
 	"port",
 	"path",
 	"unsafePathOverride",
-]);
+);
 
 export type SlackConfig = {
 	name?: string;

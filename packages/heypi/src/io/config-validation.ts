@@ -1,10 +1,25 @@
 import type { Logger } from "../core/log.js";
 
 const STALE_PERMISSION_KEYS = new Set(["approvers", "admins"]);
+const CHAT_ADAPTER_CONFIG_KEYS = [
+	"name",
+	"allow",
+	"permissions",
+	"trigger",
+	"threadTrigger",
+	"response",
+	"progress",
+	"streaming",
+	"delivery",
+];
 
 export type AdapterConfigValidation = {
 	unknownKeys: string[];
 };
+
+export function chatAdapterConfigKeys(...keys: string[]): ReadonlySet<string> {
+	return new Set([...CHAT_ADAPTER_CONFIG_KEYS, ...keys]);
+}
 
 /** Validates built-in adapter config at construction. Throws for stale security keys, returns warnings to log at start. */
 export function validateAdapterConfig(
