@@ -334,6 +334,9 @@ export function threadsView(
 function threadSearch(page: AdminPage<AdminThreadRow>): string {
 	const q = page.filters?.q ?? "";
 	const provider = page.filters?.provider ?? "";
+	const reset = activeFilters(page.filters)
+		? `<a class="btn-sm-ghost h-8 shrink-0" href="/admin" data-admin-chat-filter-reset>Reset</a>`
+		: "";
 	return `<form class="min-w-0" method="get" action="/admin" data-admin-chat-search>
 	<input type="hidden" name="limit" value="${page.limit}">
 	<div class="flex min-w-0 items-center gap-2">
@@ -347,6 +350,7 @@ function threadSearch(page: AdminPage<AdminThreadRow>): string {
 			.map((value) => `<option value="${escapeHtml(value)}"${value === provider ? " selected" : ""}>${escapeHtml(adapterLabel(value))}</option>`)
 			.join("")}
 	</select>
+	${reset}
 	</div>
 </form>${scanNotice(page)}`;
 }
@@ -1171,7 +1175,7 @@ function pageHref(path: string, limit: number, offset: number, filters?: AdminPa
 		limit: String(limit),
 		offset: String(offset),
 	});
-	for (const key of ["q", "type", "state", "channel", "actor", "scope"] as const) {
+	for (const key of ["q", "provider", "type", "state", "channel", "actor", "scope"] as const) {
 		const value = filters?.[key];
 		if (value) params.set(key, value);
 	}

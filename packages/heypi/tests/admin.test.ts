@@ -988,10 +988,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	const threadsBody = threadsView(
 		{
 			limit: 25,
-			offset: 0,
-			hasNext: false,
+			offset: 25,
+			hasNext: true,
 			rows: [threadRow, discordThreadRow],
-			filters: { provider: "discord" },
+			filters: { q: "deploy", provider: "discord" },
 			facets: { providers: ["discord", "slack"], channels: [], actors: [], scopes: [] },
 		},
 		{ checkedAt: now },
@@ -1003,13 +1003,15 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadsBody, /data-admin-chats-card/);
 	assert.match(threadsBody, /data-admin-chats-sidebar/);
 	assert.match(threadsBody, /data-admin-chat-search/);
-	assert.match(threadsBody, /type="search" name="q"[^>]+data-admin-chat-search-input/);
+	assert.match(threadsBody, /type="search" name="q"[^>]+value="deploy"[^>]+data-admin-chat-search-input/);
 	assert.match(threadsBody, /aria-label="Search query"/);
 	assert.match(threadsBody, /aria-label="Search chats"[^>]+data-admin-chat-search-submit/);
 	assert.match(threadsBody, /name="provider"[^>]+data-admin-chat-provider-filter/);
 	assert.match(threadsBody, /<option value="">All adapters<\/option>/);
 	assert.match(threadsBody, /<option value="discord" selected>Discord<\/option>/);
 	assert.match(threadsBody, /<option value="slack">Slack<\/option>/);
+	assert.match(threadsBody, /href="\/admin"[^>]+data-admin-chat-filter-reset/);
+	assert.match(threadsBody, /href="\/admin\?limit=25&amp;offset=50&amp;q=deploy&amp;provider=discord"/);
 	assert.doesNotMatch(threadsBody, /pl-8/);
 	assert.doesNotMatch(threadsBody, /absolute left-2\.5/);
 	assert.doesNotMatch(threadsBody, /All states/);
