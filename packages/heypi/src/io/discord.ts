@@ -29,6 +29,7 @@ import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { controlActionText, parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
@@ -39,6 +40,12 @@ const APPROVE = "heypi_approve";
 const DENY = "heypi_deny";
 const CANCEL = "heypi_cancel";
 const STATUS = "heypi_status";
+const DISCORD_ACTIONS = {
+	approve: APPROVE,
+	deny: DENY,
+	cancel: CANCEL,
+	status: STATUS,
+} satisfies ControlActionTokens;
 const DISCORD_TEXT_LIMIT = 2000;
 const DISCORD_EMBED_FIELD_LIMIT = 1024;
 const DISCORD_ATTACHMENT_UPLOAD_TIMEOUT_MS = 15_000;
@@ -1271,25 +1278,14 @@ function approvalColor(state: ApprovalViewState): number {
 	return APPROVAL_PENDING_COLOR;
 }
 
-type DiscordAction =
-	| { kind: "approve"; id: string }
-	| { kind: "deny"; id: string }
-	| { kind: "cancel"; id: string }
-	| { kind: "status"; id?: string };
+type DiscordAction = ControlAction;
 
 function parseAction(input: string): DiscordAction | undefined {
-	if (input === STATUS) return { kind: "status" };
-	const [kind, id] = input.split(":");
-	if (kind === APPROVE && id) return { kind: "approve", id };
-	if (kind === DENY && id) return { kind: "deny", id };
-	if (kind === CANCEL && id) return { kind: "cancel", id };
-	if (kind === STATUS && id) return { kind: "status", id };
-	return undefined;
+	return parseControlAction(input, DISCORD_ACTIONS);
 }
 
 function discordActionText(action: DiscordAction): string {
-	if (action.kind === "status") return action.id ? `/status ${action.id}` : "/status";
-	return `/${action.kind} ${action.id}`;
+	return controlActionText(action);
 }
 
 function approvedFallbackText(actor: string, text: string, id?: string): string {

@@ -12,6 +12,7 @@ import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
 import { runChatMessage } from "./chat-message.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
@@ -23,6 +24,12 @@ const APPROVE = "approve";
 const DENY = "deny";
 const CANCEL = "cancel";
 const STATUS = "status";
+const TELEGRAM_ACTIONS = {
+	approve: APPROVE,
+	deny: DENY,
+	cancel: CANCEL,
+	status: STATUS,
+} satisfies ControlActionTokens;
 const TELEGRAM_TEXT_LIMIT = 4096;
 const TELEGRAM_CALLBACK_LIMIT = 200;
 const TELEGRAM_CONFIG_KEYS = new Set([
@@ -1529,22 +1536,10 @@ function emptyMarkup(): TelegramReplyMarkup {
 	return { inline_keyboard: [] };
 }
 
-type TelegramAction =
-	| { kind: "approve"; id: string }
-	| { kind: "deny"; id: string }
-	| { kind: "cancel"; id: string }
-	| { kind: "status" };
+type TelegramAction = ControlAction;
 
 export function parseTelegramCallback(input?: string): TelegramAction | undefined {
-	if (!input) return undefined;
-	if (input === STATUS) return { kind: STATUS };
-	const index = input.indexOf(":");
-	if (index <= 0) return undefined;
-	const kind = input.slice(0, index);
-	const id = input.slice(index + 1);
-	if (!id) return undefined;
-	if (kind === APPROVE || kind === DENY || kind === CANCEL) return { kind, id };
-	return undefined;
+	return parseControlAction(input, TELEGRAM_ACTIONS);
 }
 
 function filesOf(msg: TelegramMessage): Array<{ id: string; name: string; mimeType?: string; size?: number }> {

@@ -34,6 +34,7 @@
 - Changed `create-heypi` generated apps to export the app by default so `heypi dev` and `heypi start` can load the same config used by direct execution.
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
+- Changed Discord and Telegram control callbacks to use a shared provider-neutral action parser.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.
@@ -43,6 +44,7 @@
 - Fixed Discord approval cards keeping the pending color after approval, denial, or expiry.
 - Fixed Discord approved continuations skipping the progress message while the approved action resumed.
 - Fixed Discord and Telegram root channel/group conversations sharing one channel-level transcript by indexing provider message IDs and continuing explicit replies or recent same-actor follow-ups in the correct heypi thread.
+- Fixed Discord control callbacks truncating run IDs that contain `:`.
 
 ## [0.2.0-beta.0] - 2026-06-15
 
