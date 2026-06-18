@@ -14,6 +14,7 @@ import { runChatMessage } from "./chat-message.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
+import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
@@ -1026,16 +1027,10 @@ function resolveTelegramConfig(input: TelegramConfig): TelegramConfig & { token:
 			input.mode === "webhook" || input.webhook
 				? {
 						...input.webhook,
-						secretToken: input.webhook?.secretToken ?? process.env.TELEGRAM_WEBHOOK_SECRET,
+						secretToken: input.webhook?.secretToken ?? optionalEnv("TELEGRAM_WEBHOOK_SECRET"),
 					}
 				: input.webhook,
 	};
-}
-
-function requiredEnv(name: string, label: string): string {
-	const value = process.env[name]?.trim();
-	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
-	return value;
 }
 
 type TelegramAttachmentUploadResult = {

@@ -12,6 +12,7 @@ import { type Attachment, type AttachmentStore, responseBytes } from "./attachme
 import { runChatMessage } from "./chat-message.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
+import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
@@ -523,8 +524,8 @@ function resolveSlackConfig(input: SlackConfig): ResolvedSlackConfig {
 	return {
 		...input,
 		botToken: input.botToken ?? requiredEnv("SLACK_BOT_TOKEN", "Slack bot token"),
-		appToken: ("appToken" in input ? input.appToken : undefined) ?? process.env.SLACK_APP_TOKEN,
-		signingSecret: input.signingSecret ?? process.env.SLACK_SIGNING_SECRET,
+		appToken: ("appToken" in input ? input.appToken : undefined) ?? optionalEnv("SLACK_APP_TOKEN"),
+		signingSecret: input.signingSecret ?? optionalEnv("SLACK_SIGNING_SECRET"),
 	};
 }
 
@@ -736,12 +737,6 @@ function createSlackReceiver(
 		});
 	}
 	return receiver;
-}
-
-function requiredEnv(name: string, label: string): string {
-	const value = process.env[name]?.trim();
-	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
-	return value;
 }
 
 function requiredSlackApp(app: App | undefined): App {

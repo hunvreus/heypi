@@ -31,6 +31,7 @@ import { runChatMessage } from "./chat-message.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
 import { controlActionText, parseControlAction, type ControlAction, type ControlActionTokens } from "./control-action.js";
 import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
+import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
@@ -1412,14 +1413,8 @@ function resolveDiscordConfig(input: DiscordConfig): DiscordConfig & { token: st
 	return {
 		...input,
 		token: input.token ?? requiredEnv("DISCORD_BOT_TOKEN", "Discord bot token"),
-		clientId: input.clientId ?? process.env.DISCORD_CLIENT_ID,
+		clientId: input.clientId ?? optionalEnv("DISCORD_CLIENT_ID"),
 	};
-}
-
-function requiredEnv(name: string, label: string): string {
-	const value = process.env[name]?.trim();
-	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
-	return value;
 }
 
 export function discordAllowed(

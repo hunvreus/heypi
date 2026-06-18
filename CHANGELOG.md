@@ -41,6 +41,7 @@
 - Fixed admin Chats pagination preserving the adapter filter and added a reset action for active chat filters.
 - Fixed trace event storage to redact secrets centrally before persisting event data.
 - Added admin eval definition details with full prompt and assertion text.
+- Changed built-in adapter env var resolution to use one shared helper.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.

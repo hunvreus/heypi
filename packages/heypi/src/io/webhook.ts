@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { PermissionsConfig } from "../config.js";
 import { message } from "../core/log.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
+import { optionalEnv, requiredEnv } from "./env.js";
 import type { Adapter, AdapterStart } from "./handler.js";
 import {
 	escapeRe,
@@ -146,17 +147,8 @@ export function webhook(input: WebhookConfig = {}): Adapter {
 function resolveWebhookConfig(input: WebhookConfig): ResolvedWebhookConfig {
 	return {
 		...input,
-		secret:
-			input.secret ??
-			process.env.HEYPI_WEBHOOK_SECRET?.trim() ??
-			requiredEnv("WEBHOOK_SECRET", "Webhook secret"),
+		secret: input.secret ?? optionalEnv("HEYPI_WEBHOOK_SECRET") ?? requiredEnv("WEBHOOK_SECRET", "Webhook secret"),
 	};
-}
-
-function requiredEnv(name: string, label: string): string {
-	const value = process.env[name]?.trim();
-	if (!value) throw new Error(`${label} is required; pass it explicitly or set ${name}`);
-	return value;
 }
 
 function registerWebhookRoutes(
