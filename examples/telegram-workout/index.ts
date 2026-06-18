@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, coreTools, createHeypi, runHeypi, telegram, tool, workspace } from "@hunvreus/heypi";
+import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, telegram, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
@@ -28,11 +28,11 @@ const stateRoot = "./state";
 const logPath = join(stateRoot, "memory/workouts.md");
 const profilePath = join(stateRoot, "memory/profile.md");
 
-const getProfile = tool({
+const getProfile = defineTool({
 	name: "get_profile",
 	description: "Read the saved workout profile and plan.",
-	parameters: Type.Object({}),
-	execute: async () => {
+	input: Type.Object({}),
+	run: async () => {
 		try {
 			return await readFile(profilePath, "utf8");
 		} catch {
@@ -41,7 +41,7 @@ const getProfile = tool({
 	},
 });
 
-const saveProfile = tool<{
+const saveProfile = defineTool<{
 	goal: string;
 	plan: string;
 	equipment?: string;
@@ -53,7 +53,7 @@ const saveProfile = tool<{
 }>({
 	name: "save_profile",
 	description: "Save the user's workout profile, constraints, and current plan.",
-	parameters: Type.Object({
+	input: Type.Object({
 		goal: Type.String({ description: "Primary training goal." }),
 		plan: Type.String({ description: "Concise current workout plan." }),
 		equipment: Type.Optional(Type.String({ description: "Available gym/home/outdoor equipment." })),
@@ -63,7 +63,7 @@ const saveProfile = tool<{
 		preferences: Type.Optional(Type.String({ description: "Workout preferences and dislikes." })),
 		constraints: Type.Optional(Type.String({ description: "Injuries, time, travel, sleep, or other constraints." })),
 	}),
-	execute: async (input) => {
+	run: async (input) => {
 		await mkdir(dirname(profilePath), { recursive: true });
 		const body = [
 			`# Workout Profile`,
@@ -86,7 +86,7 @@ const saveProfile = tool<{
 	},
 });
 
-const logWorkout = tool<{
+const logWorkout = defineTool<{
 	activity: string;
 	date?: string;
 	duration_min?: number;
@@ -95,14 +95,14 @@ const logWorkout = tool<{
 }>({
 	name: "log_workout",
 	description: "Append a completed workout entry to the local workout log.",
-	parameters: Type.Object({
+	input: Type.Object({
 		activity: Type.String({ description: "Workout activity, e.g. run, lift, swim, mobility." }),
 		date: Type.Optional(Type.String({ description: "Workout date if known, otherwise today." })),
 		duration_min: Type.Optional(Type.Number({ description: "Duration in minutes if known." })),
 		intensity: Type.Optional(Type.String({ description: "Short intensity note, e.g. easy, moderate, hard." })),
 		notes: Type.Optional(Type.String({ description: "Short free-form notes." })),
 	}),
-	execute: async (input) => {
+	run: async (input) => {
 		const date = input.date ?? new Date().toISOString().slice(0, 10);
 		const parts = [
 			`- ${date}: ${input.activity}`,
@@ -126,9 +126,9 @@ const app = createHeypi({
 			streaming: true,
 		}),
 	],
-	agent: agentFrom("./agent", {
+	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
-		tools: [...coreTools(), getProfile, saveProfile, logWorkout],
+		tools: [...defaultTools(), getProfile, saveProfile, logWorkout],
 	}),
 	jobs: [
 		{

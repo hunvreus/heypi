@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
-import { agentFrom, coreTools, createHeypi, runHeypi, tool, webhook, workspace } from "@hunvreus/heypi";
+import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, webhook, workspace } from "@hunvreus/heypi";
 import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 import { Type } from "@sinclair/typebox";
 
@@ -24,13 +24,13 @@ function optional(name: string): string | undefined {
 
 const repo = parseRepo(required("HEYPI_GITHUB_REPO"));
 
-const githubIssueGet = tool<{ issue: number }>({
+const githubIssueGet = defineTool<{ issue: number }>({
 	name: "github_issue_get",
 	description: "Fetch the configured GitHub issue, including recent comments.",
-	parameters: Type.Object({
+	input: Type.Object({
 		issue: Type.Number({ minimum: 1 }),
 	}),
-	execute: async ({ issue }) => {
+	run: async ({ issue }) => {
 		const item = await githubRequest<Record<string, unknown>>(`/repos/${repo.owner}/${repo.name}/issues/${issue}`);
 		const comments = await githubRequest<Array<Record<string, unknown>>>(
 			`/repos/${repo.owner}/${repo.name}/issues/${issue}/comments?per_page=20`,
@@ -52,13 +52,13 @@ const githubIssueGet = tool<{ issue: number }>({
 	},
 });
 
-const githubIssueSearch = tool<{ query: string }>({
+const githubIssueSearch = defineTool<{ query: string }>({
 	name: "github_issue_search",
 	description: "Search existing issues in the configured GitHub repository for duplicate candidates.",
-	parameters: Type.Object({
+	input: Type.Object({
 		query: Type.String({ minLength: 1 }),
 	}),
-	execute: async ({ query }) => {
+	run: async ({ query }) => {
 		const q = new URLSearchParams({
 			q: `repo:${repo.full} is:issue ${query}`,
 			per_page: "10",
@@ -77,14 +77,14 @@ const githubIssueSearch = tool<{ query: string }>({
 	},
 });
 
-const githubIssueComment = tool<{ issue: number; body: string }>({
+const githubIssueComment = defineTool<{ issue: number; body: string }>({
 	name: "github_issue_comment",
 	description: "Post a comment to the configured GitHub issue with the final diagnosis or test result.",
-	parameters: Type.Object({
+	input: Type.Object({
 		issue: Type.Number({ minimum: 1 }),
 		body: Type.String({ minLength: 1 }),
 	}),
-	execute: async ({ issue, body }) => {
+	run: async ({ issue, body }) => {
 		const result = await githubRequest<Record<string, unknown>>(
 			`/repos/${repo.owner}/${repo.name}/issues/${issue}/comments`,
 			{
@@ -101,15 +101,15 @@ const githubIssueComment = tool<{ issue: number; body: string }>({
 	},
 });
 
-const githubIssueCloseDuplicate = tool<{ issue: number; duplicateOf: number; body?: string }>({
+const githubIssueCloseDuplicate = defineTool<{ issue: number; duplicateOf: number; body?: string }>({
 	name: "github_issue_close_duplicate",
 	description: "Comment on the configured GitHub issue and close it as a duplicate.",
-	parameters: Type.Object({
+	input: Type.Object({
 		issue: Type.Number({ minimum: 1 }),
 		duplicateOf: Type.Number({ minimum: 1 }),
 		body: Type.Optional(Type.String({ minLength: 1 })),
 	}),
-	execute: async ({ issue, duplicateOf, body }) => {
+	run: async ({ issue, duplicateOf, body }) => {
 		const comment = body || `Duplicate of #${duplicateOf}.`;
 		const posted = await githubRequest<Record<string, unknown>>(
 			`/repos/${repo.owner}/${repo.name}/issues/${issue}/comments`,
@@ -147,10 +147,10 @@ const app = createHeypi({
 			secret: required("HEYPI_WEBHOOK_SECRET"),
 		}),
 	],
-	agent: agentFrom("./agent", {
+	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
 		tools: [
-			...coreTools({
+			...defaultTools({
 				bash: true,
 				write: false,
 				edit: false,

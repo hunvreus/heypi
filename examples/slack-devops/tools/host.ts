@@ -7,7 +7,7 @@ import {
 	type CommandPolicyConfig,
 	classifyCommand,
 	commandConfirm,
-	tool,
+	defineTool,
 } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
@@ -72,34 +72,34 @@ export function createHostTools(options: HostToolOptions) {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const remoteConfirm = commandConfirm(options.commandPolicy);
 	return [
-		tool({
+		defineTool({
 			name: "host_key_ensure",
 			description:
 				"Create a named SSH keypair for remote hosts if missing and return only the public key. Never returns private key material.",
-			parameters: Type.Object({
+			input: Type.Object({
 				name: Type.Optional(Type.String({ description: "Key name. Defaults to default." })),
 			}),
-			execute: async ({ name }) => {
+			run: async ({ name }) => {
 				const key = await store.ensureKey(keyName(name));
 				return [`key=${key.name}`, `publicKey:`, key.publicKey].join("\n");
 			},
 		}),
-		tool({
+		defineTool({
 			name: "host_key_public",
 			description: "Return the public SSH key for a named host key. Does not return private key material.",
-			parameters: Type.Object({
+			input: Type.Object({
 				name: Type.Optional(Type.String({ description: "Key name. Defaults to default." })),
 			}),
-			execute: async ({ name }) => {
+			run: async ({ name }) => {
 				const key = await store.readPublicKey(keyName(name));
 				return [`key=${key.name}`, `publicKey:`, key.publicKey].join("\n");
 			},
 		}),
-		tool({
+		defineTool({
 			name: "hosts_list",
 			description: "List configured remote hosts and tags from the file-backed host inventory.",
-			parameters: Type.Object({}),
-			execute: async () => {
+			input: Type.Object({}),
+			run: async () => {
 				const hosts = (await store.read()).hosts;
 				if (!hosts.length) return "no hosts configured";
 				return hosts
@@ -118,23 +118,23 @@ export function createHostTools(options: HostToolOptions) {
 					.join("\n");
 			},
 		}),
-		tool<{ host: string }>({
+		defineTool<{ host: string }>({
 			name: "hosts_lookup",
 			description: "Look up one host by exact id, name, alias, or tag.",
-			parameters: Type.Object({
+			input: Type.Object({
 				host: Type.String({ description: "Host id, name, alias, or tag." }),
 			}),
-			execute: async ({ host }) => {
+			run: async ({ host }) => {
 				const matches = await store.resolve(host);
 				if (!matches.length) return `host not found: ${host}`;
 				return matches.map((item) => JSON.stringify(publicHost(item), null, 2)).join("\n");
 			},
 		}),
-		tool<{ hosts?: string[] }>({
+		defineTool<{ hosts?: string[] }>({
 			name: "host_facts_refresh",
 			description:
 				"Probe configured remote hosts over SSH and persist facts: hostname, OS, architecture, kernel, distro, package manager, service manager, container runtime/version, disk, memory, ports 80/443, git user, and passwordless sudo availability.",
-			parameters: Type.Object({
+			input: Type.Object({
 				hosts: Type.Optional(
 					Type.Array(
 						Type.String({ description: "Host ids, aliases, or tags. Omit to refresh all configured hosts." }),
@@ -144,7 +144,7 @@ export function createHostTools(options: HostToolOptions) {
 					),
 				),
 			}),
-			execute: async ({ hosts }, ctx) => {
+			run: async ({ hosts }, ctx) => {
 				const targets = hosts?.length ? await store.resolveMany(hosts) : (await store.read()).hosts;
 				if (!targets.length) return hosts?.length ? `no hosts matched: ${hosts.join(", ")}` : "no hosts configured";
 				const out: string[] = [];
@@ -173,7 +173,7 @@ export function createHostTools(options: HostToolOptions) {
 				return out.join("\n");
 			},
 		}),
-		tool<{
+		defineTool<{
 			id: string;
 			address: string;
 			user?: string;
@@ -186,7 +186,7 @@ export function createHostTools(options: HostToolOptions) {
 			name: "hosts_upsert",
 			description:
 				"Add or update a remote host in the file-backed inventory. Ensures the referenced SSH key exists and stores its public key.",
-			parameters: Type.Object({
+			input: Type.Object({
 				id: Type.String({ description: "Stable host id, e.g. web-1." }),
 				address: Type.String({ description: "DNS name or IP address." }),
 				user: Type.Optional(Type.String({ description: "SSH user. Defaults to deploy." })),
@@ -205,7 +205,7 @@ export function createHostTools(options: HostToolOptions) {
 					...(typeof port === "number" ? [{ label: "SSH port", value: String(port) }] : []),
 				],
 			}),
-			execute: async (input) => {
+			run: async (input) => {
 				const host = await store.upsert(input);
 				return [
 					`Saved host ${host.id}.`,
@@ -223,26 +223,26 @@ export function createHostTools(options: HostToolOptions) {
 					.join("\n");
 			},
 		}),
-		tool<{ host: string }>({
+		defineTool<{ host: string }>({
 			name: "hosts_remove",
 			description: "Remove a host from the file-backed inventory.",
-			parameters: Type.Object({
+			input: Type.Object({
 				host: Type.String({ description: "Exact host id to remove." }),
 			}),
 			confirm: ({ host }) => ({
 				reason: `Remove host ${String(host)}.`,
 				details: [{ label: "Host", value: String(host) }],
 			}),
-			execute: async ({ host }) => {
+			run: async ({ host }) => {
 				const removed = await store.remove(hostId(host));
 				return removed ? `host removed: ${removed.id}` : `host not found: ${host}`;
 			},
 		}),
-		tool<{ hosts: string[]; purpose: string; command: string }>({
+		defineTool<{ hosts: string[]; purpose: string; command: string }>({
 			name: "host_exec",
 			description:
 				"Run a command on one or more configured remote hosts over SSH using the file-backed host inventory. Include a concise human purpose explaining why the command is being run.",
-			parameters: Type.Object({
+			input: Type.Object({
 				hosts: Type.Array(Type.String({ description: "Host ids, aliases, or tags." }), {
 					minItems: 1,
 					maxItems: 8,
@@ -265,7 +265,7 @@ export function createHostTools(options: HostToolOptions) {
 					],
 				};
 			},
-			execute: async ({ hosts, command }, ctx) => {
+			run: async ({ hosts, command }, ctx) => {
 				const risk = classifyCommand(command, options.commandPolicy);
 				if (risk.risk === "block") return `blocked: ${risk.reason}`;
 				const targets = await store.resolveMany(hosts);

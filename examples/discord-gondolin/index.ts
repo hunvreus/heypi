@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
-import { agentFrom, coreTools, createHeypi, discord, runHeypi, workspace } from "@hunvreus/heypi";
+import { loadAgent, defaultTools, createHeypi, discord, runHeypi, workspace } from "@hunvreus/heypi";
 import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";
 
 loadEnv(".env");
@@ -53,9 +53,9 @@ const app = createHeypi({
 			streaming: true,
 		}),
 	],
-	agent: agentFrom("./agent", {
+	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
-		tools: coreTools(),
+		tools: defaultTools(),
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,

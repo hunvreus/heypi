@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
-import { agentFrom, consoleLogger, coreTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { loadAgent, consoleLogger, defaultTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
@@ -110,11 +110,11 @@ const app = createHeypi({
 		// 	streaming: true,
 		// }),
 	],
-	agent: agentFrom("./agent", {
+	agent: loadAgent("./agent", {
 		id: "slack-devops",
 		model: "openai/gpt-5-mini",
 		context: [hostContext],
-		tools: [...coreTools(), ...runbookTools, ...hostTools],
+		tools: [...defaultTools(), ...runbookTools, ...hostTools],
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,

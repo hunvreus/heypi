@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { tool } from "@hunvreus/heypi";
+import { defineTool } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 type Hit = { file: string; line: number; text: string };
@@ -13,14 +13,14 @@ type RunbookToolOptions = {
 export function createRunbookTools(options: RunbookToolOptions) {
 	const root = resolve(options.root);
 	return [
-		tool<{ query: string; max_results?: number }>({
+		defineTool<{ query: string; max_results?: number }>({
 			name: "runbook_search",
 			description: "Search bundled Markdown runbooks and return matching lines.",
-			parameters: Type.Object({
+			input: Type.Object({
 				query: Type.String({ minLength: 2, description: "Search query." }),
 				max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 6 })),
 			}),
-			execute: async ({ query, max_results }) => {
+			run: async ({ query, max_results }) => {
 				const maxResults = max_results ?? 6;
 				try {
 					const st = statSync(root);
