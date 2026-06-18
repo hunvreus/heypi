@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadAgent, consoleLogger, createHeypi, type Logger, sqliteStore, workspace } from "@hunvreus/heypi";
+import { consoleLogger, createHeypi, type Logger, loadAgent, sqliteStore, workspace } from "@hunvreus/heypi";
 import type { Adapter } from "@hunvreus/heypi/adapter";
 import {
 	adminLoginUrl,
@@ -481,10 +481,7 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.notEqual(afterBypassRevoke.revision, live.revision);
 
 		const threads = await service.threads();
-		assert.deepEqual(
-			threads.rows.map((row) => row.id).sort(),
-			[localThread.id, ownThread.id].sort(),
-		);
+		assert.deepEqual(threads.rows.map((row) => row.id).sort(), [localThread.id, ownThread.id].sort());
 		assert.deepEqual(threads.facets?.providers, ["local", "slack"]);
 		const slackThreads = await service.threads({ provider: "slack" });
 		assert.deepEqual(
@@ -1041,10 +1038,31 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			filters: { q: "deploy", provider: "discord" },
 			facets: { providers: ["discord", "slack"], channels: [], actors: [], scopes: [] },
 		},
-		{ checkedAt: now },
+		{
+			checkedAt: now,
+			live: {
+				pendingApprovals: 2,
+				runningRuns: 1,
+				jobs: 3,
+				activeJobs: 2,
+				pausedJobs: 1,
+				recentCalls: 4,
+				checkedAt: now,
+				revision: "live-1",
+				chatsRevision: "chats-1",
+				threadRevisions: {},
+			},
+		},
 	);
 	assert.match(threadsBody, />Chats<\/h2>/);
 	assert.match(threadsBody, /Recent conversations across connected channels\./);
+	assert.match(threadsBody, /data-admin-chat-pulse/);
+	assert.match(threadsBody, /href="\/admin\/approvals"[^>]+data-admin-chat-pulse-link="approvals"/);
+	assert.match(threadsBody, /data-live-field="pendingApprovals">2<\/span>/);
+	assert.match(threadsBody, /data-live-field="runningRuns">1<\/span>/);
+	assert.match(threadsBody, /href="\/admin\/jobs"[^>]+data-admin-chat-pulse-link="jobs"/);
+	assert.match(threadsBody, /data-live-field="jobs">3<\/span>/);
+	assert.match(threadsBody, /data-live-field="checkedAt">Last updated/);
 	assert.doesNotMatch(threadsBody, /role="tab"/);
 	assert.match(threadsBody, /data-admin-chats/);
 	assert.match(threadsBody, /data-admin-chats-card/);

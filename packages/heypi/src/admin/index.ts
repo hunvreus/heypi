@@ -437,7 +437,12 @@ async function routePage(
 			overview,
 			livePage: true,
 			liveThreadId: thread.thread.id,
-			body: threadsView(threads, { checkedAt: overview.live.checkedAt, selected: thread, csrf: session.csrf }),
+			body: threadsView(threads, {
+				checkedAt: overview.live.checkedAt,
+				selected: thread,
+				csrf: session.csrf,
+				live: overview.live,
+			}),
 		});
 	}
 	if (path === "/admin") {
@@ -447,7 +452,7 @@ async function routePage(
 			active: "chats",
 			overview,
 			livePage: true,
-			body: threadsView(threads, { checkedAt: overview.live.checkedAt, csrf: session.csrf }),
+			body: threadsView(threads, { checkedAt: overview.live.checkedAt, csrf: session.csrf, live: overview.live }),
 		});
 	}
 	if (path === "/admin/configuration") {

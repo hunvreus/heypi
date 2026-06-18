@@ -308,7 +308,12 @@ ${card(
 
 export function threadsView(
 	page: AdminPage<AdminThreadRow>,
-	input: { checkedAt?: number; selected?: AdminThreadView; csrf?: string } = {},
+	input: {
+		checkedAt?: number;
+		selected?: AdminThreadView;
+		csrf?: string;
+		live?: AdminOverview["live"];
+	} = {},
 ): string {
 	const selectedId = input.selected?.thread.id;
 	return `<div class="grid h-[calc(100vh-5.5rem)] min-w-0" data-admin-chats>
@@ -320,6 +325,7 @@ export function threadsView(
 			<h2 class="leading-none font-semibold">Chats</h2>
 			<p class="text-sm text-muted-foreground">Recent conversations across connected channels.</p>
 		</div>
+		${input.live ? chatSidebarPulse(input.live) : ""}
 		${threadSearch(page)}
 	</header>
 		<div class="scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto" data-admin-thread-list>${threadList(page, selectedId)}</div>
@@ -328,6 +334,17 @@ export function threadsView(
 	<section class="min-h-0 min-w-0 overflow-hidden lg:border-l" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>
 </div>
+</div>`;
+}
+
+function chatSidebarPulse(live: AdminOverview["live"]): string {
+	return `<div class="grid min-w-0 gap-2 rounded-lg border bg-muted/40 p-3 text-sm" data-admin-chat-pulse>
+	<div class="flex min-w-0 items-center justify-between gap-3">
+		<a class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground hover:text-foreground" href="/admin/approvals" data-admin-chat-pulse-link="approvals">Approvals <span class="badge-secondary" data-live-field="pendingApprovals">${live.pendingApprovals}</span></a>
+		<span class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground" data-admin-chat-pulse-runs>Runs <span class="badge-secondary" data-live-field="runningRuns">${live.runningRuns}</span></span>
+		<a class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground hover:text-foreground" href="/admin/jobs" data-admin-chat-pulse-link="jobs">Jobs <span class="badge-secondary" data-live-field="jobs">${live.jobs}</span></a>
+	</div>
+	<p class="text-xs text-muted-foreground" data-live-field="checkedAt">Last updated ${time(live.checkedAt)}</p>
 </div>`;
 }
 
@@ -347,7 +364,10 @@ function threadSearch(page: AdminPage<AdminThreadRow>): string {
 	<select class="select h-8 w-[8.5rem] shrink-0 py-1 text-sm" name="provider" aria-label="Adapter" data-admin-chat-provider-filter>
 		<option value="">All adapters</option>
 		${(page.facets?.providers ?? [])
-			.map((value) => `<option value="${escapeHtml(value)}"${value === provider ? " selected" : ""}>${escapeHtml(adapterLabel(value))}</option>`)
+			.map(
+				(value) =>
+					`<option value="${escapeHtml(value)}"${value === provider ? " selected" : ""}>${escapeHtml(adapterLabel(value))}</option>`,
+			)
 			.join("")}
 	</select>
 	${reset}
@@ -684,10 +704,7 @@ function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: strin
 	return [...groups.values()];
 }
 
-function threadGroup(
-	group: { key: string; label: string; rows: AdminThreadRow[] },
-	selectedId?: string,
-): string {
+function threadGroup(group: { key: string; label: string; rows: AdminThreadRow[] }, selectedId?: string): string {
 	return `<section class="grid min-w-0 gap-1" data-admin-thread-group="${escapeHtml(group.key)}">
 		<header class="flex min-w-0 items-center gap-2 px-3 text-xs font-medium uppercase tracking-normal text-muted-foreground" data-admin-thread-group-header>
 			<span class="inline-flex shrink-0 items-center" aria-hidden="true">${adapterIcon(group.key)}</span>
@@ -1444,7 +1461,9 @@ function memoryPreview(entry: AdminMemory["entries"][number]): string {
 }
 
 function wrapPre(input: string): Cell {
-	return html(`<div class="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${escapeHtml(input)}</div>`);
+	return html(
+		`<div class="max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere]">${escapeHtml(input)}</div>`,
+	);
 }
 
 function relativeTimeHtml(input: number, align?: "end"): string {

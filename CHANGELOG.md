@@ -21,6 +21,7 @@
 - Added admin chat compose for sending local dev messages through the same handler path used by adapters.
 - Added admin approval actions that submit approve/deny decisions through the shared handler path.
 - Added admin thread actions for submitting cancel/status controls through the shared handler path.
+- Added a live pulse to the admin Chats sidebar for pending approvals, running runs, jobs, and refresh time.
 - Added an admin Evals page for inspecting loaded `agent/evals/` definitions.
 - Added typed trace event rows to admin thread inspection.
 - Added trace events when startup recovery marks interrupted turns and calls as failed.
