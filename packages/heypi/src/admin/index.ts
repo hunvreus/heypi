@@ -100,6 +100,7 @@ const ADMIN_ROUTES = [
 	["POST", "/admin/logout"],
 	["POST", "/admin/messages"],
 	["POST", "/admin/approvals"],
+	["POST", "/admin/thread-actions"],
 	["GET", "/admin/activity"],
 	["GET", "/admin/approvals"],
 	["GET", "/admin/configuration"],
@@ -295,6 +296,9 @@ async function handleAdminRoute(
 	if (method === "POST" && url.pathname === "/admin/approvals") {
 		return await postApproval(req, res, state, session);
 	}
+	if (method === "POST" && url.pathname === "/admin/thread-actions") {
+		return await postThreadAction(req, res, state, session);
+	}
 	if (method !== "GET") {
 		return adminError(res, 405, "Method not allowed", "This admin route does not accept that HTTP method.", nonce);
 	}
@@ -342,6 +346,31 @@ async function postApproval(
 	const target = result.threadId
 		? `/admin/threads/${encodeURIComponent(result.threadId)}?event=${encodeURIComponent(`approval:${id}`)}`
 		: "/admin/approvals";
+	redirect(res, target);
+}
+
+async function postThreadAction(
+	req: IncomingMessage,
+	res: ServerResponse,
+	state: AdminState,
+	session: { csrf: string },
+): Promise<void> {
+	const form = await requireCsrf(req, session);
+	const threadId = formValue(form, "threadId").trim();
+	const action = formValue(form, "action").trim();
+	const id = formValue(form, "id").trim();
+	const actor = formValue(form, "actor").trim();
+	if (!threadId) throw new AdminHttpError(400, "Thread id is required.");
+	if (action !== "cancel" && action !== "status") throw new AdminHttpError(400, "Thread action is invalid.");
+	if (action === "cancel" && !id) throw new AdminHttpError(400, "Cancel requires a run id.");
+	const command = id ? `/${action} ${id}` : `/${action}`;
+	await state.service.sendThreadCommand({
+		threadId,
+		text: command,
+		actor: actor || undefined,
+	});
+	const event = id ? `${action === "cancel" ? "run" : "call"}:${id}` : undefined;
+	const target = `/admin/threads/${encodeURIComponent(threadId)}${event ? `?event=${encodeURIComponent(event)}` : ""}`;
 	redirect(res, target);
 }
 

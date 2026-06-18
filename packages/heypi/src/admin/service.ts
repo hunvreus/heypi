@@ -51,6 +51,7 @@ export type AdminService = {
 	live(): Promise<AdminLiveSummary>;
 	sendMessage(input: AdminSendMessageInput): Promise<AdminSendMessageResult>;
 	resolveApproval(input: AdminResolveApprovalInput): Promise<AdminResolveApprovalResult>;
+	sendThreadCommand(input: AdminThreadCommandInput): Promise<AdminThreadCommandResult>;
 	threads(input?: AdminPageInput): Promise<AdminPage<AdminThreadRow>>;
 	thread(id: string, input?: { event?: string }): Promise<AdminThreadView | undefined>;
 	approvals(input?: AdminPageInput): Promise<AdminPage<Approval>>;
@@ -79,6 +80,18 @@ export type AdminResolveApprovalInput = {
 
 export type AdminResolveApprovalResult = {
 	threadId?: string;
+	trace: string;
+	status: "done" | "pending_approval" | "silent";
+};
+
+export type AdminThreadCommandInput = {
+	threadId: string;
+	text: string;
+	actor?: string;
+};
+
+export type AdminThreadCommandResult = {
+	threadId: string;
 	trace: string;
 	status: "done" | "pending_approval" | "silent";
 };
@@ -347,6 +360,30 @@ export function createAdminService(start: AdapterStart): AdminService {
 			});
 			return {
 				threadId: thread?.id,
+				trace,
+				status: result?.approval ? "pending_approval" : result?.silent ? "silent" : "done",
+			};
+		},
+		async sendThreadCommand(input: AdminThreadCommandInput): Promise<AdminThreadCommandResult> {
+			const text = input.text.trim();
+			if (!text) throw new Error("command text is required");
+			const thread = await store.threads.get(input.threadId);
+			if (!thread || thread.agent !== app.agent) throw new Error("thread not found");
+			const trace = `admin:${randomUUID()}`;
+			const result = await start.handler({
+				provider: thread.provider,
+				kind: thread.kind,
+				team: thread.team || undefined,
+				channel: thread.channel,
+				actor: input.actor?.trim() || "admin",
+				thread: thread.key,
+				text,
+				trace,
+				eventId: trace,
+				data: { source: "admin", command: text },
+			});
+			return {
+				threadId: thread.id,
 				trace,
 				status: result?.approval ? "pending_approval" : result?.silent ? "silent" : "done",
 			};

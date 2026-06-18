@@ -683,7 +683,7 @@ function threadConversationPanel(input?: AdminThreadView, csrf?: string): string
 	return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
 	<div class="scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
 		<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm" data-admin-thread-sticky-header>${threadHeader(input.thread)}</header>
-	<div class="min-w-0 pb-4">${threadConversation(input)}</div>
+	<div class="min-w-0 pb-4">${threadConversation(input, csrf)}</div>
 	</div>
 	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
@@ -703,7 +703,7 @@ function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: b
 </form>`;
 }
 
-function threadConversation(input: AdminThreadView): string {
+function threadConversation(input: AdminThreadView, csrf?: string): string {
 	const rows = input.timeline.filter(chatRowVisible).sort(chronologicalActivitySort);
 	const selectedKey = input.event ?? (input.selected ? activityEvent(input.selected) : undefined);
 	if (!rows.length) {
@@ -715,13 +715,13 @@ function threadConversation(input: AdminThreadView): string {
 		});
 	}
 	return `<div class="grid min-w-0 gap-3 py-3">${rows
-		.map((row) => chatRow(row, selectedKey === activityEvent(row)))
+		.map((row) => chatRow(row, selectedKey === activityEvent(row), csrf))
 		.join("")}</div>`;
 }
 
-function chatRow(row: AdminActivityRow, selected: boolean): string {
+function chatRow(row: AdminActivityRow, selected: boolean, csrf?: string): string {
 	if (row.kind === "message") return chatMessageRow(row, selected);
-	return chatContextRow(row, selected);
+	return chatContextRow(row, selected, csrf);
 }
 
 function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
@@ -749,8 +749,8 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 </article>`;
 }
 
-function chatContextRow(row: AdminActivityRow, selected: boolean): string {
-	const details = chatContextDetails(row);
+function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string): string {
+	const details = chatContextDetails(row, csrf);
 	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
 		<summary class="flex min-w-0 items-center gap-2" data-admin-context-summary>
 		${cellHtml(kindBadge(row.kind))}
@@ -763,7 +763,7 @@ function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 </details>`;
 }
 
-function chatContextDetails(row: AdminActivityRow): string {
+function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
 	const detailLabels =
 		row.kind === "event"
 			? ["Trace", "Sequence", "Turn", "Call", "Approval", "Job run", "Data"]
@@ -773,13 +773,59 @@ function chatContextDetails(row: AdminActivityRow): string {
 		row.durationMs ? { label: "Duration", value: duration(row.durationMs) } : undefined,
 		...(row.details ?? []).filter((detail) => detailLabels.includes(detail.label)),
 	]);
-	if (!details.length) return "";
-	return `<div class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm" data-admin-context-details>${details
+	const actions = chatContextActions(row, csrf);
+	if (!details.length && !actions) return "";
+	const detailRows = details
 		.map(
 			(detail) =>
 				`<div class="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3"><span class="text-muted-foreground">${escapeHtml(detail.label)}</span><span class="min-w-0 break-words [overflow-wrap:anywhere] text-foreground">${escapeHtml(detail.value)}</span></div>`,
 		)
-		.join("")}</div>`;
+		.join("");
+	return `<div class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm" data-admin-context-details>${actions}${detailRows}</div>`;
+}
+
+function chatContextActions(row: AdminActivityRow, csrf?: string): string {
+	if (!csrf || !row.threadId) return "";
+	if (row.kind === "run" && row.state === "running") {
+		return threadActionForm({
+			csrf,
+			threadId: row.threadId,
+			action: "cancel",
+			id: row.id,
+			label: "Cancel run",
+			icon: "x",
+		});
+	}
+	if (row.kind === "call") {
+		return threadActionForm({
+			csrf,
+			threadId: row.threadId,
+			action: "status",
+			id: row.id,
+			label: "Show call status",
+			icon: "activity",
+		});
+	}
+	return "";
+}
+
+function threadActionForm(input: {
+	csrf: string;
+	threadId: string;
+	action: "cancel" | "status";
+	id: string;
+	label: string;
+	icon: string;
+}): string {
+	return `<form method="post" action="/admin/thread-actions" class="flex min-w-max items-center gap-1.5" data-admin-thread-action="${escapeHtml(input.action)}">
+	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf)}">
+	<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">
+	<input type="hidden" name="action" value="${escapeHtml(input.action)}">
+	<input type="hidden" name="id" value="${escapeHtml(input.id)}">
+	<label class="sr-only" for="thread-action-actor-${escapeHtml(input.action)}-${escapeHtml(input.id)}">Action actor</label>
+	<input id="thread-action-actor-${escapeHtml(input.action)}-${escapeHtml(input.id)}" class="input h-8 w-[9rem] text-sm" name="actor" value="admin" aria-label="Action actor">
+	<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="${escapeHtml(input.label)}" data-tooltip="${escapeHtml(input.label)}" data-side="top">${icon(input.icon)}</button>
+</form>`;
 }
 
 function compactActivityDetails(input: Array<AdminActivityDetail | undefined>): AdminActivityDetail[] {

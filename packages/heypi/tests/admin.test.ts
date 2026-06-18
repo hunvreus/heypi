@@ -655,6 +655,67 @@ test("admin service resolves approvals through the shared handler", async () => 
 	}
 });
 
+test("admin service sends thread control commands through the shared handler", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-thread-action-"));
+	try {
+		const store = sqliteStore({ path: join(root, "heypi.db") });
+		await store.setup();
+		const handlerInputs: Array<Parameters<AdapterStart["handler"]>[0]> = [];
+		const service = createAdminService({
+			store,
+			handler: async (input) => {
+				handlerInputs.push(input);
+				return { text: "cancelled" };
+			},
+			logger: consoleLogger({ level: "error", format: "pretty" }),
+			app: {
+				agent: "default",
+				runtime: { name: "host-bash", root: join(root, "workspace") },
+				state: { root: stateRoot(root) },
+				memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+				adapters: [],
+				startedAt: Date.now(),
+			},
+		} as AdapterStart);
+		const thread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "discord",
+			kind: "guild",
+			team: "G1",
+			channel: "C1",
+			actor: "U_REQUESTER",
+			key: "thread-key",
+		});
+
+		const result = await service.sendThreadCommand({ threadId: thread.id, text: "/cancel run-1", actor: "U_ADMIN" });
+
+		assert.equal(result.threadId, thread.id);
+		assert.equal(handlerInputs.length, 1);
+		assert.deepEqual(
+			{
+				provider: handlerInputs[0]?.provider,
+				kind: handlerInputs[0]?.kind,
+				team: handlerInputs[0]?.team,
+				channel: handlerInputs[0]?.channel,
+				thread: handlerInputs[0]?.thread,
+				actor: handlerInputs[0]?.actor,
+				text: handlerInputs[0]?.text,
+			},
+			{
+				provider: "discord",
+				kind: "guild",
+				team: "G1",
+				channel: "C1",
+				thread: "thread-key",
+				actor: "U_ADMIN",
+				text: "/cancel run-1",
+			},
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("admin configuration summarizes essentials with adapter icons", () => {
 	const now = Date.now();
 	const body = configurationView(
@@ -963,7 +1024,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		threadId: "thread-1",
 		title: "deploy api",
 		summary: "Deployment queued",
-		state: "done",
+		state: "running",
 		provider: "slack",
 		eventType: "slack",
 		channel: "C123",
@@ -1052,6 +1113,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 				selected: callEvent,
 				event: "call:call-1",
 			},
+			csrf: "csrf-1",
 		},
 	);
 	assert.match(threadBody, /data-tooltip="slack"/);
@@ -1085,6 +1147,16 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	);
 	assert.match(threadBody, /data-admin-context-summary/);
 	assert.match(threadBody, /data-admin-context-details/);
+	assert.match(threadBody, /action="\/admin\/thread-actions"/);
+	assert.match(threadBody, /data-admin-thread-action="cancel"/);
+	assert.match(threadBody, /name="action" value="cancel"/);
+	assert.match(threadBody, /name="id" value="run-1"/);
+	assert.match(threadBody, /aria-label="Cancel run"/);
+	assert.match(threadBody, /data-admin-thread-action="status"/);
+	assert.match(threadBody, /name="action" value="status"/);
+	assert.match(threadBody, /name="id" value="call-1"/);
+	assert.match(threadBody, /aria-label="Show call status"/);
+	assert.match(threadBody, /name="actor" value="admin"/);
 	assert.match(threadBody, />Runtime<\/span>/);
 	assert.match(threadBody, /data-admin-context-row="event"/);
 	assert.match(threadBody, />Trace<\/span>/);
@@ -1097,7 +1169,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadBody, /tests passed/);
 	assert.match(threadBody, /npm test/);
 	assert.match(threadBody, /deploy api/);
-	assert.doesNotMatch(threadBody, /Deployment queued/);
+	assert.match(threadBody, /Deployment queued/);
 	assert.doesNotMatch(threadBody, /user \/ slack \/ slack/);
 	assert.doesNotMatch(threadBody, /C123 · U123<\/h2>/);
 	assert.doesNotMatch(threadBody, /Activity details/);
