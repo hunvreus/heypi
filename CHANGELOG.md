@@ -35,6 +35,7 @@
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
 - Changed Discord and Telegram control callbacks to use a shared provider-neutral action parser.
+- Changed Slack, Discord, and Telegram progress config handling to use one shared normalization policy.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.

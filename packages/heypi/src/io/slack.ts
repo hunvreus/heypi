@@ -16,6 +16,7 @@ import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
+import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "heypi_approve";
@@ -749,8 +750,7 @@ function requiredSlackApp(app: App | undefined): App {
 }
 
 function slackProgress(input: SlackConfig["progress"]): SlackProgress | undefined {
-	if (input === false) return undefined;
-	return input ?? { delayMs: 0 };
+	return normalizeProgressConfig(input);
 }
 
 type SlackAttachmentUploadResult = {

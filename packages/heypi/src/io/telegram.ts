@@ -18,6 +18,7 @@ import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
+import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "approve";
@@ -1014,8 +1015,7 @@ function telegramReplyStream(input: {
 }
 
 function telegramProgress(input: TelegramConfig["progress"]): TelegramProgress | undefined {
-	if (input === false) return undefined;
-	return input ?? { delayMs: 0 };
+	return normalizeProgressConfig(input);
 }
 
 function resolveTelegramConfig(input: TelegramConfig): TelegramConfig & { token: string } {

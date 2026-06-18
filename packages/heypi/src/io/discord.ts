@@ -34,6 +34,7 @@ import { type DeliveryConfig, DeliveryQueue } from "./delivery.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
+import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 
 const APPROVE = "heypi_approve";
@@ -1404,8 +1405,7 @@ function discordThread(msg: Message): boolean {
 }
 
 function discordProgress(input: DiscordConfig["progress"]): DiscordProgress | undefined {
-	if (input === false) return undefined;
-	return input ?? { delayMs: 0 };
+	return normalizeProgressConfig(input);
 }
 
 function resolveDiscordConfig(input: DiscordConfig): DiscordConfig & { token: string } {
