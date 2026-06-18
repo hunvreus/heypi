@@ -1,8 +1,39 @@
-import type { ApprovalDetail, ApprovalResolution } from "./types.js";
+import type { ApprovalDetail, ApprovalPrompt, ApprovalResolution } from "./types.js";
 
 const APPROVAL_DETAIL_VALUE_LIMIT = 1800;
 const APPROVAL_DETAIL_LABEL_LIMIT = 80;
 const APPROVAL_DETAIL_COUNT_LIMIT = 20;
+
+export type ApprovalViewState = "pending" | ApprovalResolution;
+
+export type ApprovalViewRow = {
+	label: string;
+	value: string;
+	format?: "code" | "text";
+};
+
+export function approvalViewRows(input: {
+	approval?: ApprovalPrompt;
+	state: ApprovalViewState;
+	actor?: string;
+	formatActor?: (actor: string) => string;
+}): ApprovalViewRow[] {
+	const rows: ApprovalViewRow[] = [];
+	if (input.approval?.reason) rows.push({ label: "Reason", value: input.approval.reason });
+	for (const detail of input.approval?.details ?? []) {
+		rows.push({ label: detail.label, value: detail.value, format: detail.format });
+	}
+	if (input.approval?.id) rows.push({ label: "Approval ID", value: input.approval.id });
+	if (input.approval?.requestedBy) {
+		rows.push({
+			label: "Requested by",
+			value: input.formatActor ? input.formatActor(input.approval.requestedBy) : input.approval.requestedBy,
+		});
+	}
+	const resolution = approvalResolutionRow(input.state, input.actor, input.formatActor);
+	if (resolution) rows.push(resolution);
+	return rows;
+}
 
 export function normalizeApprovalDetails(input: unknown): ApprovalDetail[] | undefined {
 	if (!Array.isArray(input)) return undefined;
@@ -63,6 +94,21 @@ export function approvalStateLine(state: ApprovalResolution, actor?: string): st
 	if (state === "approved") return actor ? `Approved by ${actor}.` : "Approved.";
 	if (state === "rejected") return actor ? `Rejected by ${actor}.` : "Rejected.";
 	return "Approval expired.";
+}
+
+function approvalResolutionRow(
+	state: ApprovalViewState,
+	actor?: string,
+	formatActor?: (actor: string) => string,
+): ApprovalViewRow | undefined {
+	if (state === "approved") {
+		return { label: "Approved by", value: actor ? formatActor?.(actor) ?? actor : approvalStateTitle(state) };
+	}
+	if (state === "rejected") {
+		return { label: "Rejected by", value: actor ? formatActor?.(actor) ?? actor : approvalStateTitle(state) };
+	}
+	if (state === "expired") return { label: "Status", value: approvalStateTitle(state) };
+	return undefined;
 }
 
 function escapeCodeFence(value: string): string {

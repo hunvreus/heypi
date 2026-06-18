@@ -19,7 +19,7 @@ import {
 	type TextBasedChannel,
 } from "discord.js";
 import type { PermissionsConfig } from "../config.js";
-import { approvalStateTitle, codeFence } from "../core/approval-view.js";
+import { approvalStateTitle, approvalViewRows, codeFence, type ApprovalViewState } from "../core/approval-view.js";
 import { actorGroups as configuredGroups } from "../core/approvers.js";
 import { COMMAND_NAMES, COMMANDS } from "../core/commands.js";
 import { message as errorMessage, type Logger, userError } from "../core/log.js";
@@ -1224,25 +1224,20 @@ function progressComponents(cancelId?: string) {
 	return buttons.length ? [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)] : [];
 }
 
-type ApprovalViewState = "pending" | "approved" | "rejected" | "expired";
-
 export function approvalView(input: { approval?: Outbound["approval"]; state: ApprovalViewState; actor?: string }): {
 	title: string;
 	color: number;
 	fields: Array<{ name: string; value: string; inline?: boolean }>;
 } {
-	const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
-	if (input.approval?.reason) fields.push({ name: "Reason", value: truncateEmbedValue(input.approval.reason) });
-	for (const detail of input.approval?.details ?? []) {
-		fields.push({
-			name: truncateEmbedValue(detail.label, 256),
-			value: detail.format === "code" ? codeValue(detail.value) : truncateEmbedValue(detail.value),
-		});
-	}
-	if (input.approval?.id) fields.push({ name: "Approval ID", value: truncateEmbedValue(input.approval.id) });
-	if (input.approval?.requestedBy) fields.push({ name: "Requested by", value: `<@${input.approval.requestedBy}>` });
-	const resolution = approvalResolutionField(input.state, input.actor);
-	if (resolution) fields.push(resolution);
+	const fields = approvalViewRows({
+		approval: input.approval,
+		state: input.state,
+		actor: input.actor,
+		formatActor: (actor) => `<@${actor}>`,
+	}).map((row) => ({
+		name: truncateEmbedValue(row.label, 256),
+		value: row.format === "code" ? codeValue(row.value) : truncateEmbedValue(row.value),
+	}));
 	return { title: approvalTitle(input.state), color: approvalColor(input.state), fields };
 }
 
@@ -1273,16 +1268,6 @@ function approvalColor(state: ApprovalViewState): number {
 	if (state === "rejected") return APPROVAL_REJECTED_COLOR;
 	if (state === "expired") return APPROVAL_EXPIRED_COLOR;
 	return APPROVAL_PENDING_COLOR;
-}
-
-function approvalResolutionField(
-	state: ApprovalViewState,
-	actor?: string,
-): { name: string; value: string; inline?: boolean } | undefined {
-	if (state === "approved") return { name: "Approved by", value: actor ? `<@${actor}>` : approvalStateTitle(state) };
-	if (state === "rejected") return { name: "Rejected by", value: actor ? `<@${actor}>` : approvalStateTitle(state) };
-	if (state === "expired") return { name: "Status", value: approvalStateTitle(state) };
-	return undefined;
 }
 
 type DiscordAction =
