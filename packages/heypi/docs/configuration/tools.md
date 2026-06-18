@@ -144,16 +144,6 @@ defaultTools({
 
 The classifier is a guardrail, not a sandbox. Use `just-bash`, Docker, Gondolin, or another runtime provider for isolation.
 
-## Deprecated compatibility APIs
-
-These names still work temporarily for compatibility, but new apps should use the JS-native API above.
-
-| Old API | Use instead |
-| --- | --- |
-| `coreTools(config)` | `defaultTools(config)` |
-| `tool({ parameters, execute })` | `defineTool({ input, run })` |
-| `commandConfirm(config)` | `approval.command(config)` |
-
 ## Managed tools
 
 Some top-level feature config adds tools automatically. These tools are not returned by `defaultTools()` and do not need to be listed manually in `agent.tools`.

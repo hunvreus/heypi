@@ -1,5 +1,5 @@
 export { approval } from "./approval.js";
-export { classifyCommand, commandConfirm } from "./core/policy.js";
+export { classifyCommand } from "./core/policy.js";
 export type { AgentContextBlock, AgentContextInput, AgentContextProvider } from "./config.js";
 export type { ApprovalDetail, CommandPolicyConfig, CommandRisk, Confirm, ReplyAttachment } from "./core/types.js";
 export {
@@ -25,10 +25,8 @@ export {
 export {
 	type DefineTool,
 	defineTool,
-	type Tool,
 	type ToolContext,
 	type ToolParams,
 	type ToolResult,
 	type ToolSchema,
-	tool,
 } from "./tool.js";

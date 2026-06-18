@@ -57,7 +57,7 @@ function classifySegment(command: string, config: CommandPolicyConfig): CommandR
 	return { risk: "allow", reason: "safe default" };
 }
 
-/** @deprecated Use `approval.command()` instead. */
+/** Builds a confirmation policy from command risk classification. */
 export function commandConfirm(config: CommandPolicyConfig = {}): ConfirmFunction {
 	return (input) => {
 		const command = typeof input.command === "string" ? input.command : "";

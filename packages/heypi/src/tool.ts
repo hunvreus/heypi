@@ -12,7 +12,7 @@ export type ToolResult = string | Awaited<ReturnType<ToolDefinition["execute"]>>
 export type ToolContext = ToolExecutionContext;
 export type ToolSchema = ToolDefinition["parameters"] | ZodType;
 
-export type Tool<T extends ToolParams = ToolParams> = {
+type ToolInput<T extends ToolParams = ToolParams> = {
 	name: string;
 	description: string;
 	parameters: ToolDefinition["parameters"];
@@ -49,12 +49,7 @@ export function defineTool(input: DefineTool<ToolParams, ToolSchema>): ToolDefin
 	});
 }
 
-/** @deprecated Use `defineTool()` for authored heypi tools. */
-export function tool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDefinition {
-	return createTool(input);
-}
-
-function createTool<T extends ToolParams = ToolParams>(input: Tool<T>): ToolDefinition {
+function createTool<T extends ToolParams = ToolParams>(input: ToolInput<T>): ToolDefinition {
 	const inferredName = !input.name;
 	const execute = async (params: Record<string, unknown>, context: ToolContext): Promise<{ out: string }> => {
 		const result = await input.execute(params as T, context);

@@ -10,7 +10,6 @@ export {
 	type ApprovalConfig,
 	type ApprovalPolicy,
 	type AttachmentConfig,
-	agentFrom,
 	type BusyBehavior,
 	type CancelPolicy,
 	DEFAULT_AGENT_ID,
@@ -34,13 +33,9 @@ export {
 } from "./config.js";
 export { consoleLogger, type Format, type Level, type Logger } from "./core/log.js";
 export type { AppMessages, AppMessagesConfig } from "./core/messages.js";
-export { classifyCommand, commandConfirm } from "./core/policy.js";
+export { classifyCommand } from "./core/policy.js";
 export type { ApprovalDetail, CommandPolicyConfig, CommandRisk, Confirm, ReplyAttachment } from "./core/types.js";
 export {
-	type CoreToolConfig,
-	type CoreToolName,
-	type CoreToolsConfig,
-	coreTools,
 	type DefaultToolConfig,
 	type DefaultToolDefinition,
 	type DefaultToolName,
@@ -104,10 +99,8 @@ export { sqliteStore } from "./store/sqlite.js";
 export {
 	type DefineTool,
 	defineTool,
-	type Tool,
 	type ToolContext,
 	type ToolParams,
 	type ToolResult,
 	type ToolSchema,
-	tool,
 } from "./tool.js";

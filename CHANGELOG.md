@@ -29,7 +29,7 @@
 - Added conventional env defaults for Slack, Discord, Telegram, and webhook adapter credentials.
 
 ### Changed
-- Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
+- Removed deprecated public authoring aliases in favor of `loadAgent()`, `defaultTools()`, `defineTool()`, and `approval.command()`.
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `create-heypi` generated dev mode to start only the loopback `local()` adapter, so first-run local testing does not require production adapter credentials.
 - Changed `create-heypi` generated README and next steps to separate local model setup from production adapter setup.
@@ -43,7 +43,6 @@
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
 - Changed the Slack DevOps, Telegram Workout, and Webhook GitHub Docker examples to load custom tools from `agent/tools/` discovery instead of wiring authored tools in `index.ts`.
 - Changed example READMEs to distinguish local dev adapter testing from production provider adapter startup.
-- Changed the `tool()` helper documentation to mark it as a deprecated compatibility API in favor of `defineTool()`.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed `create-heypi` generated sample tools to use Zod input schemas and declare `zod` as an app dependency.
 - Changed `defineTool()` to parse Zod input before custom `confirm` and `run` handlers.
@@ -64,15 +63,15 @@
 - Changed CLI and admin eval expectation display to use shared formatting helpers.
 - Changed Slack, Discord, and Telegram approval presentation to share provider-neutral title, row, and text helpers.
 - Changed internal runtime code and architecture docs to prefer `loadAgent()`, `defaultTools()`, and `defineTool()` terminology.
-- Changed remaining internal runtime naming to avoid teaching the deprecated `coreTools()` alias outside compatibility docs.
+- Changed remaining internal runtime naming to use `defaultTools()` terminology.
 - Changed the public agent loader options type from `AgentFromOptions` to `LoadAgentOptions`.
 - Added `DefaultToolName`, `DefaultToolOption`, and `DefaultToolDefinition` as the preferred public type names for `defaultTools()`.
-- Changed runtime tests to use `defineTool()` so deprecated `tool()` usage is limited to compatibility coverage.
+- Changed runtime tests to use `defineTool()` for custom tools.
 - Changed the heypi package test script to accept focused Node test file arguments.
 - Changed generated app README copy to point first-run users at the local admin/dev interaction path.
 - Changed admin trace rows to render model lifecycle events with readable titles and summaries.
-- Changed API and tools docs to keep deprecated aliases out of the main authoring path.
-- Changed the Slack DevOps example to use `approval.command()` instead of deprecated `commandConfirm()`.
+- Changed API and tools docs to document only the current authoring path.
+- Changed the Slack DevOps example to use the public `approval.command()` helper.
 - Changed example app scripts to use `heypi dev` and `heypi start` with default-exported apps.
 - Changed examples to mount the loopback `local()` adapter under `HEYPI_DEV` so `heypi dev` works without production adapter credentials.
 - Changed `defaultTools()` to use the public `approval.command()` helper internally.

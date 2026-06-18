@@ -246,9 +246,6 @@ export function loadAgent(folder = ".", options: LoadAgentOptions = {}): AgentCo
 	};
 }
 
-/** @deprecated Use `loadAgent()` instead. */
-export const agentFrom = loadAgent;
-
 export function modelConfig(input: string | ModelConfig): ModelConfig {
 	if (typeof input !== "string") return input;
 	const slash = input.indexOf("/");

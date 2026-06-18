@@ -78,17 +78,6 @@ Import these from `@hunvreus/heypi/authoring` inside `agent/tools/`, `agent/jobs
 
 The main `@hunvreus/heypi` entrypoint also exports the authoring helpers for direct config use. Prefer `@hunvreus/heypi/authoring` in discovered modules because `loadAgent()` loads those files during app startup.
 
-## Deprecated compatibility exports
-
-These names still work temporarily for compatibility, but new apps should not use them.
-
-| Export | Use instead |
-| --- | --- |
-| `agentFrom(folder, options)` | `loadAgent(folder, options)` |
-| `coreTools(config)` | `defaultTools(config)` |
-| `tool({ parameters, execute })` | `defineTool({ input, run })` |
-| `commandConfirm(config)` | `approval.command(config)` |
-
 ## Runtime and state
 
 | Export | Purpose |

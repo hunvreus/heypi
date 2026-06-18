@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { agentFrom, DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
+import { DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
@@ -24,13 +24,6 @@ test("loadAgent requires an explicit model or HEYPI_MODEL", () => {
 		if (previous === undefined) delete process.env.HEYPI_MODEL;
 		else process.env.HEYPI_MODEL = previous;
 	}
-});
-
-test("agentFrom remains a compatibility alias for loadAgent", () => {
-	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
-	const viaLoad = loadAgent(root, { model: "openai/gpt-5-mini" });
-	const viaAlias = agentFrom(root, { model: "openai/gpt-5-mini" });
-	assert.deepEqual(viaAlias, viaLoad);
 });
 
 test("modelConfig preserves explicit verbosity", () => {

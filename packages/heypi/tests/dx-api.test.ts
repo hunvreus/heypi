@@ -8,16 +8,7 @@ import type {
 	DefaultToolsConfig,
 } from "../src/api.js";
 import { approval, defaultTools, defineEval, evaluateEval } from "../src/api.js";
-import { coreTools } from "../src/core-tools.js";
 import { evalExpectDetail, evalExpectLabel, evalExpectSummary } from "../src/eval.js";
-
-test("coreTools remains a compatibility alias for defaultTools", () => {
-	assert.deepEqual(
-		defaultTools().map((tool) => tool.name),
-		coreTools().map((tool) => tool.name),
-	);
-	assert.equal(defaultTools().find((tool) => tool.name === "bash")?.confirm !== undefined, true);
-});
 
 test("defaultTools exports preferred public type names", () => {
 	const tool: DefaultToolConfig = { confirm: approval.never() };
@@ -26,6 +17,7 @@ test("defaultTools exports preferred public type names", () => {
 	assert.equal(disabled, false);
 	const names: DefaultToolName[] = defaultTools(config).map((row: DefaultToolDefinition) => row.name);
 	assert.deepEqual(names, ["history", "bash", "read", "edit", "grep", "find", "ls", "attach"]);
+	assert.equal(defaultTools().find((tool) => tool.name === "bash")?.confirm !== undefined, true);
 });
 
 test("approval helpers create common confirmation policies", () => {
