@@ -12,7 +12,7 @@ import { executeProcess } from "../src/runtime/shell.js";
 import { tools } from "../src/runtime/tools.js";
 import type { Runtime } from "../src/runtime/types.js";
 import type { HistoryMessage, Message, Messages } from "../src/store/types.js";
-import { tool } from "../src/tool.js";
+import { defineTool } from "../src/tool.js";
 
 async function temp(): Promise<string> {
 	return await mkdtemp(join(tmpdir(), "heypi-test-"));
@@ -280,12 +280,12 @@ test("confirmed heypi tools terminate the Pi turn while waiting for approval", a
 		channel: "c",
 		actor: "u",
 		custom: [
-			tool({
+			defineTool({
 				name: "delete_ticket",
 				description: "Delete a ticket",
-				parameters: { type: "object", properties: {} },
+				input: { type: "object", properties: {} },
 				confirm: { reason: "delete" },
-				execute: async () => "deleted",
+				run: async () => "deleted",
 			}),
 		],
 	});
@@ -359,11 +359,11 @@ test("heypi custom tools receive the selected runtime context", async () => {
 		context: { runtimeScope: "scope/path" },
 		core: [],
 		custom: [
-			tool({
+			defineTool({
 				name: "inspect",
 				description: "Inspect through runtime",
-				parameters: { type: "object", properties: {} },
-				execute: async (_params, ctx) => {
+				input: { type: "object", properties: {} },
+				run: async (_params, ctx) => {
 					seenScope = ctx.runtimeScope;
 					const result = await ctx.runtime.bash?.({ command: "echo ok", signal: ctx.signal });
 					return result?.out ?? "missing runtime";

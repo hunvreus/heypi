@@ -46,6 +46,7 @@
 - Changed Slack, Discord, and Telegram approval presentation to share provider-neutral title, row, and text helpers.
 - Changed internal runtime code and architecture docs to prefer `loadAgent()`, `defaultTools()`, and `defineTool()` terminology.
 - Changed remaining internal runtime naming to avoid teaching the deprecated `coreTools()` alias outside compatibility docs.
+- Changed runtime tests to use `defineTool()` so deprecated `tool()` usage is limited to compatibility coverage.
 
 ### Fixed
 - Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.
