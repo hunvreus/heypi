@@ -23,6 +23,8 @@ test("creates a default Slack app non-interactively", async () => {
 		const app = join(root, "team-agent");
 		const out = run([app, "--yes", "--no-install"]);
 		assert.match(out, /Created /);
+		assert.match(out, /For local agent messages/);
+		assert.match(out, /Provider adapter/);
 		assert.match(read(app, "package.json"), /"@hunvreus\/heypi"/);
 		assert.match(read(app, "package.json"), /"zod"/);
 		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
@@ -50,7 +52,9 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
 		assert.match(read(app, "agent/tools/README.md"), /# Tools/);
 		assert.match(read(app, "agent/evals/README.md"), /# Evals/);
+		assert.match(read(app, "README.md"), /Fill in the model provider value/);
 		assert.match(read(app, "README.md"), /Use it to send a test message/);
+		assert.match(read(app, "README.md"), /run start/);
 		assert.match(read(app, "setup/slack.manifest.json"), /socket_mode_enabled/);
 		assert.match(read(app, "setup/slack.manifest.json"), /channels:read/);
 		assert.doesNotMatch(read(app, "setup/slack.manifest.json"), /groups:history/);
