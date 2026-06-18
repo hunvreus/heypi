@@ -47,8 +47,6 @@ loadAgent("./agent", {
 
 Each option accepts `false`, `true`, or `{ confirm }`. Only `bash` has a confirmation policy by default.
 
-`coreTools()` remains as a compatibility alias for existing apps.
-
 ## Custom tools
 
 Custom tools run as trusted JavaScript in the Node app process:
@@ -81,8 +79,6 @@ Use `ctx.runtime` when a custom tool wants command or file work to follow the se
 | `run` | Yes | Trusted JavaScript handler. Receives input and `{ runtime, runtimeScope, signal }`. |
 | `label` | No | Human label for approvals and logs. Defaults to `name`. |
 | `confirm` | No | Confirmation policy for this tool. See [Confirmation](#confirmation). |
-
-`tool({ parameters, execute })` remains as a compatibility API for existing apps.
 
 For Zod schemas, heypi parses input before `confirm` and `run`; invalid input fails the call. TypeBox and raw JSON Schema inputs are exposed to the model but are not runtime validators by themselves.
 
@@ -144,7 +140,15 @@ defaultTools({
 
 The classifier is a guardrail, not a sandbox. Use `just-bash`, Docker, Gondolin, or another runtime provider for isolation.
 
-`commandConfirm()` remains as a compatibility alias for command approval policy.
+## Deprecated compatibility APIs
+
+These names still work for beta migration, but new apps should use the JS-native API above.
+
+| Old API | Use instead |
+| --- | --- |
+| `coreTools(config)` | `defaultTools(config)` |
+| `tool({ parameters, execute })` | `defineTool({ input, run })` |
+| `commandConfirm(config)` | `approval.command(config)` |
 
 ## Managed tools
 

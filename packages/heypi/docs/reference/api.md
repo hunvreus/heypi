@@ -34,7 +34,6 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `loadTools(folder)` | Loads default-exported tools recursively from a folder. File stems become tool names when omitted. |
 | `loadJobs(folder)` | Loads default-exported jobs recursively from a folder. |
 | `loadEvals(folder)` | Loads default-exported evals recursively from a folder. |
-| `agentFrom(folder, options)` | Compatibility alias for `loadAgent()`. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `DEFAULT_AGENT_ID` | Canonical default durable agent id, currently `default`. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
@@ -57,15 +56,23 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | Export | Purpose |
 | --- | --- |
 | `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
-| `coreTools(config)` | Compatibility alias for `defaultTools()`. |
 | `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. Zod inputs are parsed before `confirm` and `run`. See [Agent tools](../configuration/tools.md). |
-| `tool(definition)` | Compatibility API for custom tools using `parameters` and `execute`. |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
 | `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |
 | `approval` | Helpers for common confirmation policies: `always`, `never`, `when`, and `command`. |
-| `commandConfirm(config)` | Builds bash confirmation policy from allow/approve/block patterns. |
 | `classifyCommand(command, config)` | Classifies a command against command policy. |
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |
+
+## Deprecated compatibility exports
+
+These names still work for beta migration, but new apps should not use them.
+
+| Export | Use instead |
+| --- | --- |
+| `agentFrom(folder, options)` | `loadAgent(folder, options)` |
+| `coreTools(config)` | `defaultTools(config)` |
+| `tool({ parameters, execute })` | `defineTool({ input, run })` |
+| `commandConfirm(config)` | `approval.command(config)` |
 
 ## Runtime and state
 
