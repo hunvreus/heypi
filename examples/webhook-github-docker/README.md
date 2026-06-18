@@ -26,6 +26,8 @@ cp .env.example .env
 pnpm dev
 ```
 
+Dev mode starts the loopback local adapter only. Use `POST /dev/messages` to test the agent without webhook secrets. Use `pnpm start` after filling `.env` to run the real webhook adapter.
+
 Required env vars:
 
 ```bash
@@ -44,6 +46,12 @@ HEYPI_WEBHOOK_PORT=3000
 `GITHUB_TOKEN` should have the minimum repo permissions needed. For public read-only diagnosis, omit it. For comment/close writeback, use an issues-scoped token where possible.
 
 ## Request
+
+Start the production webhook adapter first:
+
+```bash
+pnpm start
+```
 
 Use one stable thread id per issue. With `scope: "channel"`, that gives each issue its own scoped Docker workspace and warm container.
 

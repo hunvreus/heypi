@@ -26,6 +26,8 @@ cp .env.example .env
 pnpm dev
 ```
 
+Dev mode starts the loopback local adapter only. Use the printed admin URL or `POST /dev/messages` to test the agent without Slack tokens. Use `pnpm start` after filling `.env` and installing the Slack app to run the real Slack adapter.
+
 This example enables the local admin panel by default. `HEYPI_HTTP_PORT=0` asks the OS for a free local port, and heypi logs the bound port and one-time admin login link at startup. If the link expires while the app is still running, run `pnpm exec heypi admin link` from this example folder.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
@@ -33,7 +35,7 @@ When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the ad
 - `daily-health-check`: active cron job, scheduled for 09:00 UTC and delivered to `HEYPI_SLACK_JOB_CHANNEL`.
 - `idle-incident-follow-up`: paused heartbeat job for quiet incident threads in `HEYPI_SLACK_JOB_CHANNEL`.
 
-If `HEYPI_SLACK_JOB_CHANNEL` is unset, the example logs a warning, starts normally, and skips those jobs. Jobs run inside the heypi Node process; no external cron service is required.
+If `HEYPI_SLACK_JOB_CHANNEL` is unset, production mode logs a warning, starts normally, and skips those jobs. Dev mode also skips Slack-targeted jobs because the Slack adapter is not running. Jobs run inside the heypi Node process; no external cron service is required.
 
 Required env vars:
 
@@ -84,7 +86,7 @@ Smoke test:
 3. Run `pnpm exec heypi slack channels devops`, then optionally set `HEYPI_SLACK_CHANNELS` to the channel you want to test.
 4. Run `pnpm exec heypi slack users <your-name>`, then optionally set `HEYPI_SLACK_APPROVERS` to your Slack user ID.
 5. Invite the Slack app to that channel.
-6. Run `pnpm dev`.
+6. Run `pnpm start`.
 7. Mention the app in Slack, for example: `@heypi help`.
 
 Try:

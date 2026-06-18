@@ -32,6 +32,8 @@ cp .env.example .env
 pnpm dev
 ```
 
+Dev mode starts the loopback local adapter only. Use the printed admin URL or `POST /dev/messages` to test the agent without Discord tokens. Use `pnpm start` after filling `.env` and installing the Discord bot to run the real Discord adapter.
+
 Required env vars:
 
 ```bash
@@ -75,7 +77,7 @@ Smoke test:
 3. Run `pnpm exec heypi discord check`.
 4. Run `pnpm exec heypi discord channels <channel-name>`, then set `HEYPI_DISCORD_CHANNELS` to the channel you want to test.
 5. Copy your Discord user ID from Developer Mode, or run `pnpm exec heypi discord observe` and send a test message. Optionally set `HEYPI_DISCORD_USERS` and `HEYPI_DISCORD_APPROVERS` to your user ID.
-6. Run `pnpm dev`.
+6. Run `pnpm start`.
 7. Mention the bot in Discord, for example: `@heypi help`.
 
 Try:

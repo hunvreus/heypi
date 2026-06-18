@@ -33,6 +33,7 @@
 - Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
 - Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
+- Changed example READMEs to distinguish local dev adapter testing from production provider adapter startup.
 - Changed the `tool()` helper documentation to mark it as a deprecated compatibility API in favor of `defineTool()`.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed `create-heypi` generated sample tools to use Zod input schemas and declare `zod` as an app dependency.

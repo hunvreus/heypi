@@ -29,6 +29,8 @@ cp .env.example .env
 pnpm dev
 ```
 
+Dev mode starts the loopback local adapter only and disables the Telegram heartbeat job because the Telegram adapter is not running. Use `POST /dev/messages` to test locally without Telegram tokens. Use `pnpm start` after filling `.env` and creating the Telegram bot to run the real Telegram adapter and heartbeat.
+
 Required env vars:
 
 ```bash
@@ -62,7 +64,7 @@ Smoke test:
 2. Run `pnpm exec heypi telegram check`.
 3. Run `pnpm exec heypi telegram observe`.
 4. Send `/start` to the bot in Telegram and confirm `observe` prints the chat.
-5. Leave `HEYPI_TELEGRAM_CHATS` empty for the DM test, then run `pnpm dev`.
+5. Leave `HEYPI_TELEGRAM_CHATS` empty for the DM test, then run `pnpm start`.
 6. Send the bot a DM, for example: `help`.
 
 Try:
