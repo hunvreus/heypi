@@ -17,8 +17,8 @@ import {
 import type { HeypiApp } from "./app.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
-import type { EvalConfig, EvalExpect } from "./eval.js";
-import { validateEval } from "./eval.js";
+import type { EvalConfig, EvalExpect, EvalResult } from "./eval.js";
+import { evaluateEval, validateEval } from "./eval.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -183,9 +183,13 @@ function buildCli() {
 				throw new Error(`Unknown command: jobs ${action}`);
 			})(flags),
 		);
-	cli.command("eval <action> [name]", "Eval commands: list, show, check")
+	cli.command("eval <action> [name]", "Eval commands: list, show, check, run")
 		.option("--agent <path>", "Agent folder")
 		.option("--tag <tag>", "Filter by tag")
+		.option("--result <path>", "JSON result file for eval run")
+		.option("--text <text>", "Assistant text for eval run")
+		.option("--tools <names>", "Comma-separated tool names for eval run")
+		.option("--approvals <ids>", "Comma-separated approval ids for eval run")
 		.option("--json", "Print JSON")
 		.action((action: string, name: string | undefined, flags: Flags) =>
 			withEnv((input) => {
@@ -193,6 +197,7 @@ function buildCli() {
 				if (action === "check") return evalsCheck(input);
 				if (!name) throw new Error(`Missing eval name for eval ${action}`);
 				if (action === "show") return evalsShow(input, name);
+				if (action === "run") return evalsRun(input, name);
 				throw new Error(`Unknown command: eval ${action}`);
 			})(flags),
 		);
@@ -836,6 +841,30 @@ function evalsCheck(flags: Flags): void {
 	line(booleanFlag(flags, "json") ? JSON.stringify(body, null, 2) : ok(`${rows.length} eval(s) valid`));
 }
 
+async function evalsRun(flags: Flags, name: string): Promise<void> {
+	const evaluation = loadCliEvals(flags).find((row) => row.name === name);
+	if (!evaluation) throw new Error(`eval not found: ${name}`);
+	const invalid = validateEval(evaluation);
+	if (invalid.length) throw new Error(`invalid eval:\n${invalid.join("\n")}`);
+	const result = evalResult(flags);
+	const report = await evaluateEval(evaluation, result);
+	const body = { ok: report.ok, eval: evaluation.name, result, assertions: report.assertions };
+	if (booleanFlag(flags, "json")) {
+		line(JSON.stringify(body, null, 2));
+	} else {
+		line(
+			[
+				report.ok ? ok(`eval ${evaluation.name} passed`) : fail(`eval ${evaluation.name} failed`),
+				table(
+					["assertion", "ok", "message"],
+					report.assertions.map((row) => [row.label, row.ok ? "yes" : "no", row.message ?? "-"]),
+				),
+			].join("\n"),
+		);
+	}
+	if (!report.ok) process.exitCode = 1;
+}
+
 function loadCliEvals(flags: Flags): EvalConfig[] {
 	const agent = stringFlag(flags, "agent") ?? "./agent";
 	return loadEvals(resolve(invocationRoot(), agent, "evals"));
@@ -855,6 +884,38 @@ function evalSummary(input: EvalConfig): Record<string, unknown> {
 		timeoutMs: input.timeoutMs,
 		expect: expectSummary(input.expect),
 	};
+}
+
+function evalResult(flags: Flags): EvalResult {
+	const file = stringFlag(flags, "result");
+	if (file) return normalizeEvalResult(parseJsonFile(resolve(invocationRoot(), file), "eval result"));
+	const text = stringFlag(flags, "text");
+	if (text === undefined) throw new Error("eval run requires --result or --text");
+	return {
+		text,
+		tools: listFlag(flags, "tools"),
+		approvals: listFlag(flags, "approvals"),
+	};
+}
+
+function normalizeEvalResult(input: unknown): EvalResult {
+	if (!input || typeof input !== "object" || Array.isArray(input)) {
+		throw new Error("eval result must be an object");
+	}
+	const row = input as Record<string, unknown>;
+	return {
+		text: typeof row.text === "string" ? row.text : "",
+		tools: stringArray(row.tools, "tools"),
+		approvals: stringArray(row.approvals, "approvals"),
+	};
+}
+
+function stringArray(input: unknown, name: string): string[] {
+	if (input === undefined) return [];
+	if (!Array.isArray(input) || input.some((row) => typeof row !== "string")) {
+		throw new Error(`eval result ${name} must be an array of strings`);
+	}
+	return input;
 }
 
 function expectSummary(input: EvalConfig["expect"]): unknown {
@@ -1024,6 +1085,23 @@ function stringFlag(flags: Flags, name: string): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function listFlag(flags: Flags, name: string): string[] {
+	const value = stringFlag(flags, name);
+	if (!value) return [];
+	return value
+		.split(",")
+		.map((row) => row.trim())
+		.filter(Boolean);
+}
+
+function parseJsonFile(path: string, label: string): unknown {
+	try {
+		return JSON.parse(readFileSync(path, "utf8")) as unknown;
+	} catch (error) {
+		throw new Error(`failed to read ${label}: ${message(error)}`);
+	}
+}
+
 function rawStringFlag(name: string): string | undefined {
 	const long = `--${name}`;
 	for (let index = 2; index < process.argv.length; index++) {
@@ -1095,7 +1173,8 @@ Usage:
   heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
   heypi eval list [--agent ./agent] [--tag smoke] [--json]
   heypi eval show <name> [--agent ./agent] [--json]
-  heypi eval check [--agent ./agent] [--tag smoke] [--json]`;
+  heypi eval check [--agent ./agent] [--tag smoke] [--json]
+  heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--json]`;
 }
 
 function numberFlag(flags: Flags, name: string, fallback: number): number {

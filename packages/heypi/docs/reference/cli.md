@@ -141,18 +141,27 @@ heypi db migrate --db ./state/heypi.db
 heypi eval list [--agent ./agent] [--tag smoke] [--json]
 heypi eval show <name> [--agent ./agent] [--json]
 heypi eval check [--agent ./agent] [--tag smoke] [--json]
+heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--json]
 ```
 
-Loads `defineEval(...)` definitions recursively from `agent/evals/`. `check` validates discovery and basic shape only; it does not run model behavior yet.
+Loads `defineEval(...)` definitions recursively from `agent/evals/`. `run` evaluates assertions against an explicit result supplied by `--result` or inline flags. It does not execute the model or agent loop yet.
 
 | Subcommand | Description |
 | --- | --- |
-| `check` | Opens the database and verifies migrations. |
-| `migrate` | Applies shipped SQL migrations. Edited migration hashes fail instead of replaying silently. |
+| `list` | Lists discovered eval definitions. |
+| `show <name>` | Shows one eval definition. |
+| `check` | Validates eval definition shape and assertions. |
+| `run <name>` | Runs the eval assertion engine against supplied text/tool/approval output. |
 
 | Option | Description |
 | --- | --- |
-| `--db <path>` | Required SQLite database path. |
+| `--agent <path>` | Agent folder containing `evals/`. Defaults to `./agent`. |
+| `--tag <tag>` | Filters `list` and `check` to evals with a tag. |
+| `--result <path>` | JSON result file with `text`, `tools`, and `approvals` for `run`. |
+| `--text <text>` | Inline assistant text for `run`. |
+| `--tools <names>` | Comma-separated tool names for `run`. |
+| `--approvals <ids>` | Comma-separated approval ids for `run`. |
+| `--json` | Prints machine-readable output. |
 
 Run migrations during deploy before starting the app:
 

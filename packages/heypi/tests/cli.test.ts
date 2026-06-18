@@ -166,6 +166,17 @@ test("cli eval commands inspect discovered eval definitions", async () => {
 		assert.equal(rows[0]?.expect.includes, "hello");
 		assert.match(cli(["eval", "show", "smoke", "--agent", "agent"], { cwd: root }), /prompt: say hello/);
 		assert.match(cli(["eval", "check", "--agent", "agent"], { cwd: root }), /ok: 1 eval\(s\) valid/);
+		const run = JSON.parse(
+			cli(["eval", "run", "smoke", "--agent", "agent", "--text", "well hello", "--json"], { cwd: root }),
+		) as { ok: boolean; assertions: Array<{ label: string; ok: boolean }> };
+		assert.equal(run.ok, true);
+		assert.deepEqual(run.assertions, [{ ok: true, label: "includes" }]);
+		const failed = spawnSync(process.execPath, [CLI, "eval", "run", "smoke", "--agent", "agent", "--text", "bye"], {
+			cwd: root,
+			encoding: "utf8",
+		});
+		assert.notEqual(failed.status, 0);
+		assert.match(failed.stdout, /eval smoke failed/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

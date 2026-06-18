@@ -70,7 +70,7 @@ Discovered tools, jobs, and evals are loaded recursively in lexical relative-pat
 
 If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.
 
-Evals discovered under `agent/evals/` are definition files for `heypi eval list`, `heypi eval show`, and `heypi eval check`. They are not executed during normal chat turns. Model-scored eval execution will build on these definitions after heypi has a typed trace timeline.
+Evals discovered under `agent/evals/` are definition files for `heypi eval list`, `heypi eval show`, `heypi eval check`, and `heypi eval run`. `run` checks assertions against an explicit supplied result; it does not execute normal chat turns or model behavior yet. Model-scored eval execution will build on these definitions after heypi has a typed trace timeline.
 
 Prompt order is: `SYSTEM.md` or heypi's generated system prompt, then `SOUL.md`, `AGENTS.md`, and dynamic context blocks.
 
