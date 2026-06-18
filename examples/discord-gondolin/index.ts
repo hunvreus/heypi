@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, discord, loadAgent, runHeypi, workspace } from "@hunvreus/heypi";
+import { createHeypi, defaultTools, discord, loadAgent, local, runHeypi, workspace } from "@hunvreus/heypi";
 import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";
 
 loadEnv(".env");
+
+const isDev = process.env.HEYPI_DEV === "1";
 
 function loadEnv(path: string): void {
 	if (existsSync(path)) loadEnvFile(path);
@@ -28,6 +30,28 @@ function optional(name: string): string | undefined {
 }
 
 const secretUrl = optional("HEYPI_SECRET_URL");
+const adapters = isDev
+	? [local()]
+	: [
+			discord({
+				token: required("DISCORD_BOT_TOKEN"),
+				clientId: process.env.DISCORD_CLIENT_ID,
+				allow: {
+					channels: list("HEYPI_DISCORD_CHANNELS"),
+					users: list("HEYPI_DISCORD_USERS"),
+					groups: list("HEYPI_DISCORD_GROUPS"),
+				},
+				permissions: {
+					approvers: {
+						users: list("HEYPI_DISCORD_APPROVERS"),
+						groups: list("HEYPI_DISCORD_APPROVER_GROUPS"),
+					},
+					admins: { users: list("HEYPI_DISCORD_ADMINS"), groups: list("HEYPI_DISCORD_ADMIN_GROUPS") },
+				},
+				trigger: "mention",
+				streaming: true,
+			}),
+		];
 
 const app = createHeypi({
 	state: { root: "./state" },
@@ -37,23 +61,7 @@ const app = createHeypi({
 	},
 	admin: true,
 	scope: "channel",
-	adapters: [
-		discord({
-			token: required("DISCORD_BOT_TOKEN"),
-			clientId: process.env.DISCORD_CLIENT_ID,
-			allow: {
-				channels: list("HEYPI_DISCORD_CHANNELS"),
-				users: list("HEYPI_DISCORD_USERS"),
-				groups: list("HEYPI_DISCORD_GROUPS"),
-			},
-			permissions: {
-				approvers: { users: list("HEYPI_DISCORD_APPROVERS"), groups: list("HEYPI_DISCORD_APPROVER_GROUPS") },
-				admins: { users: list("HEYPI_DISCORD_ADMINS"), groups: list("HEYPI_DISCORD_ADMIN_GROUPS") },
-			},
-			trigger: "mention",
-			streaming: true,
-		}),
-	],
+	adapters,
 	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
 		tools: defaultTools(),

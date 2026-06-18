@@ -3,10 +3,21 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, telegram, workspace } from "@hunvreus/heypi";
+import {
+	createHeypi,
+	defaultTools,
+	defineTool,
+	loadAgent,
+	local,
+	runHeypi,
+	telegram,
+	workspace,
+} from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
+
+const isDev = process.env.HEYPI_DEV === "1";
 
 function loadEnv(path: string): void {
 	if (existsSync(path)) loadEnvFile(path);
@@ -28,6 +39,16 @@ function list(name: string): string[] {
 const stateRoot = "./state";
 const logPath = join(stateRoot, "memory/workouts.md");
 const profilePath = join(stateRoot, "memory/profile.md");
+const adapters = isDev
+	? [local()]
+	: [
+			telegram({
+				token: required("TELEGRAM_BOT_TOKEN"),
+				allow: { chats: list("HEYPI_TELEGRAM_CHATS"), users: list("HEYPI_TELEGRAM_USERS") },
+				trigger: "mention",
+				streaming: true,
+			}),
+		];
 
 const getProfile = defineTool({
 	name: "get_profile",
@@ -119,29 +140,24 @@ const logWorkout = defineTool<{
 
 const app = createHeypi({
 	state: { root: stateRoot },
-	adapters: [
-		telegram({
-			token: required("TELEGRAM_BOT_TOKEN"),
-			allow: { chats: list("HEYPI_TELEGRAM_CHATS"), users: list("HEYPI_TELEGRAM_USERS") },
-			trigger: "mention",
-			streaming: true,
-		}),
-	],
+	adapters,
 	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
 		tools: [...defaultTools(), getProfile, saveProfile, logWorkout],
 	}),
-	jobs: [
-		{
-			id: "daily-workout-checkin",
-			kind: "heartbeat",
-			everyMs: 24 * 60 * 60 * 1000,
-			idleMs: 8 * 60 * 60 * 1000,
-			scope: { telegram: {} },
-			prompt:
-				"Use the daily-checkin skill. Review the saved profile and decide whether to check in today based on the plan, rest days, and recent context.",
-		},
-	],
+	jobs: isDev
+		? []
+		: [
+				{
+					id: "daily-workout-checkin",
+					kind: "heartbeat",
+					everyMs: 24 * 60 * 60 * 1000,
+					idleMs: 8 * 60 * 60 * 1000,
+					scope: { telegram: {} },
+					prompt:
+						"Use the daily-checkin skill. Review the saved profile and decide whether to check in today based on the plan, rest days, and recent context.",
+				},
+			],
 	runtime: { root: workspace("./workspace") },
 });
 

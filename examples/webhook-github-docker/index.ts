@@ -2,11 +2,13 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, webhook, workspace } from "@hunvreus/heypi";
+import { createHeypi, defaultTools, defineTool, loadAgent, local, runHeypi, webhook, workspace } from "@hunvreus/heypi";
 import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 import { Type } from "@sinclair/typebox";
 
 loadEnv(".env");
+
+const isDev = process.env.HEYPI_DEV === "1";
 
 function loadEnv(path: string): void {
 	if (existsSync(path)) loadEnvFile(path);
@@ -23,7 +25,15 @@ function optional(name: string): string | undefined {
 	return value || undefined;
 }
 
-const repo = parseRepo(required("HEYPI_GITHUB_REPO"));
+const repo = parseRepo(process.env.HEYPI_GITHUB_REPO ?? (isDev ? "owner/repo" : required("HEYPI_GITHUB_REPO")));
+const adapters = isDev
+	? [local()]
+	: [
+			webhook({
+				name: "github",
+				secret: required("HEYPI_WEBHOOK_SECRET"),
+			}),
+		];
 
 const githubIssueGet = defineTool<{ issue: number }>({
 	name: "github_issue_get",
@@ -142,12 +152,7 @@ const app = createHeypi({
 		port: Number(process.env.HEYPI_WEBHOOK_PORT ?? 3000),
 	},
 	scope: "channel",
-	adapters: [
-		webhook({
-			name: "github",
-			secret: required("HEYPI_WEBHOOK_SECRET"),
-		}),
-	],
+	adapters,
 	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
 		tools: [

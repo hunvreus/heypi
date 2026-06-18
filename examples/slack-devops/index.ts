@@ -1,11 +1,22 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { pathToFileURL } from "node:url";
-import { consoleLogger, createHeypi, defaultTools, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import {
+	consoleLogger,
+	createHeypi,
+	defaultTools,
+	loadAgent,
+	local,
+	runHeypi,
+	slack,
+	workspace,
+} from "@hunvreus/heypi";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
 loadEnv(".env");
+
+const isDev = process.env.HEYPI_DEV === "1";
 
 function loadEnv(path: string): void {
 	if (existsSync(path)) loadEnvFile(path);
@@ -55,10 +66,31 @@ const hostTools = createHostTools({
 const runbookTools = createRunbookTools({ root: "./agent/runbooks" });
 const hostContext = createHostContext({ root: stateRoot });
 const log = consoleLogger({ level: "debug", format: "pretty" });
-const jobChannel = optional("HEYPI_SLACK_JOB_CHANNEL");
+const jobChannel = isDev ? undefined : optional("HEYPI_SLACK_JOB_CHANNEL");
 const secretUrl = optional("HEYPI_SECRET_URL");
+const adapters = isDev
+	? [local()]
+	: [
+			slack({
+				botToken: required("SLACK_BOT_TOKEN"),
+				mode: "socket",
+				appToken: required("SLACK_APP_TOKEN"),
+				allow: {
+					channels: list("HEYPI_SLACK_CHANNELS"),
+					users: list("HEYPI_SLACK_USERS"),
+					groups: list("HEYPI_SLACK_GROUPS"),
+				},
+				permissions: {
+					approvers: { users: list("HEYPI_SLACK_APPROVERS"), groups: list("HEYPI_SLACK_APPROVER_GROUPS") },
+					admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
+				},
+				trigger: "mention",
+				response: { placement: "thread" },
+				streaming: true,
+			}),
+		];
 
-if (!jobChannel) {
+if (!isDev && !jobChannel) {
 	log.warn("example.jobs_disabled", {
 		missing: "HEYPI_SLACK_JOB_CHANNEL",
 		reason: "Slack example jobs require an explicit target channel",
@@ -74,43 +106,7 @@ const app = createHeypi({
 	},
 	admin: true,
 	secrets: secretUrl ? { url: secretUrl, serve: true } : true,
-	adapters: [
-		slack({
-			botToken: required("SLACK_BOT_TOKEN"),
-			mode: "socket",
-			appToken: required("SLACK_APP_TOKEN"),
-			allow: {
-				channels: list("HEYPI_SLACK_CHANNELS"),
-				users: list("HEYPI_SLACK_USERS"),
-				groups: list("HEYPI_SLACK_GROUPS"),
-			},
-			permissions: {
-				approvers: { users: list("HEYPI_SLACK_APPROVERS"), groups: list("HEYPI_SLACK_APPROVER_GROUPS") },
-				admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
-			},
-			trigger: "mention",
-			response: { placement: "thread" },
-			streaming: true,
-		}),
-		// Production HTTP mode:
-		// slack({
-		// 	botToken: required("SLACK_BOT_TOKEN"),
-		// 	signingSecret: required("SLACK_SIGNING_SECRET"),
-		// 	mode: "http",
-		// 	allow: {
-		// 		channels: list("HEYPI_SLACK_CHANNELS"),
-		// 		users: list("HEYPI_SLACK_USERS"),
-		// 		groups: list("HEYPI_SLACK_GROUPS"),
-		// 	},
-		// 	permissions: {
-		// 		approvers: { users: list("HEYPI_SLACK_APPROVERS"), groups: list("HEYPI_SLACK_APPROVER_GROUPS") },
-		// 		admins: { users: list("HEYPI_SLACK_ADMINS"), groups: list("HEYPI_SLACK_ADMIN_GROUPS") },
-		// 	},
-		// 	trigger: "mention",
-		// 	response: { placement: "thread" },
-		// 	streaming: true,
-		// }),
-	],
+	adapters,
 	agent: loadAgent("./agent", {
 		id: "slack-devops",
 		model: "openai/gpt-5-mini",
@@ -146,6 +142,8 @@ const app = createHeypi({
 	},
 	memory: true,
 });
+
+// Production HTTP mode can replace the socket adapter above with slack({ mode: "http", signingSecret: ... }).
 
 export default app;
 
