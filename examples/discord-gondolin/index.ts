@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
-import { loadAgent, defaultTools, createHeypi, discord, runHeypi, workspace } from "@hunvreus/heypi";
+import { pathToFileURL } from "node:url";
+import { createHeypi, defaultTools, discord, loadAgent, runHeypi, workspace } from "@hunvreus/heypi";
 import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";
 
 loadEnv(".env");
@@ -75,4 +76,8 @@ const app = createHeypi({
 	secrets: secretUrl ? { url: secretUrl, serve: true } : true,
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+	await runHeypi(app);
+}

@@ -3,8 +3,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "tsx watch --conditions development index.ts",
-		"start": "tsx --conditions development index.ts"
+		"dev": "heypi dev",
+		"start": "heypi start"
 	},
 	"dependencies": {
 		"@hunvreus/heypi": "workspace:*",

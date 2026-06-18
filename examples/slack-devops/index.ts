@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
-import { loadAgent, consoleLogger, defaultTools, createHeypi, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { pathToFileURL } from "node:url";
+import { consoleLogger, createHeypi, defaultTools, loadAgent, runHeypi, slack, workspace } from "@hunvreus/heypi";
 import { createHostContext, createHostTools } from "./tools/host.js";
 import { createRunbookTools } from "./tools/runbook.js";
 
@@ -146,4 +147,8 @@ const app = createHeypi({
 	memory: true,
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+	await runHeypi(app);
+}

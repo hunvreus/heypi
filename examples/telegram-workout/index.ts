@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
+import { pathToFileURL } from "node:url";
 import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, telegram, workspace } from "@hunvreus/heypi";
 import { Type } from "@sinclair/typebox";
 
@@ -144,4 +145,8 @@ const app = createHeypi({
 	runtime: { root: workspace("./workspace") },
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+	await runHeypi(app);
+}

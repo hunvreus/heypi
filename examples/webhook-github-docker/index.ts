@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
+import { pathToFileURL } from "node:url";
 import { createHeypi, defaultTools, defineTool, loadAgent, runHeypi, webhook, workspace } from "@hunvreus/heypi";
 import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";
 import { Type } from "@sinclair/typebox";
@@ -183,7 +184,11 @@ const app = createHeypi({
 	},
 });
 
-await runHeypi(app);
+export default app;
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+	await runHeypi(app);
+}
 
 function parseRepo(input: string): { owner: string; name: string; full: string } {
 	const [owner, name] = input.split("/");
