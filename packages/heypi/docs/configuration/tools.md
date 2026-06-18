@@ -78,11 +78,13 @@ Use `ctx.runtime` when a custom tool wants command or file work to follow the se
 | `name` | Only for direct config | Tool name exposed to the model. May be omitted for default-exported tools loaded from `agent/tools/`; the file stem becomes the name. |
 | `description` | Yes | Short model-facing description of when to use the tool. |
 | `input` | Yes | Tool input schema. Zod, TypeBox, and raw JSON Schema are supported. |
-| `run` | Yes | Trusted JavaScript handler. Receives parsed input and `{ runtime, runtimeScope, signal }`. |
+| `run` | Yes | Trusted JavaScript handler. Receives input and `{ runtime, runtimeScope, signal }`. |
 | `label` | No | Human label for approvals and logs. Defaults to `name`. |
 | `confirm` | No | Confirmation policy for this tool. See [Confirmation](#confirmation). |
 
 `tool({ parameters, execute })` remains as a compatibility API for existing apps.
+
+For Zod schemas, heypi parses input before `confirm` and `run`; invalid input fails the call. TypeBox and raw JSON Schema inputs are exposed to the model but are not runtime validators by themselves.
 
 ## Trust boundary
 

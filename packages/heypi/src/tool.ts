@@ -38,13 +38,14 @@ export function defineTool<T extends ToolParams = ToolParams>(
 ): ToolDefinition;
 export function defineTool<TSchema extends ZodType>(input: DefineZodTool<TSchema>): ToolDefinition;
 export function defineTool(input: DefineTool<ToolParams, ToolSchema>): ToolDefinition {
+	const parser = inputParser(input.input);
 	return createTool({
 		name: input.name ?? "",
 		description: input.description,
 		parameters: normalizeSchema(input.input),
 		label: input.label,
-		confirm: input.confirm,
-		execute: input.run,
+		confirm: parseConfirm(input.confirm, parser),
+		execute: (params, context) => input.run(parser(params), context),
 	});
 }
 
@@ -107,6 +108,19 @@ function needsDiscoveredToolName(tool: ToolDefinition): boolean {
 function normalizeSchema(input: ToolSchema): ToolDefinition["parameters"] {
 	if (!isZodSchema(input)) return input as ToolDefinition["parameters"];
 	return toJSONSchema(input) as ToolDefinition["parameters"];
+}
+
+function inputParser(input: ToolSchema): (params: Record<string, unknown>) => ToolParams {
+	if (!isZodSchema(input)) return (params) => params;
+	return (params) => input.parse(params) as ToolParams;
+}
+
+function parseConfirm(
+	confirm: Confirm | undefined,
+	parser: (params: Record<string, unknown>) => ToolParams,
+): Confirm | undefined {
+	if (typeof confirm !== "function") return confirm;
+	return (params) => confirm(parser(params));
 }
 
 function isZodSchema(input: ToolSchema): input is ZodType {

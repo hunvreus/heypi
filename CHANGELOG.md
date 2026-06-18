@@ -19,6 +19,7 @@
 - Changed `create-heypi` generated apps and docs to prefer `loadAgent()` and explicit `defaultTools()` while keeping `agentFrom()`, `coreTools()`, and `tool()` as compatibility APIs.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed `create-heypi` generated sample tools to use Zod input schemas and declare `zod` as an app dependency.
+- Changed `defineTool()` to parse Zod input before custom `confirm` and `run` handlers.
 - Changed `create-heypi` generated apps to export the app by default so `heypi dev` and `heypi start` can load the same config used by direct execution.
 - Changed runnable examples to use their own `pnpm dev` scripts instead of root-level example aliases.
 - Changed Discord and Telegram response placement config to use `response.placement` plus recent same-actor continuation.
