@@ -26,7 +26,12 @@ import { message as errorMessage, type Logger, userError } from "../core/log.js"
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
-import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
+import {
+	attachmentUploadNoticeText,
+	attachmentUploadText,
+	resolveOutboundAttachments,
+	saveInboundAttachments,
+} from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
@@ -1169,25 +1174,20 @@ async function indexDiscordProviderMessages(input: {
 	}
 }
 
-function attachmentUploadText(names: string[]): string {
-	const label = names.length === 1 ? names[0] : `${names.length} files`;
-	return `Attached: ${label}`;
-}
-
 async function postDiscordAttachmentUploadNotice(input: {
 	channel: TextBasedChannel;
 	upload: DiscordAttachmentUploadResult;
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	if (!input.upload.requested) return;
-	if (input.upload.status === "uploaded" && input.upload.resolved === input.upload.requested) return;
-	const text =
-		input.upload.status === "unknown"
-			? "I created the file, but Discord did not confirm the upload. If no file appears, retry the upload or check the bot's attachment permissions and server logs."
-			: input.upload.resolved > 0
-				? "I created the file, but Discord did not accept the upload. Check the bot's attachment permissions and server logs."
-				: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	const text = attachmentUploadNoticeText({
+		upload: input.upload,
+		acceptedHint:
+			"I created the file, but Discord did not accept the upload. Check the bot's attachment permissions and server logs.",
+		unknownHint:
+			"I created the file, but Discord did not confirm the upload. If no file appears, retry the upload or check the bot's attachment permissions and server logs.",
+	});
+	if (!text) return;
 	await sendTextChunks({
 		channel: input.channel,
 		text,

@@ -9,7 +9,7 @@ import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
-import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
+import { attachmentUploadNoticeText, resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, type ResolvedAttachment, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
@@ -1088,12 +1088,12 @@ async function postTelegramAttachmentUploadNotice(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	if (!input.upload.requested) return;
-	if (input.upload.uploaded && input.upload.resolved === input.upload.requested) return;
-	const text =
-		input.upload.resolved > 0
-			? "I created the file, but Telegram did not accept the upload. Check the bot's file permissions and server logs."
-			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	const text = attachmentUploadNoticeText({
+		upload: { ...input.upload, status: input.upload.uploaded ? "uploaded" : "failed" },
+		acceptedHint:
+			"I created the file, but Telegram did not accept the upload. Check the bot's file permissions and server logs.",
+	});
+	if (!text) return;
 	await input.delivery.run(
 		() =>
 			input.client.sendMessage({

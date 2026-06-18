@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { resolveScope } from "../src/core/scope.js";
-import { resolveOutboundAttachments, saveInboundAttachments } from "../src/io/attachment-policy.js";
+import {
+	attachmentUploadNoticeText,
+	attachmentUploadSucceeded,
+	attachmentUploadText,
+	resolveOutboundAttachments,
+	saveInboundAttachments,
+} from "../src/io/attachment-policy.js";
 import type { AttachmentStore, ResolvedAttachment } from "../src/io/attachments.js";
 import { attachmentInput, attachmentPrompt, responseBytes, runtimeAttachments } from "../src/io/attachments.js";
 import type { Runtime } from "../src/runtime/types.js";
@@ -15,6 +21,37 @@ test("attachmentPrompt appends stable paths and metadata", () => {
 			{ name: "report.txt", path: "/incoming/report.txt", mimeType: "text/plain", size: 5 },
 		]),
 		"review this\nAttachments:\n- report.txt: /incoming/report.txt (text/plain, 5 bytes)",
+	);
+});
+
+test("attachment upload helpers report common upload status and notices", () => {
+	assert.equal(attachmentUploadText(["report.txt"]), "Attached: report.txt");
+	assert.equal(attachmentUploadText(["a.txt", "b.txt"]), "Attached: 2 files");
+	assert.equal(attachmentUploadSucceeded({ requested: 0, resolved: 0, status: "uploaded" }), true);
+	assert.equal(attachmentUploadSucceeded({ requested: 2, resolved: 2, status: "uploaded" }), true);
+	assert.equal(attachmentUploadSucceeded({ requested: 2, resolved: 1, status: "uploaded" }), false);
+
+	assert.equal(
+		attachmentUploadNoticeText({
+			upload: { requested: 1, resolved: 1, status: "failed" },
+			acceptedHint: "Provider rejected upload.",
+		}),
+		"Provider rejected upload.",
+	);
+	assert.equal(
+		attachmentUploadNoticeText({
+			upload: { requested: 1, resolved: 0, status: "failed" },
+			acceptedHint: "Provider rejected upload.",
+		}),
+		"I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.",
+	);
+	assert.equal(
+		attachmentUploadNoticeText({
+			upload: { requested: 1, resolved: 1, status: "unknown" },
+			acceptedHint: "Provider rejected upload.",
+			unknownHint: "Provider did not confirm upload.",
+		}),
+		"Provider did not confirm upload.",
 	);
 });
 

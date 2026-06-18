@@ -8,7 +8,7 @@ import type { AppMessages } from "../core/messages.js";
 import type { ScopedKey } from "../core/scope.js";
 import { chunkText } from "../render/chunk.js";
 import { actorAllowedValue, actorAllowlist } from "./actor-allow.js";
-import { resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
+import { attachmentUploadNoticeText, resolveOutboundAttachments, saveInboundAttachments } from "./attachment-policy.js";
 import { type Attachment, type AttachmentStore, responseBytes } from "./attachments.js";
 import { botAllowConfigured, botIdentityAllowed } from "./bot-allow.js";
 import { runChatMessage } from "./chat-message.js";
@@ -798,12 +798,12 @@ export async function postSlackAttachmentUploadNotice(input: {
 	context: Record<string, unknown>;
 	delivery: DeliveryQueue;
 }): Promise<void> {
-	if (!input.upload.requested) return;
-	if (input.upload.uploaded && input.upload.resolved === input.upload.requested) return;
-	const text =
-		input.upload.resolved > 0
-			? "I created the file, but Slack did not accept the upload. Check the bot's `files:write` scope and server logs."
-			: "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+	const text = attachmentUploadNoticeText({
+		upload: { ...input.upload, status: input.upload.uploaded ? "uploaded" : "failed" },
+		acceptedHint:
+			"I created the file, but Slack did not accept the upload. Check the bot's `files:write` scope and server logs.",
+	});
+	if (!text) return;
 	await postPublicChunks({
 		client: input.client,
 		channel: input.channel,

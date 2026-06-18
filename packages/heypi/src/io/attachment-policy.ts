@@ -11,6 +11,34 @@ export type ProviderAttachmentRef = {
 	sourceUrl?: string;
 };
 
+export type AttachmentUploadStatus = "uploaded" | "failed" | "unknown";
+
+export type AttachmentUploadSummary = {
+	requested: number;
+	resolved: number;
+	status: AttachmentUploadStatus;
+};
+
+export function attachmentUploadSucceeded(input: AttachmentUploadSummary): boolean {
+	return input.requested === 0 || (input.status === "uploaded" && input.resolved === input.requested);
+}
+
+export function attachmentUploadNoticeText(input: {
+	upload: AttachmentUploadSummary;
+	acceptedHint: string;
+	unknownHint?: string;
+}): string | undefined {
+	if (!input.upload.requested || attachmentUploadSucceeded(input.upload)) return undefined;
+	if (input.upload.status === "unknown" && input.unknownHint) return input.unknownHint;
+	if (input.upload.resolved > 0) return input.acceptedHint;
+	return "I created the file, but heypi could not resolve it for upload. Check server logs for the attachment path error.";
+}
+
+export function attachmentUploadText(names: string[]): string {
+	const label = names.length === 1 ? names[0] : `${names.length} files`;
+	return `Attached: ${label}`;
+}
+
 export async function saveInboundAttachments<T extends ProviderAttachmentRef>(input: {
 	provider: string;
 	kind: string;
