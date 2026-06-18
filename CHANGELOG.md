@@ -50,6 +50,7 @@
 - Changed Discord and Telegram control callbacks to use a shared provider-neutral action parser.
 - Changed Slack, Discord, and Telegram progress config handling to use one shared normalization policy.
 - Changed Slack, Discord, and Telegram bot allowlist checks to use one shared internal policy helper.
+- Changed Slack, Discord, and Telegram missing-allow startup warnings to use one shared helper.
 - Changed the admin Chats sidebar to group conversations by adapter.
 - Added an adapter filter to the admin Chats sidebar.
 - Fixed admin Chats pagination preserving the adapter filter and added a reset action for active chat filters.

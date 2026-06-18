@@ -43,6 +43,7 @@ import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.j
 import { logCtx } from "./log-context.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
+import { warnMissingChatAllow } from "./security-warning.js";
 
 const APPROVE = "heypi_approve";
 const DENY = "heypi_deny";
@@ -135,11 +136,7 @@ export function discord(config: DiscordConfig = {}): Adapter {
 			);
 			start.logger.info("adapter.start", { adapter: name, kind });
 			if (!discordAllowConfigured(input.allow)) {
-				start.logger.warn("security.adapter_allow_missing", {
-					adapter: name,
-					kind,
-					reason: "without allow, delivered DMs and mentioned channel messages can trigger the agent",
-				});
+				warnMissingChatAllow({ logger: start.logger, adapter: name, kind, surface: "channel" });
 			}
 			client.on(Events.MessageCreate, (msg) => {
 				void handleMessage({ client, start, config: input, delivery, provider: name, kind, groups, msg });

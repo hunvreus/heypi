@@ -22,6 +22,7 @@ import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
+import { warnMissingChatAllow } from "./security-warning.js";
 
 const APPROVE = "approve";
 const DENY = "deny";
@@ -107,11 +108,7 @@ export function telegram(config: TelegramConfig = {}): Adapter {
 			warnAdapterConfig(start.logger, name, configValidation);
 			start.logger.info("adapter.start", { adapter: name, kind });
 			if (!telegramAllowConfigured(input.allow)) {
-				start.logger.warn("security.adapter_allow_missing", {
-					adapter: name,
-					kind,
-					reason: "without allow, delivered DMs and mentioned group messages can trigger the agent",
-				});
+				warnMissingChatAllow({ logger: start.logger, adapter: name, kind, surface: "group" });
 			}
 			if (input.apiUrl) start.logger.warn("telegram.api_url_override", { adapter: name, kind });
 			const identity = await client.getMe().catch((error) => {

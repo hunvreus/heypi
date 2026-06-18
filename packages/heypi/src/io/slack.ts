@@ -20,6 +20,7 @@ import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
 import { normalizeProgressConfig } from "./progress-config.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
+import { warnMissingChatAllow } from "./security-warning.js";
 
 const APPROVE = "heypi_approve";
 const DENY = "heypi_deny";
@@ -120,11 +121,7 @@ export function slack(config: SlackConfig = {}): Adapter {
 			warnAdapterConfig(log, name, configValidation);
 			log.info("adapter.start", { adapter: name, kind, mode: setup.mode });
 			if (!slackAllowConfigured(input.allow)) {
-				log.warn("security.adapter_allow_missing", {
-					adapter: name,
-					kind,
-					reason: "without allow, delivered DMs and mentioned channel messages can trigger the agent",
-				});
+				warnMissingChatAllow({ logger: log, adapter: name, kind, surface: "channel" });
 			}
 			const receiver = setup.mode === "http" ? createSlackReceiver(input, setup, start) : undefined;
 			const bolt = createSlackApp(input, setup, receiver);
