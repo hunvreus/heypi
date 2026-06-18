@@ -1,7 +1,18 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { message } from "../core/log.js";
-import type { Adapter, AdapterStart, Outbound, StatusResult } from "./handler.js";
+import type { Adapter, AdapterStart } from "./handler.js";
+import {
+	escapeRe,
+	HttpMessageError,
+	json,
+	normalizeMessagePath,
+	outboundResponse,
+	readJsonBody,
+	runningResponse,
+	statusResponse,
+	wait,
+} from "./http-message.js";
 
 export type LocalConfig = {
 	name?: string;
@@ -27,7 +38,7 @@ export function local(config: LocalConfig = {}): Adapter {
 	warnUnknownConfig(config);
 	const name = config.name ?? "local";
 	const kind = "local";
-	const base = normalizePath(config.path ?? "/dev");
+	const base = normalizeMessagePath(config.path ?? "/dev");
 	const maxBodyBytes = config.maxBodyBytes ?? 1_000_000;
 
 	return {
@@ -67,13 +78,17 @@ async function route(input: {
 }): Promise<void> {
 	try {
 		const url = new URL(input.req.url ?? "/", "http://localhost");
-		const path = normalizePath(url.pathname);
+		const path = normalizeMessagePath(url.pathname);
 		if (input.req.method === "POST" && path === `${input.base}/messages`) {
-			return await receive(input, await body(input.req, input.maxBodyBytes), undefined);
+			return await receive(input, await readJsonBody<LocalMessage>(input.req, input.maxBodyBytes), undefined);
 		}
 		const threadMatch = path.match(new RegExp(`^${escapeRe(input.base)}/threads/([^/]+)/messages$`));
 		if (input.req.method === "POST" && threadMatch) {
-			return await receive(input, await body(input.req, input.maxBodyBytes), decodeURIComponent(threadMatch[1]));
+			return await receive(
+				input,
+				await readJsonBody<LocalMessage>(input.req, input.maxBodyBytes),
+				decodeURIComponent(threadMatch[1]),
+			);
 		}
 		const runMatch = path.match(new RegExp(`^${escapeRe(input.base)}/threads/([^/]+)/runs/([^/]+)$`));
 		if (input.req.method === "GET" && runMatch) {
@@ -85,7 +100,7 @@ async function route(input: {
 		}
 		return json(input.res, 404, { ok: false, error: "not found" });
 	} catch (error) {
-		if (error instanceof LocalHttpError) return json(input.res, error.status, { ok: false, error: error.message });
+		if (error instanceof HttpMessageError) return json(input.res, error.status, { ok: false, error: error.message });
 		input.start.logger.warn("local.error", { adapter: input.name, error: message(error) });
 		return json(input.res, 500, { ok: false, error: "local adapter failed" });
 	}
@@ -141,77 +156,6 @@ async function execute(
 	} catch (error) {
 		return { ok: false, threadId, runId, status: "failed", error: message(error) };
 	}
-}
-
-function runningResponse(threadId: string, runId: string): Record<string, unknown> {
-	return { ok: true, threadId, runId, status: "running" };
-}
-
-function outboundResponse(threadId: string, runId: string, result: Outbound | undefined): Record<string, unknown> {
-	return {
-		ok: true,
-		threadId,
-		runId,
-		status: result?.approval ? "pending_approval" : "done",
-		text: result?.text,
-		private: result?.private,
-		silent: result?.silent,
-		approval: result?.approval,
-		attachments: result?.attachments,
-	};
-}
-
-function statusResponse(input: StatusResult): Record<string, unknown> {
-	return input;
-}
-
-async function body(req: IncomingMessage, maxBytes: number): Promise<LocalMessage> {
-	const chunks: Buffer[] = [];
-	let total = 0;
-	for await (const chunk of req) {
-		const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-		total += next.byteLength;
-		if (total > maxBytes) throw new LocalHttpError(413, "body too large");
-		chunks.push(next);
-	}
-	if (!chunks.length) return {};
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-	} catch {
-		throw new LocalHttpError(400, "invalid json body");
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new LocalHttpError(400, "body must be an object");
-	}
-	return parsed as LocalMessage;
-}
-
-class LocalHttpError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
-}
-
-function normalizePath(path: string): string {
-	const value = `/${path.trim().replace(/^\/+|\/+$/g, "")}`;
-	return value === "/" ? "" : value;
-}
-
-function escapeRe(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function json(res: ServerResponse, status: number, body: Record<string, unknown>): void {
-	res.writeHead(status, { "content-type": "application/json" });
-	res.end(JSON.stringify(body));
 }
 
 function loopbackHost(host: string): boolean {

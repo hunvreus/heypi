@@ -3,7 +3,18 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { PermissionsConfig } from "../config.js";
 import { message } from "../core/log.js";
 import { validateAdapterConfig, warnAdapterConfig } from "./config-validation.js";
-import type { Adapter, AdapterStart, Outbound, StatusResult } from "./handler.js";
+import type { Adapter, AdapterStart } from "./handler.js";
+import {
+	escapeRe,
+	HttpMessageError,
+	json,
+	normalizeMessagePath,
+	outboundResponse,
+	readJsonBody,
+	runningResponse,
+	statusResponse,
+	wait,
+} from "./http-message.js";
 import { assertRouteName } from "./name.js";
 
 export type WebhookConfig = {
@@ -56,7 +67,7 @@ export function webhook(config: WebhookConfig): Adapter {
 	if (config.path && !config.unsafePathOverride) {
 		throw new Error("Webhook path override requires unsafePathOverride: true");
 	}
-	const base = normalizePath(config.path ?? `/webhook/${name}`);
+	const base = normalizeMessagePath(config.path ?? `/webhook/${name}`);
 	const maxBodyBytes = config.maxBodyBytes ?? 1_000_000;
 	const maxInFlight = config.maxInFlight ?? 32;
 	const replyTimeoutMs = config.replyTimeoutMs ?? 10_000;
@@ -174,13 +185,13 @@ async function routeRequest(input: RouteInput & { release(): void }): Promise<vo
 		if (!authorized(input.req, input.config.secret))
 			return json(input.res, 401, { ok: false, error: "unauthorized" });
 		const url = new URL(input.req.url ?? "/", "http://localhost");
-		const path = normalizePath(url.pathname);
+		const path = normalizeMessagePath(url.pathname);
 		if (input.req.method === "POST" && (path === input.base || path === `${input.base}/messages`)) {
-			return await receive(input, await body(input.req, input.maxBodyBytes), false);
+			return await receive(input, await readJsonBody<WebhookMessage>(input.req, input.maxBodyBytes), false);
 		}
 		const threadMatch = path.match(new RegExp(`^${escapeRe(input.base)}/threads/([^/]+)/messages$`));
 		if (input.req.method === "POST" && threadMatch) {
-			const payload = await body(input.req, input.maxBodyBytes);
+			const payload = await readJsonBody<WebhookMessage>(input.req, input.maxBodyBytes);
 			return await receive(input, { ...payload, threadId: decodeURIComponent(threadMatch[1]) }, true);
 		}
 		const runMatch = path.match(new RegExp(`^${escapeRe(input.base)}/threads/([^/]+)/runs/([^/]+)$`));
@@ -193,7 +204,7 @@ async function routeRequest(input: RouteInput & { release(): void }): Promise<vo
 		}
 		return json(input.res, 404, { ok: false, error: "not found" });
 	} catch (error) {
-		if (error instanceof WebhookHttpError) return json(input.res, error.status, { ok: false, error: error.message });
+		if (error instanceof HttpMessageError) return json(input.res, error.status, { ok: false, error: error.message });
 		input.start.logger.warn("webhook.error", { adapter: input.name, error: message(error) });
 		return json(input.res, 500, { ok: false, error: "webhook failed" });
 	}
@@ -286,69 +297,16 @@ async function postReply(
 	}
 }
 
-function runningResponse(threadId: string, runId: string): Record<string, unknown> {
-	return { ok: true, threadId, runId, status: "running" };
-}
-
-function outboundResponse(threadId: string, runId: string, result: Outbound | undefined): Record<string, unknown> {
-	return {
-		ok: true,
-		threadId,
-		runId,
-		status: result?.approval ? "pending_approval" : "done",
-		text: result?.text,
-		private: result?.private,
-		silent: result?.silent,
-		approval: result?.approval,
-		attachments: result?.attachments,
-	};
-}
-
-function statusResponse(input: StatusResult): Record<string, unknown> {
-	return input;
-}
-
-async function body(req: IncomingMessage, maxBytes: number): Promise<WebhookMessage> {
-	const chunks: Buffer[] = [];
-	let total = 0;
-	for await (const chunk of req) {
-		const next = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-		total += next.byteLength;
-		if (total > maxBytes) throw new WebhookHttpError(413, "body too large");
-		chunks.push(next);
-	}
-	if (!chunks.length) return {};
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-	} catch {
-		throw new WebhookHttpError(400, "invalid json body");
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new WebhookHttpError(400, "body must be an object");
-	}
-	return parsed as WebhookMessage;
-}
-
 function assertReplyUrl(input: string, hosts: string[] | undefined): void {
 	let url: URL;
 	try {
 		url = new URL(input);
 	} catch {
-		throw new WebhookHttpError(400, "invalid replyUrl");
+		throw new HttpMessageError(400, "invalid replyUrl");
 	}
-	if (url.protocol !== "https:" && url.protocol !== "http:") throw new WebhookHttpError(400, "invalid replyUrl");
+	if (url.protocol !== "https:" && url.protocol !== "http:") throw new HttpMessageError(400, "invalid replyUrl");
 	if (!hosts?.length || !hosts.includes(url.hostname)) {
-		throw new WebhookHttpError(400, "replyUrl host is not allowed");
-	}
-}
-
-class WebhookHttpError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
+		throw new HttpMessageError(400, "replyUrl host is not allowed");
 	}
 }
 
@@ -364,22 +322,4 @@ function safeEqual(a: string, b: string): boolean {
 	const left = Buffer.from(a);
 	const right = Buffer.from(b);
 	return left.length === right.length && timingSafeEqual(left, right);
-}
-
-function normalizePath(path: string): string {
-	const value = `/${path.trim().replace(/^\/+|\/+$/g, "")}`;
-	return value === "/" ? "" : value;
-}
-
-function escapeRe(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function json(res: ServerResponse, status: number, body: Record<string, unknown>): void {
-	res.writeHead(status, { "content-type": "application/json" });
-	res.end(JSON.stringify(body));
 }
