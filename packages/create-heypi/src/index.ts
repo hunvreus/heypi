@@ -450,7 +450,7 @@ function evalsReadme(): string {
 	return `# Evals
 
 Add TypeScript eval modules here. Export one \`defineEval(...)\` call as the default export.
-Use \`heypi eval list\` and \`heypi eval check\` to inspect definitions.
+Use \`heypi eval list\` and \`heypi eval check\` to inspect and validate definitions.
 `;
 }
 

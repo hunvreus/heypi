@@ -18,6 +18,7 @@ import type { HeypiApp } from "./app.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
 import type { EvalConfig, EvalExpect } from "./eval.js";
+import { validateEval } from "./eval.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -823,8 +824,14 @@ function evalsShow(flags: Flags, name: string): void {
 
 function evalsCheck(flags: Flags): void {
 	const rows = filterEvals(loadCliEvals(flags), flags);
-	const invalid = rows.filter((row) => !row.prompt.trim());
-	if (invalid.length) throw new Error(`evals missing prompt: ${invalid.map((row) => row.name).join(", ")}`);
+	const invalid = rows.flatMap((row) => validateEval(row));
+	if (invalid.length) {
+		if (booleanFlag(flags, "json")) {
+			line(JSON.stringify({ ok: false, evals: rows.length, errors: invalid }, null, 2));
+			return;
+		}
+		throw new Error(`invalid evals:\n${invalid.join("\n")}`);
+	}
 	const body = { ok: true, evals: rows.length };
 	line(booleanFlag(flags, "json") ? JSON.stringify(body, null, 2) : ok(`${rows.length} eval(s) valid`));
 }

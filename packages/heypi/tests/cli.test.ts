@@ -171,6 +171,43 @@ test("cli eval commands inspect discovered eval definitions", async () => {
 	}
 });
 
+test("cli eval check validates assertion definitions", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-evals-invalid-"));
+	try {
+		await mkdir(join(root, "agent", "evals"), { recursive: true });
+		await writeFile(
+			join(root, "agent", "evals", "bad.ts"),
+			[
+				`import { defineEval } from ${JSON.stringify(resolve("src/eval.ts"))};`,
+				'export default defineEval({ name: "bad", tags: ["smoke", ""], prompt: "say hello", timeoutMs: 0, expect: { includes: "", unknown: true } });',
+			].join("\n"),
+			"utf8",
+		);
+
+		const json = JSON.parse(cli(["eval", "check", "--agent", "agent", "--json"], { cwd: root })) as {
+			ok: boolean;
+			errors: string[];
+		};
+		assert.equal(json.ok, false);
+		assert.deepEqual(json.errors, [
+			"eval bad: timeoutMs must be a positive number",
+			"eval bad: tags[1] must be a non-empty string",
+			"eval bad: expect.includes must be a non-empty string",
+			"eval bad: expect.unknown is not a supported assertion",
+		]);
+
+		const result = spawnSync(process.execPath, [CLI, "eval", "check", "--agent", "agent"], {
+			cwd: root,
+			encoding: "utf8",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /invalid evals/);
+		assert.match(result.stderr, /expect\.unknown is not a supported assertion/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("cli status summarizes persisted operator state", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-status-"));
 	try {
