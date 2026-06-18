@@ -342,6 +342,16 @@ test("admin service scopes approvals and calls to the current agent", async () =
 			createdAt: now - 1500,
 		});
 		assert.ok(traceEvent);
+		const modelEvent = await store.events?.append({
+			agent: "default",
+			trace: "trace-default",
+			threadId: ownThread.id,
+			turnId: ownTurn.id,
+			type: "model.completed",
+			data: { mode: "prompt", chars: 18, tools: ["bash", "read"] },
+			createdAt: now - 1200,
+		});
+		assert.ok(modelEvent);
 		const resultMessage = await store.messages.create({
 			threadId: ownThread.id,
 			provider: "slack",
@@ -482,6 +492,7 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.equal(timeline.has(`approval:${ownApproval.id}`), true);
 		assert.equal(timeline.has(`call:${ownCall.id}`), true);
 		assert.equal(timeline.has(`event:${traceEvent.id}`), true);
+		assert.equal(timeline.has(`event:${modelEvent.id}`), true);
 		assert.equal(timeline.has(`approval:${otherApproval.id}`), false);
 		assert.equal(timeline.has(`call:${otherCall.id}`), false);
 		assert.equal(timeline.has(`message:${otherMessage.id}`), false);
@@ -507,6 +518,15 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.deepEqual(
 			event?.details?.map((row) => row.label),
 			["Trace", "Sequence", "Turn", "Data"],
+		);
+		const model = thread?.timeline.find((row) => row.id === modelEvent.id);
+		assert.equal(model?.kind, "event");
+		assert.equal(model?.title, "Model completed");
+		assert.equal(model?.eventType, "model.completed");
+		assert.equal(model?.summary, "prompt / 18 chars / 2 tools");
+		assert.deepEqual(
+			model?.details?.map((row) => row.label),
+			["Trace", "Sequence", "Turn", "Mode", "Characters", "Tools", "Data"],
 		);
 
 		const newThread = await store.threads.getOrCreate({

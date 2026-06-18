@@ -617,14 +617,16 @@ function approvalRoute(row: Approval): {
 }
 
 function eventActivity(row: Event): AdminActivityRow {
+	const data = parseJson<Record<string, unknown>>(row.data);
 	return {
 		id: row.id,
 		kind: "event",
 		threadId: row.threadId ?? undefined,
-		title: row.type,
-		summary: preview(row.data) || `trace ${row.trace}`,
+		title: eventTitle(row.type),
+		summary: eventSummary(row, data),
 		state: eventState(row.type),
 		trace: row.trace,
+		eventType: row.type,
 		time: row.createdAt,
 		seq: row.seq,
 		details: compactDetails([
@@ -634,9 +636,44 @@ function eventActivity(row: Event): AdminActivityRow {
 			row.callId ? { label: "Call", value: row.callId, format: "mono" } : undefined,
 			row.approvalId ? { label: "Approval", value: row.approvalId, format: "mono" } : undefined,
 			row.jobRunId ? { label: "Job run", value: row.jobRunId, format: "mono" } : undefined,
+			...eventDataDetails(data),
 			row.data ? { label: "Data", value: row.data, format: "text" } : undefined,
 		]),
 	};
+}
+
+function eventTitle(type: string): string {
+	const labels: Record<string, string> = {
+		"model.started": "Model started",
+		"model.completed": "Model completed",
+		"model.failed": "Model failed",
+	};
+	return labels[type] ?? type;
+}
+
+function eventSummary(row: Event, data: Record<string, unknown> | undefined): string {
+	if (!data) return preview(row.data) || `trace ${row.trace}`;
+	if (row.type.startsWith("model.")) {
+		const mode = typeof data.mode === "string" ? data.mode : undefined;
+		const chars = typeof data.chars === "number" ? `${data.chars} chars` : undefined;
+		const tools = Array.isArray(data.tools) ? `${data.tools.length} tools` : undefined;
+		const error = typeof data.error === "string" ? data.error : undefined;
+		const reason = typeof data.reason === "string" ? data.reason : undefined;
+		return [mode, chars, tools, error, reason].filter(Boolean).join(" / ") || `trace ${row.trace}`;
+	}
+	return preview(row.data) || `trace ${row.trace}`;
+}
+
+function eventDataDetails(data: Record<string, unknown> | undefined): AdminActivityDetail[] {
+	if (!data) return [];
+	const tools = Array.isArray(data.tools) ? data.tools.filter((tool): tool is string => typeof tool === "string") : [];
+	return compactDetails([
+		typeof data.mode === "string" ? { label: "Mode", value: data.mode } : undefined,
+		typeof data.chars === "number" ? { label: "Characters", value: String(data.chars) } : undefined,
+		tools.length ? { label: "Tools", value: tools.join(", ") } : undefined,
+		typeof data.error === "string" ? { label: "Error", value: data.error } : undefined,
+		typeof data.reason === "string" ? { label: "Reason", value: data.reason } : undefined,
+	]);
 }
 
 function eventState(type: string): string {

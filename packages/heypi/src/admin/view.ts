@@ -808,7 +808,7 @@ function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string)
 function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
 	const detailLabels =
 		row.kind === "event"
-			? ["Trace", "Sequence", "Turn", "Call", "Approval", "Job run", "Data"]
+			? ["Trace", "Sequence", "Turn", "Call", "Approval", "Job run", "Mode", "Characters", "Tools", "Error", "Reason", "Data"]
 			: ["Runtime", "Policy", "Expires", "Resolved by"];
 	const details = compactActivityDetails([
 		row.summary && row.summary !== row.title ? { label: "Detail", value: row.summary } : undefined,
