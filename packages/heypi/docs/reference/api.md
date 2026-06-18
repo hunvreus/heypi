@@ -9,6 +9,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `@hunvreus/heypi` | Main app API: app lifecycle, adapters, config helpers, tools, runtime workspace helper, SQLite store. See [top-level config types](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/config.ts). |
 | `@hunvreus/heypi/adapter` | Types for custom chat or HTTP adapters, including adapter-local `permissions`. See [Custom integrations](../guides/integrations.md) and [adapter contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/io/handler.ts). |
 | `@hunvreus/heypi/attachments` | Attachment store and processing types. See [Attachments](../configuration/attachments.md) and [attachment contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/io/attachments.ts). |
+| `@hunvreus/heypi/authoring` | Lightweight helpers for discovered authored files under `agent/`: `defineTool`, `defineJob`, `defineEval`, `approval`, and command policy helpers. |
 | `@hunvreus/heypi/runtime` | Runtime and runtime provider types for custom sandbox providers. See [Runtime](../configuration/runtime.md) and [runtime contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/runtime/types.ts). |
 | `@hunvreus/heypi/store` | Store types for custom durable state backends. See [store contracts](https://github.com/hunvreus/heypi/blob/main/packages/heypi/src/store/types.ts). |
 
@@ -52,7 +53,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 Adapter configs own channel-specific approval identity through `permissions.approvers` and `permissions.admins`.
 
-## Tools
+## Default tools
 
 | Export | Purpose |
 | --- | --- |
@@ -61,6 +62,13 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | `DefaultToolName` | String union of built-in runtime tool names accepted by `defaultTools()`. |
 | `DefaultToolOption` | Per-tool boolean or config entry accepted by `DefaultToolsConfig`. |
 | `DefaultToolDefinition` | Descriptor returned by `defaultTools()` before heypi binds the runtime implementation. |
+
+## Authoring helpers
+
+Import these from `@hunvreus/heypi/authoring` inside `agent/tools/`, `agent/jobs/`, and `agent/evals/`.
+
+| Export | Purpose |
+| --- | --- |
 | `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. Zod inputs are parsed before `confirm` and `run`. See [Agent tools](../configuration/tools.md). |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
 | `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |
@@ -68,7 +76,7 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | `classifyCommand(command, config)` | Classifies a command against command policy. |
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |
 
-Discovered files under `agent/tools/`, `agent/jobs/`, and `agent/evals/` should import these authoring helpers from `@hunvreus/heypi/authoring`. That entrypoint is intentionally lightweight so `loadAgent()` can load authored modules without pulling in the app runtime.
+The main `@hunvreus/heypi` entrypoint also exports the authoring helpers for direct config use. Prefer `@hunvreus/heypi/authoring` in discovered modules because `loadAgent()` loads those files during app startup.
 
 ## Deprecated compatibility exports
 

@@ -19,6 +19,8 @@ bun create heypi my-agent
 
 The scaffolder asks for adapter, Slack transport when Slack is selected, runtime, model, admin UI, and optional samples. For non-interactive scaffolding, pass `--yes` plus flags such as `--adapter discord`, `--runtime docker`, `--no-admin`, or `--samples`.
 
+Use `--samples` if you want a copyable starter tool under `agent/tools/now.ts` and a smoke eval under `agent/evals/smoke.ts`.
+
 ## Step 2: fill in model auth
 
 For the default OpenAI starter, fill this in `.env` before sending local test messages:
@@ -48,9 +50,11 @@ my-agent/
 |   |-- AGENTS.md
 |   |-- SOUL.md
 |   |-- evals/
+|   |   `-- smoke.ts       # with --samples
 |   |-- jobs/
 |   |-- skills/
 |   `-- tools/
+|       `-- now.ts         # with --samples
 `-- setup/
     `-- slack.manifest.json
 ```

@@ -69,6 +69,8 @@ For the full lower-level Pi agent contract, see Pi's [coding-agent package](http
 
 Discovered tools, jobs, and evals are loaded recursively in lexical relative-path order. Discovered tools are appended after `tools` passed to `loadAgent()`. Duplicate tool names fail at startup. Built-in runtime tools are not added by discovery; pass `defaultTools()` explicitly when the agent should receive them.
 
+Files discovered under `agent/tools/`, `agent/jobs/`, and `agent/evals/` should import authoring helpers from `@hunvreus/heypi/authoring`. Keep `@hunvreus/heypi` imports in app entrypoints such as `index.ts`, where adapters, state, runtime, and admin are wired.
+
 `loadAgent()` uses `id: "default"` unless you pass `id`. This keeps generated apps, admin filters, CLI status, and persisted eval events on the same default agent id.
 
 If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agent/jobs/` are used. Top-level `jobs` remains the explicit override, including `jobs: []` to disable configured jobs.

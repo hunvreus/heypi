@@ -45,6 +45,22 @@ printf "You are a concise team assistant.\n" > agent/AGENTS.md
 printf "Answer directly and accurately.\n" > agent/SOUL.md
 ```
 
+Optional starter tool:
+
+```ts
+// agent/tools/now.ts
+import { defineTool } from "@hunvreus/heypi/authoring";
+import { z } from "zod";
+
+export default defineTool({
+  description: "Return the current ISO timestamp.",
+  input: z.object({}),
+  run: async () => new Date().toISOString(),
+});
+```
+
+`loadAgent("./agent", ...)` discovers that file automatically. The app entrypoint keeps using `@hunvreus/heypi`; files under `agent/` use `@hunvreus/heypi/authoring`.
+
 ## Step 4: create `.env`
 
 ```bash
