@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ApprovalConfig, PermissionsConfig, TaskConfig } from "../config.js";
-import type { EvalConfig, EvalExpect } from "../eval.js";
+import { evalExpectDetail, evalExpectLabel, type EvalConfig } from "../eval.js";
 import type { AdapterStart } from "../io/handler.js";
 import type { JobScope, JobTargets } from "../job.js";
 import { clampLimit, clampOffset } from "../store/paging.js";
@@ -1049,25 +1049,6 @@ function evalRow(row: EvalConfig): AdminEval {
 		expect: evalExpectLabel(row.expect),
 		expectDetail: evalExpectDetail(row.expect),
 	};
-}
-
-function evalExpectLabel(input: EvalConfig["expect"]): string {
-	if (!input) return "-";
-	const rows = Array.isArray(input) ? input : [input];
-	return rows.map(oneEvalExpectLabel).join(", ");
-}
-
-function evalExpectDetail(input: EvalConfig["expect"]): string {
-	if (!input) return "-";
-	const rows = Array.isArray(input) ? input : [input];
-	return rows.map((row, index) => `${rows.length > 1 ? `${index + 1}. ` : ""}${oneEvalExpectLabel(row)}`).join("\n");
-}
-
-function oneEvalExpectLabel(input: EvalExpect): string {
-	if (typeof input === "function") return "custom";
-	return Object.entries(input)
-		.map(([key, value]) => `${key}:${value instanceof RegExp ? value.toString() : String(value)}`)
-		.join("+");
 }
 
 const memorySearchText = {

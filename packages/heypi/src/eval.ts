@@ -37,6 +37,30 @@ export function defineEval(input: EvalConfig): EvalConfig {
 	return input;
 }
 
+/** Returns a JSON-safe representation of eval expectations for CLI/API display. */
+export function evalExpectSummary(input: EvalConfig["expect"]): unknown {
+	if (!input) return undefined;
+	if (typeof input === "function") return "custom";
+	if (Array.isArray(input)) return input.map(evalExpectSummary);
+	return Object.fromEntries(
+		Object.entries(input).map(([key, value]) => [key, value instanceof RegExp ? value.toString() : value]),
+	);
+}
+
+/** Returns a compact one-line label for eval expectations. */
+export function evalExpectLabel(input: EvalConfig["expect"]): string {
+	if (!input) return "-";
+	const rows = Array.isArray(input) ? input : [input];
+	return rows.map(oneExpectLabel).join(", ");
+}
+
+/** Returns a multi-line label for detailed eval expectation inspection. */
+export function evalExpectDetail(input: EvalConfig["expect"]): string {
+	if (!input) return "-";
+	const rows = Array.isArray(input) ? input : [input];
+	return rows.map((row, index) => `${rows.length > 1 ? `${index + 1}. ` : ""}${oneExpectLabel(row)}`).join("\n");
+}
+
 /** Evaluates a result against text, tool, approval, and custom assertions. */
 export async function evaluateEval(input: Pick<EvalConfig, "expect">, result: EvalResult): Promise<EvalReport> {
 	const expectations = expectList(input.expect);
@@ -106,6 +130,13 @@ function evalLabel(input: EvalConfig): string {
 function expectList(input: EvalConfig["expect"]): EvalExpect[] {
 	if (!input) return [];
 	return Array.isArray(input) ? input : [input];
+}
+
+function oneExpectLabel(input: EvalExpect): string {
+	if (typeof input === "function") return "custom";
+	return Object.entries(input)
+		.map(([key, value]) => `${key}:${value instanceof RegExp ? value.toString() : String(value)}`)
+		.join("+");
 }
 
 async function evaluateOne(expect: EvalExpect, result: EvalResult): Promise<EvalAssertion[]> {

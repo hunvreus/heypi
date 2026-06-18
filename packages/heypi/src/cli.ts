@@ -17,8 +17,8 @@ import {
 import type { HeypiApp } from "./app.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
-import type { EvalConfig, EvalExpect, EvalResult } from "./eval.js";
-import { evaluateEval, validateEval } from "./eval.js";
+import type { EvalConfig, EvalResult } from "./eval.js";
+import { evalExpectLabel, evalExpectSummary, evaluateEval, validateEval } from "./eval.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -804,7 +804,7 @@ function evalsList(flags: Flags): void {
 	line(
 		table(
 			["name", "tags", "expect"],
-			rows.map((row) => [row.name, row.tags?.join(",") || "-", expectLabel(row.expect)]),
+			rows.map((row) => [row.name, row.tags?.join(",") || "-", evalExpectLabel(row.expect)]),
 		),
 	);
 }
@@ -822,7 +822,7 @@ function evalsShow(flags: Flags, name: string): void {
 			`tags: ${evaluation.tags?.join(",") || "-"}`,
 			`timeout_ms: ${evaluation.timeoutMs ?? "-"}`,
 			`prompt: ${evaluation.prompt}`,
-			`expect: ${expectLabel(evaluation.expect)}`,
+			`expect: ${evalExpectLabel(evaluation.expect)}`,
 		].join("\n"),
 	);
 }
@@ -882,7 +882,7 @@ function evalSummary(input: EvalConfig): Record<string, unknown> {
 		prompt: input.prompt,
 		tags: input.tags ?? [],
 		timeoutMs: input.timeoutMs,
-		expect: expectSummary(input.expect),
+		expect: evalExpectSummary(input.expect),
 	};
 }
 
@@ -916,28 +916,6 @@ function stringArray(input: unknown, name: string): string[] {
 		throw new Error(`eval result ${name} must be an array of strings`);
 	}
 	return input;
-}
-
-function expectSummary(input: EvalConfig["expect"]): unknown {
-	if (!input) return undefined;
-	if (typeof input === "function") return "custom";
-	if (Array.isArray(input)) return input.map(expectSummary);
-	return Object.fromEntries(
-		Object.entries(input).map(([key, value]) => [key, value instanceof RegExp ? value.toString() : value]),
-	);
-}
-
-function expectLabel(input: EvalConfig["expect"]): string {
-	if (!input) return "-";
-	const rows = Array.isArray(input) ? input : [input];
-	return rows.map(oneExpectLabel).join(",");
-}
-
-function oneExpectLabel(input: EvalExpect): string {
-	if (typeof input === "function") return "custom";
-	return Object.entries(input)
-		.map(([key, value]) => `${key}:${value instanceof RegExp ? value.toString() : String(value)}`)
-		.join("+");
 }
 
 async function approvalsList(flags: Flags): Promise<void> {

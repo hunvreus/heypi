@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { approval, defaultTools, defineEval, evaluateEval } from "../src/api.js";
 import { coreTools } from "../src/core-tools.js";
+import { evalExpectDetail, evalExpectLabel, evalExpectSummary } from "../src/eval.js";
 
 test("defaultTools preserves the existing coreTools behavior", () => {
 	assert.deepEqual(
@@ -46,6 +47,18 @@ test("defineEval preserves behavior eval definitions", () => {
 	assert.equal(evaluation.name, "lists hosts");
 	assert.deepEqual(evaluation.tags, ["smoke"]);
 	assert.deepEqual(evaluation.expect, { tool: "hosts_list" });
+});
+
+test("eval expectation display helpers handle summaries, labels, and details", () => {
+	const expect = [{ tool: "hosts_list" }, { includes: "prod", text: /deployed/i }, async () => undefined];
+
+	assert.deepEqual(evalExpectSummary(expect), [
+		{ tool: "hosts_list" },
+		{ includes: "prod", text: "/deployed/i" },
+		"custom",
+	]);
+	assert.equal(evalExpectLabel(expect), "tool:hosts_list, includes:prod+text:/deployed/i, custom");
+	assert.equal(evalExpectDetail(expect), "1. tool:hosts_list\n2. includes:prod+text:/deployed/i\n3. custom");
 });
 
 test("evaluateEval checks text, tool, and approval assertions", async () => {
