@@ -178,6 +178,12 @@ test("adds provider env placeholders for non-OpenAI model choices", async () => 
 	}
 });
 
+test("help lists non-interactive admin flags", () => {
+	const out = run(["--help"]);
+	assert.match(out, /--admin \| --no-admin/);
+	assert.match(out, /--samples \| --no-samples/);
+});
+
 async function linkLocalDeps(app: string, packages: string[]): Promise<void> {
 	await mkdir(join(app, "node_modules", "@hunvreus"), { recursive: true });
 	await mkdir(join(app, "node_modules", "@types"), { recursive: true });

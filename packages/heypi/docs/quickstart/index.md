@@ -17,7 +17,7 @@ yarn create heypi my-agent
 bun create heypi my-agent
 ```
 
-The scaffolder asks for adapter, Slack transport when Slack is selected, runtime, model, admin UI, and optional samples.
+The scaffolder asks for adapter, Slack transport when Slack is selected, runtime, model, admin UI, and optional samples. For non-interactive scaffolding, pass `--yes` plus flags such as `--adapter discord`, `--runtime docker`, `--no-admin`, or `--samples`.
 
 ## Step 2: fill in model auth
 
