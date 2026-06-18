@@ -646,7 +646,9 @@ test("cli dev prints an exact admin login link for dynamic ports", async () => {
 		assert.notEqual(url.port, "0");
 		assert.equal(url.pathname, "/admin/login");
 		assert.ok(url.searchParams.get("t"));
-		assert.match(out, /POST JSON to \/dev\/messages/);
+		const messagesLine = out.split("\n").find((row) => row.startsWith("dev: POST JSON to "));
+		assert.ok(messagesLine);
+		assert.match(messagesLine, new RegExp(`POST JSON to http://127\\.0\\.0\\.1:${url.port}/dev/messages`));
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

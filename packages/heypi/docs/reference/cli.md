@@ -69,7 +69,7 @@ The admin Chats view includes a compose box for sending local dev messages throu
 
 If heypi restarts mid-turn, startup recovery marks interrupted turns and calls failed and records recovery events in the trace timeline. This is inspection and cleanup, not exact workflow replay.
 
-The local adapter registers:
+The local adapter registers these routes. When heypi can discover the running local HTTP listener, dev mode prints an absolute `/dev/messages` URL using the actual bound port.
 
 ```bash
 POST /dev/messages

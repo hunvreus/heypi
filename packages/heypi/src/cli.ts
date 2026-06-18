@@ -251,13 +251,14 @@ async function dev(file: string | undefined, _flags: Flags): Promise<void> {
 }
 
 async function printDevHints(): Promise<void> {
-	const admin = await devAdminLink();
-	if (admin) line(`dev: admin ${admin}`);
+	const server = await devServerHint();
+	if (server?.admin) line(`dev: admin ${server.admin}`);
 	else line("dev: admin unavailable; enable admin: true to use the local workbench");
-	line('dev: POST JSON to /dev/messages with { "text": "hello", "sync": true }');
+	const messages = server?.base ? new URL("/dev/messages", server.base).href : "/dev/messages";
+	line(`dev: POST JSON to ${messages} with { "text": "hello", "sync": true }`);
 }
 
-async function devAdminLink(): Promise<string | undefined> {
+async function devServerHint(): Promise<{ admin?: string; base?: string } | undefined> {
 	try {
 		const stateRoot = adminStateRoot({});
 		const server = await selectAdminServer(stateRoot, {}, process.env.HEYPI_ADMIN_URL);
@@ -265,7 +266,7 @@ async function devAdminLink(): Promise<string | undefined> {
 		if (!baseUrl) return undefined;
 		const secretValue = process.env.HEYPI_ADMIN_SECRET?.trim() || readAdminSecret(stateRoot);
 		const signed = createAdminLoginToken(secretValue, 5 * 60_000, { stateRoot });
-		return adminLoginUrl(baseUrl, signed.token, server?.adminPath ?? "/admin");
+		return { admin: adminLoginUrl(baseUrl, signed.token, server?.adminPath ?? "/admin"), base: baseUrl };
 	} catch {
 		return undefined;
 	}
