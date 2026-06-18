@@ -19,4 +19,4 @@ The wizard asks for:
 
 Generated apps include `agent/AGENTS.md`, `agent/SOUL.md`, `agent/skills/`, `agent/tools/`, `agent/jobs/`, `agent/evals/`, `.env.example`, and `.env`. Existing `.env` files are never overwritten. Optional samples include a Zod-based `defineTool` module under `agent/tools/`.
 
-Generated `npm run dev` uses `heypi dev`, which loads the exported app and enables the loopback-only `local()` adapter for `/dev/messages`. The local admin UI can inspect chats, approvals, jobs, memory, and eval definitions.
+Generated `npm run dev` uses `heypi dev`, which loads the exported app with only the loopback-only `local()` adapter for `/dev/messages`. Production chat adapters are still wired in `index.ts`, but they are not started in dev mode. The local admin UI can inspect chats, approvals, jobs, memory, and eval definitions.

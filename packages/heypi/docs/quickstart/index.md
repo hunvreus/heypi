@@ -63,7 +63,7 @@ Edit `agent/AGENTS.md` and `agent/SOUL.md`.
 npm run dev
 ```
 
-Open the printed admin URL to send local test messages from Chats. The dev server also exposes local testing routes on loopback:
+Open the printed admin URL to send local test messages from Chats. Generated apps start only the loopback local adapter in dev mode, so Slack, Discord, Telegram, or webhook credentials are not required for this first local loop. The dev server also exposes local testing routes on loopback:
 
 ```bash
 curl -s http://127.0.0.1:3000/dev/messages \

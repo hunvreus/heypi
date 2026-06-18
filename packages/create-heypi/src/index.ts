@@ -251,13 +251,15 @@ function indexTs(options: Options): string {
 	return `import { pathToFileURL } from "node:url";
 import { ${imports.join(", ")} } from "@hunvreus/heypi";
 ${runtimeImport}
+const isDev = process.env.HEYPI_DEV === "1";
+const adapters = isDev ? [local()] : [
+${adapterConfig(options)}
+];
+
 const app = createHeypi({
 	state: { root: "./state" },
 ${httpConfig(options)}
-	adapters: [
-		...(process.env.HEYPI_DEV ? [local()] : []),
-${adapterConfig(options)}
-	],
+	adapters,
 	agent: loadAgent("./agent", { model: "${options.model}", tools: defaultTools() }),
 ${options.admin ? "\tadmin: true,\n" : ""}\truntime: ${runtimeConfig(options.runtime)},
 });

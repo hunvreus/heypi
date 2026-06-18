@@ -28,6 +28,8 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
 		assert.match(read(app, "package.json"), /"start": "heypi start"/);
 		assert.match(read(app, "index.ts"), /slack\(\{\s*mode: "socket",\s*\}\)/);
+		assert.match(read(app, "index.ts"), /const isDev = process\.env\.HEYPI_DEV === "1"/);
+		assert.match(read(app, "index.ts"), /const adapters = isDev \? \[local\(\)\] : \[/);
 		assert.match(read(app, "index.ts"), /local\(\)/);
 		assert.match(read(app, "index.ts"), /export default app/);
 		assert.match(read(app, "index.ts"), /pathToFileURL/);

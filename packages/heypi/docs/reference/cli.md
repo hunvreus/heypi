@@ -61,7 +61,7 @@ npm create heypi@latest my-agent -- --yes
 heypi dev [index.ts] [--env .env]
 ```
 
-Loads the app module with `tsx`, sets `HEYPI_DEV=1`, and starts the default export from `createHeypi(...)`. Generated apps add `local()` only when `HEYPI_DEV` is set, so local testing does not change production adapter wiring.
+Loads the app module with `tsx`, sets `HEYPI_DEV=1`, and starts the default export from `createHeypi(...)`. Generated apps start only the loopback `local()` adapter when `HEYPI_DEV` is set, so local testing does not require production adapter credentials or change production adapter wiring.
 
 When admin is enabled, dev mode prints a one-time admin login link after startup. This uses the actual bound HTTP port, including `http: { port: 0 }`.
 
