@@ -143,7 +143,7 @@ heypi eval show <name> [--agent ./agent] [--json]
 heypi eval check [--agent ./agent] [--tag smoke] [--json]
 ```
 
-Loads `agent/evals/*.ts` and inspects `defineEval(...)` definitions. `check` validates discovery and basic shape only; it does not run model behavior yet.
+Loads `defineEval(...)` definitions recursively from `agent/evals/`. `check` validates discovery and basic shape only; it does not run model behavior yet.
 
 | Subcommand | Description |
 | --- | --- |

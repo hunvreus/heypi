@@ -30,10 +30,10 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 | Export | Purpose |
 | --- | --- |
-| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, `tools/`, `jobs/`, `evals/`, `skills/`, and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
-| `loadTools(folder)` | Loads default-exported tools from a folder. File stems become tool names when omitted. |
-| `loadJobs(folder)` | Loads default-exported jobs from a folder. |
-| `loadEvals(folder)` | Loads default-exported evals from a folder. |
+| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, recursive `tools/`, `jobs/`, `evals/`, plus `skills/` and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadTools(folder)` | Loads default-exported tools recursively from a folder. File stems become tool names when omitted. |
+| `loadJobs(folder)` | Loads default-exported jobs recursively from a folder. |
+| `loadEvals(folder)` | Loads default-exported evals recursively from a folder. |
 | `agentFrom(folder, options)` | Compatibility alias for `loadAgent()`. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
@@ -57,7 +57,7 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 | --- | --- |
 | `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
 | `coreTools(config)` | Compatibility alias for `defaultTools()`. |
-| `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. See [Agent tools](../configuration/tools.md). |
+| `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. Zod inputs are parsed before `confirm` and `run`. See [Agent tools](../configuration/tools.md). |
 | `tool(definition)` | Compatibility API for custom tools using `parameters` and `execute`. |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
 | `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |
