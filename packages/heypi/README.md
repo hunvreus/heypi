@@ -34,35 +34,39 @@ npm install @hunvreus/heypi
 ## Minimal app
 
 ```ts
-import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, slack, workspace } from "@hunvreus/heypi";
 
-const isDev = process.env.HEYPI_DEV === "1";
-const adapters = isDev
-  ? [local()]
-  : [
-      slack({
-        mode: "socket",
-      }),
-    ];
-
-const app = createHeypi({
+export default createHeypi({
   state: { root: "./state" },
-  adapters,
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
+  adapters: [
+    slack({
+      mode: "socket",
+    }),
+  ],
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { root: workspace("./workspace") },
 });
-
-export default app;
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  await runHeypi(app);
-}
 ```
 
-Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. Generated apps start only the loopback `local()` adapter in dev mode, so local testing does not require Slack, Discord, Telegram, or webhook credentials. The same dev server also exposes the loopback-only `/dev/messages` API, and the admin UI can inspect jobs, approvals, traces, memory, and loaded eval definitions.
+Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. The generated dev script runs `heypi dev`, which starts the configured adapters, enables loopback-only local test routes, and turns the admin panel on by default when omitted. `npm run start` starts the configured app without dev-only defaults.
 
 `OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
+
+## Agent files
+
+Most app-specific behavior lives under `agent/`. `index.ts` stays for operational wiring: adapters, state, runtime, admin, and deployment policy.
+
+```text
+agent/
+|-- AGENTS.md       # task and behavior instructions
+|-- SOUL.md         # voice and style
+|-- tools/          # trusted TypeScript tools
+|-- jobs/           # scheduled jobs
+|-- skills/         # bundled Pi skills
+`-- extensions/     # explicit Pi extensions
+```
+
+Files under `agent/tools/` and `agent/jobs/` should import from `@hunvreus/heypi/authoring`. Evals live under root `evals/` and use the same authoring entrypoint. The app entrypoint imports from `@hunvreus/heypi`.
 
 ## Documentation
 

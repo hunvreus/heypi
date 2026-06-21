@@ -18,7 +18,7 @@ Create a new app with:
 npm create heypi@latest
 ```
 
-Most provider commands load `./.env` when it exists. Pass `--env <path>` to load another file. Database commands require `--db`; with the default store, use `<state.root>/heypi.db`.
+Most commands load `./.env` when it exists. `heypi dev` also loads `./.env.local` after `./.env`, so local overrides win while shell environment variables still take precedence. Pass `--env <path>` to load one explicit file instead. Database commands require `--db`; with the default store, use `<state.root>/heypi.db`.
 
 Explicit token flags win over environment variables. `--json` is available on admin links, approvals, and jobs where machine-readable output is useful. Provider token values are not echoed in CLI error output.
 
@@ -27,10 +27,13 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | Command | Use for |
 | --- | --- |
 | [`heypi init`](#heypi-init) | Print app scaffolding commands. |
-| [`heypi dev`](#heypi-dev) | Start an exported app with local dev endpoints enabled. |
-| [`heypi start`](#heypi-start) | Start an exported app. |
+| [`heypi dev`](#heypi-dev) | Start an exported app for local development. |
+| [`heypi start`](#heypi-start) | Start an exported app for normal runtime. |
 | [`heypi check`](#heypi-check) | Validate Node, env, database, and runtime paths. |
 | [`heypi status`](#heypi-status) | Inspect persisted app status for operators. |
+| [`heypi threads`](#heypi-threads) | List and search persisted threads. |
+| [`heypi thread`](#heypi-thread) | Show one persisted thread transcript. |
+| [`heypi events`](#heypi-events) | Show typed trace events. |
 | [`heypi db`](#heypi-db) | Check or migrate the SQLite store. |
 | [`heypi slack`](#heypi-slack) | Verify Slack auth, generate manifests, and discover channels/users. |
 | [`heypi telegram`](#heypi-telegram) | Verify Telegram auth and discover chat IDs from delivered messages. |
@@ -61,15 +64,15 @@ npm create heypi@latest my-agent -- --yes
 heypi dev [index.ts] [--env .env]
 ```
 
-Loads the app module with `tsx`, sets `HEYPI_DEV=1`, and starts the default export from `createHeypi(...)`. Generated apps start only the loopback `local()` adapter when `HEYPI_DEV` is set, so local testing does not require production adapter credentials or change production adapter wiring.
+Loads `./.env`, then `./.env.local`, loads the app module with `tsx`, and starts the default export from `createHeypi(...)`. Dev mode starts the configured adapters exactly as declared, enables admin by default when `admin` is omitted, and appends the loopback-only `local()` adapter for scripted local messages. If the admin HTTP host is not loopback, dev mode fails rather than exposing `/dev/messages` on a public listener.
 
-When admin is enabled, dev mode prints a one-time admin login link after startup. This uses the actual bound HTTP port, including `http: { port: 0 }`.
+When the admin panel is enabled, dev mode prints its URL after startup. Passwordless loopback dev admins print `/admin` directly; authenticated admins print a short-lived login link. This uses the actual bound admin HTTP port, including `admin: { http: { port: 0 } }`.
 
 The admin Chats view includes a compose box for sending local dev messages through the same handler path used by adapters. Thread detail pages show messages, model lifecycle events, calls, approvals, and typed trace events.
 
 If heypi restarts mid-turn, startup recovery marks interrupted turns and calls failed and records recovery events in the trace timeline. This is inspection and cleanup, not exact workflow replay.
 
-The local adapter registers these routes. When heypi can discover the running local HTTP listener, dev mode prints an absolute `/dev/messages` URL using the actual bound port.
+Dev mode registers these loopback-only routes. When heypi can discover the running admin HTTP listener, it prints an absolute `/dev/messages` URL using the actual bound port.
 
 ```bash
 POST /dev/messages
@@ -80,10 +83,34 @@ GET /dev/threads/:threadId/runs/:runId
 Example:
 
 ```bash
-curl -s http://127.0.0.1:3000/dev/messages \
+curl -s http://127.0.0.1:4321/dev/messages \
   -H 'content-type: application/json' \
   -d '{"text":"hello","sync":true}'
 ```
+
+## heypi threads
+
+```bash
+heypi threads --db ./state/heypi.db [--agent <id>] [--provider <name>] [--q <text>] [--limit 25] [--offset 0] [--json]
+```
+
+Lists persisted threads from the SQLite store. Use `--q` to search thread metadata and recent message text.
+
+## heypi thread
+
+```bash
+heypi thread <id> --db ./state/heypi.db [--agent <id>] [--limit 100] [--json]
+```
+
+Shows one persisted thread transcript plus approvals attached to that thread. This is read-only and can run against a stopped app.
+
+## heypi events
+
+```bash
+heypi events --db ./state/heypi.db [--agent <id>] [--thread <id>] [--trace <id>] [--limit 100] [--json]
+```
+
+Shows typed trace events for debugging messages, turns, tools, approvals, jobs, recovery, and eval runs.
 
 ## heypi start
 
@@ -91,7 +118,16 @@ curl -s http://127.0.0.1:3000/dev/messages \
 heypi start [index.ts] [--env .env]
 ```
 
-Loads the app module with `tsx` and starts the default export from `createHeypi(...)` without setting `HEYPI_DEV`.
+Loads `./.env`, loads the app module with `tsx`, and starts the default export from `createHeypi(...)` with the configured adapters. Start mode does not enable admin or local test routes unless the app config explicitly does so.
+
+For custom Node deployment entrypoints, import the same app declaration and call `runHeypi(app)`:
+
+```ts
+import { runHeypi } from "@hunvreus/heypi";
+import app from "./index.js";
+
+await runHeypi(app);
+```
 
 ## heypi check
 
@@ -138,29 +174,33 @@ heypi db migrate --db ./state/heypi.db
 ## heypi eval
 
 ```bash
-heypi eval list [--agent ./agent] [--tag smoke] [--json]
-heypi eval show <name> [--agent ./agent] [--json]
-heypi eval check [--agent ./agent] [--tag smoke] [--json]
-heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--db ./state/heypi.db] [--agent-id default] [--json]
+heypi eval list [--evals ./evals] [--tag smoke] [--json]
+heypi eval show <name> [--evals ./evals] [--json]
+heypi eval check [--evals ./evals] [--tag smoke] [--json]
+heypi eval run <name> [--evals ./evals] [--agent ./agent] [--model openai/gpt-5-mini] [--runtime-root ./workspace] [--db ./state/heypi.db] [--agent-id default] [--json]
+heypi eval run <name> [--evals ./evals] [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--db ./state/heypi.db] [--agent-id default] [--json]
 ```
 
-Loads `defineEval(...)` definitions recursively from `agent/evals/`. `run` evaluates assertions against an explicit result supplied by `--result` or inline flags. It does not execute the model or agent loop yet. When `--db` is supplied, `run` appends an `eval.completed` or `eval.failed` trace event for admin and trace inspection.
+Loads `defineEval(...)` definitions recursively from root `evals/` by default. `run` has two modes: with `--result` or `--text`, it evaluates assertions against supplied output; without supplied output, it runs the eval prompt through a local Pi-backed heypi handler using `--model` or `HEYPI_MODEL`. Agent-backed runs use isolated temporary state and workspace by default. When `--db` is supplied, `run` appends an `eval.completed` or `eval.failed` trace event; agent-backed runs also copy their temporary trace events into the persisted eval trace without temp thread, turn, or call ids.
 
 | Subcommand | Description |
 | --- | --- |
 | `list` | Lists discovered eval definitions. |
 | `show <name>` | Shows one eval definition. |
 | `check` | Validates eval definition shape and assertions. |
-| `run <name>` | Runs the eval assertion engine against supplied text/tool/approval output. |
+| `run <name>` | Runs assertions against supplied output or a local agent-backed eval run. |
 
 | Option | Description |
 | --- | --- |
-| `--agent <path>` | Agent folder containing `evals/`. Defaults to `./agent`. |
+| `--evals <path>` | Eval folder. Defaults to `./evals`. |
+| `--agent <path>` | Agent folder for agent-backed `run`. Defaults to `./agent`. |
 | `--tag <tag>` | Filters `list` and `check` to evals with a tag. |
 | `--result <path>` | JSON result file with `text`, `tools`, and `approvals` for `run`. |
 | `--text <text>` | Inline assistant text for `run`. |
 | `--tools <names>` | Comma-separated tool names for `run`. |
 | `--approvals <ids>` | Comma-separated approval ids for `run`. |
+| `--model <provider/name>` | Model for agent-backed `run`. Defaults to `HEYPI_MODEL`. |
+| `--runtime-root <path>` | Workspace root for agent-backed `run`. Defaults to a temporary directory. |
 | `--db <path>` | Persists an eval trace event for `run` in a migrated SQLite database. |
 | `--agent-id <id>` | Agent id for persisted eval trace events. Defaults to `default`. |
 | `--json` | Prints machine-readable output. |
@@ -287,7 +327,7 @@ heypi discord observe --env .env
 ## heypi admin
 
 ```bash
-heypi admin link [--env .env] [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
+heypi admin link [--env .env] [--state ./state] [--url http://127.0.0.1:4321] [--pid <pid>] [--json]
 ```
 
 Mints a short-lived one-time admin login URL from local admin state.

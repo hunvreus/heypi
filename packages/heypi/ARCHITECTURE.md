@@ -50,12 +50,11 @@ agent/
   AGENTS.md
   tools/
   jobs/
-  evals/
   skills/
   extensions/
 ```
 
-`SOUL.md` sets identity and voice. `AGENTS.md` sets operating rules. `SYSTEM.md` is a full runtime-prompt override. Missing `SOUL.md` falls back to a concise built-in identity. `tools/`, `jobs/`, and `evals/` are discovered recursively in deterministic lexical order. The model must be passed explicitly or through `HEYPI_MODEL`.
+`SOUL.md` sets identity and voice. `AGENTS.md` sets operating rules. `SYSTEM.md` is a full runtime-prompt override. Missing `SOUL.md` falls back to a concise built-in identity. `tools/` and `jobs/` are discovered recursively in deterministic lexical order. Root `evals/` is discovered by `heypi eval`, not loaded into the runtime agent. The model must be passed explicitly or through `HEYPI_MODEL`.
 
 Programmatic `context` providers run once per turn and append compact dynamic prompt blocks. The handler also injects provider/channel/thread/sender context when available.
 

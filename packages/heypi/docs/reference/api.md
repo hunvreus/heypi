@@ -31,14 +31,16 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 | Export | Purpose |
 | --- | --- |
-| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, recursive `tools/`, `jobs/`, `evals/`, plus `skills/` and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, recursive `tools/` and `jobs/`, plus `skills/` and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadPrompt(path, options)` | Loads a UTF-8 prompt file. Missing files throw unless `optional` is true. |
 | `loadTools(folder)` | Loads default-exported tools recursively from a folder. File stems become tool names when omitted. |
 | `loadJobs(folder)` | Loads default-exported jobs recursively from a folder. |
 | `loadEvals(folder)` | Loads default-exported evals recursively from a folder. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `DEFAULT_AGENT_ID` | Canonical default durable agent id, currently `default`. |
-| `AgentConfig` | Pi agent config: model, prompts, context, tools, skills, and Pi extensions. |
-| `LoadAgentOptions` | Options accepted by `loadAgent()`, including model, id, tools, jobs, evals, context, skills, and extensions. |
+| `AgentConfig` | Pi agent config: model, prompts, context, built-in tools, authored tools, skills, and Pi extensions. |
+| `LoadAgentOptions` | Options accepted by `loadAgent()`, including model, id, builtinTools, tools, jobs, context, skills, and extensions. |
+| `LoadPromptOptions` | Options accepted by `loadPrompt()`. |
 | `AgentContextProvider` | Per-turn context callback type. |
 
 ## Adapters
@@ -49,7 +51,7 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 | `discord(config)` | Discord adapter. See [Discord](../adapters/discord.md). |
 | `telegram(config)` | Telegram adapter. See [Telegram](../adapters/telegram.md). |
 | `webhook(config)` | JSON HTTP webhook adapter. See [Webhook](../adapters/webhook.md). |
-| `local(config)` | Loopback-only dev adapter. Used by generated apps when `HEYPI_DEV=1`; registers `/dev/messages` routes for local testing. |
+| `local(config)` | Loopback-only adapter for explicit local HTTP test routes. `heypi dev` installs its own local adapter automatically; most apps do not need to configure `local()` directly. |
 
 Adapter configs own channel-specific approval identity through `permissions.approvers` and `permissions.admins`.
 
@@ -65,13 +67,13 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 
 ## Authoring helpers
 
-Import these from `@hunvreus/heypi/authoring` inside `agent/tools/`, `agent/jobs/`, and `agent/evals/`.
+Import these from `@hunvreus/heypi/authoring` inside `agent/tools/`, `agent/jobs/`, and root `evals/`.
 
 | Export | Purpose |
 | --- | --- |
 | `defineTool(definition)` | Defines a trusted custom TypeScript tool with `input` and `run`. Supports Zod, TypeBox, and raw JSON Schema input schemas. Zod inputs are parsed before `confirm` and `run`. See [Agent tools](../configuration/tools.md). |
 | `defineJob(definition)` | Defines a scheduled job for `agent/jobs/` discovery or explicit `jobs` config. |
-| `defineEval(definition)` | Defines a behavior eval for `agent/evals/` discovery and `heypi eval` inspection. |
+| `defineEval(definition)` | Defines a behavior eval for root `evals/` discovery and `heypi eval` inspection. |
 | `approval` | Helpers for common confirmation policies: `always`, `never`, `when`, and `command`. |
 | `classifyCommand(command, config)` | Classifies a command against command policy. |
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |

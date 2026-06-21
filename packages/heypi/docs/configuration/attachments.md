@@ -87,7 +87,7 @@ The `attach` core tool marks a runtime file for upload with the final reply. Fil
 
 ```ts
 loadAgent("./agent", {
-  tools: [...defaultTools({ attach: true })],
+  builtinTools: defaultTools({ attach: true }),
 });
 ```
 

@@ -160,22 +160,23 @@ Keep state and runtime workspace directories private to the heypi OS user on sha
 
 ## Expose HTTP routes
 
-If you use Slack HTTP mode, webhooks, secrets, or the admin UI, configure the heypi HTTP listener and put it behind HTTPS.
+If you use Slack HTTP mode, webhooks, or self-hosted secrets, configure the public heypi HTTP listener and put it behind HTTPS. Admin uses its own listener through `admin.http`.
 
 Common production shape:
 
-- heypi listens on localhost or a private container port.
+- public webhooks listen on localhost, a private container port, or an explicitly exposed `0.0.0.0` port.
+- admin listens on `127.0.0.1:4321` or another private `admin.http` address.
 - Caddy, nginx, a load balancer, or the platform proxy terminates HTTPS.
 - Only provider webhook routes are public.
-- Admin is protected by heypi auth and additional network controls when possible.
+- Admin is protected by heypi auth and additional network controls.
 
 Generate an admin login link from the server:
 
 ```bash
-npm exec heypi -- admin link --state ./state --url https://agent.example.com
+npm exec heypi -- admin link --state ./state --url http://127.0.0.1:4321
 ```
 
-Do not expose the admin route broadly. Prefer private networking, VPN, IP allowlists, or an authenticated reverse proxy in addition to heypi admin auth.
+For remote access, prefer an SSH tunnel, private networking, VPN, IP allowlist, or authenticated reverse proxy in addition to heypi admin auth.
 
 ## Process ownership
 

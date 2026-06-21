@@ -11,36 +11,24 @@ npm install @hunvreus/heypi
 ## Step 2: create `index.ts`
 
 ```ts
-import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, loadAgent, local, runHeypi, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, slack, workspace } from "@hunvreus/heypi";
 
-const isDev = process.env.HEYPI_DEV === "1";
-const adapters = isDev
-  ? [local()]
-  : [
-      slack({
-        mode: "socket",
-      }),
-    ];
-
-const app = createHeypi({
+export default createHeypi({
   state: { root: "./state" },
-  adapters,
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
+  adapters: [
+    slack({
+      mode: "socket",
+    }),
+  ],
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { name: "just-bash", root: workspace("./workspace") },
 });
-
-export default app;
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  await runHeypi(app);
-}
 ```
 
 ## Step 3: create agent files
 
 ```bash
-mkdir -p agent/skills agent/tools agent/jobs agent/evals
+mkdir -p agent/skills agent/tools agent/jobs evals
 printf "You are a concise team assistant.\n" > agent/AGENTS.md
 printf "Answer directly and accurately.\n" > agent/SOUL.md
 ```
@@ -79,13 +67,13 @@ Use the [Slack setup guide](../adapters/slack.md#setup) to create the app, enabl
 heypi dev
 ```
 
-Use the printed admin URL or `POST /dev/messages` to test locally without Slack credentials. Use `heypi start` after filling `.env` and installing the Slack app.
+Use the printed admin URL or `POST /dev/messages` to test locally. If the Slack adapter is configured for Socket Mode and `.env.local` contains dev bot credentials, `heypi dev` also starts the real Slack adapter.
 
 ## Config notes
 
 - `state.root` stores durable heypi state.
-- `local()` registers the loopback dev adapter when `HEYPI_DEV=1`.
-- `slack(...)` registers the Slack adapter outside dev mode.
-- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, bundled skills, app tools, jobs, and evals.
-- `defaultTools()` adds heypi's built-in runtime tools. Discovery does not add them implicitly.
+- `heypi dev` starts configured adapters, loads `.env` plus `.env.local`, enables admin by default, and adds loopback-only local test routes.
+- `heypi start` starts configured adapters, loads `.env`, and does not add admin or local test routes unless configured.
+- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, default built-in tools, bundled skills, app tools, and jobs.
+- `evals/` is discovered by `heypi eval`.
 - `runtime.root` is the workspace for runtime tools, generated files, and scoped runtime state.

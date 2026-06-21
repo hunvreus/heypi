@@ -5,25 +5,32 @@
 ### Breaking
 - Changed chat response placement config to use adapter-local `response` objects. Slack `reply` is now `response.placement`, and Slack `replyBroadcast` is now `response.broadcast`; the old keys are not supported.
 - Changed `loadAgent()` to default the durable agent id to `default` instead of the agent folder basename. Apps that relied on the old implicit id, such as `agent`, should pass `id` explicitly to keep using existing persisted state.
+- Changed `loadAgent()` defaults so built-in runtime tools live under `builtinTools`, authored tools live under `tools`, jobs/tools convention folders are overridden by explicit options, and eval discovery moved from `agent/evals/` to root `evals/`. If you pass `tools` or `jobs`, include `loadTools("./agent/tools")` or `loadJobs("./agent/jobs")` yourself when you still want convention-loaded modules.
+- Removed support for legacy `tools: defaultTools()` config. Use `builtinTools: defaultTools()` for built-in runtime tools and `tools` for authored app tools.
+- Changed admin/dev HTTP binding to use `admin.http`, defaulting to `127.0.0.1:4321`, instead of sharing the public adapter `http` listener.
 
 ### Added
 - Added the JS-native authoring APIs `loadAgent`, `defaultTools`, `defineTool`, and `approval`, with Zod input schema support for custom tools.
-- Added the `@hunvreus/heypi/authoring` entrypoint for lightweight authored modules under `agent/tools/`, `agent/jobs/`, and `agent/evals/`.
+- Added the `@hunvreus/heypi/authoring` entrypoint for lightweight authored modules under `agent/tools/`, `agent/jobs/`, and `evals/`.
 - Added `loadTools`, `loadJobs`, and `defineJob`, with `loadAgent()` discovery for `agent/tools/` and `agent/jobs/`.
-- Added `heypi dev`, `heypi start`, and the loopback-only `local()` adapter for first-run local testing without configuring Slack, Discord, Telegram, or webhook secrets.
-- Added `defineEval`, `loadEvals`, `agent/evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
+- Added `loadPrompt()` for explicit prompt-file loading with optional missing-file handling.
+- Added `heypi dev`, `heypi start`, and the loopback-only `local()` adapter for local testing alongside configured adapters.
+- Added `defineEval`, `loadEvals`, root `evals/` discovery, and `heypi eval list/show/check` for first-class behavior eval definitions.
 - Added `evaluateEval()` for reusable text, tool-call, approval, and custom eval assertions.
 - Added `heypi eval run` to run eval assertions against explicit supplied result data.
+- Added agent-backed `heypi eval run` mode for running eval prompts through a local Pi-backed heypi handler with isolated temporary state.
 - Added `create-heypi --admin` and `--no-admin` flags for non-interactive scaffolding.
 - Added optional eval run trace event persistence through `heypi eval run --db`.
 - Added persisted trace events for messages, turns, tool calls, approvals, and call traces to support richer run inspection.
 - Added persisted model lifecycle trace events for agent turns and approved continuations.
+- Added persisted Pi tool lifecycle trace events for agent-backed tool execution.
 - Added retry handling for trace event sequence conflicts during concurrent event appends.
 - Added admin chat compose for sending local dev messages through the same handler path used by adapters.
 - Added admin approval actions that submit approve/deny decisions through the shared handler path.
 - Added admin thread actions for submitting cancel/status controls through the shared handler path.
 - Added a live pulse to the admin Chats sidebar for pending approvals, running runs, jobs, and refresh time.
-- Added an admin Evals page for inspecting loaded `agent/evals/` definitions.
+- Added an admin Evals page for inspecting loaded eval definitions.
+- Added read-only `heypi threads`, `heypi thread`, and `heypi events` commands for inspecting persisted chat and trace state from the CLI.
 - Added typed trace event rows to admin thread inspection.
 - Added trace events when startup recovery marks interrupted turns and calls as failed.
 - Added conventional env defaults for Slack, Discord, Telegram, and webhook adapter credentials.
@@ -31,18 +38,20 @@
 ### Changed
 - Removed deprecated public authoring aliases in favor of `loadAgent()`, `defaultTools()`, `defineTool()`, and `approval.command()`.
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
-- Changed `create-heypi` generated dev mode to start only the loopback `local()` adapter, so first-run local testing does not require production adapter credentials.
+- Changed `heypi dev` to start configured adapters, enable admin by default when omitted, load `.env.local` after `.env`, and install internal loopback local test routes.
+- Changed `heypi start` to load only `.env` and avoid dev-only admin/local route defaults.
+- Changed generated apps and examples to omit admin config by default so `heypi dev` owns the local admin behavior.
 - Changed `create-heypi` generated README and next steps to separate local model setup from production adapter setup.
 - Changed `create-heypi` generated README and next steps to describe `/dev/messages` instead of admin when admin is disabled.
-- Changed README and manual setup examples to use the same local-only dev adapter branch as generated apps.
+- Changed README, manual setup, generated apps, and examples to use declaration-only app config without a visible `HEYPI_DEV` adapter branch or direct-run guard.
 - Changed quickstart setup order to make model auth local-first and provider adapter auth production-only.
 - Changed create-heypi docs to list common non-interactive flags, including `--admin` and `--no-admin`.
 - Changed `heypi dev` to print an absolute `/dev/messages` URL when the running local HTTP listener can be discovered.
-- Changed `loadAgent()` discovery to load nested `tools/`, `jobs/`, and `evals/` modules in deterministic relative-path order.
+- Changed `loadAgent()` discovery to load nested `tools/` and `jobs/` modules in deterministic relative-path order.
 - Changed `heypi eval check` to validate eval names, prompts, tags, timeouts, and assertion shapes instead of only checking for a prompt.
-- Changed examples to use `loadAgent()`, `defaultTools()`, and `defineTool()` instead of deprecated authoring aliases.
+- Changed examples to use `loadAgent()` and `defineTool()` instead of deprecated authoring aliases.
 - Changed the Slack DevOps, Telegram Workout, and Webhook GitHub Docker examples to load custom tools from `agent/tools/` discovery instead of wiring authored tools in `index.ts`.
-- Changed example READMEs to distinguish local dev adapter testing from production provider adapter startup.
+- Changed example READMEs to distinguish `heypi dev` local conveniences from `heypi start` normal runtime startup.
 - Changed `create-heypi` generated tool samples to live under `agent/tools/` for discovery instead of top-level `tools/`.
 - Changed `create-heypi` generated sample tools to use Zod input schemas and declare `zod` as an app dependency.
 - Changed `defineTool()` to parse Zod input before custom `confirm` and `run` handlers.
@@ -73,13 +82,20 @@
 - Changed API and tools docs to document only the current authoring path.
 - Changed the Slack DevOps example to use the public `approval.command()` helper.
 - Changed example app scripts to use `heypi dev` and `heypi start` with default-exported apps.
-- Changed examples to mount the loopback `local()` adapter under `HEYPI_DEV` so `heypi dev` works without production adapter credentials.
 - Changed `defaultTools()` to use the public `approval.command()` helper internally.
 - Added `DefaultToolConfig` and `DefaultToolsConfig` as the preferred public type names for `defaultTools()` config.
 
 ### Fixed
-- Fixed manual setup docs showing `loadAgent()` without explicit `defaultTools()`, which produced an agent without built-in runtime tools.
+- Fixed admin thread pages refreshing the selected conversation by replacing the thread panel instead of reloading the full admin document.
+- Fixed admin live refresh falling back to a full page reload when both the selected thread and chat sidebar data changed in the same pulse.
+- Fixed agent-backed `heypi eval run` missing-model errors to fail before constructing the local eval runtime.
+- Fixed public package subpath exports to include consistent `default` fallbacks for CommonJS-compatible loaders.
+- Fixed `@hunvreus/heypi/authoring` resolution for discovered TypeScript agent modules loaded through CommonJS-compatible loaders.
+- Fixed manual setup docs to reflect that `loadAgent()` now provides default built-in runtime tools through `builtinTools`.
 - Fixed `heypi dev` printing a guessed admin URL when the HTTP listener binds to a dynamic port.
+- Fixed `heypi dev` refusing to expose local test routes when the app HTTP host is not loopback.
+- Fixed `heypi dev` printing duplicate admin links by showing one admin URL and using `/admin` directly when dev admin auth is disabled.
+- Fixed passwordless loopback admin form posts by using a real per-instance CSRF token with same-origin checks.
 - Fixed the admin header logo to use the current heypi brand assets instead of the stale inline SVG.
 - Fixed approval controls being recorded as fresh user turns, which could make an approved action trigger a second approval.
 - Fixed Discord approval cards keeping the pending color after approval, denial, or expiry.

@@ -6,7 +6,7 @@ heypi apps are configured in TypeScript with `createHeypi()`. The config object 
 createHeypi({
   state: { root: "./state" },
   adapters: [slack({ mode: "socket" })],
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini", tools: defaultTools() }),
+  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
   runtime: { root: workspace("./workspace") },
 });
 ```
@@ -19,7 +19,7 @@ The main keys are:
 | `adapters` | Yes | Chat or HTTP entrypoints. Built-ins cover Slack, Discord, Telegram, and webhook. Custom adapters can be passed here too. See [Adapters](../adapters/index.md). |
 | `agent` | Yes | The Pi agent: model, prompt files, SOUL/system text, dynamic context, tools, skills, and Pi extensions. See [Agent](agent.md). |
 | `runtime` | Yes | Runtime workspace and execution backend. Runtime-backed default tools include `bash`, file tools, and search tools; `attach` and `history` are default tools too, but are documented with the agent tool surface. No default. See [Runtime](runtime.md) and [Agent tools](tools.md#default-tools). |
-| `http` | Only for HTTP routes | Shared Node HTTP listener for HTTP adapters, admin, and self-hosted secret pages. Defaults to `127.0.0.1:3000`; use `port: 0` for an OS-assigned local port. See [HTTP listener](http.md). |
+| `http` | Only for HTTP routes | Public Node HTTP listener for HTTP adapters and self-hosted secret pages. Defaults to `127.0.0.1:3000`; admin/dev routes use `admin.http`, which defaults to `127.0.0.1:4321`. See [HTTP listener](http.md). |
 | `scope` | No | Default sharing boundary for runtime files, memory, skills, secrets, and attachments. Defaults to `channel`. See [Scope](scope.md). |
 | `approval` | No | Who can list and resolve approval-gated calls, plus optional expiry. Tool confirmation decides which calls need approval. See [Approvals](approvals.md) and [Agent tools](tools.md#confirmation). |
 | `task` | No | Same-thread behavior and cancellation policy while a task is active. Defaults to `busy: "steer"` and `cancel: "initiator"`. See [Task behavior](task.md). |

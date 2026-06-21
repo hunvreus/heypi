@@ -18,15 +18,16 @@ createHeypi({
 });
 ```
 
-By default, admin binds through heypi's shared HTTP listener on loopback. On startup, heypi logs a one-time login URL that expires after 5 minutes.
+By default, admin binds to its own loopback listener at `127.0.0.1:4321`. On startup, heypi logs a one-time login URL that expires after 5 minutes.
 
-Use top-level `http` when you need a specific host or port. Use `port: 0` for local development when you want the OS to pick a free port:
+Use `admin.http` when you need a specific admin host or port. Use `port: 0` for local development when you want the OS to pick a free port:
 
 ```ts
 createHeypi({
   state: { root: "./state" },
-  http: { host: "127.0.0.1", port: 0 },
-  admin: true,
+  admin: {
+    http: { host: "127.0.0.1", port: 0 },
+  },
   // ...adapters, agent, runtime
 });
 ```
@@ -52,14 +53,16 @@ createHeypi({
   state: { root: "./state" },
   http: { host: "0.0.0.0", port: 3000 },
   admin: {
+    http: { host: "127.0.0.1", port: 4321 },
     secret: process.env.HEYPI_ADMIN_SECRET!,
-    secureCookies: true,
   },
   // ...adapters, agent, runtime
 });
 ```
 
-Do not expose admin over plain HTTP. `secureCookies: true` is required outside loopback.
+With this shape, public webhooks bind on `0.0.0.0:3000`, while admin stays reachable only from the server itself. Access it through SSH port forwarding, VPN, or a reverse proxy with its own authentication.
+
+If you intentionally bind admin to a non-loopback host, keep `auth` enabled, set a strong `secret`, put it behind HTTPS, and set `secureCookies: true`. Do not expose admin over plain HTTP.
 
 Notes:
 
@@ -88,7 +91,7 @@ Useful flags:
 | Flag | Purpose |
 | --- | --- |
 | `--state ./state` | Use a specific state root when running outside the app folder. |
-| `--url http://127.0.0.1:3000` | Override the discovered admin URL, for example through a tunnel or proxy. |
+| `--url http://127.0.0.1:4321` | Override the discovered admin URL, for example through a tunnel or proxy. |
 | `--pid <pid>` | Select one admin server when multiple descriptors exist. |
 | `--json` | Print machine-readable output. |
 

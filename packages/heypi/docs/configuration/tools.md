@@ -12,20 +12,18 @@ bash, read, write, edit, grep, find, ls, attach, history
 
 These run through the selected runtime when the runtime implements the operation. `attach` marks a generated runtime file for upload with the final chat reply.
 
-Configure default tools with `defaultTools()`:
+Configure default tools with the agent `builtinTools` option:
 
 ```ts
 import { approval, defaultTools, loadAgent } from "@hunvreus/heypi";
 
 loadAgent("./agent", {
   model: "openai/gpt-5.4-mini",
-  tools: [
-    ...defaultTools({
-      bash: { confirm: approval.command() },
-      write: false,
-      edit: false,
-    }),
-  ],
+  builtinTools: defaultTools({
+    bash: { confirm: approval.command() },
+    write: false,
+    edit: false,
+  }),
 });
 ```
 
@@ -68,6 +66,10 @@ const inspectWorkspace = defineTool({
 ```
 
 When a tool is default-exported from `agent/tools/inspect_workspace.ts` and loaded by `loadAgent("./agent")`, the filename becomes the tool name. Tools passed directly in `agent.tools` must set `name`.
+
+Passing `tools` overrides `agent/tools/` discovery for that category. Use `tools: [...loadTools("./agent/tools"), myTool]` when you want convention-loaded tools plus inline tools.
+
+Do not put `defaultTools()` in `tools`. Built-in runtime tools belong in `builtinTools`; heypi rejects legacy `tools: defaultTools()` config.
 
 Use `@hunvreus/heypi/authoring` inside discovered `agent/` modules. App entrypoints such as `index.ts` should keep importing runtime config helpers from `@hunvreus/heypi`.
 

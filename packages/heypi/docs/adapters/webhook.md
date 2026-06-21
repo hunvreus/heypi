@@ -2,7 +2,7 @@
 
 The webhook adapter exposes a JSON HTTP interface for trusted systems. Use it when another service should start or continue heypi threads without going through Slack, Discord, or Telegram.
 
-Webhook registers routes on heypi's shared Node HTTP listener when top-level [`http`](../configuration/http.md) is configured. It can also run a standalone listener from adapter config, but most apps should use the shared listener.
+Webhook registers routes on heypi's public Node HTTP listener when top-level [`http`](../configuration/http.md) is configured. It can also run a standalone listener from adapter config, but most apps should use the app listener.
 
 For a runnable advanced example, see [`examples/webhook-github-docker`](https://github.com/hunvreus/heypi/tree/main/examples/webhook-github-docker).
 
@@ -17,7 +17,7 @@ For a runnable advanced example, see [`examples/webhook-github-docker`](https://
 | `path` | No | Custom route base. Requires `unsafePathOverride: true`. |
 | `unsafePathOverride` | No | Required when overriding the default path. |
 | `host` | No | Host constraint for registered routes, or standalone bind host. |
-| `port` | No | Port for standalone mode, or route constraint for shared HTTP. Required for standalone mode. |
+| `port` | No | Port for standalone mode, or route constraint for the app HTTP listener. Required for standalone mode. |
 | `syncTimeoutMs` | No | Maximum wait time for `sync: true` requests. |
 | `replyTimeoutMs` | No | Maximum wait time when posting an async `replyUrl` callback. Defaults to `10_000`. |
 | `maxBodyBytes` | No | Maximum request body size. Defaults to `1_000_000`. |

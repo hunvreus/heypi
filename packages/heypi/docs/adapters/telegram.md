@@ -126,7 +126,7 @@ createHeypi({
 });
 ```
 
-Webhook mode registers an HTTP route through heypi's shared HTTP server:
+Webhook mode registers an HTTP route through heypi's public HTTP listener:
 
 ```ts
 createHeypi({
