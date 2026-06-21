@@ -19,36 +19,8 @@
     {
       "idx": 2,
       "version": "6",
-      "when": 1781259976262,
-      "tag": "0002_approval_bypass",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1781326505847,
-      "tag": "0003_steep_anthem",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1781692742761,
-      "tag": "0004_useful_mimic",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1781753629836,
-      "tag": "0005_wild_fenris",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1781753736237,
-      "tag": "0006_green_argent",
+      "when": 1781845635589,
+      "tag": "0002_smooth_sleepwalker",
       "breakpoints": true
     }
   ]
