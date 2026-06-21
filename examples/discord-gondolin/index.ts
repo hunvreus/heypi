@@ -1,22 +1,5 @@
-import { existsSync } from "node:fs";
-import { loadEnvFile } from "node:process";
-import { pathToFileURL } from "node:url";
-import { createHeypi, defaultTools, discord, loadAgent, local, runHeypi, workspace } from "@hunvreus/heypi";
+import { createHeypi, discord, loadAgent, workspace } from "@hunvreus/heypi";
 import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";
-
-loadEnv(".env");
-
-const isDev = process.env.HEYPI_DEV === "1";
-
-function loadEnv(path: string): void {
-	if (existsSync(path)) loadEnvFile(path);
-}
-
-function required(name: string): string {
-	const value = process.env[name];
-	if (!value) throw new Error(`Missing env var: ${name}`);
-	return value;
-}
 
 function list(name: string): string[] {
 	return (process.env[name] ?? "")
@@ -30,28 +13,25 @@ function optional(name: string): string | undefined {
 }
 
 const secretUrl = optional("HEYPI_SECRET_URL");
-const adapters = isDev
-	? [local()]
-	: [
-			discord({
-				token: required("DISCORD_BOT_TOKEN"),
-				clientId: process.env.DISCORD_CLIENT_ID,
-				allow: {
-					channels: list("HEYPI_DISCORD_CHANNELS"),
-					users: list("HEYPI_DISCORD_USERS"),
-					groups: list("HEYPI_DISCORD_GROUPS"),
-				},
-				permissions: {
-					approvers: {
-						users: list("HEYPI_DISCORD_APPROVERS"),
-						groups: list("HEYPI_DISCORD_APPROVER_GROUPS"),
-					},
-					admins: { users: list("HEYPI_DISCORD_ADMINS"), groups: list("HEYPI_DISCORD_ADMIN_GROUPS") },
-				},
-				trigger: "mention",
-				streaming: true,
-			}),
-		];
+const adapters = [
+	discord({
+		clientId: process.env.DISCORD_CLIENT_ID,
+		allow: {
+			channels: list("HEYPI_DISCORD_CHANNELS"),
+			users: list("HEYPI_DISCORD_USERS"),
+			groups: list("HEYPI_DISCORD_GROUPS"),
+		},
+		permissions: {
+			approvers: {
+				users: list("HEYPI_DISCORD_APPROVERS"),
+				groups: list("HEYPI_DISCORD_APPROVER_GROUPS"),
+			},
+			admins: { users: list("HEYPI_DISCORD_ADMINS"), groups: list("HEYPI_DISCORD_ADMIN_GROUPS") },
+		},
+		trigger: "mention",
+		streaming: true,
+	}),
+];
 
 const app = createHeypi({
 	state: { root: "./state" },
@@ -59,12 +39,10 @@ const app = createHeypi({
 		host: "127.0.0.1",
 		port: Number(process.env.HEYPI_HTTP_PORT ?? 0),
 	},
-	admin: true,
 	scope: "channel",
 	adapters,
 	agent: loadAgent("./agent", {
 		model: "openai/gpt-5-mini",
-		tools: defaultTools(),
 	}),
 	approval: {
 		expiresInMs: 10 * 60 * 1000,
@@ -85,7 +63,3 @@ const app = createHeypi({
 });
 
 export default app;
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-	await runHeypi(app);
-}

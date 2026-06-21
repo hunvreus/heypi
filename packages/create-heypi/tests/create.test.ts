@@ -30,28 +30,26 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, "package.json"), /"dev": "heypi dev"/);
 		assert.match(read(app, "package.json"), /"start": "heypi start"/);
 		assert.match(read(app, "index.ts"), /slack\(\{\s*mode: "socket",\s*\}\)/);
-		assert.match(read(app, "index.ts"), /const isDev = process\.env\.HEYPI_DEV === "1"/);
-		assert.match(read(app, "index.ts"), /const adapters = isDev \? \[local\(\)\] : \[/);
-		assert.match(read(app, "index.ts"), /local\(\)/);
-		assert.match(read(app, "index.ts"), /export default app/);
-		assert.match(read(app, "index.ts"), /pathToFileURL/);
+		assert.doesNotMatch(read(app, "index.ts"), /HEYPI_DEV/);
+		assert.doesNotMatch(read(app, "index.ts"), /local\(\)/);
+		assert.doesNotMatch(read(app, "index.ts"), /admin:/);
+		assert.match(read(app, "index.ts"), /export default createHeypi/);
+		assert.doesNotMatch(read(app, "index.ts"), /pathToFileURL/);
+		assert.doesNotMatch(read(app, "index.ts"), /runHeypi/);
 		assert.match(read(app, "index.ts"), /mode: "socket"/);
-		assert.match(
-			read(app, "index.ts"),
-			/http: \{ port: Number\(process\.env\.HEYPI_HTTP_PORT \?\? \(process\.env\.HEYPI_DEV \? 3000 : 0\)\) \}/,
-		);
+		assert.doesNotMatch(read(app, "index.ts"), /HEYPI_HTTP_PORT/);
 		assert.match(read(app, "index.ts"), /name: "just-bash"/);
 		assert.match(read(app, "index.ts"), /openai\/gpt-5\.4-mini/);
 		assert.match(read(app, ".env"), /OPENAI_API_KEY=/);
 		assert.match(read(app, ".env.example"), /SLACK_BOT_TOKEN=/);
 		assert.match(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
-		assert.match(read(app, ".env.example"), /HEYPI_HTTP_PORT=0/);
+		assert.doesNotMatch(read(app, ".env.example"), /HEYPI_HTTP_PORT/);
 		assert.doesNotMatch(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
 		assert.match(read(app, "agent/AGENTS.md"), /concise team assistant/);
 		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
 		assert.match(read(app, "agent/tools/README.md"), /# Tools/);
-		assert.match(read(app, "agent/evals/README.md"), /# Evals/);
+		assert.match(read(app, "evals/README.md"), /# Evals/);
 		assert.match(read(app, "README.md"), /Fill in the model provider value/);
 		assert.match(read(app, "README.md"), /Use it to send a test message/);
 		assert.match(read(app, "README.md"), /run start/);
@@ -93,10 +91,10 @@ test("creates an app without admin when requested", async () => {
 		const out = run([app, "--yes", "--no-admin", "--no-install"]);
 		assert.match(out, /POST to \/dev\/messages/);
 		assert.doesNotMatch(out, /printed admin URL/);
-		assert.doesNotMatch(read(app, "index.ts"), /admin: true/);
+		assert.match(read(app, "index.ts"), /admin: false/);
 		assert.doesNotMatch(read(app, "index.ts"), /HEYPI_HTTP_PORT/);
-		assert.match(read(app, "index.ts"), /const adapters = isDev \? \[local\(\)\] : \[/);
-		assert.match(read(app, "README.md"), /loopback `\/dev\/messages` API/);
+		assert.doesNotMatch(read(app, "index.ts"), /local\(\)/);
+		assert.match(read(app, "README.md"), /loopback-only `\/dev\/messages` API/);
 		assert.doesNotMatch(read(app, "README.md"), /prints a local admin URL/);
 		assert.doesNotMatch(read(app, ".env.example"), /HEYPI_HTTP_PORT/);
 	} finally {
@@ -130,8 +128,8 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, "agent/tools/now.ts"), /@hunvreus\/heypi\/authoring/);
 		assert.match(read(app, "agent/tools/now.ts"), /from "zod"/);
 		assert.match(read(app, "agent/tools/now.ts"), /z\.object/);
-		assert.match(read(app, "agent/evals/smoke.ts"), /defineEval/);
-		assert.match(read(app, "agent/evals/smoke.ts"), /@hunvreus\/heypi\/authoring/);
+		assert.match(read(app, "evals/smoke.ts"), /defineEval/);
+		assert.match(read(app, "evals/smoke.ts"), /@hunvreus\/heypi\/authoring/);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		runTsc(app);
 	} finally {

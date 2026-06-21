@@ -29,7 +29,7 @@ type Flags = {
 
 type Options = {
 	adapter: Adapter;
-	admin: boolean;
+	admin?: boolean;
 	dir: string;
 	install: boolean;
 	model: string;
@@ -63,7 +63,7 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 	if (flags.yes) {
 		return {
 			adapter: flags.adapter ?? "slack",
-			admin: flags.admin ?? true,
+			admin: flags.admin,
 			dir: defaultDir,
 			install: flags.install ?? true,
 			model: flags.model ?? defaultModel,
@@ -98,9 +98,9 @@ async function resolveOptions(flags: Flags): Promise<Options> {
 	const admin =
 		flags.admin ??
 		(await promptConfirm(
-			"Enable local admin UI",
-			true,
-			"Adds a local browser UI for chats, jobs, approvals, evals, and diagnostics.",
+			"Enable production admin config",
+			false,
+			"`heypi dev` enables the local admin panel automatically. This writes admin config for `heypi start`.",
 		));
 	const sampleChoices = flags.samples
 		? ["skills", "tools"]
@@ -152,7 +152,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await mkdir(join(root, "agent", "skills"), { recursive: true });
 	await mkdir(join(root, "agent", "tools"), { recursive: true });
 	await mkdir(join(root, "agent", "jobs"), { recursive: true });
-	await mkdir(join(root, "agent", "evals"), { recursive: true });
+	await mkdir(join(root, "evals"), { recursive: true });
 	await write(root, "package.json", packageJson(options));
 	await write(root, "tsconfig.json", tsconfigJson());
 	await write(root, "index.ts", indexTs(options));
@@ -165,7 +165,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await write(root, "agent/skills/README.md", skillsReadme());
 	await write(root, "agent/tools/README.md", toolsReadme());
 	await write(root, "agent/jobs/README.md", jobsReadme());
-	await write(root, "agent/evals/README.md", evalsReadme());
+	await write(root, "evals/README.md", evalsReadme());
 	if (options.adapter === "slack") {
 		await write(root, "setup/slack.manifest.json", slackManifest(options.slackMode ?? "socket"));
 	}
@@ -173,7 +173,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 		await mkdir(join(root, "agent", "skills", "example"), { recursive: true });
 		await write(root, "agent/skills/example/SKILL.md", sampleSkill());
 		await write(root, "agent/tools/now.ts", sampleTool());
-		await write(root, "agent/evals/smoke.ts", sampleEval());
+		await write(root, "evals/smoke.ts", sampleEval());
 	}
 }
 
@@ -236,42 +236,24 @@ function tsconfigJson(): string {
 }
 
 function indexTs(options: Options): string {
-	const imports = [
-		"createHeypi",
-		"defaultTools",
-		"loadAgent",
-		"local",
-		"runHeypi",
-		adapterImport(options.adapter),
-		"workspace",
-	];
+	const imports = ["createHeypi", "loadAgent", adapterImport(options.adapter), "workspace"];
 	const runtimeImport =
 		options.runtime === "docker"
 			? 'import { dockerRuntime } from "@hunvreus/heypi-runtime-docker";\n'
 			: options.runtime === "gondolin"
 				? 'import { gondolinRuntime } from "@hunvreus/heypi-runtime-gondolin";\n'
 				: "";
-	return `import { pathToFileURL } from "node:url";
-import { ${imports.join(", ")} } from "@hunvreus/heypi";
+	return `import { ${imports.join(", ")} } from "@hunvreus/heypi";
 ${runtimeImport}
-const isDev = process.env.HEYPI_DEV === "1";
-const adapters = isDev ? [local()] : [
-${adapterConfig(options)}
-];
-
-const app = createHeypi({
+export default createHeypi({
 	state: { root: "./state" },
 ${httpConfig(options)}
-	adapters,
-	agent: loadAgent("./agent", { model: "${options.model}", tools: defaultTools() }),
-${options.admin ? "\tadmin: true,\n" : ""}\truntime: ${runtimeConfig(options.runtime)},
+	adapters: [
+${adapterConfig(options)}
+	],
+	agent: loadAgent("./agent", { model: "${options.model}" }),
+${adminConfig(options.admin)}\truntime: ${runtimeConfig(options.runtime)},
 });
-
-export default app;
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-	await runHeypi(app);
-}
 `;
 }
 
@@ -286,9 +268,6 @@ function httpConfig(options: Options): string {
 	}
 	if (options.adapter === "webhook") {
 		return "\thttp: { port: Number(process.env.PORT ?? 3000) },\n";
-	}
-	if (options.admin) {
-		return "\thttp: { port: Number(process.env.HEYPI_HTTP_PORT ?? (process.env.HEYPI_DEV ? 3000 : 0)) },\n";
 	}
 	return "";
 }
@@ -328,7 +307,6 @@ function envExample(options: Options): string {
 	rows.push(...adapterEnvVars(options).map((name) => `${name}=`));
 	if (options.adapter === "slack" && options.slackMode === "http") rows.push("", "# HTTP listener", "PORT=3000");
 	else if (options.adapter === "webhook") rows.push("", "# HTTP listener", "PORT=3000");
-	else if (options.admin) rows.push("", "# Local HTTP listener", "HEYPI_HTTP_PORT=0");
 	return `${rows.join("\n")}\n`;
 }
 
@@ -393,7 +371,7 @@ ${runtimeNotes(options.runtime)}
 - \`agent/skills/\`: reusable skill instructions loaded by \`loadAgent("./agent")\`.
 - \`agent/tools/\`: TypeScript tools discovered by \`loadAgent("./agent")\`.
 - \`agent/jobs/\`: scheduled jobs discovered by \`loadAgent("./agent")\`.
-- \`agent/evals/\`: agent behavior eval definitions discovered by \`loadAgent("./agent")\` and \`heypi eval\`.
+- \`evals/\`: behavior eval definitions discovered by \`heypi eval\`.
 - \`index.ts\`: operational wiring for adapters, state, runtime, and admin.
 `;
 }
@@ -415,10 +393,16 @@ function adapterNotes(options: Options): string {
 }
 
 function devReadme(options: Options): string {
-	if (options.admin) {
-		return "`heypi dev` prints a local admin URL. Use it to send a test message, approve or deny tool calls, inspect chats, and check eval definitions before wiring real team traffic.";
+	if (options.admin !== false) {
+		return "The dev script starts the configured adapters, enables loopback-only local test routes, and prints an admin URL. Use it to send a test message, approve or deny tool calls, inspect chats, and check eval definitions while iterating locally.";
 	}
-	return "`heypi dev` starts the loopback `/dev/messages` API for local test messages before wiring real team traffic.";
+	return "The dev script starts the configured adapters and enables the loopback-only `/dev/messages` API for local test messages while iterating locally.";
+}
+
+function adminConfig(input: boolean | undefined): string {
+	if (input === true) return "\tadmin: true,\n";
+	if (input === false) return "\tadmin: false,\n";
+	return "";
 }
 
 function runtimeNotes(runtime: Runtime): string {
@@ -464,7 +448,7 @@ function evalsReadme(): string {
 	return `# Evals
 
 Add TypeScript eval modules here. Export one \`defineEval(...)\` call as the default export.
-Import authoring helpers from \`@hunvreus/heypi/authoring\` in files under \`agent/\`.
+Import authoring helpers from \`@hunvreus/heypi/authoring\` in eval files.
 Use \`heypi eval list\` and \`heypi eval check\` to inspect and validate definitions.
 `;
 }
@@ -563,7 +547,7 @@ export default defineEval({
 function printNextSteps(root: string, options: Options): void {
 	const run = options.pm === "npm" ? "npm run dev" : `${options.pm} run dev`;
 	const start = options.pm === "npm" ? "npm run start" : `${options.pm} run start`;
-	const devSurface = options.admin ? "Open the printed admin URL or POST to /dev/messages." : "POST to /dev/messages.";
+	const devSurface = options.admin !== false ? "Open the printed admin URL or POST to /dev/messages." : "POST to /dev/messages.";
 	const install = options.pm === "yarn" ? "yarn" : `${options.pm} install`;
 	const modelVars = modelEnvVars(options.model);
 	const adapterVars = adapterEnvVars(options);

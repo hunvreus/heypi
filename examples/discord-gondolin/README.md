@@ -22,7 +22,7 @@ This is the full runtime example. It is closer to pi-chat than the Slack and Tel
 - `memory: true` enables durable channel memory.
 - `skills.enabled` enables scoped channel skills. With `HEYPI_DISCORD_APPROVERS` set, skill writes default to approver-only.
 - `secrets` uses the hosted encrypted handoff page by default. Set `HEYPI_SECRET_URL` with a fixed `HEYPI_HTTP_PORT` to self-host it locally.
-- Admin is enabled on the shared local HTTP listener. `HEYPI_HTTP_PORT=0` asks the OS for a free port, and heypi logs the admin URL at startup. Use `pnpm exec heypi admin link` from this example folder if you need a fresh login link.
+- `heypi dev` enables the local admin panel automatically. `HEYPI_HTTP_PORT=0` asks the OS for a free adapter port.
 
 ## Run
 
@@ -32,7 +32,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-Dev mode starts the loopback local adapter only. Use the printed admin URL or `POST /dev/messages` to test the agent without Discord tokens. Use `pnpm start` after filling `.env` and installing the Discord bot to run the real Discord adapter.
+`pnpm dev` starts the configured Discord adapter and the local admin/dev routes. Use the printed admin URL or `POST /dev/messages` for local test messages, or interact through Discord after filling `.env` and installing the bot. `pnpm start` runs the same app without dev-only admin/local defaults.
 
 Required env vars:
 

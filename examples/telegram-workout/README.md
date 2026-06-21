@@ -14,7 +14,7 @@ This is the simpler boilerplate example. It shows the normal heypi shape without
 
 - Telegram long polling adapter.
 - `SOUL.md` / `AGENTS.md` prompt files. `SYSTEM.md` is only for advanced runtime-prompt overrides.
-- Default runtime tools through `defaultTools()`.
+- Default runtime tools through `loadAgent()`'s `builtinTools` default.
 - Three small custom tools from `agent/tools/workout.ts` for local Markdown memory: `get_profile`, `save_profile`, and `log_workout`.
 - A heartbeat job for daily check-ins.
 - Optional chat/user allowlists.
@@ -29,7 +29,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-Dev mode starts the loopback local adapter only and disables the Telegram heartbeat job because the Telegram adapter is not running. Use `POST /dev/messages` to test locally without Telegram tokens. Use `pnpm start` after filling `.env` and creating the Telegram bot to run the real Telegram adapter and heartbeat.
+`pnpm dev` starts the configured Telegram adapter and the local admin/dev routes. Use `POST /dev/messages` for local test messages, or interact through Telegram after filling `.env` and creating the bot. `pnpm start` runs the same app without dev-only admin/local defaults.
 
 Required env vars:
 

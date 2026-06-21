@@ -1,7 +1,7 @@
 import { defineTool } from "@hunvreus/heypi/authoring";
 import { Type } from "@sinclair/typebox";
 
-const repo = parseRepo(process.env.HEYPI_GITHUB_REPO ?? (process.env.HEYPI_DEV === "1" ? "owner/repo" : required("HEYPI_GITHUB_REPO")));
+const repo = parseRepo(process.env.HEYPI_GITHUB_REPO ?? "owner/repo");
 
 const githubIssueGet = defineTool<{ issue: number }>({
 	name: "github_issue_get",
@@ -114,12 +114,6 @@ const githubIssueCloseDuplicate = defineTool<{ issue: number; duplicateOf: numbe
 });
 
 export default [githubIssueGet, githubIssueSearch, githubIssueComment, githubIssueCloseDuplicate];
-
-function required(name: string): string {
-	const value = process.env[name];
-	if (!value) throw new Error(`Missing env var: ${name}`);
-	return value;
-}
 
 function optional(name: string): string | undefined {
 	const value = process.env[name]?.trim();

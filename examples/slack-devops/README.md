@@ -14,7 +14,7 @@ The agent loads:
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
 - Channel-scoped memory, so the agent can keep small durable notes for each Slack channel.
 - Custom host tools from `agent/tools/host.ts` for SSH key onboarding, host inventory, cached host facts, and remote SSH execution.
-- Default runtime tools through `defaultTools()`. Risky local workspace commands use heypi's default approval policy; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
+- Default runtime tools through `loadAgent()`'s `builtinTools` default. Risky local workspace commands use heypi's default approval policy; remote SSH commands run through `host_exec` with command policy, approval checks, and audit rows.
 
 Runbooks are plain Markdown files under `agent/runbooks/`, exposed through `agent/tools/runbook.ts`. The skill tells the agent when to use `runbook_search` and how to apply the results.
 
@@ -26,16 +26,16 @@ cp .env.example .env
 pnpm dev
 ```
 
-Dev mode starts the loopback local adapter only. Use the printed admin URL or `POST /dev/messages` to test the agent without Slack tokens. Use `pnpm start` after filling `.env` and installing the Slack app to run the real Slack adapter.
+`pnpm dev` starts the real Slack Socket Mode adapter and the local admin/dev routes. Fill `.env`, or put dev overrides in `.env.local`, install the Slack app, invite it to the target channel, then mention the app in Slack. You can also use the printed admin URL or `POST /dev/messages` for local test messages.
 
-This example enables the local admin panel by default. `HEYPI_HTTP_PORT=0` asks the OS for a free local port, and heypi logs the bound port and one-time admin login link at startup. If the link expires while the app is still running, run `pnpm exec heypi admin link` from this example folder.
+`heypi dev` enables the local admin panel automatically. `HEYPI_HTTP_PORT=0` asks the OS for a free local adapter port.
 
 When `HEYPI_SLACK_JOB_CHANNEL` is set, the example configures two jobs so the admin Jobs tab has real app-level state:
 
 - `daily-health-check`: active cron job, scheduled for 09:00 UTC and delivered to `HEYPI_SLACK_JOB_CHANNEL`.
 - `idle-incident-follow-up`: paused heartbeat job for quiet incident threads in `HEYPI_SLACK_JOB_CHANNEL`.
 
-If `HEYPI_SLACK_JOB_CHANNEL` is unset, production mode logs a warning, starts normally, and skips those jobs. Dev mode also skips Slack-targeted jobs because the Slack adapter is not running. Jobs run inside the heypi Node process; no external cron service is required.
+If `HEYPI_SLACK_JOB_CHANNEL` is unset, the example logs a warning, starts normally, and skips those jobs. Jobs run inside the heypi Node process; no external cron service is required.
 
 Required env vars:
 
@@ -157,4 +157,4 @@ With these defaults, top-level channel messages require a mention and thread rep
 
 In Slack app settings, set Event Subscriptions and Interactivity URLs to `https://<host>/slack/slack/events`. If you set a custom adapter `name`, use `/slack/<name>/events`. Configure non-default host/port with top-level `http`; HTTP mode should use a stable externally reachable URL, not `port: 0`.
 
-The admin panel uses the same HTTP listener as Slack HTTP mode and remains available at `/admin` when enabled.
+The admin panel uses its own listener and remains available at `/admin` when enabled. In local development it binds to loopback by default.

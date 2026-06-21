@@ -26,7 +26,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-Dev mode starts the loopback local adapter only. Use `POST /dev/messages` to test the agent without webhook secrets. Use `pnpm start` after filling `.env` to run the real webhook adapter.
+`pnpm dev` starts the configured webhook adapter and the local admin/dev routes. Use `POST /dev/messages` for local test messages, or send real webhooks after filling `.env`. `pnpm start` runs the same app without dev-only admin/local defaults.
 
 Required env vars:
 
