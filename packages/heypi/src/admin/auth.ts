@@ -23,6 +23,7 @@ export type AdminServerDescriptor = {
 	project: string;
 	startedAt: string;
 	adminPath: string;
+	auth?: boolean;
 };
 
 type AdminLoginPayload = {
@@ -200,7 +201,8 @@ function readAdminServerDescriptor(path: string): AdminServerDescriptor | undefi
 			typeof parsed.agent !== "string" ||
 			typeof parsed.project !== "string" ||
 			typeof parsed.startedAt !== "string" ||
-			typeof parsed.adminPath !== "string"
+			typeof parsed.adminPath !== "string" ||
+			("auth" in parsed && typeof parsed.auth !== "boolean")
 		) {
 			return undefined;
 		}

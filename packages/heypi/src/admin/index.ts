@@ -26,6 +26,7 @@ import {
 	loginPage,
 	memoryView,
 	page,
+	threadConversationPanel,
 	threadsView,
 } from "./view.js";
 
@@ -66,6 +67,7 @@ type AdminState = {
 	host: string;
 	port: number | string;
 	instanceId: string;
+	csrf: string;
 	secretHash?: string;
 	signingSecret?: string;
 	loginTtlMs: number;
@@ -108,6 +110,7 @@ const ADMIN_ROUTES = [
 	["GET", "/admin/jobs"],
 	["GET", "/admin/memory"],
 	["GET", "/admin/summary"],
+	["GET", "/admin/threads/:id/_panel"],
 	["GET", "/admin/threads/:id"],
 	["GET", "/admin/events"],
 	["GET", "/admin/assets/admin.css"],
@@ -151,6 +154,7 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, s
 				host,
 				port,
 				instanceId,
+				csrf: randomToken(),
 				secretHash,
 				signingSecret,
 				loginTtlMs,
@@ -192,7 +196,6 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, s
 				state.host = address.host;
 				state.port = address.port;
 			}
-			if (!state.auth) return;
 			removeStaleAdminServerDescriptors(state.stateRoot);
 			writeAdminServerDescriptor(state.stateRoot, {
 				version: 1,
@@ -204,7 +207,9 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, s
 				project: state.project,
 				startedAt: new Date(state.start.app?.startedAt ?? Date.now()).toISOString(),
 				adminPath: ADMIN_PATH,
+				auth: state.auth,
 			});
+			if (!state.auth) return;
 			if (!state.secretHash && loopbackHost(state.host)) {
 				const link = mintLoginLink(state);
 				input.logger.warn("admin.login_link", {
@@ -215,7 +220,7 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, s
 		},
 		async stop(): Promise<void> {
 			start?.logger.info("admin.stop", { path: ADMIN_PATH });
-			if (state?.auth) removeAdminServerDescriptor(state.stateRoot);
+			if (state) removeAdminServerDescriptor(state.stateRoot);
 			usedLoginJtis.clear();
 			sessions.clear();
 			failures.clear();
@@ -278,7 +283,7 @@ async function handleWithoutAuth(
 	if (method === "POST" && (url.pathname === "/admin/login" || url.pathname === "/admin/logout")) {
 		return redirect(res, "/admin");
 	}
-	return await handleAdminRoute(req, res, state, { csrf: "" }, nonce, url, method);
+	return await handleAdminRoute(req, res, state, { csrf: state.csrf }, nonce, url, method);
 }
 
 async function handleAdminRoute(
@@ -423,6 +428,12 @@ async function routePage(
 	const path = url.pathname;
 	if (CONFIG_REDIRECTS.has(path)) return redirect(res, "/admin/configuration");
 	if (CHAT_REDIRECTS.has(path)) return redirect(res, "/admin");
+	const threadPanelId = threadPanelPathId(path);
+	if (threadPanelId) {
+		const thread = await state.service.thread(threadPanelId, { event: stringParam(url.searchParams.get("event")) });
+		if (!thread) return adminError(res, 404, "Thread not found", "This admin thread does not exist.", nonce);
+		return html(res, 200, threadConversationPanel(thread, session.csrf));
+	}
 	const threadId = threadPathId(path);
 	if (threadId) {
 		const [overview, threads, thread] = await Promise.all([
@@ -431,10 +442,11 @@ async function routePage(
 			state.service.thread(threadId, { event: stringParam(url.searchParams.get("event")) }),
 		]);
 		if (!thread) return adminError(res, 404, "Thread not found", "This admin thread does not exist.", nonce);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Thread",
 			active: "chats",
 			overview,
+			sidebarThreads: threads,
 			livePage: true,
 			liveThreadId: thread.thread.id,
 			body: threadsView(threads, {
@@ -447,17 +459,18 @@ async function routePage(
 	}
 	if (path === "/admin") {
 		const [overview, threads] = await Promise.all([state.service.overview(), state.service.threads(pageInput(url))]);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Chats",
 			active: "chats",
 			overview,
+			sidebarThreads: threads,
 			livePage: true,
 			body: threadsView(threads, { checkedAt: overview.live.checkedAt, csrf: session.csrf, live: overview.live }),
 		});
 	}
 	if (path === "/admin/configuration") {
 		const overview = await state.service.overview();
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Configuration",
 			active: "configuration",
 			overview,
@@ -470,7 +483,7 @@ async function routePage(
 			state.service.overview(),
 			state.service.approvals(pageInput(url)),
 		]);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Approvals",
 			active: "approvals",
 			overview,
@@ -480,7 +493,7 @@ async function routePage(
 	}
 	if (path === "/admin/jobs") {
 		const [overview, jobs] = await Promise.all([state.service.overview(), state.service.jobs(pageInput(url))]);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Jobs",
 			active: "jobs",
 			overview,
@@ -490,7 +503,7 @@ async function routePage(
 	}
 	if (path === "/admin/evals") {
 		const [overview, evals] = await Promise.all([state.service.overview(), state.service.evals(pageInput(url))]);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Evals",
 			active: "evals",
 			overview,
@@ -500,7 +513,7 @@ async function routePage(
 	}
 	if (path === "/admin/memory") {
 		const [overview, memory] = await Promise.all([state.service.overview(), state.service.memory(pageInput(url))]);
-		return renderAdminPage(res, state, session, nonce, {
+		return await renderAdminPage(res, state, session, nonce, {
 			title: "Memory",
 			active: "memory",
 			overview,
@@ -510,7 +523,7 @@ async function routePage(
 	return adminError(res, 404, "Page not found", "This admin page does not exist or has moved.", nonce);
 }
 
-function renderAdminPage(
+async function renderAdminPage(
 	res: ServerResponse,
 	state: AdminState,
 	session: { csrf: string },
@@ -519,11 +532,13 @@ function renderAdminPage(
 		title: string;
 		active: string;
 		overview: AdminOverview;
+		sidebarThreads?: Awaited<ReturnType<AdminService["threads"]>>;
 		body: string;
 		livePage?: boolean;
 		liveThreadId?: string;
 	},
-): void {
+): Promise<void> {
+	const sidebarThreads = input.sidebarThreads ?? (await state.service.threads({ limit: 50 }));
 	html(
 		res,
 		200,
@@ -534,6 +549,7 @@ function renderAdminPage(
 			auth: state.auth,
 			live: input.overview.live,
 			memoryFiles: input.overview.memory.total,
+			threads: sidebarThreads,
 			nonce,
 			livePage: input.livePage,
 			liveThreadId: input.liveThreadId,
@@ -629,7 +645,21 @@ function threadPathId(path: string): string | undefined {
 	const prefix = "/admin/threads/";
 	if (!path.startsWith(prefix)) return undefined;
 	const id = path.slice(prefix.length).trim();
+	if (id.includes("/")) return undefined;
 	if (!id) return undefined;
+	try {
+		return decodeURIComponent(id);
+	} catch {
+		return undefined;
+	}
+}
+
+function threadPanelPathId(path: string): string | undefined {
+	const prefix = "/admin/threads/";
+	const suffix = "/_panel";
+	if (!path.startsWith(prefix) || !path.endsWith(suffix)) return undefined;
+	const id = path.slice(prefix.length, -suffix.length).trim();
+	if (!id || id.includes("/")) return undefined;
 	try {
 		return decodeURIComponent(id);
 	} catch {
