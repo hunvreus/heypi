@@ -14,32 +14,38 @@
 		".": {
 			"development": "./src/index.ts",
 			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
 		},
 		"./adapter": {
 			"development": "./src/adapter/index.ts",
 			"types": "./dist/adapter/index.d.ts",
-			"import": "./dist/adapter/index.js"
+			"import": "./dist/adapter/index.js",
+			"default": "./dist/adapter/index.js"
 		},
 		"./attachments": {
 			"development": "./src/attachments/index.ts",
 			"types": "./dist/attachments/index.d.ts",
-			"import": "./dist/attachments/index.js"
+			"import": "./dist/attachments/index.js",
+			"default": "./dist/attachments/index.js"
 		},
 		"./authoring": {
 			"development": "./src/authoring.ts",
 			"types": "./dist/authoring.d.ts",
-			"import": "./dist/authoring.js"
+			"import": "./dist/authoring.js",
+			"default": "./dist/authoring.js"
 		},
 		"./runtime": {
 			"development": "./src/runtime/public.ts",
 			"types": "./dist/runtime/public.d.ts",
-			"import": "./dist/runtime/public.js"
+			"import": "./dist/runtime/public.js",
+			"default": "./dist/runtime/public.js"
 		},
 		"./store": {
 			"development": "./src/store/index.ts",
 			"types": "./dist/store/index.d.ts",
-			"import": "./dist/store/index.js"
+			"import": "./dist/store/index.js",
+			"default": "./dist/store/index.js"
 		}
 	},
 	"files": [
