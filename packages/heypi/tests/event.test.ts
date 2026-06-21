@@ -130,6 +130,8 @@ test("handler emits message and turn timeline events", async () => {
 		const agent: Agent = {
 			ask: async (req) => {
 				await req.lifecycleEvents?.({ type: "model.started", data: { mode: "prompt" } });
+				await req.lifecycleEvents?.({ type: "tool.started", data: { tool: "lookup" } });
+				await req.lifecycleEvents?.({ type: "tool.completed", data: { tool: "lookup" } });
 				await req.lifecycleEvents?.({ type: "model.completed", data: { chars: 4 } });
 				return { text: "pong" };
 			},
@@ -164,6 +166,8 @@ test("handler emits message and turn timeline events", async () => {
 			"message.received",
 			"turn.started",
 			"model.started",
+			"tool.started",
+			"tool.completed",
 			"model.completed",
 			"message.sent",
 			"turn.completed",

@@ -1,8 +1,8 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Confirm, ToolExecute, ToolExecutionContext } from "./core/types.js";
 
-export const TOOL_EXECUTE = Symbol("heypi.tool.execute");
-export const TOOL_PI_EXECUTE = Symbol("heypi.tool.pi.execute");
+export const TOOL_EXECUTE = Symbol.for("heypi.tool.execute");
+export const TOOL_PI_EXECUTE = Symbol.for("heypi.tool.pi.execute");
 
 export type ToolPiExecute = (
 	args: Record<string, unknown>,

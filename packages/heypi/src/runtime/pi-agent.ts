@@ -141,6 +141,7 @@ export class PiAgent implements Agent {
 		let out = "";
 		const unsub = session.subscribe((event) => {
 			if (event.type === "tool_execution_start") {
+				void emitLifecycle(req, { type: "tool.started", data: { tool: event.toolName } });
 				log.debug("tool.start", {
 					agent: this.input.agent.id,
 					trace: req.trace,
@@ -153,6 +154,10 @@ export class PiAgent implements Agent {
 				});
 			}
 			if (event.type === "tool_execution_end") {
+				void emitLifecycle(req, {
+					type: event.isError ? "tool.failed" : "tool.completed",
+					data: { tool: event.toolName, error: event.isError ? String(event.result) : undefined },
+				});
 				log.debug("tool.end", {
 					agent: this.input.agent.id,
 					trace: req.trace,
@@ -359,7 +364,7 @@ export class PiAgent implements Agent {
 				? skillsContext(req.scope.skills, await this.input.skills.list(req.scope.skills))
 				: undefined;
 		if (skillsBlock) contextBlocks.push(skillsBlock);
-		const agentTools = splitTools(agent.tools);
+		const agentTools = splitTools(agent.tools, agent.builtinTools);
 		const runtime = this.runtimeFor(req.scope?.workspace.path, req.runtimeEvents);
 		const toolContext = {
 			...context,

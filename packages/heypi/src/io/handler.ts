@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApprovalPolicy, ModelConfig, PermissionsConfig, Scope, TaskConfig } from "../config.js";
-import type { EvalConfig } from "../eval.js";
 import { ActiveRuns, cancelReply, isAbortError } from "../core/active.js";
 import type { CallRunner } from "../core/calls.js";
 import { helpReply, renderApprovalBypasses, renderApprovals, renderThreadStatus } from "../core/format.js";
@@ -13,6 +12,7 @@ import type { ScopedKey } from "../core/scope.js";
 import { isSecretReply, type Secrets } from "../core/secrets.js";
 import type { NormalizedSkillsConfig } from "../core/skills.js";
 import type { ApprovalPrompt, ApprovalResolution, ReplyAttachment } from "../core/types.js";
+import type { EvalConfig } from "../eval.js";
 import type { Agent, AgentLifecycleEvent } from "../runtime/agent.js";
 import type { Runtime, RuntimeEventHandler } from "../runtime/types.js";
 import { transaction } from "../store/transaction.js";
@@ -587,7 +587,7 @@ export function createHandler(input: {
 								signal: currentRun.signal,
 								stream,
 								runtimeEvents,
-								lifecycleEvents: modelLifecycleEvents(input.store, {
+								lifecycleEvents: agentLifecycleEvents(input.store, {
 									trace,
 									agent: agentId,
 									threadId: thread.id,
@@ -623,7 +623,7 @@ export function createHandler(input: {
 					scope: turnScope,
 					stream,
 					runtimeEvents,
-					lifecycleEvents: modelLifecycleEvents(input.store, {
+					lifecycleEvents: agentLifecycleEvents(input.store, {
 						trace,
 						agent: agentId,
 						threadId: targetThreadId ?? thread.id,
@@ -748,7 +748,7 @@ function runtimeProgressEvents(progress: RuntimeProgress, text: string): Runtime
 	};
 }
 
-function modelLifecycleEvents(
+function agentLifecycleEvents(
 	store: Store,
 	input: { agent: string; trace: string; threadId: string; turnId: string; logger: Logger },
 ): (event: AgentLifecycleEvent) => Promise<void> {
@@ -763,7 +763,7 @@ function modelLifecycleEvents(
 				data: event.data,
 			});
 		} catch (error) {
-			input.logger.warn("handler.model_event_failed", {
+			input.logger.warn("handler.agent_event_failed", {
 				agent: input.agent,
 				trace: input.trace,
 				type: event.type,

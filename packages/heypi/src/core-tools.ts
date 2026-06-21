@@ -21,8 +21,6 @@ export type DefaultToolDefinition = {
 	readonly confirm?: Confirm;
 };
 
-export type AgentToolDefinition = ToolDefinition | DefaultToolDefinition;
-
 const DEFAULT_CORE: Required<DefaultToolsConfig> = {
 	history: true,
 	bash: { confirm: approval.command() },
@@ -55,19 +53,27 @@ function isDefaultTool(input: unknown): input is DefaultToolDefinition {
 	return Boolean(input && typeof input === "object" && (input as { [DEFAULT_TOOL]?: unknown })[DEFAULT_TOOL]);
 }
 
-export function splitTools(input: AgentToolDefinition[] | undefined): {
+export function assertAuthoredTools(input: readonly unknown[] | undefined): void {
+	for (const tool of input ?? []) {
+		if (isDefaultTool(tool))
+			throw new Error("defaultTools() entries must be configured with builtinTools, not tools");
+	}
+}
+
+export function splitTools(
+	input: ToolDefinition[] | undefined,
+	builtinInput?: DefaultToolDefinition[],
+): {
 	core: DefaultToolDefinition[];
 	custom: ToolDefinition[];
 } {
-	const tools = input ?? defaultTools();
-	const core: DefaultToolDefinition[] = [];
+	const tools = input ?? [];
+	const core: DefaultToolDefinition[] = [...(builtinInput ?? defaultTools())];
 	const custom: ToolDefinition[] = [];
+	assertAuthoredTools(tools);
 	for (const tool of tools) {
-		if (isDefaultTool(tool)) core.push(tool);
-		else {
-			validateToolName(tool);
-			custom.push(tool);
-		}
+		validateToolName(tool);
+		custom.push(tool);
 	}
 	return { core, custom };
 }

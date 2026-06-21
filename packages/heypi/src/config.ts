@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type {
 	BashOptions,
 	CommandName,
@@ -14,12 +15,12 @@ import type { ActorPolicy } from "./core/approvers.js";
 import type { Logger } from "./core/log.js";
 import type { AppMessagesConfig } from "./core/messages.js";
 import type { SchedulerConfig } from "./core/scheduler.js";
-import type { AgentToolDefinition } from "./core-tools.js";
+import { assertAuthoredTools, type DefaultToolDefinition, defaultTools } from "./core-tools.js";
 import type { EvalConfig } from "./eval.js";
 import type { AttachmentProcessingConfig, AttachmentStore } from "./io/attachments.js";
 import type { Adapter } from "./io/handler.js";
 import type { JobConfig } from "./job.js";
-import { loadEvals, loadJobs, loadTools } from "./load.js";
+import { loadJobs, loadTools } from "./load.js";
 import type { RuntimeName, RuntimeProvider } from "./runtime/types.js";
 import type { StateConfig } from "./state.js";
 import type { Store } from "./store/types.js";
@@ -68,7 +69,8 @@ export type AgentConfig = {
 	context?: AgentContextProvider[];
 	skills?: string[];
 	extensions?: string[];
-	tools?: AgentToolDefinition[];
+	builtinTools?: DefaultToolDefinition[];
+	tools?: ToolDefinition[];
 	jobs?: JobConfig[];
 	evals?: EvalConfig[];
 };
@@ -218,31 +220,48 @@ export const DEFAULT_SOUL = [
 
 export const DEFAULT_AGENT_ID = "default";
 
-/** Loads an agent from the heypi folder convention, including prompts, tools, jobs, evals, skills, and extensions. */
+export type LoadPromptOptions = {
+	optional?: boolean;
+};
+
+/** Loads a UTF-8 prompt file. Missing files throw unless `optional` is true. */
+export function loadPrompt(path: string, options: LoadPromptOptions = {}): string | undefined {
+	const file = resolve(path);
+	if (!existsSync(file)) {
+		if (options.optional) return undefined;
+		throw new Error(`prompt file not found: ${file}`);
+	}
+	const stat = statSync(file);
+	if (!stat.isFile()) {
+		if (options.optional) return undefined;
+		throw new Error(`prompt path is not a file: ${file}`);
+	}
+	return readFileSync(file, "utf8").trim();
+}
+
+/** Loads an agent from the heypi folder convention, including prompts, tools, jobs, skills, and extensions. */
 export function loadAgent(folder = ".", options: LoadAgentOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? DEFAULT_AGENT_ID;
 	const selectedModel = options.model ?? process.env.HEYPI_MODEL;
 	if (!selectedModel) throw new Error("agent model is required; pass loadAgent(..., { model }) or set HEYPI_MODEL");
 	const model = modelConfig(selectedModel);
-	const discoveredTools = loadTools(resolve(directory, "tools"));
-	const explicitTools = options.tools ?? [];
-	const tools = mergeTools(explicitTools, discoveredTools);
-	const jobs = mergeJobs(options.jobs ?? [], loadJobs(resolve(directory, "jobs")));
-	const evals = mergeEvals(options.evals ?? [], loadEvals(resolve(directory, "evals")));
+	const tools = options.tools ?? loadTools(resolve(directory, "tools"));
+	assertAuthoredTools(tools);
 	return {
 		id,
 		model,
 		directory,
-		systemPrompt: options.systemPrompt ?? readIfFile(resolve(directory, "SYSTEM.md")),
-		soul: options.soul ?? readIfFile(resolve(directory, "SOUL.md")) ?? DEFAULT_SOUL,
-		prompt: options.prompt ?? readIfFile(resolve(directory, "AGENTS.md")),
+		systemPrompt: options.systemPrompt ?? loadPrompt(resolve(directory, "SYSTEM.md"), { optional: true }),
+		soul: options.soul ?? loadPrompt(resolve(directory, "SOUL.md"), { optional: true }) ?? DEFAULT_SOUL,
+		prompt: options.prompt ?? loadPrompt(resolve(directory, "AGENTS.md"), { optional: true }),
 		context: options.context,
 		skills: options.skills ?? dirList(resolve(directory, "skills")),
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),
+		builtinTools: options.builtinTools ?? defaultTools(),
 		tools,
-		jobs,
-		evals,
+		jobs: options.jobs ?? loadJobs(resolve(directory, "jobs")),
+		evals: options.evals,
 	};
 }
 
@@ -253,55 +272,8 @@ export function modelConfig(input: string | ModelConfig): ModelConfig {
 	return { provider: input.slice(0, slash), name: input.slice(slash + 1) };
 }
 
-function readIfFile(path: string): string | undefined {
-	if (!existsSync(path)) return undefined;
-	const stat = statSync(path);
-	if (!stat.isFile()) return undefined;
-	return readFileSync(path, "utf8").trim();
-}
-
 function dirList(path: string): string[] {
 	if (!existsSync(path)) return [];
 	const stat = statSync(path);
 	return stat.isDirectory() ? [path] : [];
-}
-
-function mergeTools(
-	explicit: AgentToolDefinition[],
-	discovered: AgentToolDefinition[],
-): AgentToolDefinition[] | undefined {
-	if (!explicit.length && !discovered.length) return undefined;
-	const seen = new Set<string>();
-	for (const tool of explicit) {
-		if ("name" in tool) seen.add(tool.name);
-	}
-	for (const tool of discovered) {
-		if ("name" in tool && seen.has(tool.name))
-			throw new Error(`duplicate tool name "${tool.name}" in config and discovery`);
-		if ("name" in tool) seen.add(tool.name);
-	}
-	return [...explicit, ...discovered];
-}
-
-function mergeJobs(explicit: JobConfig[], discovered: JobConfig[]): JobConfig[] | undefined {
-	if (!explicit.length && !discovered.length) return undefined;
-	const seen = new Set<string>();
-	for (const job of explicit) seen.add(job.id);
-	for (const job of discovered) {
-		if (seen.has(job.id)) throw new Error(`duplicate job id "${job.id}" in config and discovery`);
-		seen.add(job.id);
-	}
-	return [...explicit, ...discovered];
-}
-
-function mergeEvals(explicit: EvalConfig[], discovered: EvalConfig[]): EvalConfig[] | undefined {
-	if (!explicit.length && !discovered.length) return undefined;
-	const seen = new Set<string>();
-	for (const evaluation of explicit) seen.add(evaluation.name);
-	for (const evaluation of discovered) {
-		if (seen.has(evaluation.name))
-			throw new Error(`duplicate eval name "${evaluation.name}" in config and discovery`);
-		seen.add(evaluation.name);
-	}
-	return [...explicit, ...discovered];
 }

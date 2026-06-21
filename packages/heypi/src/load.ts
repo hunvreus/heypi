@@ -2,7 +2,6 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, extname, relative, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AgentToolDefinition } from "./core-tools.js";
 import type { EvalConfig } from "./eval.js";
 import type { JobConfig } from "./job.js";
 import { assignDiscoveredToolName } from "./tool.js";
@@ -13,8 +12,8 @@ const MODULE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]
 type LoadedModule = Record<string, unknown> & { default?: unknown };
 
 /** Loads default-exported tools from a folder. File stems become tool names when omitted. */
-export function loadTools(folder: string): AgentToolDefinition[] {
-	const tools: AgentToolDefinition[] = [];
+export function loadTools(folder: string): ToolDefinition[] {
+	const tools: ToolDefinition[] = [];
 	const seen = new Map<string, string>();
 	for (const file of moduleFiles(folder)) {
 		const name = basename(file, extname(file));

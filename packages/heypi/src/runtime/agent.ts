@@ -11,7 +11,7 @@ type AgentLiveSession = {
 };
 
 export type AgentLifecycleEvent = {
-	type: "model.started" | "model.completed" | "model.failed";
+	type: "model.started" | "model.completed" | "model.failed" | "tool.started" | "tool.completed" | "tool.failed";
 	data?: Record<string, unknown>;
 };
 

@@ -25,6 +25,7 @@ import { splitTools } from "./core-tools.js";
 import { runtimeAttachments } from "./io/attachments.js";
 import { type Adapter, type AdapterStart, createHandler, createStatus } from "./io/handler.js";
 import { createHttpServerRegistry } from "./io/http.js";
+import { local } from "./io/local.js";
 import { createRuntime } from "./runtime/index.js";
 import { PiAgent } from "./runtime/pi-agent.js";
 import { Queue } from "./runtime/queue.js";
@@ -43,6 +44,7 @@ type ShutdownSignal = "SIGINT" | "SIGTERM";
 const DEFAULT_APP_LOCK_TTL_MS = 60_000;
 const DEFAULT_DRAIN_MS = 30_000;
 const DEFAULT_HTTP: Required<HttpConfig> = { host: "127.0.0.1", port: 3000 };
+const DEFAULT_ADMIN_HTTP: Required<HttpConfig> = { host: "127.0.0.1", port: 4321 };
 const TOP_LEVEL_CONFIG_KEYS = new Set([
 	"store",
 	"state",
@@ -74,18 +76,27 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 	const jobs = config.jobs ?? config.agent.jobs;
 	config.runtime.provider?.setLogger?.(log);
 	const messages = normalizeMessages(config.messages);
+	const devMode = process.env.HEYPI_INTERNAL_DEV === "1";
 	const httpConfig = normalizeHttpConfig(config.http);
+	const configuredAdmin = config.admin ?? (devMode ? { auth: false } : undefined);
+	const rawAdminConfig = configuredAdmin === true ? {} : configuredAdmin === false ? undefined : configuredAdmin;
+	const adminHttpConfig = normalizeHttpConfig(rawAdminConfig?.http, DEFAULT_ADMIN_HTTP);
 	const stateRoot = normalizeStateRoot(config.state);
 	mkdirSync(stateRoot, { recursive: true });
 	validateUserAdapters(config.adapters);
-	const adminAdapter = config.admin
-		? createAdminAdapter(config.admin === true ? {} : config.admin, httpConfig, {
+	const devAdapter = shouldEnableDevAdapter(config.adapters) ? local() : undefined;
+	if (devAdapter && !loopbackHost(adminHttpConfig.host)) {
+		throw new Error("heypi dev requires a loopback admin HTTP host for local test routes");
+	}
+	const runtimeAdapters = devAdapter ? [...config.adapters, devAdapter] : config.adapters;
+	const adminAdapter = rawAdminConfig
+		? createAdminAdapter(rawAdminConfig ?? {}, adminHttpConfig, {
 				root: stateRoot,
 				agent: config.agent.id,
 				project: cwd,
 			})
 		: undefined;
-	const lifecycleAdapters = adminAdapter ? [...config.adapters, adminAdapter] : config.adapters;
+	const lifecycleAdapters = adminAdapter ? [...runtimeAdapters, adminAdapter] : runtimeAdapters;
 	validateAdapterNames(lifecycleAdapters);
 	const store = config.store ?? sqliteStore({ path: join(stateRoot, "heypi.db") });
 	const active = new ActiveRuns();
@@ -115,7 +126,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		maxConcurrent: config.runtime.maxConcurrent ?? 12,
 		maxPerChat: config.runtime.maxConcurrentPerChat ?? 1,
 	});
-	const agentTools = splitTools(config.agent.tools);
+	const agentTools = splitTools(config.agent.tools, config.agent.builtinTools);
 	const bashConfirm = agentTools.core.find((tool) => tool.name === "bash")?.confirm;
 	warnSecurityPosture({
 		logger: log,
@@ -124,7 +135,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		http: httpConfig,
 		approval: config.approval,
 		approvalActorsConfigured: hasActorPolicy(approvalActors),
-		botInputAdapters: config.adapters.filter((adapter) => adapter.acceptsBots).map((adapter) => adapter.name),
+		botInputAdapters: runtimeAdapters.filter((adapter) => adapter.acceptsBots).map((adapter) => adapter.name),
 		bashEnabled: agentTools.core.some((tool) => tool.name === "bash"),
 		confirmedCustomTools: agentTools.custom.filter((tool) => toolConfirm(tool)).map((tool) => tool.name),
 	});
@@ -185,13 +196,14 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 		agent: config.agent.id,
 		store,
 		handler,
-		adapters: config.adapters,
+		adapters: runtimeAdapters,
 		starts,
 		logger: log,
 		config: { ...(config.scheduler ?? {}), jobs },
 	});
 	const appLock = appLockState(config.agent.id, config.appLock);
 	const http = createHttpServerRegistry({ logger: log, listen: httpConfig });
+	const adminHttp = createHttpServerRegistry({ logger: log, listen: adminHttpConfig });
 	if (secretsConfig.enabled && secretsConfig.serve) {
 		http.register({
 			method: "GET",
@@ -241,7 +253,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			log.info("app.start", {
 				agent: config.agent.id,
 				runtime: appRuntime.name,
-				adapters: config.adapters.length,
+				adapters: runtimeAdapters.length,
 				admin: adminAdapter !== undefined,
 				jobs: jobs?.length ?? 0,
 			});
@@ -298,7 +310,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 					logger: log,
 					messages,
 					attachments,
-					http,
+					http: adapter === adminAdapter || adapter === devAdapter ? adminHttp : http,
 					store,
 					approval: adapterApproval,
 					memory,
@@ -312,7 +324,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 						approval: config.approval,
 						memory: memoryConfig,
 						skills: skillsConfig,
-						adapters: config.adapters.map((item) => ({
+						adapters: runtimeAdapters.map((item) => ({
 							name: item.name,
 							kind: item.kind,
 							permissions: item.permissions,
@@ -325,7 +337,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 				await adapter.start(start);
 				started.push(adapter);
 			}
-			await http.listen();
+			await Promise.all([http.listen(), adminHttp.listen()]);
 			for (const adapter of lifecycleAdapters) {
 				const start = starts.get(adapter);
 				if (start) await adapter.ready?.(start);
@@ -333,7 +345,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			await scheduler?.start();
 		} catch (error) {
 			await Promise.allSettled(started.reverse().map((adapter) => adapter.stop?.()));
-			await http.close();
+			await Promise.allSettled([http.close(), adminHttp.close()]);
 			await runtimes.close();
 			for (const adapter of started) starts.delete(adapter);
 			if (locked) await releaseAppLock({ lock: appLock, store });
@@ -351,7 +363,7 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 			log.info("app.stop", { agent: config.agent.id, reason });
 			try {
 				await scheduler?.stop();
-				await http.close();
+				await Promise.allSettled([http.close(), adminHttp.close()]);
 				const drained = await active.drain(appLock.drainMs);
 				if (!drained) {
 					const cancelled = active.abortAll();
@@ -425,6 +437,10 @@ function validateUserAdapters(adapters: HeypiConfig["adapters"]): void {
 	}
 }
 
+function shouldEnableDevAdapter(adapters: HeypiConfig["adapters"]): boolean {
+	return process.env.HEYPI_INTERNAL_DEV === "1" && !adapters.some((adapter) => adapter.name === "local");
+}
+
 function validateAdapterNames(adapters: HeypiConfig["adapters"]): void {
 	const names = new Set<string>();
 	for (const adapter of adapters) {
@@ -452,10 +468,13 @@ function warnUnknownKeys(log: Logger, path: string, input: Record<string, unknow
 	}
 }
 
-function normalizeHttpConfig(config: HttpConfig | undefined): Required<HttpConfig> {
+function normalizeHttpConfig(
+	config: HttpConfig | undefined,
+	defaults: Required<HttpConfig> = DEFAULT_HTTP,
+): Required<HttpConfig> {
 	return {
-		host: config?.host ?? DEFAULT_HTTP.host,
-		port: config?.port ?? DEFAULT_HTTP.port,
+		host: config?.host ?? defaults.host,
+		port: config?.port ?? defaults.port,
 	};
 }
 

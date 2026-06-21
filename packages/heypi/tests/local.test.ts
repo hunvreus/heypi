@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { consoleLogger, local } from "@hunvreus/heypi";
+import { consoleLogger, createHeypi, local, workspace } from "@hunvreus/heypi";
 import type { Handler, HttpRoute } from "@hunvreus/heypi/adapter";
 
-test("local adapter registers loopback dev routes on the shared HTTP listener", async () => {
+test("local adapter registers loopback dev routes on the admin HTTP listener", async () => {
 	const routes: HttpRoute[] = [];
 	const adapter = local();
 	await adapter.start({
@@ -106,6 +109,75 @@ test("local adapter refuses non-loopback host binding", async () => {
 			},
 		}),
 	);
+});
+
+test("heypi dev starts configured adapters and the internal local adapter", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-dev-local-"));
+	const previous = process.env.HEYPI_INTERNAL_DEV;
+	process.env.HEYPI_INTERNAL_DEV = "1";
+	let productionStarted = false;
+	const app = createHeypi({
+		state: { root: join(root, "state") },
+		http: { host: "127.0.0.1", port: 0 },
+		admin: { auth: false, http: { host: "127.0.0.1", port: 0 } },
+		adapters: [
+			{
+				name: "prod",
+				kind: "prod",
+				start: async () => {
+					productionStarted = true;
+				},
+			},
+		],
+		agent: {
+			id: "default",
+			directory: join(root, "agent"),
+			model: { provider: "openai", name: "gpt-5-mini" },
+			prompt: "Test agent.",
+			soul: "Concise.",
+			tools: [],
+		},
+		runtime: { root: workspace(join(root, "workspace")) },
+	});
+	try {
+		await app.start();
+		assert.equal(productionStarted, true);
+	} finally {
+		await app.stop();
+		if (previous === undefined) delete process.env.HEYPI_INTERNAL_DEV;
+		else process.env.HEYPI_INTERNAL_DEV = previous;
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("heypi dev refuses local routes on non-loopback HTTP hosts", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-dev-public-host-"));
+	const previous = process.env.HEYPI_INTERNAL_DEV;
+	process.env.HEYPI_INTERNAL_DEV = "1";
+	try {
+		assert.throws(
+			() =>
+				createHeypi({
+					state: { root: join(root, "state") },
+					admin: { auth: false, http: { host: "0.0.0.0", port: 3000 } },
+					adapters: [],
+					agent: {
+						id: "default",
+						directory: root,
+						model: { provider: "openai", name: "gpt-5-mini" },
+						prompt: "Test agent.",
+						soul: "Concise.",
+						tools: [],
+					},
+					runtime: { root: workspace(join(root, "workspace")) },
+				}),
+			/loopback admin HTTP host/,
+		);
+	} finally {
+		if (previous === undefined) delete process.env.HEYPI_INTERNAL_DEV;
+		else process.env.HEYPI_INTERNAL_DEV = previous;
+		await rm(root, { recursive: true, force: true });
+	}
 });
 
 async function post(port: number, path: string, body: Record<string, unknown>) {

@@ -32,6 +32,10 @@ import {
 
 export type AdminConfig = {
 	auth?: boolean;
+	http?: {
+		host?: string;
+		port?: number | string;
+	};
 	secret?: string;
 	loginTtlMs?: number;
 	sessionTtlMs?: number;

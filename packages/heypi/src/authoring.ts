@@ -1,6 +1,6 @@
 export { approval } from "./approval.js";
-export { classifyCommand } from "./core/policy.js";
 export type { AgentContextBlock, AgentContextInput, AgentContextProvider } from "./config.js";
+export { classifyCommand } from "./core/policy.js";
 export type { ApprovalDetail, CommandPolicyConfig, CommandRisk, Confirm, ReplyAttachment } from "./core/types.js";
 export {
 	defineEval,

@@ -3,9 +3,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, modelConfig } from "../src/config.js";
+import { DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, loadPrompt, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
+import { defaultTools } from "../src/core-tools.js";
 import { RUNTIME_STARTUP_ERROR_KIND } from "../src/runtime/errors.js";
 import {
 	approvalFromMessages,
@@ -14,6 +15,7 @@ import {
 	runtimeSystemPrompt,
 } from "../src/runtime/pi-agent.js";
 import { defineTool } from "../src/tool.js";
+import { toolConfirm, toolPiRunner, toolRunner } from "../src/tool-internal.js";
 
 test("loadAgent requires an explicit model or HEYPI_MODEL", () => {
 	const previous = process.env.HEYPI_MODEL;
@@ -53,6 +55,12 @@ test("loadAgent uses a default SOUL.md fallback", () => {
 	assert.equal(agent.soul, DEFAULT_SOUL);
 });
 
+test("loadPrompt throws for explicit missing files unless optional", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
+	assert.throws(() => loadPrompt(join(root, "missing.md")), /prompt file not found/);
+	assert.equal(loadPrompt(join(root, "missing.md"), { optional: true }), undefined);
+});
+
 test("loadAgent defaults to the canonical agent id", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	assert.equal(loadAgent(root, { model: "openai/gpt-5-mini" }).id, DEFAULT_AGENT_ID);
@@ -72,8 +80,6 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 	mkdirSync(join(root, "tools", "github"), { recursive: true });
 	mkdirSync(join(root, "jobs"), { recursive: true });
 	mkdirSync(join(root, "jobs", "ops"), { recursive: true });
-	mkdirSync(join(root, "evals"), { recursive: true });
-	mkdirSync(join(root, "evals", "smoke"), { recursive: true });
 	writeFileSync(
 		join(root, "tools", "lookup.ts"),
 		[
@@ -102,22 +108,11 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 			'export default defineJob({ id: "hourly", everyMs: 3_600_000, targets: { test: { channels: ["C1"] } }, prompt: "hourly" });',
 		].join("\n"),
 	);
-	writeFileSync(
-		join(root, "evals", "smoke.ts"),
-		[
-			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
-			'export default defineEval({ name: "smoke", prompt: "say hello", expect: { includes: "hello" } });',
-		].join("\n"),
-	);
-	writeFileSync(
-		join(root, "evals", "smoke", "tools.ts"),
-		[
-			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
-			'export default defineEval({ name: "uses tools", prompt: "use a tool", expect: { tool: "lookup" } });',
-		].join("\n"),
-	);
-
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
+	assert.deepEqual(
+		agent.builtinTools?.map((tool) => tool.name),
+		["history", "bash", "read", "write", "edit", "grep", "find", "ls", "attach"],
+	);
 	assert.deepEqual(
 		agent.tools?.map((tool) => tool.name),
 		["repos", "lookup"],
@@ -126,10 +121,7 @@ test("loadAgent discovers tools and jobs from agent folders", () => {
 		agent.jobs?.map((job) => job.id),
 		["daily", "hourly"],
 	);
-	assert.deepEqual(
-		agent.evals?.map((evaluation) => evaluation.name),
-		["smoke", "uses tools"],
-	);
+	assert.equal(agent.evals, undefined);
 });
 
 test("loadAgent discovers Telegram example tools from agent/tools", () => {
@@ -141,8 +133,8 @@ test("loadAgent discovers Telegram example tools from agent/tools", () => {
 });
 
 test("loadAgent discovers webhook GitHub example tools from agent/tools", () => {
-	const previous = process.env.HEYPI_DEV;
-	process.env.HEYPI_DEV = "1";
+	const previous = process.env.HEYPI_INTERNAL_DEV;
+	process.env.HEYPI_INTERNAL_DEV = "1";
 	try {
 		const agent = loadAgent("../../examples/webhook-github-docker/agent", { model: "openai/gpt-5-mini" });
 		assert.deepEqual(
@@ -150,14 +142,24 @@ test("loadAgent discovers webhook GitHub example tools from agent/tools", () => 
 			["github_issue_get", "github_issue_search", "github_issue_comment", "github_issue_close_duplicate"],
 		);
 	} finally {
-		if (previous === undefined) delete process.env.HEYPI_DEV;
-		else process.env.HEYPI_DEV = previous;
+		if (previous === undefined) delete process.env.HEYPI_INTERNAL_DEV;
+		else process.env.HEYPI_INTERNAL_DEV = previous;
 	}
 });
 
-test("loadAgent rejects duplicate discovered and explicit tool names", () => {
+test("loadAgent preserves heypi tool metadata across package import paths", () => {
+	const agent = loadAgent("../../examples/slack-devops/agent", { model: "openai/gpt-5-mini" });
+	const tool = agent.tools?.find((item) => item.name === "host_exec");
+	assert.ok(tool);
+	assert.equal(typeof toolConfirm(tool), "function");
+	assert.equal(typeof toolRunner(tool), "function");
+	assert.equal(typeof toolPiRunner(tool), "function");
+});
+
+test("loadAgent options override convention folders by category", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	mkdirSync(join(root, "tools"), { recursive: true });
+	mkdirSync(join(root, "jobs"), { recursive: true });
 	writeFileSync(
 		join(root, "tools", "lookup.ts"),
 		[
@@ -165,35 +167,35 @@ test("loadAgent rejects duplicate discovered and explicit tool names", () => {
 			'export default defineTool({ description: "Lookup.", input: { type: "object", properties: {} }, run: async () => "ok" });',
 		].join("\n"),
 	);
-
-	assert.throws(
-		() =>
-			loadAgent(root, {
-				model: "openai/gpt-5-mini",
-				tools: [defineTool({ name: "lookup", description: "Explicit.", input: {}, run: async () => "ok" })],
-			}),
-		/duplicate tool name "lookup"/,
-	);
-});
-
-test("loadAgent rejects duplicate discovered and explicit eval names", () => {
-	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
-	mkdirSync(join(root, "evals"), { recursive: true });
 	writeFileSync(
-		join(root, "evals", "smoke.ts"),
+		join(root, "jobs", "daily.ts"),
 		[
-			`import { defineEval } from ${JSON.stringify(modulePath("src/eval.ts"))};`,
-			'export default defineEval({ name: "smoke", prompt: "say hello" });',
+			`import { defineJob } from ${JSON.stringify(modulePath("src/job.ts"))};`,
+			'export default defineJob({ id: "daily", everyMs: 60_000, targets: { test: { channels: ["C1"] } }, prompt: "check" });',
 		].join("\n"),
 	);
 
+	const agent = loadAgent(root, {
+		model: "openai/gpt-5-mini",
+		tools: [defineTool({ name: "inline", description: "Explicit.", input: {}, run: async () => "ok" })],
+		jobs: [],
+	});
+	assert.deepEqual(
+		agent.tools?.map((tool) => tool.name),
+		["inline"],
+	);
+	assert.deepEqual(agent.jobs, []);
+});
+
+test("loadAgent rejects legacy defaultTools entries in tools", () => {
+	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	assert.throws(
 		() =>
 			loadAgent(root, {
 				model: "openai/gpt-5-mini",
-				evals: [{ name: "smoke", prompt: "explicit" }],
+				tools: defaultTools() as never,
 			}),
-		/duplicate eval name "smoke"/,
+		/defaultTools\(\) entries must be configured with builtinTools, not tools/,
 	);
 });
 
