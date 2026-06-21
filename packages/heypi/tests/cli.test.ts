@@ -25,8 +25,7 @@ function escapeRegExp(value: string): string {
 }
 
 function cli(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: string }): string {
-	const env = { ...process.env, ...(input?.env ?? {}) };
-	if (!input?.env || !("INIT_CWD" in input.env)) delete env.INIT_CWD;
+	const env = cliEnv(input?.env);
 	return execFileSync(process.execPath, [CLI, ...args], {
 		cwd: input?.cwd ?? process.cwd(),
 		env,
@@ -36,8 +35,7 @@ function cli(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: string }):
 
 function cliAsync(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: string }): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const env = { ...process.env, ...(input?.env ?? {}) };
-		if (!input?.env || !("INIT_CWD" in input.env)) delete env.INIT_CWD;
+		const env = cliEnv(input?.env);
 		execFile(
 			process.execPath,
 			[CLI, ...args],
@@ -56,6 +54,12 @@ function cliAsync(args: string[], input?: { env?: NodeJS.ProcessEnv; cwd?: strin
 			},
 		);
 	});
+}
+
+function cliEnv(input?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const env = { ...process.env, ...(input ?? {}) };
+	if (!input || !("INIT_CWD" in input)) delete env.INIT_CWD;
+	return env;
 }
 
 function spawnCliUntil(
@@ -135,6 +139,40 @@ test("cli check loads .env by default", async () => {
 	}
 });
 
+test("cli dev loads .env.local after .env", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-env-"));
+	try {
+		await writeFile(join(root, ".env"), "HEYPI_TEST_VALUE=base\n", "utf8");
+		await writeFile(join(root, ".env.local"), "HEYPI_TEST_VALUE=local\n", "utf8");
+		await writeFile(
+			join(root, "index.mjs"),
+			'export default { async start() { console.log("value=" + process.env.HEYPI_TEST_VALUE); }, async stop() {} };',
+			"utf8",
+		);
+		const out = cli(["dev", "index.mjs"], { cwd: root, env: { HEYPI_CLI_CHILD: "1" } });
+		assert.match(out, /value=local/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli start loads .env without .env.local", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-start-env-"));
+	try {
+		await writeFile(join(root, ".env"), "HEYPI_TEST_VALUE=base\n", "utf8");
+		await writeFile(join(root, ".env.local"), "HEYPI_TEST_VALUE=local\n", "utf8");
+		await writeFile(
+			join(root, "index.mjs"),
+			'export default { async start() { console.log("value=" + process.env.HEYPI_TEST_VALUE); }, async stop() {} };',
+			"utf8",
+		);
+		const out = cli(["start", "index.mjs"], { cwd: root, env: { HEYPI_CLI_CHILD: "1" } });
+		assert.match(out, /value=base/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("cli resolves env paths from original invocation root", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-invocation-env-"));
 	try {
@@ -151,25 +189,26 @@ test("cli resolves env paths from original invocation root", async () => {
 test("cli eval commands inspect discovered eval definitions", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-evals-"));
 	try {
-		await mkdir(join(root, "agent", "evals"), { recursive: true });
+		await mkdir(join(root, "evals"), { recursive: true });
 		await writeFile(
-			join(root, "agent", "evals", "smoke.ts"),
+			join(root, "evals", "smoke.ts"),
 			[
 				`import { defineEval } from ${JSON.stringify(resolve("src/eval.ts"))};`,
 				'export default defineEval({ name: "smoke", tags: ["smoke"], prompt: "say hello", expect: { includes: "hello" } });',
 			].join("\n"),
 			"utf8",
 		);
-		const listed = cli(["eval", "list", "--agent", "agent", "--json"], { cwd: root });
+		const listed = cli(["eval", "list", "--json"], { cwd: root });
 		const rows = JSON.parse(listed) as Array<{ name: string; expect: { includes: string } }>;
 		assert.equal(rows[0]?.name, "smoke");
 		assert.equal(rows[0]?.expect.includes, "hello");
-		assert.match(cli(["eval", "show", "smoke", "--agent", "agent"], { cwd: root }), /prompt: say hello/);
-		assert.match(cli(["eval", "check", "--agent", "agent"], { cwd: root }), /ok: 1 eval\(s\) valid/);
+		assert.match(cli(["eval", "show", "smoke"], { cwd: root }), /prompt: say hello/);
+		assert.match(cli(["eval", "check"], { cwd: root }), /ok: 1 eval\(s\) valid/);
 		const run = JSON.parse(
 			cli(["eval", "run", "smoke", "--agent", "agent", "--text", "well hello", "--json"], { cwd: root }),
-		) as { ok: boolean; assertions: Array<{ label: string; ok: boolean }> };
+		) as { ok: boolean; mode: string; assertions: Array<{ label: string; ok: boolean }> };
 		assert.equal(run.ok, true);
+		assert.equal(run.mode, "supplied");
 		assert.deepEqual(run.assertions, [{ ok: true, label: "includes" }]);
 		assert.equal("trace" in run, false);
 		const db = join(root, "heypi.db");
@@ -212,10 +251,18 @@ test("cli eval commands inspect discovered eval definitions", async () => {
 		assert.equal(data.result?.textChars, "well hello".length);
 		const failed = spawnSync(process.execPath, [CLI, "eval", "run", "smoke", "--agent", "agent", "--text", "bye"], {
 			cwd: root,
+			env: cliEnv(),
 			encoding: "utf8",
 		});
 		assert.notEqual(failed.status, 0);
 		assert.match(failed.stdout, /eval smoke failed/);
+		const missingModel = spawnSync(process.execPath, [CLI, "eval", "run", "smoke", "--agent", "agent"], {
+			cwd: root,
+			env: cliEnv({ HEYPI_MODEL: "" }),
+			encoding: "utf8",
+		});
+		assert.notEqual(missingModel.status, 0);
+		assert.match(missingModel.stderr, /eval run requires --result, --text, or --model\/HEYPI_MODEL/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -224,9 +271,9 @@ test("cli eval commands inspect discovered eval definitions", async () => {
 test("cli eval check validates assertion definitions", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-evals-invalid-"));
 	try {
-		await mkdir(join(root, "agent", "evals"), { recursive: true });
+		await mkdir(join(root, "evals"), { recursive: true });
 		await writeFile(
-			join(root, "agent", "evals", "bad.ts"),
+			join(root, "evals", "bad.ts"),
 			[
 				`import { defineEval } from ${JSON.stringify(resolve("src/eval.ts"))};`,
 				'export default defineEval({ name: "bad", tags: ["smoke", ""], prompt: "say hello", timeoutMs: 0, expect: { includes: "", unknown: true } });',
@@ -234,7 +281,7 @@ test("cli eval check validates assertion definitions", async () => {
 			"utf8",
 		);
 
-		const json = JSON.parse(cli(["eval", "check", "--agent", "agent", "--json"], { cwd: root })) as {
+		const json = JSON.parse(cli(["eval", "check", "--json"], { cwd: root })) as {
 			ok: boolean;
 			errors: string[];
 		};
@@ -246,13 +293,70 @@ test("cli eval check validates assertion definitions", async () => {
 			"eval bad: expect.unknown is not a supported assertion",
 		]);
 
-		const result = spawnSync(process.execPath, [CLI, "eval", "check", "--agent", "agent"], {
+		const result = spawnSync(process.execPath, [CLI, "eval", "check"], {
 			cwd: root,
+			env: cliEnv(),
 			encoding: "utf8",
 		});
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, /invalid evals/);
 		assert.match(result.stderr, /expect\.unknown is not a supported assertion/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli thread commands list, search, show, and inspect events", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-threads-"));
+	try {
+		const db = join(root, "heypi.db");
+		const store = sqliteStore({ path: db });
+		await store.setup();
+		const thread = await store.threads.getOrCreate({
+			agent: "default",
+			provider: "slack",
+			channel: "deploy",
+			actor: "U123",
+			key: "T1:C1:deploy",
+		});
+		await store.messages.create({
+			threadId: thread.id,
+			provider: "slack",
+			role: "user",
+			actor: "U123",
+			text: "please deploy the app",
+			createdAt: 1_700_000_000_000,
+		});
+		await store.messages.create({
+			threadId: thread.id,
+			provider: "slack",
+			role: "assistant",
+			text: "deployment queued",
+			createdAt: 1_700_000_001_000,
+		});
+		await store.events.append({
+			agent: "default",
+			trace: "turn:abc",
+			threadId: thread.id,
+			type: "turn.started",
+			data: { ok: true },
+			createdAt: 1_700_000_002_000,
+		});
+
+		const listed = cli(["threads", "--db", db, "--q", "deploy"]);
+		assert.match(listed, new RegExp(escapeRegExp(thread.id)));
+		assert.match(listed, /deployment queued/);
+
+		const shown = cli(["thread", thread.id, "--db", db]);
+		assert.match(shown, /please deploy the app/);
+		assert.match(shown, /deployment queued/);
+
+		const events = cli(["events", "--db", db, "--thread", thread.id]);
+		assert.match(events, /turn\.started/);
+		assert.match(events, /turn:abc/);
+
+		const json = JSON.parse(cli(["threads", "--db", db, "--q", "queued", "--json"])) as Array<{ id: string }>;
+		assert.equal(json[0]?.id, thread.id);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -588,7 +692,7 @@ test("cli admin link signs a URL from admin state", async () => {
 	}
 });
 
-test("cli dev prints an exact admin login link for dynamic ports", async () => {
+test("cli dev prints an exact admin link for dynamic ports", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-"));
 	try {
 		await mkdir(join(root, "agent"), { recursive: true });
@@ -624,6 +728,7 @@ test("cli dev prints an exact admin login link for dynamic ports", async () => {
 				"        project: process.cwd(),",
 				"        startedAt: new Date().toISOString(),",
 				'        adminPath: "/admin",',
+				"        auth: false,",
 				"      }),",
 				"    );",
 				"  },",
@@ -637,18 +742,21 @@ test("cli dev prints an exact admin login link for dynamic ports", async () => {
 		const out = await spawnCliUntil(["dev", "index.mjs"], {
 			cwd: root,
 			env: { HEYPI_CLI_CHILD: "1" },
-			match: /dev: POST JSON/u,
+			match: /Admin:/u,
 		});
-		const adminLine = out.split("\n").find((row) => row.startsWith("dev: admin "));
+		assert.match(out, /ready in (?:\d+ms|\d+\.\d+s)/u);
+		assert.doesNotMatch(out, /Test messages/u);
+		assert.doesNotMatch(out, /Ctrl\+C/u);
+		assert.doesNotMatch(out, /ready heypi dev/u);
+		const adminLine = out.split("\n").find((row) => row.includes("http://127.0.0.1:"));
 		assert.ok(adminLine);
-		const url = new URL(adminLine.replace("dev: admin ", ""));
+		const urlText = adminLine.match(/https?:\/\/\S+/u)?.[0];
+		assert.ok(urlText);
+		const url = new URL(urlText);
 		assert.equal(url.hostname, "127.0.0.1");
 		assert.notEqual(url.port, "0");
-		assert.equal(url.pathname, "/admin/login");
-		assert.ok(url.searchParams.get("t"));
-		const messagesLine = out.split("\n").find((row) => row.startsWith("dev: POST JSON to "));
-		assert.ok(messagesLine);
-		assert.match(messagesLine, new RegExp(`POST JSON to http://127\\.0\\.0\\.1:${url.port}/dev/messages`));
+		assert.equal(url.pathname, "/admin");
+		assert.equal(url.search, "");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

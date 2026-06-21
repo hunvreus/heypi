@@ -32,7 +32,7 @@ export type EvalConfig = {
 	timeoutMs?: number;
 };
 
-/** Defines an agent behavior eval loaded from `agent/evals/` or explicit config. */
+/** Defines an agent behavior eval loaded from root `evals/` or explicit config. */
 export function defineEval(input: EvalConfig): EvalConfig {
 	return input;
 }
@@ -109,7 +109,8 @@ function validateOneExpect(input: EvalExpect, label: string): string[] {
 	if (!entries.length) errors.push(`${label} must define at least one assertion`);
 	for (const [key, value] of entries) {
 		if (key === "text") {
-			if (typeof value !== "string" && !(value instanceof RegExp)) errors.push(`${label}.text must be a string or RegExp`);
+			if (typeof value !== "string" && !(value instanceof RegExp))
+				errors.push(`${label}.text must be a string or RegExp`);
 		} else if (key === "includes" || key === "tool") {
 			if (!stringNonEmpty(value)) errors.push(`${label}.${key} must be a non-empty string`);
 		} else if (key === "approval") {
@@ -177,7 +178,11 @@ async function evaluateOne(expect: EvalExpect, result: EvalResult): Promise<Eval
 			assertions.push({
 				ok,
 				label: "approval",
-				message: ok ? undefined : expect.approval ? "expected an approval request" : "expected no approval requests",
+				message: ok
+					? undefined
+					: expect.approval
+						? "expected an approval request"
+						: "expected no approval requests",
 			});
 		} else {
 			const ok = result.approvals.includes(expect.approval);

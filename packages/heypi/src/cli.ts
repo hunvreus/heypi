@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { loadEnvFile } from "node:process";
 import { pathToFileURL } from "node:url";
+import { parseEnv } from "node:util";
 import { cac } from "cac";
 import pc from "picocolors";
 import {
@@ -16,10 +16,12 @@ import {
 	readAdminServerDescriptors,
 } from "./admin/auth.js";
 import type { HeypiApp } from "./app.js";
+import { loadAgent } from "./config.js";
 import { COMMANDS } from "./core/commands.js";
 import { enqueueJobRuns } from "./core/scheduler.js";
 import type { EvalConfig, EvalReport, EvalResult } from "./eval.js";
 import { evalExpectLabel, evalExpectSummary, evaluateEval, validateEval } from "./eval.js";
+import { type EvalTraceEvent, runEvalAgent } from "./eval-runner.js";
 import {
 	discordCheck as checkDiscord,
 	discordChannels,
@@ -36,12 +38,14 @@ import { CallRepo } from "./store/repo-call.js";
 import { EventRepo } from "./store/repo-event.js";
 import { JobRepo, JobRunRepo } from "./store/repo-job.js";
 import { LockRepo } from "./store/repo-lock.js";
+import { MessageRepo } from "./store/repo-message.js";
 import { ThreadRepo } from "./store/repo-thread.js";
 import { TurnRepo } from "./store/repo-turn.js";
 
 const VERSION = packageVersion();
 
 type Flags = Record<string, string | number | boolean>;
+type EnvMode = "start" | "dev";
 type SlackMode = "socket" | "http";
 
 const slackModes = ["socket", "http"] as const;
@@ -80,26 +84,49 @@ function buildCli() {
 	cli.command("init", "Create a new heypi app").action(init);
 	cli.command("start [file]", "Start a heypi app")
 		.option("--env <path>", "Load env file")
-		.action((file: string | undefined, flags: Flags) => withEnv((input) => startApp(file, input))(flags));
-	cli.command("dev [file]", "Start a heypi app in local dev mode")
+		.action((file: string | undefined, flags: Flags) => withEnv("start", (input) => startApp(file, input))(flags));
+	cli.command("dev [file]", "Start a heypi app for local development")
 		.option("--env <path>", "Load env file")
-		.action((file: string | undefined, flags: Flags) => withEnv((input) => dev(file, input))(flags));
+		.action((file: string | undefined, flags: Flags) => withEnv("dev", (input) => devApp(file, input))(flags));
 	cli.command("check", "Run local setup checks")
 		.option("--env <path>", "Load env file")
 		.option("--db <path>", "SQLite database path")
 		.option("--runtime-root <path>", "Runtime workspace path")
-		.action(withEnv(check));
+		.action(withEnv("start", check));
 	cli.command("status", "Inspect persisted app status")
 		.option("--env <path>", "Load env file")
 		.option("--db <path>", "SQLite database path")
 		.option("--agent <id>", "Filter status for one agent")
 		.option("--runtime-root <path>", "Runtime workspace path")
 		.option("--json", "Print JSON")
-		.action(withEnv(status));
+		.action(withEnv("start", status));
+	cli.command("threads", "List and search persisted threads")
+		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter threads for one agent")
+		.option("--provider <name>", "Filter threads by adapter/provider")
+		.option("--q <text>", "Search thread metadata and message text")
+		.option("--limit <count>", "Maximum threads to list")
+		.option("--offset <count>", "Threads to skip")
+		.option("--json", "Print JSON")
+		.action(withEnv("start", threadsList));
+	cli.command("thread <id>", "Show one persisted thread transcript")
+		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter thread for one agent")
+		.option("--limit <count>", "Maximum messages to show")
+		.option("--json", "Print JSON")
+		.action((id: string, flags: Flags) => withEnv("start", (input) => threadShow(input, id))(flags));
+	cli.command("events", "Show persisted trace events")
+		.option("--db <path>", "SQLite database path")
+		.option("--agent <id>", "Filter events for one agent")
+		.option("--thread <id>", "Filter events for one thread")
+		.option("--trace <id>", "Filter events for one trace")
+		.option("--limit <count>", "Maximum events to show")
+		.option("--json", "Print JSON")
+		.action(withEnv("start", eventsList));
 	cli.command("db <action>", "Database commands: check, migrate")
 		.option("--db <path>", "SQLite database path")
 		.action((action: string, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "check") return dbCheck(input);
 				if (action === "migrate") return dbMigrate(input);
 				throw new Error(`Unknown command: db ${action}`);
@@ -117,7 +144,7 @@ function buildCli() {
 		.option("--bots", "Include bot users")
 		.option("--query <text>", "Filter Slack channels or users by name or ID")
 		.action((action: string, query: string | undefined, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "check") return slackCheck(input);
 				if (action === "manifest") return slackManifest(input);
 				if (action === "channels") return slackChannelsList(input, query);
@@ -133,7 +160,7 @@ function buildCli() {
 		.option("--url <url>", "Telegram webhook URL")
 		.option("--secret-token <token>", "Telegram webhook secret token")
 		.action((action: string, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "check") return telegramCheck(input);
 				if (action === "observe") return telegramObserve(input);
 				if (action === "set-webhook") return telegramSetWebhook(input);
@@ -148,7 +175,7 @@ function buildCli() {
 		.option("--timeout <seconds>", "Timeout in seconds")
 		.option("--query <text>", "Filter Discord channels by guild, channel name, or ID")
 		.action((action: string, query: string | undefined, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "check") return discordCheck(input);
 				if (action === "observe") return discordObserve(input);
 				if (action === "channels") return discordChannelsList(input, query);
@@ -164,7 +191,7 @@ function buildCli() {
 		.option("--url <url>", "Admin base URL")
 		.option("--json", "Print JSON")
 		.action((action: string, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "link") return adminLink(input);
 				throw new Error(`Unknown command: admin ${action}`);
 			})(flags),
@@ -175,7 +202,7 @@ function buildCli() {
 		.option("--limit <count>", "Maximum jobs to list")
 		.option("--json", "Print JSON")
 		.action((action: string, id: string | undefined, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "list") return jobsList(input);
 				if (!id) throw new Error(`Missing job id for jobs ${action}`);
 				if (action === "show") return jobsShow(input, id);
@@ -187,6 +214,9 @@ function buildCli() {
 		);
 	cli.command("eval <action> [name]", "Eval commands: list, show, check, run")
 		.option("--agent <path>", "Agent folder")
+		.option("--evals <path>", "Eval folder")
+		.option("--model <provider/name>", "Model for agent-backed eval runs")
+		.option("--runtime-root <path>", "Runtime workspace root for agent-backed eval runs")
 		.option("--tag <tag>", "Filter by tag")
 		.option("--result <path>", "JSON result file for eval run")
 		.option("--text <text>", "Assistant text for eval run")
@@ -196,7 +226,7 @@ function buildCli() {
 		.option("--agent-id <id>", "Agent id for persisted eval run events")
 		.option("--json", "Print JSON")
 		.action((action: string, name: string | undefined, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "list") return evalsList(input);
 				if (action === "check") return evalsCheck(input);
 				if (!name) throw new Error(`Missing eval name for eval ${action}`);
@@ -211,7 +241,7 @@ function buildCli() {
 		.option("--limit <count>", "Maximum approvals to list")
 		.option("--json", "Print JSON")
 		.action((action: string, id: string | undefined, flags: Flags) =>
-			withEnv((input) => {
+			withEnv("start", (input) => {
 				if (action === "list") return approvalsList(input);
 				if (action === "bypasses") return approvalBypassesList(input);
 				if (!id) throw new Error(`Missing approval id for approvals ${action}`);
@@ -222,17 +252,26 @@ function buildCli() {
 	return cli;
 }
 
-function withEnv(fn: (flags: Flags) => void | Promise<void>): (flags: Flags) => Promise<void> {
+function withEnv(mode: EnvMode, fn: (flags: Flags) => void | Promise<void>): (flags: Flags) => Promise<void> {
 	return async (flags) => {
-		loadEnv(flags);
+		loadEnv(flags, mode);
 		await fn(flags);
 	};
 }
 
-function loadEnv(flags: Flags): void {
-	const raw = stringFlag(flags, "env") ?? ".env";
-	const path = isAbsolute(raw) ? raw : resolve(invocationRoot(), raw);
-	if (existsSync(path)) loadEnvFile(path);
+function loadEnv(flags: Flags, mode: EnvMode): void {
+	const explicit = stringFlag(flags, "env");
+	const files = explicit ? [explicit] : mode === "dev" ? [".env", ".env.local"] : [".env"];
+	const protectedKeys = new Set(Object.keys(process.env));
+	for (const raw of files) {
+		const path = isAbsolute(raw) ? raw : resolve(invocationRoot(), raw);
+		if (!existsSync(path)) continue;
+		const values = parseEnv(readFileSync(path, "utf8"));
+		for (const [key, value] of Object.entries(values)) {
+			if (value === undefined || protectedKeys.has(key)) continue;
+			process.env[key] = value;
+		}
+	}
 }
 
 async function startApp(file: string | undefined, _flags: Flags): Promise<void> {
@@ -242,20 +281,35 @@ async function startApp(file: string | undefined, _flags: Flags): Promise<void> 
 	await runHeypi(app);
 }
 
-async function dev(file: string | undefined, _flags: Flags): Promise<void> {
-	if (!process.env.HEYPI_CLI_CHILD) return await spawnWithTsx("dev", file, { HEYPI_DEV: "1" });
+async function devApp(file: string | undefined, _flags: Flags): Promise<void> {
+	if (!process.env.HEYPI_CLI_CHILD) return await spawnWithTsx("dev", file, { HEYPI_INTERNAL_DEV: "1" });
+	const start = Date.now();
 	const app = await loadApp(file);
 	const { runHeypi } = await import("./app.js");
 	await runHeypi(app);
-	await printDevHints();
+	await printDevHints(Date.now() - start);
 }
 
-async function printDevHints(): Promise<void> {
+async function printDevHints(elapsedMs: number): Promise<void> {
 	const server = await devServerHint();
-	if (server?.admin) line(`dev: admin ${server.admin}`);
-	else line("dev: admin unavailable; enable admin: true to use the local workbench");
 	const messages = server?.base ? new URL("/dev/messages", server.base).href : "/dev/messages";
-	line(`dev: POST JSON to ${messages} with { "text": "hello", "sync": true }`);
+	line("");
+	if (server?.admin) {
+		line(`${pc.green("ready")} in ${formatElapsed(elapsedMs)}`);
+		line("");
+		line(`  ${pc.bold("Admin:")} ${pc.underline(server.admin)}`);
+		line("");
+		return;
+	}
+	line(`${pc.green("ready")} in ${formatElapsed(elapsedMs)}`);
+	line("");
+	line(`  ${pc.bold("Local API:")} ${messages}`);
+	line("");
+}
+
+function formatElapsed(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	return `${(ms / 1000).toFixed(1)}s`;
 }
 
 async function devServerHint(): Promise<{ admin?: string; base?: string } | undefined> {
@@ -264,6 +318,9 @@ async function devServerHint(): Promise<{ admin?: string; base?: string } | unde
 		const server = await selectAdminServer(stateRoot, {}, process.env.HEYPI_ADMIN_URL);
 		const baseUrl = process.env.HEYPI_ADMIN_URL ?? server?.url;
 		if (!baseUrl) return undefined;
+		if (server?.auth === false) {
+			return { admin: adminPageUrl(baseUrl, server.adminPath), base: baseUrl };
+		}
 		const secretValue = process.env.HEYPI_ADMIN_SECRET?.trim() || readAdminSecret(stateRoot);
 		const signed = createAdminLoginToken(secretValue, 5 * 60_000, { stateRoot });
 		return { admin: adminLoginUrl(baseUrl, signed.token, server?.adminPath ?? "/admin"), base: baseUrl };
@@ -282,18 +339,37 @@ async function spawnWithTsx(command: "start" | "dev", file: string | undefined, 
 		env: { ...process.env, ...env, HEYPI_CLI_CHILD: "1" },
 		stdio: "inherit",
 	});
-	await new Promise<void>((resolve, reject) => {
-		child.once("error", reject);
-		child.once("exit", (code, signal) => {
-			if (signal) {
-				process.exitCode = 128;
+	let forwarded = false;
+	const forward = (signal: "SIGINT" | "SIGTERM") => {
+		if (child.exitCode !== null || child.killed) return;
+		if (forwarded) {
+			child.kill("SIGKILL");
+			return;
+		}
+		forwarded = true;
+		child.kill(signal);
+	};
+	const onSigint = () => forward("SIGINT");
+	const onSigterm = () => forward("SIGTERM");
+	process.once("SIGINT", onSigint);
+	process.once("SIGTERM", onSigterm);
+	try {
+		await new Promise<void>((resolve, reject) => {
+			child.once("error", reject);
+			child.once("exit", (code, signal) => {
+				if (signal) {
+					process.exitCode = signal === "SIGINT" ? 130 : signal === "SIGTERM" ? 143 : 128;
+					resolve();
+					return;
+				}
+				process.exitCode = code ?? 0;
 				resolve();
-				return;
-			}
-			process.exitCode = code ?? 0;
-			resolve();
+			});
 		});
-	});
+	} finally {
+		process.off("SIGINT", onSigint);
+		process.off("SIGTERM", onSigterm);
+	}
 }
 
 async function loadApp(file: string | undefined): Promise<HeypiApp> {
@@ -431,6 +507,120 @@ async function status(flags: Flags): Promise<void> {
 		`jobs: ${totalJobs} total, ${activeJobs} active, ${pausedJobs} paused, ${dueJobs} due`,
 	];
 	line(rows.join("\n"));
+}
+
+async function threadsList(flags: Flags): Promise<void> {
+	const db = dbFor(requiredFlag(flags, "db"));
+	const threads = new ThreadRepo(db);
+	const messages = new MessageRepo(db);
+	const query = stringFlag(flags, "q")?.toLowerCase();
+	const limit = numberFlag(flags, "limit", 25);
+	const rows = await threads.list({
+		agent: stringFlag(flags, "agent"),
+		providers: listFlag(flags, "provider"),
+		limit: query ? Math.max(limit * 4, 100) : limit,
+		offset: query ? 0 : numberFlag(flags, "offset", 0),
+	});
+	const out = [];
+	for (const row of rows) {
+		const latest = (await messages.listForThread(row.id, { limit: 1 }))[0];
+		const haystack = [
+			row.id,
+			row.agent,
+			row.provider,
+			row.kind,
+			row.team,
+			row.channel,
+			row.actor,
+			row.key,
+			latest?.text,
+		]
+			.filter(Boolean)
+			.join("\n")
+			.toLowerCase();
+		if (query && !haystack.includes(query)) {
+			const hits = await messages.search({ threadId: row.id, query, limit: 1, includeTools: true });
+			if (!hits.length) continue;
+		}
+		out.push({ ...row, preview: latest?.text ?? "" });
+		if (out.length >= limit) break;
+	}
+	if (booleanFlag(flags, "json")) return line(JSON.stringify(out, null, 2));
+	if (!out.length) return line("No threads found.");
+	line(
+		table(
+			["id", "agent", "provider", "channel", "actor", "updated", "preview"],
+			out.map((row) => [
+				row.id,
+				row.agent,
+				row.provider,
+				row.channel,
+				row.actor ?? "-",
+				fmtTime(row.updatedAt),
+				clipOneLine(row.preview, 72),
+			]),
+		),
+	);
+}
+
+async function threadShow(flags: Flags, id: string): Promise<void> {
+	const db = dbFor(requiredFlag(flags, "db"));
+	const thread = await new ThreadRepo(db).get(id);
+	if (!thread || (stringFlag(flags, "agent") && thread.agent !== stringFlag(flags, "agent"))) {
+		throw new Error(`thread not found: ${id}`);
+	}
+	const messages = await new MessageRepo(db).listForThread(id, { limit: numberFlag(flags, "limit", 100) });
+	const approvals = await new ApprovalRepo(db).listForThread(id, { agent: stringFlag(flags, "agent"), limit: 100 });
+	if (booleanFlag(flags, "json")) return line(JSON.stringify({ thread, messages, approvals }, null, 2));
+	const rows = [
+		`thread: ${thread.id}`,
+		`agent: ${thread.agent}`,
+		`provider: ${thread.provider}`,
+		`channel: ${thread.channel}`,
+		`actor: ${thread.actor ?? "-"}`,
+		`updated: ${fmtTime(thread.updatedAt)}`,
+		"",
+		...messages.map(
+			(row) =>
+				`${fmtTime(row.createdAt)} ${row.role}${row.actor ? `(${row.actor})` : ""}: ${clipOneLine(row.text, 180)}`,
+		),
+	];
+	if (approvals.length) {
+		rows.push(
+			"",
+			"approvals:",
+			...approvals.map(
+				(row) => `${row.id} ${row.state} ${row.runtime} ${clipOneLine(row.command, 80)} (${row.reason})`,
+			),
+		);
+	}
+	line(rows.join("\n"));
+}
+
+async function eventsList(flags: Flags): Promise<void> {
+	const events = await new EventRepo(dbFor(requiredFlag(flags, "db"))).list({
+		agent: stringFlag(flags, "agent"),
+		threadId: stringFlag(flags, "thread"),
+		trace: stringFlag(flags, "trace"),
+		limit: numberFlag(flags, "limit", 100),
+	});
+	const rows = events.reverse();
+	if (booleanFlag(flags, "json")) return line(JSON.stringify(rows, null, 2));
+	if (!rows.length) return line("No events found.");
+	line(
+		table(
+			["time", "seq", "type", "trace", "thread", "call", "approval"],
+			rows.map((row) => [
+				fmtTime(row.createdAt),
+				String(row.seq),
+				row.type,
+				row.trace,
+				row.threadId ?? "-",
+				row.callId ?? "-",
+				row.approvalId ?? "-",
+			]),
+		),
+	);
 }
 
 function init(): void {
@@ -851,13 +1041,16 @@ async function evalsRun(flags: Flags, name: string): Promise<void> {
 	if (!evaluation) throw new Error(`eval not found: ${name}`);
 	const invalid = validateEval(evaluation);
 	if (invalid.length) throw new Error(`invalid eval:\n${invalid.join("\n")}`);
-	const result = evalResult(flags);
+	const run = await evalRunResult(flags, evaluation);
+	const result = run.result;
 	const report = await evaluateEval(evaluation, result);
-	const trace = stringFlag(flags, "db") ? `eval:${randomUUID()}` : undefined;
-	if (trace) await persistEvalRunEvent(flags, { trace, evaluation, result, report });
+	const dbPath = stringFlag(flags, "db");
+	const trace = dbPath ? (run.trace ?? `eval:${randomUUID()}`) : undefined;
+	if (trace && dbPath) await persistEvalRunEvent(flags, { trace, evaluation, result, report, events: run.events });
 	const body = {
 		ok: report.ok,
 		eval: evaluation.name,
+		mode: run.mode,
 		...(trace ? { trace } : {}),
 		result,
 		assertions: report.assertions,
@@ -883,10 +1076,19 @@ async function evalsRun(flags: Flags, name: string): Promise<void> {
 
 async function persistEvalRunEvent(
 	flags: Flags,
-	input: { trace: string; evaluation: EvalConfig; result: EvalResult; report: EvalReport },
+	input: { trace: string; evaluation: EvalConfig; result: EvalResult; report: EvalReport; events?: EvalTraceEvent[] },
 ): Promise<void> {
 	const dbPath = requiredFlag(flags, "db");
 	const repo = new EventRepo(dbFor(dbPath));
+	for (const event of input.events ?? []) {
+		await repo.append({
+			agent: stringFlag(flags, "agent-id") ?? "default",
+			trace: input.trace,
+			type: event.type,
+			data: event.data,
+			createdAt: event.createdAt,
+		});
+	}
 	await repo.append({
 		agent: stringFlag(flags, "agent-id") ?? "default",
 		trace: input.trace,
@@ -908,8 +1110,8 @@ async function persistEvalRunEvent(
 }
 
 function loadCliEvals(flags: Flags): EvalConfig[] {
-	const agent = stringFlag(flags, "agent") ?? "./agent";
-	return loadEvals(resolve(invocationRoot(), agent, "evals"));
+	const evals = stringFlag(flags, "evals") ?? "./evals";
+	return loadEvals(resolve(invocationRoot(), evals));
 }
 
 function filterEvals(rows: EvalConfig[], flags: Flags): EvalConfig[] {
@@ -928,11 +1130,38 @@ function evalSummary(input: EvalConfig): Record<string, unknown> {
 	};
 }
 
-function evalResult(flags: Flags): EvalResult {
+async function evalRunResult(
+	flags: Flags,
+	evaluation: EvalConfig,
+): Promise<{ mode: "supplied" | "agent"; result: EvalResult; trace?: string; events?: EvalTraceEvent[] }> {
+	if (hasSuppliedEvalResult(flags)) return { mode: "supplied", result: suppliedEvalResult(flags) };
+	const model = stringFlag(flags, "model") ?? process.env.HEYPI_MODEL;
+	if (!model) throw new Error("eval run requires --result, --text, or --model/HEYPI_MODEL");
+	const agent = loadAgent(resolve(invocationRoot(), stringFlag(flags, "agent") ?? "./agent"), {
+		model,
+	});
+	const run = await runEvalAgent({
+		evaluation,
+		agent,
+		runtime: { root: stringFlag(flags, "runtime-root") },
+	});
+	return {
+		mode: "agent",
+		result: { text: run.text, tools: run.tools, approvals: run.approvals },
+		trace: run.trace,
+		events: run.events,
+	};
+}
+
+function hasSuppliedEvalResult(flags: Flags): boolean {
+	return stringFlag(flags, "result") !== undefined || stringFlag(flags, "text") !== undefined;
+}
+
+function suppliedEvalResult(flags: Flags): EvalResult {
 	const file = stringFlag(flags, "result");
 	if (file) return normalizeEvalResult(parseJsonFile(resolve(invocationRoot(), file), "eval result"));
 	const text = stringFlag(flags, "text");
-	if (text === undefined) throw new Error("eval run requires --result or --text");
+	if (text === undefined) throw new Error("eval run requires --result, --text, or --model/HEYPI_MODEL");
 	return {
 		text,
 		tools: listFlag(flags, "tools"),
@@ -1169,6 +1398,9 @@ Usage:
   heypi status --db ./state/heypi.db [--agent <id>] [--runtime-root ./workspace] [--json]
   heypi db check --db ./state/heypi.db
   heypi db migrate --db ./state/heypi.db
+  heypi threads --db ./state/heypi.db [--q deploy] [--json]
+  heypi thread <id> --db ./state/heypi.db [--json]
+  heypi events --db ./state/heypi.db [--thread <id>] [--trace <id>] [--json]
   heypi slack check [--env .env] [--mode socket|http]
   heypi slack manifest --mode socket
   heypi slack manifest --mode http --url https://host/slack/slack/events
@@ -1182,7 +1414,7 @@ Usage:
   heypi discord check [--env .env]
   heypi discord observe [--env .env] [--timeout 60]
   heypi discord channels [engineering] [--env .env] [--query engineering]
-  heypi admin link [--state ./state] [--url http://127.0.0.1:3000] [--pid <pid>] [--json]
+  heypi admin link [--state ./state] [--url http://127.0.0.1:4321] [--pid <pid>] [--json]
   heypi approvals list --db ./state/heypi.db [--agent <id>] [--json]
   heypi approvals show <id> --db ./state/heypi.db [--agent <id>] [--json]
   heypi approvals bypasses --db ./state/heypi.db [--agent <id>] [--json]
@@ -1191,10 +1423,11 @@ Usage:
   heypi jobs run <id> --db ./state/heypi.db [--agent <id>]
   heypi jobs pause <id> --db ./state/heypi.db [--agent <id>]
   heypi jobs resume <id> --db ./state/heypi.db [--agent <id>]
-  heypi eval list [--agent ./agent] [--tag smoke] [--json]
-  heypi eval show <name> [--agent ./agent] [--json]
-  heypi eval check [--agent ./agent] [--tag smoke] [--json]
-  heypi eval run <name> [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--json]`;
+  heypi eval list [--evals ./evals] [--tag smoke] [--json]
+  heypi eval show <name> [--evals ./evals] [--json]
+  heypi eval check [--evals ./evals] [--tag smoke] [--json]
+  heypi eval run <name> [--evals ./evals] [--agent ./agent] [--model openai/gpt-5-mini] [--runtime-root ./workspace] [--db ./state/heypi.db] [--agent-id default] [--json]
+  heypi eval run <name> [--evals ./evals] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--db ./state/heypi.db] [--agent-id default] [--json]`;
 }
 
 function numberFlag(flags: Flags, name: string, fallback: number): number {
@@ -1248,7 +1481,7 @@ async function selectAdminServer(
 	stateRoot: string,
 	flags: Flags,
 	urlOverride?: string,
-): Promise<{ pid: number; url: string; adminPath: string } | undefined> {
+): Promise<{ pid: number; url: string; adminPath: string; auth?: boolean } | undefined> {
 	const requestedPid = optionalNumberFlag(flags, "pid");
 	const matched: Array<{ path: string; descriptor: AdminServerDescriptor }> = [];
 	const unavailable: AdminServerDescriptor[] = [];
@@ -1338,6 +1571,14 @@ function adminProbeUrl(baseUrl: string, adminPath: string): string {
 	return url.toString();
 }
 
+function adminPageUrl(baseUrl: string, adminPath: string): string {
+	const url = new URL(baseUrl);
+	url.pathname = adminPath;
+	url.search = "";
+	url.hash = "";
+	return url.toString();
+}
+
 function discoverStateRoots(root: string, depth = 5): string[] {
 	const out = new Set<string>();
 	const walk = (dir: string, remaining: number) => {
@@ -1391,6 +1632,12 @@ function checkDir(path: string, label: string): string {
 
 function fmtTime(value: number | null): string {
 	return value ? new Date(value).toISOString() : "-";
+}
+
+function clipOneLine(value: string, max: number): string {
+	const clean = value.replace(/\s+/g, " ").trim();
+	if (clean.length <= max) return clean;
+	return `${clean.slice(0, Math.max(0, max - 3))}...`;
 }
 
 function chatName(chat: TelegramChat): string {
