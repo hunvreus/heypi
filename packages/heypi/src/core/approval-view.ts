@@ -135,10 +135,10 @@ function approvalResolutionRow(
 	formatActor?: (actor: string) => string,
 ): ApprovalViewRow | undefined {
 	if (state === "approved") {
-		return { label: "Approved by", value: actor ? formatActor?.(actor) ?? actor : approvalStateTitle(state) };
+		return { label: "Approved by", value: actor ? (formatActor?.(actor) ?? actor) : approvalStateTitle(state) };
 	}
 	if (state === "rejected") {
-		return { label: "Rejected by", value: actor ? formatActor?.(actor) ?? actor : approvalStateTitle(state) };
+		return { label: "Rejected by", value: actor ? (formatActor?.(actor) ?? actor) : approvalStateTitle(state) };
 	}
 	if (state === "expired") return { label: "Status", value: approvalStateTitle(state) };
 	return undefined;

@@ -49,8 +49,8 @@ import { optionalEnv, requiredEnv } from "./env.js";
 import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
-import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { normalizeProgressConfig } from "./progress-config.js";
+import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 import { warnMissingChatAllow } from "./security-warning.js";
 
@@ -857,18 +857,17 @@ export function startDiscordProgress(input: {
 		message: input.progress?.message === false ? false : (input.progress?.message ?? "Working..."),
 		delayMs: input.progress?.delayMs ?? 1000,
 		send: async (text) => {
-			const msg = await input.delivery
-				.run(
-					() =>
-						sendTo(input.message.channel, input.reply === false ? undefined : input.message, {
-							content: text,
-							components: progressComponents(input.cancelId),
-						}),
-					{
-						...input.context,
-						retry: "send",
-					},
-				);
+			const msg = await input.delivery.run(
+				() =>
+					sendTo(input.message.channel, input.reply === false ? undefined : input.message, {
+						content: text,
+						components: progressComponents(input.cancelId),
+					}),
+				{
+					...input.context,
+					retry: "send",
+				},
+			);
 			return msg.id;
 		},
 		onError: (error) =>

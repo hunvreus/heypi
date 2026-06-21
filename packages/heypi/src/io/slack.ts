@@ -20,8 +20,8 @@ import { allowByDimensions, messageTriggered } from "./gate.js";
 import type { Adapter, AdapterStart, AdapterTarget, Handler, Outbound } from "./handler.js";
 import { logCtx } from "./log-context.js";
 import { assertRouteName } from "./name.js";
-import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { normalizeProgressConfig } from "./progress-config.js";
+import { delayedProgressPlaceholder } from "./progress-placeholder.js";
 import { DraftReplyStream, type ReplyStreamOption } from "./reply-stream.js";
 import { warnMissingChatAllow } from "./security-warning.js";
 
@@ -1001,7 +1001,7 @@ export function startProgress(input: {
 			})
 			.catch((error) => {
 				input.logger.warn("slack.progress.reaction_failed", { ...input.context, error: errorMessage(error) });
-		});
+			});
 	}
 
 	const placeholder = delayedProgressPlaceholder({
