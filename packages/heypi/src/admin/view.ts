@@ -22,6 +22,7 @@ export type PageInput = {
 	auth?: boolean;
 	live: AdminOverview["live"];
 	memoryFiles: number;
+	threads: AdminPage<AdminThreadRow>;
 	body: string;
 	nonce: string;
 	livePage?: boolean;
@@ -44,12 +45,11 @@ type AdminInfo = {
 
 type Cell = string | { html: string };
 type CardDescription = string | Cell;
-const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=8";
+const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=9";
 const ADMIN_JS_HREF = "/admin/assets/basecoat.all.min.js?v=1";
 const ADMIN_DOCS_HREF = "https://heypi.dev/docs";
 
 export function page(input: PageInput): string {
-	const mainClass = "mx-auto grid min-w-0 w-full max-w-7xl gap-4 px-6 py-3 max-[760px]:px-4 max-[760px]:py-3";
 	return `<!doctype html>
 <html lang="en" class="overflow-x-hidden">
 <head>
@@ -58,19 +58,25 @@ ${themeScript(input.nonce, true)}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(input.title)} · heypi admin</title>
 <link rel="stylesheet" href="${ADMIN_CSS_HREF}">
-${navBreakpointStyle(input.nonce)}
 </head>
 <body class="min-h-screen overflow-x-hidden bg-background text-foreground" data-live-page="${input.livePage ? "true" : "false"}" data-live-revision="${escapeHtml(input.live.revision)}" data-live-chats-revision="${escapeHtml(input.live.chatsRevision)}" data-live-thread-id="${escapeHtml(input.liveThreadId ?? "")}" data-live-thread-revision="${escapeHtml(input.liveThreadId ? (input.live.threadRevisions[input.liveThreadId] ?? "") : "")}">
-	<header class="bg-background" data-admin-app-header>
-	<div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3 max-[760px]:px-4">
-	<a class="flex items-center text-foreground" href="/admin" aria-label="heypi">${logo("h-4 w-auto")}</a>
-	${topNav(input.active, input.live, input.memoryFiles, input.csrf, input.auth)}
-	</div>
+${adminSidebar(input)}
+<main class="flex h-screen min-w-0 flex-col overflow-hidden bg-background" data-admin-main>
+	<header class="flex min-w-0 items-center gap-2 border-b px-6 py-3 max-[760px]:px-4" data-admin-main-header>
+		<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Toggle sidebar" data-admin-sidebar-toggle data-tooltip="Toggle sidebar" data-side="bottom">${icon("panel-left")}</button>
+		<div class="min-w-0">
+			<h1 class="truncate font-semibold" data-admin-page-title>${escapeHtml(input.title)}</h1>
+		</div>
+		<div class="ml-auto flex min-w-0 items-center gap-1">
+			${mainAction(input)}
+			${sectionDocsLink(input.active)}
+		</div>
 	</header>
-	<main class="${mainClass}" data-admin-main>
-	<h1 class="sr-only" data-admin-page-title>${escapeHtml(input.title)}</h1>
+	<section class="min-h-0 min-w-0 flex-1 overflow-hidden" data-admin-page-content="${escapeHtml(input.active)}">
 ${input.body}
+	</section>
 </main>
+${commandDialog(input)}
 <script src="${ADMIN_JS_HREF}" defer></script>
 <script nonce="${escapeHtml(input.nonce)}">
 let currentRevision = document.body.dataset.liveRevision || undefined;
@@ -115,6 +121,9 @@ function fallbackCopy(text) {
 function threadScrollContainer() {
 	return document.querySelector("[data-admin-thread-scroll]");
 }
+function threadPanelContainer() {
+	return document.querySelector("[data-admin-thread-panel]");
+}
 function threadScrollKey() {
 	return "heypi:admin:thread-scroll:" + location.pathname + location.search;
 }
@@ -124,14 +133,17 @@ function threadAtBottom(container) {
 function threadScrollBottom(container) {
 	container.scrollTop = container.scrollHeight;
 }
-const threadScroll = threadScrollContainer();
 let threadFollowBottom = true;
-if (threadScroll instanceof HTMLElement) {
+let threadScrollObserver;
+function setupThreadScroll(restore) {
+	if (threadScrollObserver) threadScrollObserver.disconnect();
+	const threadScroll = threadScrollContainer();
+	if (!(threadScroll instanceof HTMLElement)) return;
 	requestAnimationFrame(() => {
 		requestAnimationFrame(() => {
 			const stored = sessionStorage.getItem(threadScrollKey());
 			sessionStorage.removeItem(threadScrollKey());
-			if (stored && stored !== "bottom") threadScroll.scrollTop = Number(stored) || 0;
+			if (restore && stored && stored !== "bottom") threadScroll.scrollTop = Number(stored) || 0;
 			else threadScrollBottom(threadScroll);
 			threadFollowBottom = threadAtBottom(threadScroll);
 		});
@@ -139,9 +151,31 @@ if (threadScroll instanceof HTMLElement) {
 	threadScroll.addEventListener("scroll", () => {
 		threadFollowBottom = threadAtBottom(threadScroll);
 	}, { passive: true });
-	new MutationObserver(() => {
+	threadScrollObserver = new MutationObserver(() => {
 		if (threadFollowBottom) requestAnimationFrame(() => threadScrollBottom(threadScroll));
-	}).observe(threadScroll, { childList: true, subtree: true });
+	});
+	threadScrollObserver.observe(threadScroll, { childList: true, subtree: true });
+}
+setupThreadScroll(true);
+async function refreshThreadPanel() {
+	if (!liveThreadId) return false;
+	const panel = threadPanelContainer();
+	if (!(panel instanceof HTMLElement)) return false;
+	const before = threadScrollContainer();
+	const followBottom = before instanceof HTMLElement ? threadAtBottom(before) : true;
+	if (before instanceof HTMLElement && !followBottom) {
+		sessionStorage.setItem(threadScrollKey(), String(before.scrollTop));
+	} else {
+		sessionStorage.setItem(threadScrollKey(), "bottom");
+	}
+	const response = await fetch("/admin/threads/" + encodeURIComponent(liveThreadId) + "/_panel" + location.search, {
+		headers: { accept: "text/html" },
+		credentials: "same-origin"
+	});
+	if (!response.ok) return false;
+	panel.innerHTML = await response.text();
+	setupThreadScroll(true);
+	return true;
 }
 const events = new EventSource("/admin/events");
 events.addEventListener("summary", (event) => {
@@ -156,12 +190,15 @@ events.addEventListener("summary", (event) => {
 	if (currentRevision && data.revision !== currentRevision && livePage) {
 		const nextThreadRevision = liveThreadId ? data.threadRevisions?.[liveThreadId] : undefined;
 		const chatsChanged = Boolean(data.chatsRevision && data.chatsRevision !== currentChatsRevision);
-		const shouldReload = liveThreadId
-			? chatsChanged || Boolean(nextThreadRevision && nextThreadRevision !== currentThreadRevision)
-			: true;
+		const threadChanged = Boolean(nextThreadRevision && nextThreadRevision !== currentThreadRevision);
+		const shouldReload = liveThreadId ? false : true;
 		if (data.chatsRevision) currentChatsRevision = data.chatsRevision;
 		if (nextThreadRevision) currentThreadRevision = nextThreadRevision;
-		if (shouldReload) {
+		if (liveThreadId && threadChanged && !chatsChanged) {
+			void refreshThreadPanel().then((ok) => {
+				if (!ok) location.reload();
+			}).catch(() => location.reload());
+		} else if (shouldReload || chatsChanged) {
 			const container = threadScrollContainer();
 			if (container instanceof HTMLElement) {
 				sessionStorage.setItem(threadScrollKey(), threadAtBottom(container) ? "bottom" : String(container.scrollTop));
@@ -179,6 +216,21 @@ events.onerror = () => updateField("checkedAt", "Last update unavailable");
 document.addEventListener("click", (event) => {
 	const target = event.target;
 	if (!(target instanceof Element)) return;
+	const toggle = target.closest("[data-admin-sidebar-toggle]");
+	if (toggle) {
+		const sidebar = document.getElementById("admin-sidebar");
+		if (sidebar && typeof sidebar.toggle === "function") sidebar.toggle();
+		return;
+	}
+	const commandOpen = target.closest("[data-admin-command-open]");
+	if (commandOpen) {
+		const command = document.getElementById("admin-command");
+		if (command instanceof HTMLDialogElement) {
+			command.showModal();
+			requestAnimationFrame(() => command.querySelector("input")?.focus());
+		}
+		return;
+	}
 	const copy = target.closest("[data-admin-copy]");
 	if (copy instanceof HTMLElement) {
 		const text = copy.dataset.adminCopy ?? "";
@@ -211,21 +263,186 @@ document.addEventListener("click", (event) => {
 </html>`;
 }
 
-function logoutForm(csrf: string): string {
-	return `<form method="post" action="/admin/logout" class="contents">
-	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-		<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="Log out" data-admin-logout data-tooltip="Log out" data-side="bottom">${icon("log-out")}</button>
-	</form>`;
+type AdminNavItem = {
+	label: string;
+	href: string;
+	key: string;
+	icon: string;
+	count?: number;
+	field?: string;
+};
+
+function adminSidebar(input: PageInput): string {
+	return `<aside id="admin-sidebar" class="sidebar" data-side="left" data-initial-open="true" data-admin-sidebar>
+	<nav aria-label="Admin navigation">
+		<header>
+			<a class="flex min-w-0 items-center gap-2 rounded-md p-2" href="/admin" aria-label="heypi">${logo("h-4 w-auto shrink-0")}</a>
+		</header>
+		<section id="admin-sidebar-content" class="scrollbar" data-admin-sidebar-content>
+			${sidebarMenu(input)}
+			${sidebarThreadList(input.threads, input.liveThreadId)}
+			${sidebarFooter(input)}
+		</section>
+	</nav>
+</aside>`;
 }
 
-function navBreakpointStyle(nonce: string): string {
-	return `<style nonce="${escapeHtml(nonce)}">
-[data-admin-nav-mobile]{display:none}
-@media (max-width:760px){
-	[data-admin-nav-desktop]{display:none!important}
-	[data-admin-nav-mobile]{display:block!important}
+function sidebarMenu(input: PageInput): string {
+	const items = navItems(input.live, input.memoryFiles);
+	return `<div role="group" aria-labelledby="admin-sidebar-menu-heading">
+	<h3 id="admin-sidebar-menu-heading">Admin</h3>
+	<ul>
+		<li><button type="button" data-admin-command-open>${icon("search")}<span>Search</span></button></li>
+		${items
+			.filter((item) => item.key !== "chats" && item.key !== "evals")
+			.map((item) => sidebarNavItem(item, input.active))
+			.join("")}
+	</ul>
+</div>`;
 }
-</style>`;
+
+function sidebarNavItem(item: AdminNavItem, active: string): string {
+	const selected = active === item.key;
+	const count =
+		item.count === undefined
+			? ""
+			: `<span class="badge ms-auto" data-variant="secondary"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
+	return `<li><a href="${escapeHtml(item.href)}"${selected ? ' aria-current="page"' : ""} data-admin-sidebar-link="${escapeHtml(item.key)}">${icon(item.icon)}<span>${escapeHtml(item.label)}</span>${count}</a></li>`;
+}
+
+function sidebarThreadList(page: AdminPage<AdminThreadRow>, selectedId?: string): string {
+	if (!page.rows.length) {
+		return `<div role="group" aria-labelledby="admin-sidebar-threads-heading">
+	<h3 id="admin-sidebar-threads-heading">Threads</h3>
+	<ul>
+		<li><button type="button" disabled><span>No threads yet</span></button></li>
+	</ul>
+</div>`;
+	}
+	return `${threadGroups(page.rows)
+		.map(
+			(group) => `<div role="group" aria-labelledby="admin-thread-group-${escapeHtml(group.key)}">
+	<h3 id="admin-thread-group-${escapeHtml(group.key)}">${escapeHtml(group.label)} <span class="ml-auto font-mono">${group.rows.length}</span></h3>
+	<ul>
+		${group.rows.map((row) => sidebarThreadItem(row, row.id === selectedId)).join("")}
+	</ul>
+</div>`,
+		)
+		.join("")}`;
+}
+
+function sidebarThreadItem(row: AdminThreadRow, selected: boolean): string {
+	return `<li><a href="${escapeHtml(threadHref(row))}"${selected ? ' aria-current="page"' : ""} data-admin-sidebar-thread="${escapeHtml(row.id)}">
+	${adapterIcon(row.kind)}
+	<span>${escapeHtml(threadPreview(row))}</span>
+	${row.pendingApprovals ? `<span class="badge ms-auto" data-variant="secondary">${row.pendingApprovals}</span>` : ""}
+</a></li>`;
+}
+
+function sidebarFooter(input: PageInput): string {
+	const logout = input.auth === false ? sidebarDisabledItem("Log out", "log-out") : sidebarLogoutForm(input.csrf);
+	return `<div role="group" aria-labelledby="admin-sidebar-links-heading">
+	<h3 id="admin-sidebar-links-heading">Links</h3>
+	<ul>
+		<li><a href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" data-admin-docs-link>${icon("book-text")}<span>Docs</span></a></li>
+		<li><button type="button" aria-label="Toggle theme" data-tooltip="Toggle theme" data-admin-theme-toggle>${themeIcon()}<span>Theme</span></button></li>
+		${logout}
+	</ul>
+</div>`;
+}
+
+function themeIcon(): string {
+	return `<span class="block dark:hidden" data-admin-theme-icon="moon">${icon("moon")}</span><span class="hidden dark:block" data-admin-theme-icon="sun">${icon("sun")}</span>`;
+}
+
+function sidebarDisabledItem(label: string, iconName: string): string {
+	return `<li><button type="button" aria-disabled="true">${icon(iconName)}<span>${escapeHtml(label)}</span></button></li>`;
+}
+
+function sidebarLogoutForm(csrf: string): string {
+	return `<li><form method="post" action="/admin/logout" class="contents">
+	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
+	<button type="submit" data-admin-logout>${icon("log-out")}<span>Log out</span></button>
+</form></li>`;
+}
+
+function commandDialog(input: PageInput): string {
+	const items = navItems(input.live, input.memoryFiles);
+	return `<dialog id="admin-command" class="command-dialog" aria-label="Admin command menu">
+	<div class="command">
+		<header>
+			${icon("search")}
+			<input id="admin-command-input" type="text" placeholder="Search admin..." autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="admin-command-menu">
+		</header>
+		<div role="menu" id="admin-command-menu" aria-orientation="vertical" data-empty="No results found." class="scrollbar">
+			<div role="group" aria-labelledby="admin-command-pages-heading">
+				<span role="heading" id="admin-command-pages-heading">Pages</span>
+				${items.map((item) => commandItem(item)).join("")}
+			</div>
+			${commandThreadGroup(input.threads)}
+		</div>
+	</div>
+</dialog>`;
+}
+
+function commandItem(item: AdminNavItem): string {
+	return `<a href="${escapeHtml(item.href)}" role="menuitem" data-keywords="${escapeHtml(item.key)}">${icon(item.icon)}${escapeHtml(item.label)}</a>`;
+}
+
+function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
+	if (!page.rows.length) return "";
+	return `<div role="group" aria-labelledby="admin-command-threads-heading">
+	<span role="heading" id="admin-command-threads-heading">Threads</span>
+	${page.rows
+		.map(
+			(row) =>
+				`<a href="${escapeHtml(threadHref(row))}" role="menuitem" data-keywords="${escapeHtml(`${row.provider} ${row.kind} ${row.channel} ${row.actor ?? ""}`)}">${adapterIcon(row.kind)}${escapeHtml(threadPreview(row))}</a>`,
+		)
+		.join("")}
+</div>`;
+}
+
+function mainAction(input: PageInput): string {
+	if (input.active === "chats") {
+		return `<a class="btn-sm" href="/admin">${icon("message-square")}New message</a>`;
+	}
+	return "";
+}
+
+function sectionDocsLink(input: string): string {
+	const path: Record<string, string> = {
+		approvals: "/configuration/admin/",
+		configuration: "/configuration/admin/",
+		jobs: "/configuration/scheduling/",
+		memory: "/configuration/memory/",
+	};
+	const href = `${ADMIN_DOCS_HREF}${path[input] ?? ""}`;
+	return `<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="bottom" data-admin-docs-link>${icon("book-text")}</a>`;
+}
+
+function navItems(live: AdminOverview["live"], memoryFiles: number): AdminNavItem[] {
+	return [
+		{ label: "Threads", href: "/admin", key: "chats", icon: "message-square" },
+		{
+			label: "Approvals",
+			href: "/admin/approvals",
+			key: "approvals",
+			icon: "shield-check",
+			count: live.pendingApprovals,
+			field: "pendingApprovals",
+		},
+		{
+			label: "Jobs",
+			href: "/admin/jobs",
+			key: "jobs",
+			icon: "briefcase",
+			count: live.jobs,
+			field: "jobs",
+		},
+		{ label: "Evals", href: "/admin/evals", key: "evals", icon: "activity" },
+		{ label: "Memory", href: "/admin/memory", key: "memory", icon: "database", count: memoryFiles },
+		{ label: "Config", href: "/admin/configuration", key: "configuration", icon: "settings" },
+	];
 }
 
 export function loginPage(input: { error?: string; secret: boolean; nonce: string }): string {
@@ -307,7 +524,7 @@ ${card(
 }
 
 export function threadsView(
-	page: AdminPage<AdminThreadRow>,
+	_page: AdminPage<AdminThreadRow>,
 	input: {
 		checkedAt?: number;
 		selected?: AdminThreadView;
@@ -315,64 +532,9 @@ export function threadsView(
 		live?: AdminOverview["live"];
 	} = {},
 ): string {
-	const selectedId = input.selected?.thread.id;
-	return `<div class="grid h-[calc(100vh-5.5rem)] min-w-0" data-admin-chats>
-	<div class="card !p-0 flex h-full min-h-0 min-w-0 flex-col overflow-hidden" data-admin-chats-card>
-	<div class="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)] lg:grid-rows-1" data-admin-chats-layout>
-	<aside class="flex max-h-[36vh] min-h-0 min-w-0 flex-col gap-3 overflow-hidden border-b p-4 lg:max-h-none lg:border-b-0" data-admin-chats-sidebar>
-	<header class="grid gap-3">
-		<div class="grid gap-1">
-			<h2 class="leading-none font-semibold">Chats</h2>
-			<p class="text-sm text-muted-foreground">Recent conversations across connected channels.</p>
-		</div>
-		${input.live ? chatSidebarPulse(input.live) : ""}
-		${threadSearch(page)}
-	</header>
-		<div class="scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto" data-admin-thread-list>${threadList(page, selectedId)}</div>
-		${adminComposeForm({ csrf: input.csrf, compact: true })}
-	</aside>
-	<section class="min-h-0 min-w-0 overflow-hidden lg:border-l" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
-</div>
-</div>
+	return `<div class="h-full min-h-0 min-w-0" data-admin-chats>
+	<section class="h-full min-h-0 min-w-0 overflow-hidden" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>`;
-}
-
-function chatSidebarPulse(live: AdminOverview["live"]): string {
-	return `<div class="grid min-w-0 gap-2 rounded-lg border bg-muted/40 p-3 text-sm" data-admin-chat-pulse>
-	<div class="flex min-w-0 items-center justify-between gap-3">
-		<a class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground hover:text-foreground" href="/admin/approvals" data-admin-chat-pulse-link="approvals">Approvals <span class="badge-secondary" data-live-field="pendingApprovals">${live.pendingApprovals}</span></a>
-		<span class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground" data-admin-chat-pulse-runs>Runs <span class="badge-secondary" data-live-field="runningRuns">${live.runningRuns}</span></span>
-		<a class="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground hover:text-foreground" href="/admin/jobs" data-admin-chat-pulse-link="jobs">Jobs <span class="badge-secondary" data-live-field="jobs">${live.jobs}</span></a>
-	</div>
-	<p class="text-xs text-muted-foreground" data-live-field="checkedAt">Last updated ${time(live.checkedAt)}</p>
-</div>`;
-}
-
-function threadSearch(page: AdminPage<AdminThreadRow>): string {
-	const q = page.filters?.q ?? "";
-	const provider = page.filters?.provider ?? "";
-	const reset = activeFilters(page.filters)
-		? `<a class="btn-sm-ghost h-8 shrink-0" href="/admin" data-admin-chat-filter-reset>Reset</a>`
-		: "";
-	return `<form class="min-w-0" method="get" action="/admin" data-admin-chat-search>
-	<input type="hidden" name="limit" value="${page.limit}">
-	<div class="flex min-w-0 items-center gap-2">
-	<div class="relative min-w-0 flex-1">
-			<input type="search" name="q" class="input h-8 pr-9 text-sm" placeholder="Search..." value="${escapeHtml(q)}" aria-label="Search query" data-admin-chat-search-input>
-			<button class="absolute right-1.5 top-1/2 -translate-y-1/2 btn-icon-ghost text-muted-foreground hover:text-accent-foreground size-6" type="submit" aria-label="Search chats" data-admin-chat-search-submit data-tooltip="Search chats" data-side="top" data-align="end">${icon("search")}</button>
-	</div>
-	<select class="select h-8 w-[8.5rem] shrink-0 py-1 text-sm" name="provider" aria-label="Adapter" data-admin-chat-provider-filter>
-		<option value="">All adapters</option>
-		${(page.facets?.providers ?? [])
-			.map(
-				(value) =>
-					`<option value="${escapeHtml(value)}"${value === provider ? " selected" : ""}>${escapeHtml(adapterLabel(value))}</option>`,
-			)
-			.join("")}
-	</select>
-	${reset}
-	</div>
-</form>${scanNotice(page)}`;
 }
 
 export function approvalsView(page: AdminPage<Approval>, checkedAt?: number, input: { csrf?: string } = {}): string {
@@ -483,7 +645,7 @@ export function evalsView(page: AdminPage<AdminEval>, checkedAt?: number): strin
 		]),
 		emptyStateForFilters(page.filters, {
 			title: "No evals configured",
-			message: "Add eval definitions under agent/evals/ to inspect behavior checks here.",
+			message: "Add eval definitions under evals/ to inspect behavior checks here.",
 		}),
 	)}${pagination("/admin/evals", page)}`;
 	return `<div class="grid min-w-0 gap-4">${card("Evals", checkedAtDescription("Loaded agent behavior eval definitions.", checkedAt), body)}</div>`;
@@ -533,170 +695,17 @@ export function memoryView(memory: AdminMemory, checkedAt?: number): string {
 	return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
 }
 
-function topNav(
-	active: string,
-	live: AdminOverview["live"],
-	memoryFiles: number,
-	csrf: string,
-	auth?: boolean,
-): string {
-	const items = [
-		{ label: "Chats", href: "/admin", key: "chats" },
-		{
-			label: "Approvals",
-			href: "/admin/approvals",
-			key: "approvals",
-			count: live.pendingApprovals,
-			field: "pendingApprovals",
-		},
-		{
-			label: "Jobs",
-			href: "/admin/jobs",
-			key: "jobs",
-			count: live.jobs,
-			field: "jobs",
-		},
-		{
-			label: "Evals",
-			href: "/admin/evals",
-			key: "evals",
-		},
-		{
-			label: "Memory",
-			href: "/admin/memory",
-			key: "memory",
-			count: memoryFiles,
-		},
-		{
-			label: "Configuration",
-			href: "/admin/configuration",
-			key: "configuration",
-		},
-	];
-	const desktop = `<div data-admin-nav-desktop class="flex min-w-0 flex-wrap items-center justify-end gap-1">${items
-		.map((item) => navLink(item, active))
-		.join("")}${navSeparator()}${docsLink()}${auth === false ? "" : logoutForm(csrf)}${themeToggle()}</div>`;
-	return `<nav class="flex min-w-0 items-center justify-end gap-1 text-sm">${desktop}${mobileNavMenu(items, active, csrf, auth)}</nav>`;
-}
-
-function navLink(
-	item: {
-		label: string;
-		href: string;
-		key: string;
-		count?: number;
-		field?: string;
-	},
-	active: string,
-): string {
-	const selected = active === item.key;
-	const count =
-		item.count === undefined
-			? ""
-			: `<span class="badge-secondary"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
-	const className = [
-		"btn-sm-ghost hover:text-foreground",
-		selected ? "bg-muted text-foreground" : "text-muted-foreground",
-		item.count === undefined ? "" : "pr-2",
-	]
-		.filter(Boolean)
-		.join(" ");
-	const current = selected ? ' aria-current="page"' : "";
-	return `<a class="${className}" href="${item.href}" data-admin-nav-link="${escapeHtml(item.key)}"${current}>${escapeHtml(item.label)}${count}</a>`;
-}
-
-function navSeparator(): string {
-	return `<span class="mx-1 h-4 w-px bg-border" aria-hidden="true" data-admin-nav-separator></span>`;
-}
-
-function mobileNavMenu(
-	items: Array<{
-		label: string;
-		href: string;
-		key: string;
-		count?: number;
-		field?: string;
-	}>,
-	active: string,
-	csrf: string,
-	auth?: boolean,
-): string {
-	return `<div id="admin-mobile-menu" data-admin-nav-mobile class="dropdown-menu">
-		<button type="button" id="admin-mobile-menu-trigger" aria-haspopup="menu" aria-controls="admin-mobile-menu-menu" aria-expanded="false" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Open menu" data-admin-mobile-menu-trigger data-tooltip="Menu" data-side="bottom" data-align="end">${icon("menu")}</button>
-		<div id="admin-mobile-menu-popover" data-popover aria-hidden="true" data-align="end" class="min-w-56" data-admin-mobile-menu-popover>
-		<div role="menu" id="admin-mobile-menu-menu" aria-labelledby="admin-mobile-menu-trigger">
-			${items.map((item) => mobileNavItem(item, active)).join("")}
-			<hr role="separator">
-			${mobileDocsItem()}
-			${mobileThemeItem()}
-			${auth === false ? "" : mobileLogoutForm(csrf)}
-		</div>
-	</div>
-</div>`;
-}
-
-function mobileNavItem(
-	item: {
-		label: string;
-		href: string;
-		key: string;
-		count?: number;
-		field?: string;
-	},
-	active: string,
-): string {
-	const selected = active === item.key;
-	const count =
-		item.count === undefined
-			? ""
-			: `<span class="badge-secondary ml-auto"${item.field ? ` data-live-field="${escapeHtml(item.field)}"` : ""}>${item.count}</span>`;
-	const current = selected ? ' aria-current="page"' : "";
-	return `<a role="menuitem" href="${item.href}" data-admin-mobile-nav-link="${escapeHtml(item.key)}"${current}${selected ? ' class="bg-muted text-foreground"' : ""}>${escapeHtml(item.label)}${count}</a>`;
-}
-
-function mobileDocsItem(): string {
-	return `<a role="menuitem" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" data-admin-mobile-docs-link>${icon("book-text")}Docs</a>`;
-}
-
-function mobileThemeItem(): string {
-	return `<button type="button" role="menuitem" data-admin-theme-toggle class="w-full">
-		<span class="block dark:hidden" data-admin-theme-icon="moon">${icon("moon")}</span>
-		<span class="hidden dark:block" data-admin-theme-icon="sun">${icon("sun")}</span>
-		Toggle theme
-		</button>`;
-}
-
-function mobileLogoutForm(csrf: string): string {
-	return `<form method="post" action="/admin/logout" class="contents">
-		<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-		<button type="submit" role="menuitem" class="w-full" data-admin-mobile-logout>${icon("log-out")}Log out</button>
-		</form>`;
-}
-
 function threadHeader(row: AdminThreadRow): string {
-	return `<div class="flex min-w-0 items-center gap-2" data-admin-thread-header><span class="inline-flex shrink-0 items-center" data-tooltip="${escapeHtml(row.provider)}" data-side="bottom">${adapterIcon(row.provider)}</span><h2 class="min-w-0 truncate font-mono text-[13px]" data-admin-thread-channel>${escapeHtml(row.channel)}</h2><span class="min-w-0 truncate font-mono text-[13px] text-muted-foreground" data-admin-thread-id>${escapeHtml(row.id)}</span></div>`;
-}
-
-function threadList(page: AdminPage<AdminThreadRow>, selectedId?: string): string {
-	const empty = emptyStateForFilters(page.filters, {
-		title: "No threads yet",
-		message: "Once the agent receives a message, the thread will show up here.",
-	});
-	if (!page.rows.length) {
-		return emptyState({ ...empty, frame: "section", variant: "plain" });
-	}
-	return `<div class="grid min-w-0 gap-3" data-admin-thread-groups>${threadGroups(page.rows)
-		.map((group) => threadGroup(group, selectedId))
-		.join("")}</div>${pagination("/admin", page)}`;
+	return `<div class="flex min-w-0 items-center gap-2" data-admin-thread-header><span class="inline-flex shrink-0 items-center" data-tooltip="${escapeHtml(row.provider)}" data-side="bottom">${adapterIcon(row.kind)}</span><h2 class="min-w-0 truncate font-mono text-[13px]" data-admin-thread-channel>${escapeHtml(row.channel)}</h2><span class="min-w-0 truncate font-mono text-[13px] text-muted-foreground" data-admin-thread-id>${escapeHtml(row.id)}</span></div>`;
 }
 
 function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: string; rows: AdminThreadRow[] }> {
 	const groups = new Map<string, { key: string; label: string; rows: AdminThreadRow[] }>();
 	for (const row of rows) {
-		const key = row.provider;
+		const key = `${row.kind}:${row.provider}`;
 		let group = groups.get(key);
 		if (!group) {
-			group = { key, label: adapterLabel(row.provider), rows: [] };
+			group = { key, label: `${row.provider} · ${adapterLabel(row.kind)}`, rows: [] };
 			groups.set(key, group);
 		}
 		group.rows.push(row);
@@ -704,40 +713,18 @@ function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: strin
 	return [...groups.values()];
 }
 
-function threadGroup(group: { key: string; label: string; rows: AdminThreadRow[] }, selectedId?: string): string {
-	return `<section class="grid min-w-0 gap-1" data-admin-thread-group="${escapeHtml(group.key)}">
-		<header class="flex min-w-0 items-center gap-2 px-3 text-xs font-medium uppercase tracking-normal text-muted-foreground" data-admin-thread-group-header>
-			<span class="inline-flex shrink-0 items-center" aria-hidden="true">${adapterIcon(group.key)}</span>
-			<span class="min-w-0 truncate">${escapeHtml(group.label)}</span>
-			<span class="ml-auto font-mono">${group.rows.length}</span>
-		</header>
-		<div class="grid min-w-0 gap-1">${group.rows.map((row) => threadListItem(row, row.id === selectedId)).join("")}</div>
-	</section>`;
-}
-
-function threadListItem(row: AdminThreadRow, selected: boolean): string {
-	const current = selected ? ' aria-current="true"' : "";
-	return `<a class="grid min-w-0 gap-1 rounded-sm p-3 text-sm hover:bg-muted/60 ${selected ? "bg-muted" : ""}" href="${escapeHtml(threadHref(row))}" data-admin-thread-item data-thread-id="${escapeHtml(row.id)}"${current}>
-		<div class="flex min-w-0 items-center gap-2">
-			<span class="inline-flex shrink-0 items-center" data-tooltip="${escapeHtml(row.provider)}" data-side="right">${adapterIcon(row.provider)}</span>
-			<span class="shrink-0 font-mono text-[13px]" data-admin-thread-channel>${escapeHtml(row.channel)}</span>
-			<span class="text-muted-foreground" aria-hidden="true">·</span>
-			<span class="min-w-0 truncate text-muted-foreground" data-admin-thread-preview>${escapeHtml(threadPreview(row))}</span>
-		</div>
-		<div class="pl-6 text-xs text-muted-foreground" data-admin-thread-updated>
-			${relativeTimeHtml(row.lastActivityAt)}
-		</div>
-	</a>`;
-}
-
-function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
+export function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
 	if (!input) {
-		return `<div class="grid h-full place-items-center p-4" data-admin-thread-empty>${emptyState({
+		return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
+	<div class="grid min-h-0 place-items-center px-6">
+		${emptyState({
 			title: "Select a thread",
 			message: "Open a thread or send a local message.",
-			actionHtml: adminComposeForm({ csrf }),
 			variant: "plain",
-		})}</div>`;
+		})}
+	</div>
+	${adminComposeForm({ csrf })}
+</div>`;
 	}
 	return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
 	<div class="scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
@@ -751,12 +738,12 @@ function threadConversationPanel(input?: AdminThreadView, csrf?: string): string
 function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: boolean } = {}): string {
 	const compact = input.compact === true;
 	const textareaClass = compact ? "min-h-0 h-16" : "min-h-24";
-	return `<form class="grid min-w-0 gap-2 ${compact ? "border-t pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
+	return `<form class="min-w-0 ${compact ? "border-t pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
 	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
 	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
 	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>
-	<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none text-sm" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
-	<div class="flex min-w-0 items-center justify-end gap-2">
+	<div class="mx-auto grid w-full max-w-3xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+		<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none text-sm" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
 		<button class="btn-sm-icon" type="submit" aria-label="Send message" data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("send")}</button>
 	</div>
 </form>`;
@@ -1240,17 +1227,6 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 </div>`;
 }
 
-function themeToggle(): string {
-	return `<button type="button" aria-label="Toggle theme" data-admin-theme-toggle class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" data-tooltip="Toggle theme" data-side="bottom" data-align="end">
-		<span class="block dark:hidden" data-admin-theme-icon="moon">${icon("moon")}</span>
-		<span class="hidden dark:block" data-admin-theme-icon="sun">${icon("sun")}</span>
-		</button>`;
-}
-
-function docsLink(): string {
-	return `<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-admin-docs-link data-tooltip="Docs" data-side="bottom">${icon("book-text")}</a>`;
-}
-
 function kindBadge(kind: AdminActivityRow["kind"]): Cell {
 	return badge(kindLabel(kind));
 }
@@ -1587,6 +1563,8 @@ function icon(name: string, className?: string): string {
 		"arrow-up-right": '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
 		"book-text":
 			'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 11h8"/><path d="M8 7h6"/>',
+		briefcase:
+			'<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
 		check: '<path d="M20 6 9 17l-5-5"/>',
 		"chevron-left": '<path d="m15 18-6-6 6-6"/>',
 		"chevron-right": '<path d="m9 18 6-6-6-6"/>',
@@ -1602,13 +1580,19 @@ function icon(name: string, className?: string): string {
 			'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
 		menu: '<path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/>',
 		moon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>',
+		"message-square": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
 		minus: '<path d="M5 12h14"/>',
+		"panel-left": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
 		pause: '<path d="M10 4v16"/><path d="M14 4v16"/>',
 		refresh:
 			'<path d="M21 12a9 9 0 0 0-9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.8 9.8 0 0 0 6.7-2.7L21 16"/><path d="M16 16h5v5"/>',
 		route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
 		search: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
 		send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+		settings:
+			'<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831 2.34 2.34 0 0 1 2.33-4.033 2.34 2.34 0 0 0 3.32-1.915"/><circle cx="12" cy="12" r="3"/>',
+		"shield-check":
+			'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
 		sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
 		warning:
 			'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
