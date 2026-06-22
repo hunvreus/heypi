@@ -781,7 +781,7 @@ test("admin service sends thread control commands through the shared handler", a
 	}
 });
 
-test("admin configuration summarizes essentials with adapter icons", () => {
+test("admin configuration summarizes essentials", () => {
 	const now = Date.now();
 	const body = configurationView(
 		{
@@ -1295,7 +1295,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		livePage: true,
 		liveThreadId: "thread-1",
 	});
-	assert.match(threadShell, /data-admin-main-header[\s\S]*data-tooltip="slack"/);
+	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-tooltip="slack"/);
 	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-channel>C123<\/h2>/);
 	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-id>thread-1<\/span>/);
 	assert.doesNotMatch(threadShell, /data-admin-page-title>Thread<\/h1>/);
