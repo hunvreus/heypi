@@ -1244,11 +1244,9 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			csrf: "csrf-1",
 		},
 	);
-	assert.match(threadBody, /data-tooltip="slack"/);
-	assert.match(threadBody, /data-admin-thread-sticky-header/);
-	assert.match(threadBody, /data-admin-thread-header/);
-	assert.match(threadBody, /data-admin-thread-channel>C123<\/h2>/);
-	assert.match(threadBody, /data-admin-thread-id>thread-1<\/span>/);
+	assert.doesNotMatch(threadBody, /data-tooltip="slack"/);
+	assert.doesNotMatch(threadBody, /data-admin-thread-sticky-header/);
+	assert.doesNotMatch(threadBody, /data-admin-thread-header/);
 	assert.doesNotMatch(threadBody, /Channel C123 · Created /);
 	assert.doesNotMatch(threadBody, / · Last updated /);
 	assert.doesNotMatch(threadBody, /href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
@@ -1268,6 +1266,41 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadBody, /heypi <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /<strong>deploy<\/strong> api/);
 	assert.doesNotMatch(threadBody, /<code/);
+
+	const threadShell = page({
+		title: "Thread",
+		active: "chats",
+		csrf: "csrf-1",
+		live: {
+			pendingApprovals: 0,
+			runningRuns: 1,
+			jobs: 0,
+			activeJobs: 0,
+			pausedJobs: 0,
+			recentCalls: 1,
+			checkedAt: now,
+			revision: "live-2",
+			chatsRevision: "chats-2",
+			threadRevisions: { "thread-1": "thread-revision-1" },
+		},
+		memoryFiles: 0,
+		threads: {
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [threadRow],
+		},
+		body: threadBody,
+		nonce: "nonce-1",
+		livePage: true,
+		liveThreadId: "thread-1",
+	});
+	assert.match(threadShell, /data-admin-main-header[\s\S]*data-tooltip="slack"/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-channel>C123<\/h2>/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-id>thread-1<\/span>/);
+	assert.doesNotMatch(threadShell, /data-admin-page-title>Thread<\/h1>/);
+	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*New message[\s\S]*<\/header>/);
+	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-admin-docs-link[\s\S]*<\/header>/);
 	assert.match(threadBody, /<ul[^>]*><li>first check<\/li><\/ul>/);
 	assert.match(
 		threadBody,

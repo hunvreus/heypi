@@ -64,15 +64,15 @@ ${adminSidebar(input)}
 <main class="flex h-screen min-w-0 flex-col overflow-hidden bg-background" data-admin-main>
 	<header class="flex min-w-0 items-center gap-2 border-b px-6 py-3 max-[760px]:px-4" data-admin-main-header>
 		<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Toggle sidebar" data-admin-sidebar-toggle data-tooltip="Toggle sidebar" data-side="bottom">${icon("panel-left")}</button>
-		<div class="min-w-0">
-			<h1 class="truncate font-semibold" data-admin-page-title>${escapeHtml(input.title)}</h1>
+		<div class="min-w-0 flex-1">
+			${mainHeaderTitle(input)}
 		</div>
 		<div class="ml-auto flex min-w-0 items-center gap-1">
 			${mainAction(input)}
-			${sectionDocsLink(input.active)}
+			${input.liveThreadId ? "" : sectionDocsLink(input.active)}
 		</div>
 	</header>
-	<section class="min-h-0 min-w-0 flex-1 overflow-hidden" data-admin-page-content="${escapeHtml(input.active)}"${input.active === "chats" ? " data-admin-thread-scroll" : ""}>
+	<section class="min-h-0 min-w-0 flex-1 overflow-hidden" data-admin-page-content="${escapeHtml(input.active)}">
 ${input.body}
 	</section>
 </main>
@@ -438,10 +438,17 @@ function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
 }
 
 function mainAction(input: PageInput): string {
+	if (input.liveThreadId) return "";
 	if (input.active === "chats") {
 		return `<a class="btn-sm" href="/admin">${icon("message-square")}New message</a>`;
 	}
 	return "";
+}
+
+function mainHeaderTitle(input: PageInput): string {
+	const thread = input.liveThreadId ? input.threads.rows.find((row) => row.id === input.liveThreadId) : undefined;
+	if (thread) return threadHeader(thread);
+	return `<h1 class="truncate font-semibold" data-admin-page-title>${escapeHtml(input.title)}</h1>`;
 }
 
 function sectionDocsLink(input: string): string {
@@ -568,7 +575,7 @@ export function threadsView(
 	} = {},
 ): string {
 	return `<div class="h-full min-h-0 min-w-0" data-admin-chats>
-	<section class="min-h-full min-w-0" data-admin-thread-panel data-admin-thread-scroll>${threadConversationPanel(input.selected, input.csrf)}</section>
+	<section class="h-full min-h-0 min-w-0" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>`;
 }
 
@@ -750,8 +757,8 @@ function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: strin
 
 export function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
 	if (!input) {
-		return `<div class="grid min-h-[calc(100vh-4rem)] grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
-	<div class="grid min-h-0 place-items-center px-4">
+		return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
+	<div class="scrollbar grid min-h-0 place-items-center overflow-y-auto px-4" data-admin-thread-scroll>
 		${emptyState({
 			title: "Select a thread",
 			message: "Open a thread or send a local message.",
@@ -761,11 +768,8 @@ export function threadConversationPanel(input?: AdminThreadView, csrf?: string):
 	${adminComposeForm({ csrf })}
 </div>`;
 	}
-	return `<div class="grid min-h-full min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-	<header class="sticky top-0 z-20 min-w-0 border-b bg-background pt-4 pb-3 text-sm" data-admin-thread-sticky-header>
-		<div class="mx-auto w-full max-w-3xl px-4">${threadHeader(input.thread)}</div>
-	</header>
-	<div class="min-w-0 pb-4">${threadConversation(input, csrf)}</div>
+	return `<div class="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
+	<div class="scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-4" data-admin-thread-scroll>${threadConversation(input, csrf)}</div>
 	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
 }
@@ -773,7 +777,7 @@ export function threadConversationPanel(input?: AdminThreadView, csrf?: string):
 function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: boolean } = {}): string {
 	const compact = input.compact === true;
 	const textareaClass = compact ? "min-h-10 h-10" : "min-h-10 h-10";
-	return `<form class="sticky bottom-0 z-20 min-w-0 bg-background py-3 ${compact ? "pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
+	return `<form class="min-w-0 bg-background py-3 ${compact ? "pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
 	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
 	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
 	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>

@@ -15,11 +15,6 @@
 		margin-inline: auto;
 	}
 
-	[data-admin-page-content="chats"] {
-		overflow-x: hidden;
-		overflow-y: auto;
-	}
-
 	[data-admin-thread-panel] [data-admin-empty-state] {
 		padding: 0;
 	}
