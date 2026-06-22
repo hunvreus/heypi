@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "../../node_modules/basecoat-css/dist/basecoat.cdn.css";
+@import "../../node_modules/basecoat-css/dist/basecoat.cdn.min.css";
 
 @source "./**/*.ts";
 
@@ -15,6 +15,11 @@
 		margin-inline: auto;
 	}
 
+	[data-admin-page-content="chats"] {
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
 	[data-admin-thread-panel] [data-admin-empty-state] {
 		padding: 0;
 	}
@@ -23,14 +28,8 @@
 		width: 100%;
 	}
 
-	[data-admin-thread-panel] > .grid > [data-admin-compose],
-	[data-admin-thread-empty] > [data-admin-compose] {
-		border-top: 1px solid var(--border);
-		padding: 0.75rem 1rem 1rem;
-	}
-
 	[data-admin-thread-panel] [data-admin-compose] textarea {
-		min-height: 2.75rem;
+		min-height: 2.5rem;
 		max-height: 10rem;
 	}
 

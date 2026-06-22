@@ -72,7 +72,7 @@ ${adminSidebar(input)}
 			${sectionDocsLink(input.active)}
 		</div>
 	</header>
-	<section class="min-h-0 min-w-0 flex-1 overflow-hidden" data-admin-page-content="${escapeHtml(input.active)}">
+	<section class="min-h-0 min-w-0 flex-1 overflow-hidden" data-admin-page-content="${escapeHtml(input.active)}"${input.active === "chats" ? " data-admin-thread-scroll" : ""}>
 ${input.body}
 	</section>
 </main>
@@ -133,6 +133,17 @@ function threadAtBottom(container) {
 function threadScrollBottom(container) {
 	container.scrollTop = container.scrollHeight;
 }
+function resizeComposeText(textarea) {
+	textarea.style.height = "auto";
+	const next = Math.min(textarea.scrollHeight, 160);
+	textarea.style.height = next + "px";
+	textarea.style.overflowY = textarea.scrollHeight > 160 ? "auto" : "hidden";
+}
+function setupComposeTextareas(root = document) {
+	root.querySelectorAll("[data-admin-compose-text]").forEach((textarea) => {
+		if (textarea instanceof HTMLTextAreaElement) resizeComposeText(textarea);
+	});
+}
 function openAdminCommand() {
 	const command = document.getElementById("admin-command");
 	if (!(command instanceof HTMLDialogElement)) return;
@@ -148,6 +159,7 @@ function openAdminCommand() {
 }
 let threadFollowBottom = true;
 let threadScrollObserver;
+setupComposeTextareas();
 function setupThreadScroll(restore) {
 	if (threadScrollObserver) threadScrollObserver.disconnect();
 	const threadScroll = threadScrollContainer();
@@ -187,6 +199,7 @@ async function refreshThreadPanel() {
 	});
 	if (!response.ok) return false;
 	panel.innerHTML = await response.text();
+	setupComposeTextareas(panel);
 	setupThreadScroll(true);
 	return true;
 }
@@ -266,6 +279,12 @@ document.addEventListener("click", (event) => {
 	}
 	const closer = target.closest("[data-admin-dialog-close]");
 	if (closer) closer.closest("dialog")?.close();
+});
+document.addEventListener("input", (event) => {
+	const target = event.target;
+	if (target instanceof HTMLTextAreaElement && target.matches("[data-admin-compose-text]")) {
+		resizeComposeText(target);
+	}
 });
 document.addEventListener("keydown", (event) => {
 	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -549,7 +568,7 @@ export function threadsView(
 	} = {},
 ): string {
 	return `<div class="h-full min-h-0 min-w-0" data-admin-chats>
-	<section class="h-full min-h-0 min-w-0 overflow-hidden" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
+	<section class="min-h-full min-w-0" data-admin-thread-panel data-admin-thread-scroll>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>`;
 }
 
@@ -731,8 +750,8 @@ function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: strin
 
 export function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
 	if (!input) {
-		return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
-	<div class="grid min-h-0 place-items-center px-6">
+		return `<div class="grid min-h-[calc(100vh-4rem)] grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
+	<div class="grid min-h-0 place-items-center px-4">
 		${emptyState({
 			title: "Select a thread",
 			message: "Open a thread or send a local message.",
@@ -742,25 +761,25 @@ export function threadConversationPanel(input?: AdminThreadView, csrf?: string):
 	${adminComposeForm({ csrf })}
 </div>`;
 	}
-	return `<div class="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-	<div class="scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4" data-admin-thread-scroll>
-		<header class="sticky top-0 z-10 min-w-0 border-b bg-card pt-4 pb-3 text-sm" data-admin-thread-sticky-header>${threadHeader(input.thread)}</header>
+	return `<div class="grid min-h-full min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+	<header class="sticky top-0 z-20 min-w-0 border-b bg-background pt-4 pb-3 text-sm" data-admin-thread-sticky-header>
+		<div class="mx-auto w-full max-w-3xl px-4">${threadHeader(input.thread)}</div>
+	</header>
 	<div class="min-w-0 pb-4">${threadConversation(input, csrf)}</div>
-	</div>
 	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
 }
 
 function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: boolean } = {}): string {
 	const compact = input.compact === true;
-	const textareaClass = compact ? "min-h-0 h-16" : "min-h-24";
-	return `<form class="min-w-0 ${compact ? "border-t pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
+	const textareaClass = compact ? "min-h-10 h-10" : "min-h-10 h-10";
+	return `<form class="sticky bottom-0 z-20 min-w-0 bg-background py-3 ${compact ? "pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
 	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
 	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
 	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>
-	<div class="mx-auto grid w-full max-w-3xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-		<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none text-sm" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
-		<button class="btn-sm-icon" type="submit" aria-label="Send message" data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("send")}</button>
+	<div class="mx-auto grid w-full max-w-3xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2 px-4">
+		<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none overflow-hidden text-sm leading-5" rows="1" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
+		<button class="btn-sm-icon rounded-full" type="submit" aria-label="Send message" data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
 	</div>
 </form>`;
 }
@@ -776,7 +795,7 @@ function threadConversation(input: AdminThreadView, csrf?: string): string {
 			variant: "plain",
 		});
 	}
-	return `<div class="grid min-w-0 gap-3 py-3">${rows
+	return `<div class="mx-auto grid w-full max-w-3xl min-w-0 gap-3 px-4 py-3">${rows
 		.map((row) => chatRow(row, selectedKey === activityEvent(row), csrf))
 		.join("")}</div>`;
 }
@@ -1244,17 +1263,15 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 }
 
 function kindBadge(kind: AdminActivityRow["kind"]): Cell {
-	return badge(kindLabel(kind));
+	return {
+		html: `<span class="badge-secondary ${kindBg(kind)}">${escapeHtml(kindLabel(kind))}</span>`,
+	};
 }
 
 function statusBadge(state: string): Cell {
 	return {
 		html: `<span class="badge-secondary ${stateBg(state)}">${escapeHtml(stateLabel(state))}</span>`,
 	};
-}
-
-function badge(input: string): Cell {
-	return { html: `<span class="badge-secondary">${escapeHtml(input)}</span>` };
 }
 
 function html(input: string): Cell {
@@ -1299,17 +1316,30 @@ function truncatedText(input: string): Cell {
 	};
 }
 
+function kindBg(kind: AdminActivityRow["kind"]): string {
+	const classes: Record<AdminActivityRow["kind"], string> = {
+		approval: "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50",
+		call: "bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50",
+		event: "bg-sky-100 text-sky-950 dark:bg-sky-950 dark:text-sky-50",
+		message: "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50",
+		run: "bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-50",
+	};
+	return classes[kind];
+}
+
 function stateBg(state: string): string {
 	if (["active", "approved", "completed", "done", "succeeded", "success"].includes(state)) {
-		return "bg-emerald-100 dark:bg-emerald-900";
+		return "bg-emerald-100 text-emerald-950 dark:bg-emerald-900 dark:text-emerald-50";
 	}
 	if (["blocked", "pending", "pending_approval", "running"].includes(state)) {
-		return "bg-amber-100 dark:bg-amber-900";
+		return "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50";
 	}
 	if (["cancelled", "denied", "expired", "failed", "rejected", "unauthorized"].includes(state)) {
-		return "bg-red-100 dark:bg-red-900";
+		return "bg-red-100 text-red-950 dark:bg-red-900 dark:text-red-50";
 	}
-	if (["idle", "paused", "skipped"].includes(state)) return "bg-zinc-100 dark:bg-zinc-900";
+	if (["idle", "paused", "skipped"].includes(state)) {
+		return "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50";
+	}
 	return "bg-muted";
 }
 
@@ -1576,6 +1606,7 @@ function icon(name: string, className?: string): string {
 	const common = `xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"`;
 	const paths: Record<string, string> = {
 		activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+		"arrow-up": '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
 		"arrow-up-right": '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
 		"book-text":
 			'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 11h8"/><path d="M8 7h6"/>',
