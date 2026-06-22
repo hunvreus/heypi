@@ -133,6 +133,19 @@ function threadAtBottom(container) {
 function threadScrollBottom(container) {
 	container.scrollTop = container.scrollHeight;
 }
+function openAdminCommand() {
+	const command = document.getElementById("admin-command");
+	if (!(command instanceof HTMLDialogElement)) return;
+	command.showModal();
+	requestAnimationFrame(() => {
+		const input = command.querySelector("input");
+		if (input instanceof HTMLInputElement) {
+			input.value = "";
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			input.focus();
+		}
+	});
+}
 let threadFollowBottom = true;
 let threadScrollObserver;
 function setupThreadScroll(restore) {
@@ -224,11 +237,7 @@ document.addEventListener("click", (event) => {
 	}
 	const commandOpen = target.closest("[data-admin-command-open]");
 	if (commandOpen) {
-		const command = document.getElementById("admin-command");
-		if (command instanceof HTMLDialogElement) {
-			command.showModal();
-			requestAnimationFrame(() => command.querySelector("input")?.focus());
-		}
+		openAdminCommand();
 		return;
 	}
 	const copy = target.closest("[data-admin-copy]");
@@ -258,6 +267,12 @@ document.addEventListener("click", (event) => {
 	const closer = target.closest("[data-admin-dialog-close]");
 	if (closer) closer.closest("dialog")?.close();
 });
+document.addEventListener("keydown", (event) => {
+	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+		event.preventDefault();
+		openAdminCommand();
+	}
+});
 </script>
 </body>
 </html>`;
@@ -281,18 +296,19 @@ function adminSidebar(input: PageInput): string {
 		<section id="admin-sidebar-content" class="scrollbar" data-admin-sidebar-content>
 			${sidebarMenu(input)}
 			${sidebarThreadList(input.threads, input.liveThreadId)}
-			${sidebarFooter(input)}
 		</section>
+		<footer>
+			${sidebarFooter(input)}
+		</footer>
 	</nav>
 </aside>`;
 }
 
 function sidebarMenu(input: PageInput): string {
 	const items = navItems(input.live, input.memoryFiles);
-	return `<div role="group" aria-labelledby="admin-sidebar-menu-heading">
-	<h3 id="admin-sidebar-menu-heading">Admin</h3>
+	return `<div role="group">
 	<ul>
-		<li><button type="button" data-admin-command-open>${icon("search")}<span>Search</span></button></li>
+		<li><button type="button" data-admin-command-open>${icon("search")}<span>Search</span><kbd class="kbd ms-auto">⌘K</kbd></button></li>
 		${items
 			.filter((item) => item.key !== "chats" && item.key !== "evals")
 			.map((item) => sidebarNavItem(item, input.active))
@@ -386,7 +402,7 @@ function commandDialog(input: PageInput): string {
 }
 
 function commandItem(item: AdminNavItem): string {
-	return `<a href="${escapeHtml(item.href)}" role="menuitem" data-keywords="${escapeHtml(item.key)}">${icon(item.icon)}${escapeHtml(item.label)}</a>`;
+	return `<a href="${escapeHtml(item.href)}" role="menuitem" data-filter="${escapeHtml(item.label)}" data-keywords="${escapeHtml(item.key)}">${icon(item.icon)}<span>${escapeHtml(item.label)}</span></a>`;
 }
 
 function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
@@ -396,7 +412,7 @@ function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
 	${page.rows
 		.map(
 			(row) =>
-				`<a href="${escapeHtml(threadHref(row))}" role="menuitem" data-keywords="${escapeHtml(`${row.provider} ${row.kind} ${row.channel} ${row.actor ?? ""}`)}">${adapterIcon(row.kind)}${escapeHtml(threadPreview(row))}</a>`,
+				`<a href="${escapeHtml(threadHref(row))}" role="menuitem" data-filter="${escapeHtml(threadPreview(row))}" data-keywords="${escapeHtml(`${row.provider} ${row.kind} ${row.channel} ${row.actor ?? ""}`)}">${adapterIcon(row.kind)}<span>${escapeHtml(threadPreview(row))}</span></a>`,
 		)
 		.join("")}
 </div>`;
