@@ -87,6 +87,8 @@ let currentChatsRevision = document.body.dataset.liveChatsRevision || undefined;
 let currentThreadRevision = document.body.dataset.liveThreadRevision || undefined;
 const livePage = document.body.dataset.livePage === "true";
 const liveThreadId = document.body.dataset.liveThreadId || "";
+const hotReloadKey = "heypi:admin:hot-reload";
+const hotReloadInput = document.querySelector("[data-admin-hot-reload]");
 const fields = {
 	pendingApprovals: document.querySelectorAll('[data-live-field="pendingApprovals"]'),
 	runningRuns: document.querySelectorAll('[data-live-field="runningRuns"]'),
@@ -98,6 +100,19 @@ const fields = {
 };
 function updateField(name, value) {
 	for (const el of fields[name] || []) el.textContent = String(value);
+}
+function hotReloadEnabled() {
+	try {
+		return localStorage.getItem(hotReloadKey) !== "false";
+	} catch {
+		return true;
+	}
+}
+function setHotReloadEnabled(enabled) {
+	if (hotReloadInput instanceof HTMLInputElement) hotReloadInput.checked = enabled;
+	try {
+		localStorage.setItem(hotReloadKey, enabled ? "true" : "false");
+	} catch {}
 }
 function markCopied(button, previous) {
 	button.setAttribute("aria-label", "Copied");
@@ -189,6 +204,7 @@ function setupThreadScrollTracking() {
 	);
 }
 setupThreadScrollTracking();
+setHotReloadEnabled(hotReloadEnabled());
 async function refreshThreadPanel() {
 	if (!liveThreadId) return false;
 	const panel = threadPanelContainer();
@@ -223,7 +239,7 @@ events.addEventListener("summary", (event) => {
 	updateField("pausedJobs", data.pausedJobs);
 	updateField("recentCalls", data.recentCalls);
 	updateField("checkedAt", "Last updated " + new Date(data.checkedAt).toLocaleTimeString());
-	if (currentRevision && data.revision !== currentRevision && livePage) {
+	if (currentRevision && data.revision !== currentRevision && livePage && hotReloadEnabled()) {
 		const nextThreadRevision = liveThreadId ? data.threadRevisions?.[liveThreadId] : undefined;
 		const chatsChanged = Boolean(data.chatsRevision && data.chatsRevision !== currentChatsRevision);
 		const threadChanged = Boolean(nextThreadRevision && nextThreadRevision !== currentThreadRevision);
@@ -289,6 +305,12 @@ document.addEventListener("click", (event) => {
 	}
 	const closer = target.closest("[data-admin-dialog-close]");
 	if (closer) closer.closest("dialog")?.close();
+});
+document.addEventListener("change", (event) => {
+	const target = event.target;
+	if (target instanceof HTMLInputElement && target.matches("[data-admin-hot-reload]")) {
+		setHotReloadEnabled(target.checked);
+	}
 });
 document.addEventListener("input", (event) => {
 	const target = event.target;
@@ -390,6 +412,7 @@ function sidebarFooter(input: PageInput): string {
 	<ul>
 		<li><a href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" data-admin-docs-link>${icon("book-text")}<span>Docs</span></a></li>
 		<li><button type="button" aria-label="Toggle theme" data-tooltip="Toggle theme" data-admin-theme-toggle>${themeIcon()}<span>Theme</span></button></li>
+		<li><label class="flex w-full items-center gap-2 overflow-hidden text-left" for="admin-hot-reload">${icon("refresh")}<span>Hot reload</span><input id="admin-hot-reload" class="input ms-auto" type="checkbox" role="switch" data-size="sm" checked data-admin-hot-reload></label></li>
 		${logout}
 	</ul>
 </div>`;
