@@ -94,6 +94,7 @@
 - Swapped admin thread message bubble styling so user messages use the accent fill and model messages use a bordered background.
 - Changed admin thread compose controls to use an input-group layout with Enter-to-send behavior and icon-only sidebar footer actions.
 - Fixed admin thread message bubbles to keep natural left/right widths while sharing the centered compose column.
+- Fixed admin thread compose input-group width to fill the same centered column as the timeline.
 - Fixed admin thread live refresh pinning the page to the bottom while reading earlier messages.
 - Fixed admin thread scrolling, view toggle state coverage, and stale Basecoat semantic utilities in generated admin CSS.
 - Changed `heypi dev` to run apps under a file watcher so code and admin UI template changes restart automatically during local development.

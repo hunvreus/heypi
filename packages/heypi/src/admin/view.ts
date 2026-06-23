@@ -794,8 +794,8 @@ function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: b
 	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
 	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
 	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>
-	<div class="mx-auto w-full max-w-3xl min-w-0 px-4">
-		<div class="input-group" data-orientation="vertical" data-admin-compose-group>
+	<div class="${adminThreadColumnClass()}">
+		<div class="input-group w-full" data-orientation="vertical" data-admin-compose-group>
 			<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" data-control class="min-h-10 resize-none overflow-hidden text-sm leading-5" rows="1" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
 			<footer data-align="block-end" class="flex justify-end p-2">
 				<button class="btn-sm-icon" type="submit" aria-label="Send message" disabled data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
@@ -803,6 +803,10 @@ function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: b
 		</div>
 	</div>
 </form>`;
+}
+
+function adminThreadColumnClass(): string {
+	return "mx-auto w-full max-w-3xl min-w-0 px-4";
 }
 
 function threadConversation(input: AdminThreadView, csrf: string | undefined): string {
@@ -816,7 +820,7 @@ function threadConversation(input: AdminThreadView, csrf: string | undefined): s
 			variant: "plain",
 		});
 	}
-	return `<div class="mx-auto grid w-full max-w-3xl min-w-0 gap-3 px-4 py-3" data-admin-thread-view="timeline">${rows
+	return `<div class="${adminThreadColumnClass()} grid gap-3 py-3" data-admin-thread-view="timeline">${rows
 		.map((row) => chatRow(row, selectedKey === activityEvent(row), csrf))
 		.join("")}</div>`;
 }
