@@ -813,7 +813,7 @@ function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: b
 		<div class="input-group w-full" data-orientation="vertical" data-admin-compose-group>
 			<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" data-control class="min-h-10 resize-none overflow-hidden text-sm leading-5" rows="1" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
 			<footer data-align="block-end" class="flex justify-end p-2">
-				<button class="btn-sm-icon" type="submit" aria-label="Send message" disabled data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
+				<button class="btn" data-size="icon-sm" type="submit" aria-label="Send message" disabled data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
 			</footer>
 		</div>
 	</div>
@@ -862,7 +862,7 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 		</div>
 	</article>`;
 	}
-	return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="assistant"${selectedAttr(selected)} class="grid min-w-0 justify-items-start px-2">
+	return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="assistant"${selectedAttr(selected)} class="grid min-w-0 justify-items-start">
 		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg border bg-background px-4 py-3 text-foreground">
 		<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
 		${meta}

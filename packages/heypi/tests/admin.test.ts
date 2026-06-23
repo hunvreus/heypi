@@ -1316,6 +1316,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /data-admin-compose-group/);
 	assert.match(threadBody, /<textarea[^>]+data-control[^>]+data-admin-compose-text/);
+	assert.match(threadBody, /class="btn" data-size="icon-sm"[^>]+data-admin-compose-submit/);
 	assert.match(threadBody, /disabled data-admin-compose-submit/);
 	assert.match(threadBody, /data-align="end"/);
 	assert.match(threadBody, /Deployment is ready/);
@@ -1324,6 +1325,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		threadBody,
 		/data-admin-message-role="assistant"[\s\S]*justify-items-start[\s\S]*rounded-lg border bg-background[\s\S]*text-foreground/,
 	);
+	assert.doesNotMatch(threadBody, /data-admin-message-role="assistant"[^>]+px-2/);
 	assert.match(threadBody, /data-admin-message-role="assistant"[\s\S]*max-w-\[min\(42rem,80%\)\]/);
 	assert.match(threadBody, />Empty message<\/p>/);
 	assert.doesNotMatch(threadBody, /\(empty message\)/);
