@@ -346,7 +346,7 @@ type AdminNavItem = {
 function adminSidebar(input: PageInput): string {
 	return `<aside id="admin-sidebar" class="sidebar" data-side="left" data-initial-open="true" data-admin-sidebar>
 	<nav aria-label="Admin navigation">
-		<header class="flex items-center gap-2">
+		<header data-admin-sidebar-header>
 			<a class="flex min-w-0 items-center gap-2 rounded-md p-2" href="/admin" aria-label="heypi">${logo("h-4 w-auto shrink-0")}</a>
 			<button type="button" class="btn-sm-icon-ghost ms-auto text-muted-foreground hover:text-foreground" aria-label="Toggle theme" data-tooltip="Toggle theme" data-side="bottom" data-admin-theme-toggle>${themeIcon()}</button>
 		</header>

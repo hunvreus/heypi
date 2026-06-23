@@ -1549,10 +1549,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"/);
 		assert.match(body, /aria-label="Toggle theme"/);
 		assert.match(body, /data-tooltip="Toggle theme"/);
-		assert.match(
-			body,
-			/<header class="flex items-center gap-2">[\s\S]*aria-label="heypi"[\s\S]*data-admin-theme-toggle/,
-		);
+		assert.match(body, /<header data-admin-sidebar-header>[\s\S]*aria-label="heypi"[\s\S]*data-admin-theme-toggle/);
 		assert.doesNotMatch(body, /aria-current="false"/);
 		assert.doesNotMatch(body, /data-tooltip="Toggle dark mode"/);
 		assert.doesNotMatch(body, /title="Toggle dark mode"/);

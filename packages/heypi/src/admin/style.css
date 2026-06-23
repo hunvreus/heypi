@@ -27,6 +27,79 @@
 		max-height: 10rem;
 	}
 
+	.sidebar nav > header[data-admin-sidebar-header] {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.sidebar nav > header[data-admin-sidebar-header] [data-admin-theme-toggle] {
+		display: inline-flex;
+		width: calc(var(--spacing) * 8);
+		height: calc(var(--spacing) * 8);
+		align-items: center;
+		justify-content: center;
+		margin-inline-start: auto;
+	}
+
+	[data-admin-sidebar-footer-actions] {
+		position: relative;
+		display: flex;
+		width: 100%;
+		min-width: 0;
+		flex-direction: column;
+		font-size: var(--text-sm);
+		line-height: var(--tw-leading, var(--text-sm--line-height));
+	}
+
+	[data-admin-sidebar-footer-actions] > ul {
+		display: flex;
+		width: 100%;
+		min-width: 0;
+		flex-direction: column;
+		gap: calc(var(--spacing) * 1);
+	}
+
+	[data-admin-sidebar-footer-actions] li {
+		position: relative;
+	}
+
+	[data-admin-sidebar-footer-actions] li > :is(a, button),
+	[data-admin-sidebar-footer-actions] li > form > button {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: calc(var(--spacing) * 2);
+		overflow: hidden;
+		border-radius: var(--radius-md);
+		padding: calc(var(--spacing) * 2);
+		text-align: left;
+		outline: none;
+		transition-property: width, height, padding;
+		transition-duration: var(--default-transition-duration);
+		transition-timing-function: var(--default-transition-timing-function);
+	}
+
+	[data-admin-sidebar-footer-actions] li > :is(a, button):hover,
+	[data-admin-sidebar-footer-actions] li > form > button:hover {
+		background-color: var(--color-sidebar-accent);
+		color: var(--color-sidebar-accent-foreground);
+	}
+
+	[data-admin-sidebar-footer-actions] li > :is(a, button) > svg,
+	[data-admin-sidebar-footer-actions] li > form > button > svg {
+		width: calc(var(--spacing) * 4);
+		height: calc(var(--spacing) * 4);
+		flex-shrink: 0;
+	}
+
+	[data-admin-sidebar-footer-actions] li > :is(a, button) > span:last-child,
+	[data-admin-sidebar-footer-actions] li > form > button > span:last-child {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	[data-admin-context-summary] {
 		cursor: pointer;
 		list-style: none;
