@@ -1173,6 +1173,19 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		actor: "U123",
 		time: now - 900,
 	};
+	const completedRunEvent = {
+		id: "run-2",
+		kind: "run" as const,
+		threadId: "thread-1",
+		title: 'I didn\'t understand "sdf". Did you mean to run a command?',
+		summary: "Quick options I can do: list hosts, show host facts, run a command, fetch a URL.",
+		state: "done",
+		provider: "slack",
+		eventType: "slack",
+		channel: "C123",
+		actor: "U123",
+		time: now - 850,
+	};
 	const callEvent = {
 		id: "call-1",
 		kind: "call" as const,
@@ -1282,7 +1295,17 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			checkedAt: now,
 			selected: {
 				thread: threadRow,
-				timeline: [runEvent, callEvent, traceEvent, turnEvent, modelEvent, event, assistantEvent, emptyEvent],
+				timeline: [
+					runEvent,
+					completedRunEvent,
+					callEvent,
+					traceEvent,
+					turnEvent,
+					modelEvent,
+					event,
+					assistantEvent,
+					emptyEvent,
+				],
 				selected: callEvent,
 				event: "call:call-1",
 			},
@@ -1386,10 +1409,14 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-admin-context-row="call"[^>]+max-w-\[min\(42rem,80%\)\]/);
 	assert.match(
 		threadBody,
-		/class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary/,
+		/class="flex w-full max-w-full min-w-0 items-center gap-2 px-3 py-2" data-admin-context-summary/,
 	);
+	assert.doesNotMatch(threadBody, /data-admin-context-summary[^>]+overflow-hidden/);
+	assert.doesNotMatch(threadBody, /<span class="shrink-0 font-medium">/);
 	assert.match(threadBody, /class="min-w-0 flex-1 truncate text-muted-foreground"/);
+	assert.match(threadBody, /class="shrink-0 text-sm text-muted-foreground"><span data-tooltip=/);
 	assert.doesNotMatch(threadBody, /ml-auto shrink-0 text-xs text-muted-foreground/);
+	assert.doesNotMatch(threadBody, /class="shrink-0 text-xs text-muted-foreground"><span data-tooltip=/);
 	assert.match(threadBody, /data-admin-context-details/);
 	assert.match(threadBody, /class="grid min-w-0 gap-2 border-t px-3 py-2 text-sm" data-admin-context-details/);
 	assert.doesNotMatch(threadBody, /action="\/admin\/thread-actions"/);
@@ -1401,8 +1428,16 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, />Trace<\/span>/);
 	assert.match(threadBody, />Sequence<\/span>/);
 	assert.match(threadBody, />Data<\/span>/);
+	assert.match(
+		threadBody,
+		/<pre class="max-h-64 min-w-0 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-xs leading-5 text-foreground \[overflow-wrap:anywhere\]">\{\n {2}&quot;tool&quot;: &quot;host_exec&quot;/,
+	);
 	assert.match(threadBody, />Run<\/span>/);
 	assert.match(threadBody, />Run started<\/span>/);
+	assert.match(
+		threadBody,
+		/>Run completed<\/span>\s*<span class="min-w-0 flex-1 truncate text-muted-foreground"><\/span>/,
+	);
 	assert.match(threadBody, />Tool<\/span>/);
 	assert.match(threadBody, /class="badge bg-cyan-100 text-cyan-950/);
 	assert.match(threadBody, />Tool completed<\/span>/);

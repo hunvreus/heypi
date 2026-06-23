@@ -876,11 +876,11 @@ function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 	const teaser = chatContextTeaser(row);
 	return `<article class="grid min-w-0 justify-items-start" data-admin-context-shell>
 	<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group w-full max-w-[min(42rem,80%)] min-w-0 rounded-md border text-sm" data-admin-context-type="${activityType(row)}">
-		<summary class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary>
+		<summary class="flex w-full max-w-full min-w-0 items-center gap-2 px-3 py-2" data-admin-context-summary>
 		${cellHtml(activityBadge(row))}
-		<span class="shrink-0 font-medium">${escapeHtml(teaser.title)}</span>
+		<span class="shrink-0">${escapeHtml(teaser.title)}</span>
 		<span class="min-w-0 flex-1 truncate text-muted-foreground">${escapeHtml(previewText(teaser.meta))}</span>
-		<span class="shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
+		<span class="shrink-0 text-sm text-muted-foreground">${relativeTimeHtml(row.time)}</span>
 		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
 	</summary>
 	${details}
@@ -890,7 +890,8 @@ function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 
 function chatContextTeaser(row: AdminActivityRow): { title: string; meta?: string } {
 	if (row.kind === "run") {
-		return { title: `Run ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
+		const meta = row.state === "running" ? firstText(row.title, row.summary) : undefined;
+		return { title: `Run ${lifecycleVerb(row.state)}`, meta };
 	}
 	if (row.kind === "call") {
 		const meta = [row.title, row.durationMs ? duration(row.durationMs) : undefined].filter(Boolean).join(" · ");
@@ -1015,10 +1016,30 @@ function chatContextDetails(row: AdminActivityRow): string {
 	const detailRows = details
 		.map(
 			(detail) =>
-				`<div class="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3"><span class="text-muted-foreground">${escapeHtml(detail.label)}</span><span class="min-w-0 break-words [overflow-wrap:anywhere] text-foreground">${escapeHtml(detail.value)}</span></div>`,
+				`<div class="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3"><span class="text-muted-foreground">${escapeHtml(detail.label)}</span>${activityDetailValueHtml(detail)}</div>`,
 		)
 		.join("");
 	return `<div class="grid min-w-0 gap-2 border-t px-3 py-2 text-sm" data-admin-context-details>${detailRows}</div>`;
+}
+
+function activityDetailValueHtml(detail: AdminActivityDetail): string {
+	const prettyJson = prettyJsonText(detail.value);
+	if (prettyJson) {
+		return `<pre class="max-h-64 min-w-0 overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-xs leading-5 text-foreground [overflow-wrap:anywhere]">${escapeHtml(prettyJson)}</pre>`;
+	}
+	if (detail.format === "mono") {
+		return `<span class="min-w-0 font-mono text-[13px] text-foreground [overflow-wrap:anywhere]">${escapeHtml(detail.value)}</span>`;
+	}
+	return `<span class="min-w-0 break-words text-foreground [overflow-wrap:anywhere]">${escapeHtml(detail.value)}</span>`;
+}
+
+function prettyJsonText(input: string): string | undefined {
+	if (!looksJson(input)) return undefined;
+	try {
+		return JSON.stringify(JSON.parse(input) as unknown, null, 2);
+	} catch {
+		return undefined;
+	}
 }
 
 function compactActivityDetails(input: Array<AdminActivityDetail | undefined>): AdminActivityDetail[] {

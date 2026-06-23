@@ -40,6 +40,7 @@
 - Changed admin thread context rows to use bordered collapsible blocks, capped previews, colored type badges, expand-all controls, and the heypi favicon.
 - Changed admin thread assistant messages to align with the thread column and use a primary compose send button.
 - Changed admin thread activity rows to align with assistant messages and use a labeled expand/collapse control.
+- Changed admin thread activity rows to use regular labels, readable structured details, visible summary tooltips, and quieter completed run summaries.
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `heypi dev` to start configured adapters, enable admin by default when omitted, load `.env.local` after `.env`, and install internal loopback local test routes.
 - Changed `heypi start` to load only `.env` and avoid dev-only admin/local route defaults.
