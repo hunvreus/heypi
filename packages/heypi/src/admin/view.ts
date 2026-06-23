@@ -872,7 +872,7 @@ function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string)
 
 function chatContextTeaser(row: AdminActivityRow): { title: string; meta?: string } {
 	if (row.kind === "run") {
-		return { title: `Activity ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
+		return { title: `Run ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
 	}
 	if (row.kind === "call") {
 		const meta = [row.title, row.durationMs ? duration(row.durationMs) : undefined].filter(Boolean).join(" · ");
@@ -894,7 +894,7 @@ function eventTeaser(row: AdminActivityRow): { title: string; meta?: string } {
 		return { title: row.title, meta: firstText(row.summary && !looksJson(row.summary) ? row.summary : undefined) };
 	}
 	const [category = "trace", action = row.state] = type.split(".", 2);
-	const categoryTitle = titleCase(category);
+	const categoryTitle = eventCategoryLabel(category);
 	const actionTitle = action ? lifecycleVerb(action) : lifecycleVerb(row.state);
 	const data = eventData(row);
 	const tool = stringValue(data?.tool);
@@ -957,10 +957,9 @@ function looksJson(input: string): boolean {
 	return /^[[{]/u.test(input.trim());
 }
 
-function titleCase(input: string): string {
+function eventCategoryLabel(input: string): string {
 	const normalized = input.replace(/[_-]+/gu, " ").trim();
-	if (normalized === "message" || normalized === "model" || normalized === "turn") return "Activity";
-	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Activity";
+	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Event";
 }
 
 function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
@@ -1384,7 +1383,7 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 function activityBadge(row: AdminActivityRow): Cell {
 	const bucket = activityBucket(row);
 	return {
-		html: `<span class="badge-secondary ${activityBucketBg(bucket)}">${escapeHtml(activityBucketLabel(bucket))}</span>`,
+		html: `<span class="badge-secondary ${activityBucketBg(bucket)}">${escapeHtml(activityBucketLabel(row, bucket))}</span>`,
 	};
 }
 
@@ -1447,13 +1446,28 @@ function activityBucket(row: AdminActivityRow): ActivityBucket {
 	return "activity";
 }
 
-function activityBucketLabel(bucket: ActivityBucket): string {
+function activityBucketLabel(row: AdminActivityRow, bucket: ActivityBucket): string {
+	if (bucket === "activity") return activityLabel(row);
 	const labels: Record<ActivityBucket, string> = {
-		activity: "Activity",
+		activity: "Event",
 		approval: "Approval",
 		tool: "Tool",
 	};
 	return labels[bucket];
+}
+
+function activityLabel(row: AdminActivityRow): string {
+	if (row.kind === "run") return "Run";
+	if (row.kind !== "event") return "Event";
+	const category = eventCategory(row.eventType ?? row.title);
+	return eventCategoryLabel(category);
+}
+
+function eventCategory(input: string): string {
+	if (input.includes(".")) return input.split(".", 1)[0] ?? "";
+	const [first = ""] = input.trim().split(/\s+/u, 1);
+	const normalized = first.toLowerCase();
+	return ["approval", "message", "model", "tool", "turn"].includes(normalized) ? normalized : "event";
 }
 
 function activityBucketBg(bucket: ActivityBucket): string {
