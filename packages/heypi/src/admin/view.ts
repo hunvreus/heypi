@@ -273,6 +273,7 @@ document.addEventListener("click", (event) => {
 		for (const row of rows) row.open = open;
 		expandAll.setAttribute("aria-label", open ? "Collapse all" : "Expand all");
 		expandAll.setAttribute("data-tooltip", open ? "Collapse all" : "Expand all");
+		expandAll.textContent = open ? "Collapse all" : "Expand all";
 		return;
 	}
 	const commandOpen = target.closest("[data-admin-command-open]");
@@ -473,7 +474,7 @@ function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
 
 function mainAction(input: PageInput): string {
 	if (input.liveThreadId) {
-		return `<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Expand all" data-tooltip="Expand all" data-side="bottom" data-admin-expand-all>${icon("chevrons-up-down")}</button>`;
+		return `<button type="button" class="btn" data-variant="ghost" data-size="sm" aria-label="Expand all" data-tooltip="Expand all" data-side="bottom" data-admin-expand-all>Expand all</button>`;
 	}
 	if (input.active === "chats") {
 		return `<a class="btn-sm" href="/admin">${icon("message-square")}New message</a>`;
@@ -873,7 +874,8 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 	const details = chatContextDetails(row);
 	const teaser = chatContextTeaser(row);
-	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group min-w-0 rounded-md border text-sm" data-admin-context-type="${activityType(row)}">
+	return `<article class="grid min-w-0 justify-items-start" data-admin-context-shell>
+	<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group w-full max-w-[min(42rem,80%)] min-w-0 rounded-md border text-sm" data-admin-context-type="${activityType(row)}">
 		<summary class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary>
 		${cellHtml(activityBadge(row))}
 		<span class="shrink-0 font-medium">${escapeHtml(teaser.title)}</span>
@@ -882,7 +884,8 @@ function chatContextRow(row: AdminActivityRow, selected: boolean): string {
 		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
 	</summary>
 	${details}
-</details>`;
+</details>
+</article>`;
 }
 
 function chatContextTeaser(row: AdminActivityRow): { title: string; meta?: string } {

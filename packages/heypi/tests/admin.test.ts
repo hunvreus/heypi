@@ -1303,7 +1303,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-admin-compose-text/);
 	assert.match(threadBody, /data-admin-thread-view="timeline"/);
 	assert.match(threadBody, /data-admin-context-type="run"/);
-	assert.match(threadBody, /class="group min-w-0 rounded-md border text-sm"/);
+	assert.match(threadBody, /class="group w-full max-w-\[min\(42rem,80%\)\] min-w-0 rounded-md border text-sm"/);
 	assert.match(
 		threadBody,
 		/class="mx-auto w-full max-w-3xl min-w-0 px-4 grid gap-3 py-3" data-admin-thread-view="timeline"/,
@@ -1373,13 +1373,17 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*New message[\s\S]*<\/header>/);
 	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-expand-all/);
 	assert.match(threadShell, /aria-label="Expand all"/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*>Expand all<\/button>/);
+	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*chevrons-up-down/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-admin-docs-link[\s\S]*<\/header>/);
 	assert.match(threadShell, /rel="icon" type="image\/svg\+xml" href="\/admin\/assets\/favicon\.svg\?v=1"/);
 	assert.match(threadBody, /<ul[^>]*><li>first check<\/li><\/ul>/);
+	assert.match(threadBody, /data-admin-context-shell/);
 	assert.match(
 		threadBody,
-		/<details id="event-call-call-1"[^>]+data-admin-context-row="call"[^>]+data-selected-event="true"/,
+		/<article class="grid min-w-0 justify-items-start" data-admin-context-shell>\s*<details id="event-call-call-1"[^>]+data-admin-context-row="call"[^>]+data-selected-event="true"/,
 	);
+	assert.match(threadBody, /data-admin-context-row="call"[^>]+max-w-\[min\(42rem,80%\)\]/);
 	assert.match(
 		threadBody,
 		/class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary/,

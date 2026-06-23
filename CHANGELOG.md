@@ -39,6 +39,7 @@
 - Removed deprecated public authoring aliases in favor of `loadAgent()`, `defaultTools()`, `defineTool()`, and `approval.command()`.
 - Changed admin thread context rows to use bordered collapsible blocks, capped previews, colored type badges, expand-all controls, and the heypi favicon.
 - Changed admin thread assistant messages to align with the thread column and use a primary compose send button.
+- Changed admin thread activity rows to align with assistant messages and use a labeled expand/collapse control.
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `heypi dev` to start configured adapters, enable admin by default when omitted, load `.env.local` after `.env`, and install internal loopback local test routes.
 - Changed `heypi start` to load only `.env` and avoid dev-only admin/local route defaults.
