@@ -91,6 +91,7 @@
 - Changed admin thread pages to use one timeline view, remove the conversation/log toggle, and label generic trace rows distinctly from runs.
 - Changed admin thread trace teasers to show human-readable lifecycle labels and useful metadata instead of raw event names.
 - Changed admin thread activity badges to emphasize Tool, Approval, and Activity buckets and made user messages bordered instead of filled.
+- Swapped admin thread message bubble styling so user messages use the accent fill and model messages use a bordered background.
 - Fixed admin thread live refresh pinning the page to the bottom while reading earlier messages.
 - Fixed admin thread scrolling, view toggle state coverage, and stale Basecoat semantic utilities in generated admin CSS.
 - Changed `heypi dev` to run apps under a file watcher so code and admin UI template changes restart automatically during local development.
