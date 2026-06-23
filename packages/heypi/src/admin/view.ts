@@ -346,8 +346,9 @@ type AdminNavItem = {
 function adminSidebar(input: PageInput): string {
 	return `<aside id="admin-sidebar" class="sidebar" data-side="left" data-initial-open="true" data-admin-sidebar>
 	<nav aria-label="Admin navigation">
-		<header>
+		<header class="flex items-center gap-2">
 			<a class="flex min-w-0 items-center gap-2 rounded-md p-2" href="/admin" aria-label="heypi">${logo("h-4 w-auto shrink-0")}</a>
+			<button type="button" class="btn-sm-icon-ghost ms-auto text-muted-foreground hover:text-foreground" aria-label="Toggle theme" data-tooltip="Toggle theme" data-side="bottom" data-admin-theme-toggle>${themeIcon()}</button>
 		</header>
 		<section id="admin-sidebar-content" class="scrollbar" data-admin-sidebar-content>
 			${sidebarMenu(input)}
@@ -412,12 +413,11 @@ function sidebarThreadItem(row: AdminThreadRow, selected: boolean): string {
 
 function sidebarFooter(input: PageInput): string {
 	const logout = input.auth === false ? sidebarDisabledAction("Log out", "log-out") : sidebarLogoutForm(input.csrf);
-	return `<div class="flex items-center gap-2 px-2 py-1" data-admin-sidebar-footer-actions>
-	<div class="flex items-center gap-1">${logout}</div>
-	<div class="ms-auto flex items-center gap-1">
-		<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="top" data-admin-docs-link>${icon("book-text")}</a>
-		<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Toggle theme" data-tooltip="Toggle theme" data-side="top" data-admin-theme-toggle>${themeIcon()}</button>
-	</div>
+	return `<div role="group" data-admin-sidebar-footer-actions>
+	<ul>
+		<li><a href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" data-admin-docs-link>${icon("book-text")}<span>Documentation</span></a></li>
+		<li>${logout}</li>
+	</ul>
 </div>`;
 }
 
@@ -426,13 +426,13 @@ function themeIcon(): string {
 }
 
 function sidebarDisabledAction(label: string, iconName: string): string {
-	return `<button type="button" class="btn-sm-icon-ghost text-muted-foreground" disabled aria-disabled="true" aria-label="${escapeHtml(label)}" data-tooltip="${escapeHtml(label)}" data-side="top" data-admin-logout>${icon(iconName)}</button>`;
+	return `<button type="button" disabled aria-disabled="true" data-admin-logout>${icon(iconName)}<span>${escapeHtml(label)}</span></button>`;
 }
 
 function sidebarLogoutForm(csrf: string): string {
 	return `<form method="post" action="/admin/logout" class="contents">
 	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-	<button type="submit" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Log out" data-tooltip="Log out" data-side="top" data-admin-logout>${icon("log-out")}</button>
+	<button type="submit" data-admin-logout>${icon("log-out")}<span>Log out</span></button>
 </form>`;
 }
 

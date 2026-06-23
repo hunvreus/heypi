@@ -1136,8 +1136,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(shell, /Slack[\s\S]*href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
 	assert.match(shell, /discord · Discord[\s\S]*href="\/admin\/threads\/thread-2\?event=message%3Amessage-2"/);
 	assert.match(shell, /data-admin-sidebar-footer-actions/);
+	assert.match(shell, /data-admin-sidebar-footer-actions[\s\S]*>Documentation<\/span>/);
 	assert.match(shell, /data-admin-logout/);
-	assert.match(shell, /disabled aria-disabled="true" aria-label="Log out"/);
+	assert.match(shell, /disabled aria-disabled="true" data-admin-logout/);
+	assert.match(shell, /data-admin-logout[\s\S]*>Log out<\/span>/);
 	assert.doesNotMatch(shell, /admin-sidebar-links-heading/);
 	assert.match(shell, /id="admin-command"/);
 	assert.match(shell, /href="\/admin\/memory"[^>]+role="menuitem"/);
@@ -1539,16 +1541,18 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /Memory<\/span><span[^>]*>0<\/span>/);
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"[^>]+data-admin-docs-link/);
 		assert.match(body, /button type="submit"[^>]+data-admin-logout/);
-		assert.match(body, /aria-label="Log out"/);
-		assert.match(body, /data-tooltip="Log out"/);
+		assert.match(body, /data-admin-sidebar-footer-actions[\s\S]*>Documentation<\/span>/);
+		assert.match(body, /data-admin-sidebar-footer-actions[\s\S]*>Log out<\/span>/);
 		assert.match(body, /Toggle theme/);
 		assert.match(body, /data-admin-theme-icon="moon"/);
 		assert.match(body, /data-admin-theme-icon="sun"/);
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"/);
-		assert.match(body, /aria-label="Docs"/);
-		assert.match(body, /data-tooltip="Docs"/);
 		assert.match(body, /aria-label="Toggle theme"/);
 		assert.match(body, /data-tooltip="Toggle theme"/);
+		assert.match(
+			body,
+			/<header class="flex items-center gap-2">[\s\S]*aria-label="heypi"[\s\S]*data-admin-theme-toggle/,
+		);
 		assert.doesNotMatch(body, /aria-current="false"/);
 		assert.doesNotMatch(body, /data-tooltip="Toggle dark mode"/);
 		assert.doesNotMatch(body, /title="Toggle dark mode"/);
@@ -1744,7 +1748,8 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 		const body = await adminPage.text();
 		assert.match(body, /heypi admin/);
 		assert.match(body, /data-admin-logout/);
-		assert.match(body, /disabled aria-disabled="true" aria-label="Log out"/);
+		assert.match(body, /disabled aria-disabled="true" data-admin-logout/);
+		assert.match(body, /data-admin-sidebar-footer-actions[\s\S]*>Log out<\/span>/);
 		const csrf = requiredMatch(body, /name="csrf" value="([^"]+)"/u);
 		assert.ok(csrf);
 
