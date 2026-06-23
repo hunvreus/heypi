@@ -46,19 +46,21 @@ type AdminInfo = {
 
 type Cell = string | { html: string };
 type CardDescription = string | Cell;
-const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=9";
+const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=10";
 const ADMIN_JS_HREF = "/admin/assets/basecoat.all.min.js?v=1";
 const ADMIN_DOCS_HREF = "https://heypi.dev/docs";
+const ADMIN_FAVICON_HREF = "/admin/assets/favicon.svg?v=1";
 
 export function page(input: PageInput): string {
 	return `<!doctype html>
 <html lang="en" class="overflow-x-hidden">
 <head>
 ${themeScript(input.nonce, true)}
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(input.title)} · heypi admin</title>
-<link rel="stylesheet" href="${ADMIN_CSS_HREF}">
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>${escapeHtml(input.title)} · heypi admin</title>
+	<link rel="icon" type="image/svg+xml" href="${ADMIN_FAVICON_HREF}">
+	<link rel="stylesheet" href="${ADMIN_CSS_HREF}">
 </head>
 <body class="min-h-screen overflow-x-hidden bg-background text-foreground" data-live-page="${input.livePage ? "true" : "false"}" data-live-revision="${escapeHtml(input.live.revision)}" data-live-chats-revision="${escapeHtml(input.live.chatsRevision)}" data-live-thread-id="${escapeHtml(input.liveThreadId ?? "")}" data-live-thread-revision="${escapeHtml(input.liveThreadId ? (input.live.threadRevisions[input.liveThreadId] ?? "") : "")}">
 ${adminSidebar(input)}
@@ -262,6 +264,17 @@ document.addEventListener("click", (event) => {
 		if (sidebar && typeof sidebar.toggle === "function") sidebar.toggle();
 		return;
 	}
+	const expandAll = target.closest("[data-admin-expand-all]");
+	if (expandAll instanceof HTMLElement) {
+		const rows = [...document.querySelectorAll("[data-admin-context-row]")].filter(
+			(row) => row instanceof HTMLDetailsElement,
+		);
+		const open = rows.some((row) => !row.open);
+		for (const row of rows) row.open = open;
+		expandAll.setAttribute("aria-label", open ? "Collapse all" : "Expand all");
+		expandAll.setAttribute("data-tooltip", open ? "Collapse all" : "Expand all");
+		return;
+	}
 	const commandOpen = target.closest("[data-admin-command-open]");
 	if (commandOpen) {
 		openAdminCommand();
@@ -459,7 +472,9 @@ function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
 }
 
 function mainAction(input: PageInput): string {
-	if (input.liveThreadId) return "";
+	if (input.liveThreadId) {
+		return `<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Expand all" data-tooltip="Expand all" data-side="bottom" data-admin-expand-all>${icon("chevrons-up-down")}</button>`;
+	}
 	if (input.active === "chats") {
 		return `<a class="btn-sm" href="/admin">${icon("message-square")}New message</a>`;
 	}
@@ -783,7 +798,7 @@ export function threadConversationPanel(input?: AdminThreadView, csrf?: string):
 </div>`;
 	}
 	return `<div class="grid min-h-[calc(100vh-3.5rem)] min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-	<div class="min-w-0 pb-4" data-admin-thread-scroll>${threadConversation(input, csrf)}</div>
+		<div class="min-w-0 pb-4" data-admin-thread-scroll>${threadConversation(input)}</div>
 	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
 }
@@ -809,7 +824,7 @@ function adminThreadColumnClass(): string {
 	return "mx-auto w-full max-w-3xl min-w-0 px-4";
 }
 
-function threadConversation(input: AdminThreadView, csrf: string | undefined): string {
+function threadConversation(input: AdminThreadView): string {
 	const rows = [...input.timeline].sort(chronologicalActivitySort);
 	const selectedKey = input.event ?? (input.selected ? activityEvent(input.selected) : undefined);
 	if (!rows.length) {
@@ -821,13 +836,13 @@ function threadConversation(input: AdminThreadView, csrf: string | undefined): s
 		});
 	}
 	return `<div class="${adminThreadColumnClass()} grid gap-3 py-3" data-admin-thread-view="timeline">${rows
-		.map((row) => chatRow(row, selectedKey === activityEvent(row), csrf))
+		.map((row) => chatRow(row, selectedKey === activityEvent(row)))
 		.join("")}</div>`;
 }
 
-function chatRow(row: AdminActivityRow, selected: boolean, csrf?: string): string {
+function chatRow(row: AdminActivityRow, selected: boolean): string {
 	if (row.kind === "message") return chatMessageRow(row, selected);
-	return chatContextRow(row, selected, csrf);
+	return chatContextRow(row, selected);
 }
 
 function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
@@ -855,14 +870,14 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 </article>`;
 }
 
-function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string): string {
-	const details = chatContextDetails(row, csrf);
+function chatContextRow(row: AdminActivityRow, selected: boolean): string {
+	const details = chatContextDetails(row);
 	const teaser = chatContextTeaser(row);
-	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
-		<summary class="flex max-w-full min-w-0 items-center gap-2 overflow-hidden" data-admin-context-summary>
+	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group min-w-0 rounded-md border text-sm" data-admin-context-type="${activityType(row)}">
+		<summary class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary>
 		${cellHtml(activityBadge(row))}
 		<span class="shrink-0 font-medium">${escapeHtml(teaser.title)}</span>
-		<span class="min-w-0 flex-1 truncate text-muted-foreground">${escapeHtml(teaser.meta ?? "")}</span>
+		<span class="min-w-0 flex-1 truncate text-muted-foreground">${escapeHtml(previewText(teaser.meta))}</span>
 		<span class="shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
 		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
 	</summary>
@@ -953,6 +968,12 @@ function firstText(...values: Array<string | undefined>): string | undefined {
 	return values.find((value) => value?.trim());
 }
 
+function previewText(input: string | undefined): string {
+	const text = input?.replace(/\s+/gu, " ").trim() ?? "";
+	if (text.length <= 80) return text;
+	return `${text.slice(0, 77).trimEnd()}...`;
+}
+
 function looksJson(input: string): boolean {
 	return /^[[{]/u.test(input.trim());
 }
@@ -962,7 +983,7 @@ function eventCategoryLabel(input: string): string {
 	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Event";
 }
 
-function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
+function chatContextDetails(row: AdminActivityRow): string {
 	const detailLabels =
 		row.kind === "event"
 			? [
@@ -987,59 +1008,14 @@ function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
 		row.durationMs ? { label: "Duration", value: duration(row.durationMs) } : undefined,
 		...(row.details ?? []).filter((detail) => detailLabels.includes(detail.label)),
 	]);
-	const actions = chatContextActions(row, csrf);
-	if (!details.length && !actions) return "";
+	if (!details.length) return "";
 	const detailRows = details
 		.map(
 			(detail) =>
 				`<div class="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3"><span class="text-muted-foreground">${escapeHtml(detail.label)}</span><span class="min-w-0 break-words [overflow-wrap:anywhere] text-foreground">${escapeHtml(detail.value)}</span></div>`,
 		)
 		.join("");
-	return `<div class="mt-2 ml-3 grid min-w-0 gap-2 border-l pl-3 text-sm" data-admin-context-details>${actions}${detailRows}</div>`;
-}
-
-function chatContextActions(row: AdminActivityRow, csrf?: string): string {
-	if (!csrf || !row.threadId) return "";
-	if (row.kind === "run" && row.state === "running") {
-		return threadActionForm({
-			csrf,
-			threadId: row.threadId,
-			action: "cancel",
-			id: row.id,
-			label: "Cancel run",
-			icon: "x",
-		});
-	}
-	if (row.kind === "call") {
-		return threadActionForm({
-			csrf,
-			threadId: row.threadId,
-			action: "status",
-			id: row.id,
-			label: "Show call status",
-			icon: "activity",
-		});
-	}
-	return "";
-}
-
-function threadActionForm(input: {
-	csrf: string;
-	threadId: string;
-	action: "cancel" | "status";
-	id: string;
-	label: string;
-	icon: string;
-}): string {
-	return `<form method="post" action="/admin/thread-actions" class="flex min-w-max items-center gap-1.5" data-admin-thread-action="${escapeHtml(input.action)}">
-	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf)}">
-	<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">
-	<input type="hidden" name="action" value="${escapeHtml(input.action)}">
-	<input type="hidden" name="id" value="${escapeHtml(input.id)}">
-	<label class="sr-only" for="thread-action-actor-${escapeHtml(input.action)}-${escapeHtml(input.id)}">Action actor</label>
-	<input id="thread-action-actor-${escapeHtml(input.action)}-${escapeHtml(input.id)}" class="input h-8 w-[9rem] text-sm" name="actor" value="admin" aria-label="Action actor">
-	<button class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" type="submit" aria-label="${escapeHtml(input.label)}" data-tooltip="${escapeHtml(input.label)}" data-side="top">${icon(input.icon)}</button>
-</form>`;
+	return `<div class="grid min-w-0 gap-2 border-t px-3 py-2 text-sm" data-admin-context-details>${detailRows}</div>`;
 }
 
 function compactActivityDetails(input: Array<AdminActivityDetail | undefined>): AdminActivityDetail[] {
@@ -1381,9 +1357,9 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 }
 
 function activityBadge(row: AdminActivityRow): Cell {
-	const bucket = activityBucket(row);
+	const type = activityType(row);
 	return {
-		html: `<span class="badge-secondary ${activityBucketBg(bucket)}">${escapeHtml(activityBucketLabel(row, bucket))}</span>`,
+		html: activityBadgeHtml(type),
 	};
 }
 
@@ -1435,32 +1411,49 @@ function truncatedText(input: string): Cell {
 	};
 }
 
-type ActivityBucket = "activity" | "approval" | "tool";
+type ActivityType = "approval" | "event" | "message" | "model" | "run" | "tool" | "turn";
 
-function activityBucket(row: AdminActivityRow): ActivityBucket {
+function activityType(row: AdminActivityRow): ActivityType {
 	if (row.kind === "approval") return "approval";
 	if (row.kind === "call") return "tool";
+	if (row.kind === "run") return "run";
 	const eventName = row.eventType ?? row.title;
-	if (row.kind === "event" && eventName.startsWith("tool.")) return "tool";
-	if (row.kind === "event" && eventName.startsWith("approval.")) return "approval";
-	return "activity";
+	if (row.kind === "event") {
+		const category = eventCategory(eventName);
+		if (isActivityType(category)) return category;
+	}
+	return "event";
 }
 
-function activityBucketLabel(row: AdminActivityRow, bucket: ActivityBucket): string {
-	if (bucket === "activity") return activityLabel(row);
-	const labels: Record<ActivityBucket, string> = {
-		activity: "Event",
+function isActivityType(input: string): input is ActivityType {
+	return ["approval", "event", "message", "model", "run", "tool", "turn"].includes(input);
+}
+
+function activityBadgeHtml(type: ActivityType): string {
+	const labels: Record<ActivityType, string> = {
 		approval: "Approval",
+		event: "Event",
+		message: "Message",
+		model: "Model",
+		run: "Run",
 		tool: "Tool",
+		turn: "Turn",
 	};
-	return labels[bucket];
+	if (type === "turn") return `<span class="badge" data-variant="secondary">${labels[type]}</span>`;
+	return `<span class="badge ${activityBadgeColor(type)}">${labels[type]}</span>`;
 }
 
-function activityLabel(row: AdminActivityRow): string {
-	if (row.kind === "run") return "Run";
-	if (row.kind !== "event") return "Event";
-	const category = eventCategory(row.eventType ?? row.title);
-	return eventCategoryLabel(category);
+function activityBadgeColor(type: ActivityType): string {
+	const classes: Record<ActivityType, string> = {
+		approval: "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50",
+		event: "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50",
+		message: "bg-sky-100 text-sky-950 dark:bg-sky-950 dark:text-sky-50",
+		model: "bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-50",
+		run: "bg-emerald-100 text-emerald-950 dark:bg-emerald-900 dark:text-emerald-50",
+		tool: "bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50",
+		turn: "",
+	};
+	return classes[type];
 }
 
 function eventCategory(input: string): string {
@@ -1468,15 +1461,6 @@ function eventCategory(input: string): string {
 	const [first = ""] = input.trim().split(/\s+/u, 1);
 	const normalized = first.toLowerCase();
 	return ["approval", "message", "model", "tool", "turn"].includes(normalized) ? normalized : "event";
-}
-
-function activityBucketBg(bucket: ActivityBucket): string {
-	const classes: Record<ActivityBucket, string> = {
-		activity: "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50",
-		approval: "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50",
-		tool: "bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50",
-	};
-	return classes[bucket];
 }
 
 function stateBg(state: string): string {

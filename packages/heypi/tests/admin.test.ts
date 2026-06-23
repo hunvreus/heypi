@@ -1207,6 +1207,21 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			{ label: "Data", value: '{"tool":"host_exec","state":"done"}', format: "text" as const },
 		],
 	};
+	const turnEvent = {
+		id: "event-turn-1",
+		kind: "event" as const,
+		threadId: "thread-1",
+		title: "turn.started",
+		summary: "",
+		state: "running",
+		trace: "trace-1",
+		time: now - 735,
+		seq: 4.5,
+		details: [
+			{ label: "Trace", value: "trace-1", format: "mono" as const },
+			{ label: "Sequence", value: "4.5", format: "mono" as const },
+		],
+	};
 	const modelEvent = {
 		id: "event-model-1",
 		kind: "event" as const,
@@ -1267,7 +1282,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			checkedAt: now,
 			selected: {
 				thread: threadRow,
-				timeline: [runEvent, callEvent, traceEvent, modelEvent, event, assistantEvent, emptyEvent],
+				timeline: [runEvent, callEvent, traceEvent, turnEvent, modelEvent, event, assistantEvent, emptyEvent],
 				selected: callEvent,
 				event: "call:call-1",
 			},
@@ -1287,6 +1302,8 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /name="threadId" value="thread-1"/);
 	assert.match(threadBody, /data-admin-compose-text/);
 	assert.match(threadBody, /data-admin-thread-view="timeline"/);
+	assert.match(threadBody, /data-admin-context-type="run"/);
+	assert.match(threadBody, /class="group min-w-0 rounded-md border text-sm"/);
 	assert.match(
 		threadBody,
 		/class="mx-auto w-full max-w-3xl min-w-0 px-4 grid gap-3 py-3" data-admin-thread-view="timeline"/,
@@ -1352,7 +1369,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadShell, /view=log/);
 	assert.doesNotMatch(threadShell, /data-admin-page-title>Thread<\/h1>/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*New message[\s\S]*<\/header>/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-expand-all/);
+	assert.match(threadShell, /aria-label="Expand all"/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-admin-docs-link[\s\S]*<\/header>/);
+	assert.match(threadShell, /rel="icon" type="image\/svg\+xml" href="\/admin\/assets\/favicon\.svg\?v=1"/);
 	assert.match(threadBody, /<ul[^>]*><li>first check<\/li><\/ul>/);
 	assert.match(
 		threadBody,
@@ -1360,21 +1380,16 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	);
 	assert.match(
 		threadBody,
-		/class="flex max-w-full min-w-0 items-center gap-2 overflow-hidden" data-admin-context-summary/,
+		/class="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-2" data-admin-context-summary/,
 	);
 	assert.match(threadBody, /class="min-w-0 flex-1 truncate text-muted-foreground"/);
 	assert.doesNotMatch(threadBody, /ml-auto shrink-0 text-xs text-muted-foreground/);
 	assert.match(threadBody, /data-admin-context-details/);
-	assert.match(threadBody, /action="\/admin\/thread-actions"/);
-	assert.match(threadBody, /data-admin-thread-action="cancel"/);
-	assert.match(threadBody, /name="action" value="cancel"/);
-	assert.match(threadBody, /name="id" value="run-1"/);
-	assert.match(threadBody, /aria-label="Cancel run"/);
-	assert.match(threadBody, /data-admin-thread-action="status"/);
-	assert.match(threadBody, /name="action" value="status"/);
-	assert.match(threadBody, /name="id" value="call-1"/);
-	assert.match(threadBody, /aria-label="Show call status"/);
-	assert.match(threadBody, /name="actor" value="admin"/);
+	assert.match(threadBody, /class="grid min-w-0 gap-2 border-t px-3 py-2 text-sm" data-admin-context-details/);
+	assert.doesNotMatch(threadBody, /action="\/admin\/thread-actions"/);
+	assert.doesNotMatch(threadBody, /data-admin-thread-action="status"/);
+	assert.doesNotMatch(threadBody, /aria-label="Show call status"/);
+	assert.doesNotMatch(threadBody, /name="actor" value="admin"/);
 	assert.match(threadBody, />Runtime<\/span>/);
 	assert.match(threadBody, /data-admin-context-row="event"/);
 	assert.match(threadBody, />Trace<\/span>/);
@@ -1383,10 +1398,14 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, />Run<\/span>/);
 	assert.match(threadBody, />Run started<\/span>/);
 	assert.match(threadBody, />Tool<\/span>/);
+	assert.match(threadBody, /class="badge bg-cyan-100 text-cyan-950/);
 	assert.match(threadBody, />Tool completed<\/span>/);
 	assert.doesNotMatch(threadBody, /tool\.completed/);
 	assert.match(threadBody, />Model<\/span>/);
+	assert.match(threadBody, /class="badge bg-violet-100 text-violet-950/);
 	assert.match(threadBody, /Model completed/);
+	assert.match(threadBody, /<span class="badge" data-variant="secondary">Turn<\/span>/);
+	assert.match(threadBody, />Turn started<\/span>/);
 	assert.doesNotMatch(threadBody, /Activity started/);
 	assert.doesNotMatch(threadBody, /Activity received/);
 	assert.doesNotMatch(threadBody, />Stdout<\/span>/);

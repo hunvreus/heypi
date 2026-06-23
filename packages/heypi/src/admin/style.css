@@ -27,6 +27,19 @@
 		max-height: 10rem;
 	}
 
+	[data-admin-context-summary] {
+		cursor: pointer;
+		list-style: none;
+	}
+
+	[data-admin-context-summary]::-webkit-details-marker {
+		display: none;
+	}
+
+	[data-admin-context-summary]:hover {
+		background-color: var(--color-accent);
+	}
+
 	@media (max-width: 760px) {
 		[data-admin-page-content]:not([data-admin-page-content="chats"]) {
 			padding: 0.75rem;
