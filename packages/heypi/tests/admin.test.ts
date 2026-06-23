@@ -1288,7 +1288,8 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-admin-compose-text/);
 	assert.match(threadBody, /data-admin-thread-view="timeline"/);
 	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
-	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*grid w-full min-w-0[\s\S]*rounded-lg bg-accent/);
+	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*justify-items-end[\s\S]*rounded-lg bg-accent/);
+	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*max-w-\[min\(42rem,80%\)\]/);
 	assert.doesNotMatch(threadBody, /data-admin-message-role="user"[\s\S]*bg-primary/);
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /data-admin-compose-group/);
@@ -1299,8 +1300,9 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /<article id="event-message-message-2" data-admin-message-role="assistant"/);
 	assert.match(
 		threadBody,
-		/data-admin-message-role="assistant"[\s\S]*grid w-full min-w-0[\s\S]*rounded-lg border bg-background[\s\S]*text-foreground/,
+		/data-admin-message-role="assistant"[\s\S]*justify-items-start[\s\S]*rounded-lg border bg-background[\s\S]*text-foreground/,
 	);
+	assert.match(threadBody, /data-admin-message-role="assistant"[\s\S]*max-w-\[min\(42rem,80%\)\]/);
 	assert.match(threadBody, />Empty message<\/p>/);
 	assert.doesNotMatch(threadBody, /\(empty message\)/);
 	assert.doesNotMatch(threadBody, /heypi <span aria-hidden="true">·<\/span>/);
