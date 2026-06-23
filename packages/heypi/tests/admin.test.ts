@@ -1358,7 +1358,9 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, />Trace<\/span>/);
 	assert.match(threadBody, />Sequence<\/span>/);
 	assert.match(threadBody, />Data<\/span>/);
-	assert.match(threadBody, /tool\.completed/);
+	assert.match(threadBody, />Run started<\/span>/);
+	assert.match(threadBody, />Tool completed<\/span>/);
+	assert.doesNotMatch(threadBody, /tool\.completed/);
 	assert.match(threadBody, /Model completed/);
 	assert.doesNotMatch(threadBody, />Stdout<\/span>/);
 	assert.doesNotMatch(threadBody, />ID<\/div>/);

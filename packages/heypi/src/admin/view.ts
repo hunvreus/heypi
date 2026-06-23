@@ -836,16 +836,109 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 
 function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string): string {
 	const details = chatContextDetails(row, csrf);
+	const teaser = chatContextTeaser(row);
 	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
 		<summary class="flex min-w-0 items-center gap-2" data-admin-context-summary>
 		${cellHtml(kindBadge(row.kind))}
-		${cellHtml(statusBadge(row.state))}
-		<span class="min-w-0 truncate font-medium">${escapeHtml(row.title)}</span>
+		<span class="min-w-0 truncate font-medium">${escapeHtml(teaser.title)}</span>
+		${teaser.meta ? `<span class="min-w-0 truncate text-muted-foreground">${escapeHtml(teaser.meta)}</span>` : ""}
 		<span class="ml-auto shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
 		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
 	</summary>
 	${details}
 </details>`;
+}
+
+function chatContextTeaser(row: AdminActivityRow): { title: string; meta?: string } {
+	if (row.kind === "run") {
+		return { title: `Run ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
+	}
+	if (row.kind === "call") {
+		const meta = [row.title, row.durationMs ? duration(row.durationMs) : undefined].filter(Boolean).join(" · ");
+		return { title: `Tool ${lifecycleVerb(row.state)}`, meta };
+	}
+	if (row.kind === "approval") {
+		return { title: `Approval ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
+	}
+	if (row.kind === "event") {
+		const event = eventTeaser(row);
+		return event;
+	}
+	return { title: row.title, meta: row.summary };
+}
+
+function eventTeaser(row: AdminActivityRow): { title: string; meta?: string } {
+	const type = row.eventType ?? row.title;
+	if (!type.includes(".")) {
+		return { title: row.title, meta: firstText(row.summary && !looksJson(row.summary) ? row.summary : undefined) };
+	}
+	const [category = "trace", action = row.state] = type.split(".", 2);
+	const categoryTitle = titleCase(category);
+	const actionTitle = action ? lifecycleVerb(action) : lifecycleVerb(row.state);
+	const data = eventData(row);
+	const tool = stringValue(data?.tool);
+	const meta = firstText(tool, row.summary && !looksJson(row.summary) ? row.summary : undefined);
+	return { title: `${categoryTitle} ${actionTitle}`, meta };
+}
+
+function stateVerb(input: string): string {
+	const labels: Record<string, string> = {
+		active: "active",
+		approved: "approved",
+		cancelled: "cancelled",
+		completed: "completed",
+		denied: "denied",
+		done: "completed",
+		expired: "expired",
+		failed: "failed",
+		pending: "pending",
+		pending_approval: "pending",
+		received: "received",
+		rejected: "rejected",
+		requested: "requested",
+		resolved: "resolved",
+		running: "running",
+		sent: "sent",
+		started: "started",
+		succeeded: "succeeded",
+		success: "succeeded",
+	};
+	return labels[input] ?? input.replace(/_/gu, " ");
+}
+
+function lifecycleVerb(input: string): string {
+	if (input === "running") return "started";
+	return stateVerb(input);
+}
+
+function eventData(row: AdminActivityRow): Record<string, unknown> | undefined {
+	const data = activityDetail(row, "Data")?.value;
+	if (!data) return undefined;
+	try {
+		const parsed = JSON.parse(data) as unknown;
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function stringValue(input: unknown): string | undefined {
+	return typeof input === "string" && input.trim() ? input : undefined;
+}
+
+function firstText(...values: Array<string | undefined>): string | undefined {
+	return values.find((value) => value?.trim());
+}
+
+function looksJson(input: string): boolean {
+	return /^[[{]/u.test(input.trim());
+}
+
+function titleCase(input: string): string {
+	const normalized = input.replace(/[_-]+/gu, " ").trim();
+	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Trace";
 }
 
 function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
