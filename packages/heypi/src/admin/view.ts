@@ -28,7 +28,6 @@ export type PageInput = {
 	livePage?: boolean;
 	liveThreadId?: string;
 	threadEvent?: string;
-	threadView?: ThreadViewMode;
 };
 
 export type ErrorPageInput = {
@@ -47,7 +46,6 @@ type AdminInfo = {
 
 type Cell = string | { html: string };
 type CardDescription = string | Cell;
-type ThreadViewMode = "conversation" | "log";
 const ADMIN_CSS_HREF = "/admin/assets/admin.css?v=9";
 const ADMIN_JS_HREF = "/admin/assets/basecoat.all.min.js?v=1";
 const ADMIN_DOCS_HREF = "https://heypi.dev/docs";
@@ -447,10 +445,7 @@ function commandThreadGroup(page: AdminPage<AdminThreadRow>): string {
 }
 
 function mainAction(input: PageInput): string {
-	if (input.liveThreadId) {
-		const thread = input.threads.rows.find((row) => row.id === input.liveThreadId);
-		return thread ? threadViewToggle(thread, input.threadEvent, input.threadView ?? "conversation") : "";
-	}
+	if (input.liveThreadId) return "";
 	if (input.active === "chats") {
 		return `<a class="btn-sm" href="/admin">${icon("message-square")}New message</a>`;
 	}
@@ -578,11 +573,10 @@ export function threadsView(
 		selected?: AdminThreadView;
 		csrf?: string;
 		live?: AdminOverview["live"];
-		view?: ThreadViewMode;
 	} = {},
 ): string {
 	return `<div class="min-w-0" data-admin-chats>
-	<section class="min-w-0" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf, { view: input.view })}</section>
+	<section class="min-w-0" data-admin-thread-panel>${threadConversationPanel(input.selected, input.csrf)}</section>
 </div>`;
 }
 
@@ -744,33 +738,7 @@ export function memoryView(memory: AdminMemory, _checkedAt?: number): string {
 }
 
 function threadHeader(row: AdminThreadRow): string {
-	return `<div class="flex min-w-0 items-center gap-2" data-admin-thread-header><h2 class="min-w-0 truncate font-mono text-[13px]" data-admin-thread-adapter>${escapeHtml(row.provider)}</h2>${icon("chevron-right", "size-4 shrink-0 text-muted-foreground")}<span class="min-w-0 truncate font-mono text-[13px] text-muted-foreground" data-admin-thread-id>${escapeHtml(row.id)}</span></div>`;
-}
-
-function threadViewToggle(row: AdminThreadRow, event: string | undefined, view: ThreadViewMode): string {
-	return `<div class="inline-flex items-center rounded-md border bg-background p-0.5" aria-label="Thread view" data-admin-thread-view-toggle>
-		${threadViewToggleItem(row, event, "conversation", view)}
-		${threadViewToggleItem(row, event, "log", view)}
-	</div>`;
-}
-
-function threadViewToggleItem(
-	row: AdminThreadRow,
-	event: string | undefined,
-	mode: ThreadViewMode,
-	current: ThreadViewMode,
-): string {
-	const active = mode === current;
-	const label = mode === "conversation" ? "Conversation" : "Log";
-	return `<a class="rounded-sm px-2.5 py-1 text-sm ${active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}" href="${escapeHtml(threadViewHref(row.id, event, mode))}"${active ? ' aria-current="true"' : ""} data-admin-thread-view-link="${mode}">${label}</a>`;
-}
-
-function threadViewHref(threadId: string, event: string | undefined, view: ThreadViewMode): string {
-	const params = new URLSearchParams();
-	if (event) params.set("event", event);
-	if (view === "log") params.set("view", "log");
-	const query = params.toString();
-	return `/admin/threads/${encodeURIComponent(threadId)}${query ? `?${query}` : ""}`;
+	return `<div class="flex min-w-0 items-center gap-2" data-admin-thread-header><h2 class="min-w-0 truncate text-sm font-medium" data-admin-thread-adapter>${escapeHtml(threadChannelLabel(row))}</h2>${icon("chevron-right", "size-4 shrink-0 text-muted-foreground")}<span class="min-w-0 truncate font-mono text-[13px] text-muted-foreground" data-admin-thread-id>${escapeHtml(row.id)}</span></div>`;
 }
 
 function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: string; rows: AdminThreadRow[] }> {
@@ -787,11 +755,7 @@ function threadGroups(rows: AdminThreadRow[]): Array<{ key: string; label: strin
 	return [...groups.values()];
 }
 
-export function threadConversationPanel(
-	input?: AdminThreadView,
-	csrf?: string,
-	options: { view?: ThreadViewMode } = {},
-): string {
+export function threadConversationPanel(input?: AdminThreadView, csrf?: string): string {
 	if (!input) {
 		return `<div class="grid min-h-[calc(100vh-3.5rem)] grid-rows-[minmax(0,1fr)_auto]" data-admin-thread-empty>
 	<div class="grid min-h-0 place-items-center px-4" data-admin-thread-scroll>
@@ -805,7 +769,7 @@ export function threadConversationPanel(
 </div>`;
 	}
 	return `<div class="grid min-h-[calc(100vh-3.5rem)] min-w-0 grid-rows-[minmax(0,1fr)_auto]">
-	<div class="min-w-0 pb-4" data-admin-thread-scroll>${threadConversation(input, csrf, options.view ?? "conversation")}</div>
+	<div class="min-w-0 pb-4" data-admin-thread-scroll>${threadConversation(input, csrf)}</div>
 	${adminComposeForm({ csrf, threadId: input.thread.id })}
 </div>`;
 }
@@ -824,8 +788,8 @@ function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: b
 </form>`;
 }
 
-function threadConversation(input: AdminThreadView, csrf: string | undefined, view: ThreadViewMode): string {
-	const rows = input.timeline.filter((row) => chatRowVisible(row, view)).sort(chronologicalActivitySort);
+function threadConversation(input: AdminThreadView, csrf: string | undefined): string {
+	const rows = [...input.timeline].sort(chronologicalActivitySort);
 	const selectedKey = input.event ?? (input.selected ? activityEvent(input.selected) : undefined);
 	if (!rows.length) {
 		return emptyState({
@@ -835,7 +799,7 @@ function threadConversation(input: AdminThreadView, csrf: string | undefined, vi
 			variant: "plain",
 		});
 	}
-	return `<div class="mx-auto grid w-full max-w-3xl min-w-0 gap-3 px-4 py-3" data-admin-thread-view="${view}">${rows
+	return `<div class="mx-auto grid w-full max-w-3xl min-w-0 gap-3 px-4 py-3" data-admin-thread-view="timeline">${rows
 		.map((row) => chatRow(row, selectedKey === activityEvent(row), csrf))
 		.join("")}</div>`;
 }
@@ -968,22 +932,12 @@ function compactActivityDetails(input: Array<AdminActivityDetail | undefined>): 
 	return input.filter((row): row is AdminActivityDetail => Boolean(row?.value));
 }
 
-function chatRowVisible(row: AdminActivityRow, view: ThreadViewMode): boolean {
-	if (view === "log") return true;
-	if (row.kind === "message" || row.kind === "approval" || row.kind === "call") return true;
-	if (row.kind === "run") return row.state !== "done";
-	return importantEvent(row);
-}
-
-function importantEvent(row: AdminActivityRow): boolean {
-	return (
-		/^tool\./u.test(row.title) ||
-		/approval|denied|error|fail|reject/iu.test(`${row.title} ${row.state} ${row.summary}`)
-	);
-}
-
 function chronologicalActivitySort(left: AdminActivityRow, right: AdminActivityRow): number {
 	return left.time - right.time || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id);
+}
+
+function threadChannelLabel(row: AdminThreadRow): string {
+	return row.provider || row.channel || row.kind || "thread";
 }
 
 function threadPreview(row: AdminThreadRow): string {
@@ -1561,7 +1515,7 @@ function kindLabel(kind: AdminActivityRow["kind"]): string {
 	const labels: Record<AdminActivityRow["kind"], string> = {
 		approval: "Approval",
 		call: "Tool call",
-		event: "Event",
+		event: "Trace",
 		message: "Message",
 		run: "Run",
 	};

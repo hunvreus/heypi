@@ -436,12 +436,11 @@ async function routePage(
 	if (threadPanelId) {
 		const thread = await state.service.thread(threadPanelId, { event: stringParam(url.searchParams.get("event")) });
 		if (!thread) return adminError(res, 404, "Thread not found", "This admin thread does not exist.", nonce);
-		return html(res, 200, threadConversationPanel(thread, session.csrf, { view: threadViewParam(url) }));
+		return html(res, 200, threadConversationPanel(thread, session.csrf));
 	}
 	const threadId = threadPathId(path);
 	if (threadId) {
 		const threadEvent = stringParam(url.searchParams.get("event"));
-		const threadView = threadViewParam(url);
 		const [overview, threads, thread] = await Promise.all([
 			state.service.overview(),
 			state.service.threads(pageInput(url)),
@@ -456,13 +455,11 @@ async function routePage(
 			livePage: true,
 			liveThreadId: thread.thread.id,
 			threadEvent,
-			threadView,
 			body: threadsView(threads, {
 				checkedAt: overview.live.checkedAt,
 				selected: thread,
 				csrf: session.csrf,
 				live: overview.live,
-				view: threadView,
 			}),
 		});
 	}
@@ -546,7 +543,6 @@ async function renderAdminPage(
 		livePage?: boolean;
 		liveThreadId?: string;
 		threadEvent?: string;
-		threadView?: "conversation" | "log";
 	},
 ): Promise<void> {
 	const sidebarThreads = input.sidebarThreads ?? (await state.service.threads({ limit: 50 }));
@@ -565,7 +561,6 @@ async function renderAdminPage(
 			livePage: input.livePage,
 			liveThreadId: input.liveThreadId,
 			threadEvent: input.threadEvent,
-			threadView: input.threadView,
 			body: input.body,
 		}),
 	);
@@ -652,10 +647,6 @@ function numberParam(input: string | null, fallback: number): number {
 function stringParam(input: string | null): string | undefined {
 	const value = input?.trim();
 	return value ? value : undefined;
-}
-
-function threadViewParam(url: URL): "conversation" | "log" {
-	return url.searchParams.get("view") === "log" ? "log" : "conversation";
 }
 
 function threadPathId(path: string): string | undefined {
