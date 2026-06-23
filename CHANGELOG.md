@@ -64,6 +64,7 @@
 - Changed Slack, Discord, and Telegram actor allowlist matching to use one shared internal policy helper.
 - Changed Slack, Discord, and Telegram missing-allow startup warnings to use one shared helper.
 - Changed the admin Chats sidebar to group conversations by adapter.
+- Changed admin thread pages to default to a summarized conversation view with a URL-backed full log toggle.
 - Added an adapter filter to the admin Chats sidebar.
 - Fixed admin Chats pagination preserving the adapter filter and added a reset action for active chat filters.
 - Fixed trace event storage to redact secrets centrally before persisting event data.

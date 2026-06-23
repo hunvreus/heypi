@@ -21,6 +21,7 @@ import {
 	jobsView,
 	memoryView,
 	page,
+	threadConversationPanel,
 	threadsView,
 } from "../src/admin/view.js";
 import type { AdapterStart } from "../src/io/handler.js";
@@ -1193,6 +1194,22 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			{ label: "Data", value: '{"tool":"host_exec","state":"done"}', format: "text" as const },
 		],
 	};
+	const modelEvent = {
+		id: "event-model-1",
+		kind: "event" as const,
+		threadId: "thread-1",
+		title: "Model completed",
+		summary: "prompt / 223 chars",
+		state: "done",
+		trace: "trace-1",
+		time: now - 725,
+		seq: 5,
+		details: [
+			{ label: "Trace", value: "trace-1", format: "mono" as const },
+			{ label: "Sequence", value: "5", format: "mono" as const },
+			{ label: "Data", value: '{"mode":"prompt","chars":223}', format: "text" as const },
+		],
+	};
 	const assistantEvent = {
 		id: "message-2",
 		kind: "message" as const,
@@ -1237,7 +1254,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 			checkedAt: now,
 			selected: {
 				thread: threadRow,
-				timeline: [runEvent, callEvent, traceEvent, event, assistantEvent, emptyEvent],
+				timeline: [runEvent, callEvent, traceEvent, modelEvent, event, assistantEvent, emptyEvent],
 				selected: callEvent,
 				event: "call:call-1",
 			},
@@ -1256,11 +1273,14 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadBody, /data-admin-thread-list/);
 	assert.match(threadBody, /name="threadId" value="thread-1"/);
 	assert.match(threadBody, /data-admin-compose-text/);
+	assert.match(threadBody, /data-admin-thread-view="conversation"/);
 	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
+	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*bg-primary[\s\S]*text-foreground/);
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
 	assert.match(threadBody, /data-align="end"/);
 	assert.match(threadBody, /Deployment is ready/);
 	assert.match(threadBody, /<article id="event-message-message-2" data-admin-message-role="assistant"/);
+	assert.match(threadBody, /data-admin-message-role="assistant"[\s\S]*bg-accent/);
 	assert.match(threadBody, />Empty message<\/p>/);
 	assert.doesNotMatch(threadBody, /\(empty message\)/);
 	assert.doesNotMatch(threadBody, /heypi <span aria-hidden="true">·<\/span>/);
@@ -1294,10 +1314,21 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		nonce: "nonce-1",
 		livePage: true,
 		liveThreadId: "thread-1",
+		threadEvent: "call:call-1",
 	});
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-tooltip="slack"/);
-	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-channel>C123<\/h2>/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-adapter>slack<\/h2>/);
+	assert.match(threadShell, /data-admin-main-header[\s\S]*<path d="m9 18 6-6-6-6"/);
 	assert.match(threadShell, /data-admin-main-header[\s\S]*data-admin-thread-id>thread-1<\/span>/);
+	assert.match(threadShell, /data-admin-thread-view-toggle/);
+	assert.match(
+		threadShell,
+		/href="\/admin\/threads\/thread-1\?event=call%3Acall-1"[^>]+aria-current="true"[^>]+data-admin-thread-view-link="conversation"/,
+	);
+	assert.match(
+		threadShell,
+		/href="\/admin\/threads\/thread-1\?event=call%3Acall-1&amp;view=log"[^>]+data-admin-thread-view-link="log"/,
+	);
 	assert.doesNotMatch(threadShell, /data-admin-page-title>Thread<\/h1>/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*New message[\s\S]*<\/header>/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-admin-docs-link[\s\S]*<\/header>/);
@@ -1324,6 +1355,7 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, />Sequence<\/span>/);
 	assert.match(threadBody, />Data<\/span>/);
 	assert.match(threadBody, /tool\.completed/);
+	assert.doesNotMatch(threadBody, /Model completed/);
 	assert.doesNotMatch(threadBody, />Stdout<\/span>/);
 	assert.doesNotMatch(threadBody, />ID<\/div>/);
 	assert.match(threadBody, /host_exec/);
@@ -1334,6 +1366,19 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.doesNotMatch(threadBody, /user \/ slack \/ slack/);
 	assert.doesNotMatch(threadBody, /C123 · U123<\/h2>/);
 	assert.doesNotMatch(threadBody, /Activity details/);
+
+	const logBody = threadConversationPanel(
+		{
+			thread: threadRow,
+			timeline: [modelEvent],
+			selected: modelEvent,
+			event: "event:event-model-1",
+		},
+		"csrf-1",
+		{ view: "log" },
+	);
+	assert.match(logBody, /data-admin-thread-view="log"/);
+	assert.match(logBody, /Model completed/);
 });
 
 test("admin one-time login issues a session and logout requires CSRF", async () => {
