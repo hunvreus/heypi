@@ -1499,7 +1499,9 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /data\.chatsRevision !== currentChatsRevision/);
 		assert.match(body, /data\.threadRevisions\?\.\[liveThreadId\]/);
 		assert.match(body, /sessionStorage\.setItem\(threadScrollKey\(\), threadAtBottom\(container\) \? "bottom"/);
-		assert.match(body, /new MutationObserver/);
+		assert.match(body, /const followBottom = before instanceof HTMLElement \? threadAtBottom\(before\) : true/);
+		assert.match(body, /if \(followBottom\) threadScrollBottom\(after\)/);
+		assert.doesNotMatch(body, /new MutationObserver/);
 		assert.doesNotMatch(body, /scrollIntoView/);
 		assert.match(body, /navigator\.clipboard/);
 		assert.match(body, /button\.innerHTML = '<svg/);

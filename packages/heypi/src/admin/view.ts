@@ -160,11 +160,8 @@ function openAdminCommand() {
 		}
 	});
 }
-let threadFollowBottom = true;
-let threadScrollObserver;
 setupComposeTextareas();
 function setupThreadScroll(restore) {
-	if (threadScrollObserver) threadScrollObserver.disconnect();
 	const threadScroll = threadScrollContainer();
 	if (!(threadScroll instanceof HTMLElement)) return;
 	requestAnimationFrame(() => {
@@ -173,16 +170,8 @@ function setupThreadScroll(restore) {
 			sessionStorage.removeItem(threadScrollKey());
 			if (restore && stored && stored !== "bottom") threadScroll.scrollTop = Number(stored) || 0;
 			else threadScrollBottom(threadScroll);
-			threadFollowBottom = threadAtBottom(threadScroll);
 		});
 	});
-	threadScroll.addEventListener("scroll", () => {
-		threadFollowBottom = threadAtBottom(threadScroll);
-	}, { passive: true });
-	threadScrollObserver = new MutationObserver(() => {
-		if (threadFollowBottom) requestAnimationFrame(() => threadScrollBottom(threadScroll));
-	});
-	threadScrollObserver.observe(threadScroll, { childList: true, subtree: true });
 }
 setupThreadScroll(true);
 async function refreshThreadPanel() {
@@ -191,11 +180,7 @@ async function refreshThreadPanel() {
 	if (!(panel instanceof HTMLElement)) return false;
 	const before = threadScrollContainer();
 	const followBottom = before instanceof HTMLElement ? threadAtBottom(before) : true;
-	if (before instanceof HTMLElement && !followBottom) {
-		sessionStorage.setItem(threadScrollKey(), String(before.scrollTop));
-	} else {
-		sessionStorage.setItem(threadScrollKey(), "bottom");
-	}
+	const scrollTop = before instanceof HTMLElement ? before.scrollTop : 0;
 	const response = await fetch("/admin/threads/" + encodeURIComponent(liveThreadId) + "/_panel" + location.search, {
 		headers: { accept: "text/html" },
 		credentials: "same-origin"
@@ -203,7 +188,14 @@ async function refreshThreadPanel() {
 	if (!response.ok) return false;
 	panel.innerHTML = await response.text();
 	setupComposeTextareas(panel);
-	setupThreadScroll(true);
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			const after = threadScrollContainer();
+			if (!(after instanceof HTMLElement)) return;
+			if (followBottom) threadScrollBottom(after);
+			else after.scrollTop = scrollTop;
+		});
+	});
 	return true;
 }
 const events = new EventSource("/admin/events");

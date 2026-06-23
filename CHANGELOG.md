@@ -87,6 +87,7 @@
 - Added `DefaultToolConfig` and `DefaultToolsConfig` as the preferred public type names for `defaultTools()` config.
 
 ### Fixed
+- Fixed admin thread live refresh pinning the page to the bottom while reading earlier messages.
 - Fixed admin thread pages refreshing the selected conversation by replacing the thread panel instead of reloading the full admin document.
 - Fixed admin live refresh falling back to a full page reload when both the selected thread and chat sidebar data changed in the same pulse.
 - Fixed agent-backed `heypi eval run` missing-model errors to fail before constructing the local eval runtime.

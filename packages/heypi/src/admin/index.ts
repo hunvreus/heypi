@@ -545,6 +545,8 @@ async function renderAdminPage(
 		body: string;
 		livePage?: boolean;
 		liveThreadId?: string;
+		threadEvent?: string;
+		threadView?: "conversation" | "log";
 	},
 ): Promise<void> {
 	const sidebarThreads = input.sidebarThreads ?? (await state.service.threads({ limit: 50 }));
@@ -562,6 +564,8 @@ async function renderAdminPage(
 			nonce,
 			livePage: input.livePage,
 			liveThreadId: input.liveThreadId,
+			threadEvent: input.threadEvent,
+			threadView: input.threadView,
 			body: input.body,
 		}),
 	);
