@@ -156,6 +156,68 @@ test("cli dev loads .env.local after .env", async () => {
 	}
 });
 
+test("cli dev watches app files and restarts on change", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-watch-"));
+	const appFile = join(root, "index.mjs");
+	const source = (version: string) =>
+		[
+			"let timer;",
+			"export default {",
+			"  async start() {",
+			`    console.log("boot=${version}");`,
+			"    timer = setInterval(() => undefined, 1000);",
+			"  },",
+			"  async stop() {",
+			`    console.log("stop=${version}");`,
+			"    clearInterval(timer);",
+			"  },",
+			"};",
+		].join("\n");
+	try {
+		await writeFile(appFile, source("v1"), "utf8");
+		const child = spawn(process.execPath, [CLI, "dev", "index.mjs"], {
+			cwd: root,
+			env: { ...process.env, INIT_CWD: root },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let out = "";
+		const waitFor = (pattern: RegExp) =>
+			new Promise<void>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					cleanup();
+					reject(new Error(`timed out waiting for ${pattern}: ${out}`));
+				}, 15_000);
+				const cleanup = () => {
+					clearTimeout(timeout);
+					child.stdout.off("data", collect);
+					child.stderr.off("data", collect);
+				};
+				const collect = (chunk: Buffer) => {
+					out += chunk.toString("utf8");
+					if (pattern.test(out)) {
+						cleanup();
+						resolve();
+					}
+				};
+				child.stdout.on("data", collect);
+				child.stderr.on("data", collect);
+				if (pattern.test(out)) {
+					cleanup();
+					resolve();
+				}
+			});
+		try {
+			await waitFor(/boot=v1/u);
+			await writeFile(appFile, source("v2"), "utf8");
+			await waitFor(/boot=v2/u);
+		} finally {
+			child.kill("SIGTERM");
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("cli start loads .env without .env.local", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-start-env-"));
 	try {

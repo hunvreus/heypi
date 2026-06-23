@@ -1126,8 +1126,6 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(shell, /Slack[\s\S]*href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
 	assert.match(shell, /discord · Discord[\s\S]*href="\/admin\/threads\/thread-2\?event=message%3Amessage-2"/);
 	assert.match(shell, /aria-disabled="true"[\s\S]*Log out/);
-	assert.match(shell, /data-admin-hot-reload/);
-	assert.match(shell, /Hot reload/);
 	assert.match(shell, /id="admin-command"/);
 	assert.match(shell, /href="\/admin\/memory"[^>]+role="menuitem"/);
 
@@ -1528,10 +1526,6 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /addEventListener\?\.\("change"/);
 		assert.match(body, /basecoat:theme/);
 		assert.match(body, /data-admin-theme-toggle/);
-		assert.match(body, /data-admin-hot-reload/);
-		assert.match(body, /heypi:admin:hot-reload/);
-		assert.match(body, /function hotReloadEnabled\(\)/);
-		assert.match(body, /function setHotReloadEnabled\(enabled\)/);
 		assert.match(body, /function threadScrollContainer\(\)/);
 		assert.match(body, /return document\.querySelector\("\[data-admin-main\]"\)/);
 		assert.match(body, /heypi:admin:thread-scroll:/);
@@ -1540,7 +1534,6 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /const liveThreadId = document\.body\.dataset\.liveThreadId \|\| "";/);
 		assert.match(body, /data\.chatsRevision !== currentChatsRevision/);
 		assert.match(body, /data\.threadRevisions\?\.\[liveThreadId\]/);
-		assert.match(body, /currentRevision && data\.revision !== currentRevision && livePage && hotReloadEnabled\(\)/);
 		assert.match(body, /sessionStorage\.setItem\(threadScrollKey\(\), threadAtBottom\(container\) \? "bottom"/);
 		assert.match(body, /let threadWasAtBottom = true/);
 		assert.match(body, /function setupThreadScrollTracking\(\)/);

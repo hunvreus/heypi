@@ -85,7 +85,7 @@ function buildCli() {
 	cli.command("start [file]", "Start a heypi app")
 		.option("--env <path>", "Load env file")
 		.action((file: string | undefined, flags: Flags) => withEnv("start", (input) => startApp(file, input))(flags));
-	cli.command("dev [file]", "Start a heypi app for local development")
+	cli.command("dev [file]", "Start a heypi app for local development with file watching")
 		.option("--env <path>", "Load env file")
 		.action((file: string | undefined, flags: Flags) => withEnv("dev", (input) => devApp(file, input))(flags));
 	cli.command("check", "Run local setup checks")
@@ -332,11 +332,18 @@ async function devServerHint(): Promise<{ admin?: string; base?: string } | unde
 async function spawnWithTsx(command: "start" | "dev", file: string | undefined, env: NodeJS.ProcessEnv): Promise<void> {
 	const cli = process.argv[1];
 	if (!cli) throw new Error("cannot resolve heypi CLI entrypoint");
-	const args = ["--conditions", "development", cli, command];
+	const watch = command === "dev";
+	const args = watch ? ["watch", "--clear-screen=false", cli, command] : ["--conditions", "development", cli, command];
 	if (file) args.push(file);
+	const childEnv = {
+		...process.env,
+		...env,
+		HEYPI_CLI_CHILD: "1",
+		NODE_OPTIONS: watch ? nodeOptionsWithDevelopment(process.env.NODE_OPTIONS) : process.env.NODE_OPTIONS,
+	};
 	const child = spawn("tsx", args, {
 		cwd: invocationRoot(),
-		env: { ...process.env, ...env, HEYPI_CLI_CHILD: "1" },
+		env: childEnv,
 		stdio: "inherit",
 	});
 	let forwarded = false;
@@ -370,6 +377,13 @@ async function spawnWithTsx(command: "start" | "dev", file: string | undefined, 
 		process.off("SIGINT", onSigint);
 		process.off("SIGTERM", onSigterm);
 	}
+}
+
+function nodeOptionsWithDevelopment(input: string | undefined): string {
+	const value = input?.trim();
+	if (!value) return "--conditions=development";
+	if (/(^|\s)--conditions(?:=|\s)development(?:\s|$)/u.test(value)) return value;
+	return `${value} --conditions=development`;
 }
 
 async function loadApp(file: string | undefined): Promise<HeypiApp> {

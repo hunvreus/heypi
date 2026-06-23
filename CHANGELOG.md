@@ -89,7 +89,7 @@
 ### Fixed
 - Fixed admin thread live refresh pinning the page to the bottom while reading earlier messages.
 - Fixed admin thread scrolling, view toggle state coverage, and stale Basecoat semantic utilities in generated admin CSS.
-- Added an admin hot reload switch so browser sessions can opt out of automatic page and thread panel refreshes.
+- Changed `heypi dev` to run apps under a file watcher so code and admin UI template changes restart automatically during local development.
 - Fixed admin thread pages refreshing the selected conversation by replacing the thread panel instead of reloading the full admin document.
 - Fixed admin live refresh falling back to a full page reload when both the selected thread and chat sidebar data changed in the same pulse.
 - Fixed agent-backed `heypi eval run` missing-model errors to fail before constructing the local eval runtime.
