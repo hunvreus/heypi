@@ -1358,7 +1358,12 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		threadBody,
 		/<details id="event-call-call-1"[^>]+data-admin-context-row="call"[^>]+data-selected-event="true"/,
 	);
-	assert.match(threadBody, /data-admin-context-summary/);
+	assert.match(
+		threadBody,
+		/class="flex max-w-full min-w-0 items-center gap-2 overflow-hidden" data-admin-context-summary/,
+	);
+	assert.match(threadBody, /class="min-w-0 flex-1 truncate text-muted-foreground"/);
+	assert.doesNotMatch(threadBody, /ml-auto shrink-0 text-xs text-muted-foreground/);
 	assert.match(threadBody, /data-admin-context-details/);
 	assert.match(threadBody, /action="\/admin\/thread-actions"/);
 	assert.match(threadBody, /data-admin-thread-action="cancel"/);

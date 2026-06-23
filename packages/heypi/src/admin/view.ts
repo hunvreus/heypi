@@ -859,11 +859,11 @@ function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string)
 	const details = chatContextDetails(row, csrf);
 	const teaser = chatContextTeaser(row);
 	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
-		<summary class="flex min-w-0 items-center gap-2" data-admin-context-summary>
+		<summary class="flex max-w-full min-w-0 items-center gap-2 overflow-hidden" data-admin-context-summary>
 		${cellHtml(activityBadge(row))}
-		<span class="min-w-0 truncate font-medium">${escapeHtml(teaser.title)}</span>
-		${teaser.meta ? `<span class="min-w-0 truncate text-muted-foreground">${escapeHtml(teaser.meta)}</span>` : ""}
-		<span class="ml-auto shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
+		<span class="shrink-0 font-medium">${escapeHtml(teaser.title)}</span>
+		<span class="min-w-0 flex-1 truncate text-muted-foreground">${escapeHtml(teaser.meta ?? "")}</span>
+		<span class="shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
 		${icon("chevron-right", "text-muted-foreground transition group-open:rotate-90")}
 	</summary>
 	${details}
