@@ -140,9 +140,15 @@ function resizeComposeText(textarea) {
 	textarea.style.height = next + "px";
 	textarea.style.overflowY = textarea.scrollHeight > 160 ? "auto" : "hidden";
 }
+function updateComposeText(textarea) {
+	resizeComposeText(textarea);
+	const form = textarea.closest("[data-admin-compose]");
+	const submit = form?.querySelector("[data-admin-compose-submit]");
+	if (submit instanceof HTMLButtonElement) submit.disabled = textarea.value.trim().length === 0;
+}
 function setupComposeTextareas(root = document) {
 	root.querySelectorAll("[data-admin-compose-text]").forEach((textarea) => {
-		if (textarea instanceof HTMLTextAreaElement) resizeComposeText(textarea);
+		if (textarea instanceof HTMLTextAreaElement) updateComposeText(textarea);
 	});
 }
 function openAdminCommand() {
@@ -291,13 +297,22 @@ document.addEventListener("click", (event) => {
 document.addEventListener("input", (event) => {
 	const target = event.target;
 	if (target instanceof HTMLTextAreaElement && target.matches("[data-admin-compose-text]")) {
-		resizeComposeText(target);
+		updateComposeText(target);
 	}
 });
 document.addEventListener("keydown", (event) => {
 	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
 		event.preventDefault();
 		openAdminCommand();
+		return;
+	}
+	const target = event.target;
+	if (target instanceof HTMLTextAreaElement && target.matches("[data-admin-compose-text]")) {
+		if (event.key === "Enter" && !event.shiftKey) {
+			event.preventDefault();
+			updateComposeText(target);
+			if (target.value.trim()) target.form?.requestSubmit();
+		}
 	}
 });
 </script>
@@ -382,14 +397,13 @@ function sidebarThreadItem(row: AdminThreadRow, selected: boolean): string {
 }
 
 function sidebarFooter(input: PageInput): string {
-	const logout = input.auth === false ? sidebarDisabledItem("Log out", "log-out") : sidebarLogoutForm(input.csrf);
-	return `<div role="group" aria-labelledby="admin-sidebar-links-heading">
-	<h3 id="admin-sidebar-links-heading">Links</h3>
-	<ul>
-		<li><a href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" data-admin-docs-link>${icon("book-text")}<span>Docs</span></a></li>
-		<li><button type="button" aria-label="Toggle theme" data-tooltip="Toggle theme" data-admin-theme-toggle>${themeIcon()}<span>Theme</span></button></li>
-		${logout}
-	</ul>
+	const logout = input.auth === false ? sidebarDisabledAction("Log out", "log-out") : sidebarLogoutForm(input.csrf);
+	return `<div class="flex items-center gap-2 px-2 py-1" data-admin-sidebar-footer-actions>
+	<div class="flex items-center gap-1">${logout}</div>
+	<div class="ms-auto flex items-center gap-1">
+		<a class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" href="${ADMIN_DOCS_HREF}" target="_blank" rel="noopener noreferrer" aria-label="Docs" data-tooltip="Docs" data-side="top" data-admin-docs-link>${icon("book-text")}</a>
+		<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Toggle theme" data-tooltip="Toggle theme" data-side="top" data-admin-theme-toggle>${themeIcon()}</button>
+	</div>
 </div>`;
 }
 
@@ -397,15 +411,15 @@ function themeIcon(): string {
 	return `<span class="block dark:hidden" data-admin-theme-icon="moon">${icon("moon")}</span><span class="hidden dark:block" data-admin-theme-icon="sun">${icon("sun")}</span>`;
 }
 
-function sidebarDisabledItem(label: string, iconName: string): string {
-	return `<li><button type="button" aria-disabled="true">${icon(iconName)}<span>${escapeHtml(label)}</span></button></li>`;
+function sidebarDisabledAction(label: string, iconName: string): string {
+	return `<button type="button" class="btn-sm-icon-ghost text-muted-foreground" disabled aria-disabled="true" aria-label="${escapeHtml(label)}" data-tooltip="${escapeHtml(label)}" data-side="top" data-admin-logout>${icon(iconName)}</button>`;
 }
 
 function sidebarLogoutForm(csrf: string): string {
-	return `<li><form method="post" action="/admin/logout" class="contents">
+	return `<form method="post" action="/admin/logout" class="contents">
 	<input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-	<button type="submit" data-admin-logout>${icon("log-out")}<span>Log out</span></button>
-</form></li>`;
+	<button type="submit" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Log out" data-tooltip="Log out" data-side="top" data-admin-logout>${icon("log-out")}</button>
+</form>`;
 }
 
 function commandDialog(input: PageInput): string {
@@ -776,14 +790,17 @@ export function threadConversationPanel(input?: AdminThreadView, csrf?: string):
 
 function adminComposeForm(input: { csrf?: string; threadId?: string; compact?: boolean } = {}): string {
 	const compact = input.compact === true;
-	const textareaClass = compact ? "min-h-10 h-10" : "min-h-10 h-10";
 	return `<form class="sticky bottom-0 z-10 min-w-0 bg-background py-3 ${compact ? "pt-3" : "w-full"}" method="post" action="/admin/messages" data-admin-compose>
 	<input type="hidden" name="csrf" value="${escapeHtml(input.csrf ?? "")}">
 	${input.threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}">` : ""}
 	<label class="sr-only" for="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}">Message</label>
-	<div class="mx-auto grid w-full max-w-3xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2 px-4">
-		<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" class="textarea ${textareaClass} resize-none overflow-hidden text-sm leading-5" rows="1" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
-		<button class="btn-sm-icon rounded-full" type="submit" aria-label="Send message" data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
+	<div class="mx-auto w-full max-w-3xl min-w-0 px-4">
+		<div class="input-group" data-orientation="vertical" data-admin-compose-group>
+			<textarea id="${input.threadId ? "admin-compose-thread" : compact ? "admin-compose-sidebar" : "admin-compose-new"}" data-control class="min-h-10 resize-none overflow-hidden text-sm leading-5" rows="1" name="text" placeholder="Message..." required data-admin-compose-text></textarea>
+			<footer data-align="block-end" class="flex justify-end p-2">
+				<button class="btn-sm-icon" type="submit" aria-label="Send message" disabled data-admin-compose-submit data-tooltip="Send" data-side="top" data-align="end">${icon("arrow-up")}</button>
+			</footer>
+		</div>
 	</div>
 </form>`;
 }
@@ -819,15 +836,15 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 	const author = user ? `${escapeHtml(messageAuthor(row))} <span aria-hidden="true">·</span> ` : "";
 	const meta = `<footer class="text-xs text-muted-foreground">${author}${relativeTimeHtml(row.time, user ? "end" : undefined)}${state}</footer>`;
 	if (user) {
-		return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="user"${selectedAttr(selected)} class="grid min-w-0 justify-items-end px-2">
-		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg bg-accent px-4 py-3">
+		return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="user"${selectedAttr(selected)} class="grid min-w-0">
+		<div class="grid w-full min-w-0 gap-2 rounded-lg bg-accent px-4 py-3">
 			<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
 			<div class="text-right">${meta}</div>
 		</div>
 	</article>`;
 	}
-	return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="assistant"${selectedAttr(selected)} class="grid min-w-0 justify-items-start px-2">
-		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg border bg-background px-4 py-3 text-foreground">
+	return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="assistant"${selectedAttr(selected)} class="grid min-w-0">
+		<div class="grid w-full min-w-0 gap-2 rounded-lg border bg-background px-4 py-3 text-foreground">
 		<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
 		${meta}
 	</div>

@@ -1135,7 +1135,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(shell, /Jobs[\s\S]*data-live-field="jobs">3<\/span>/);
 	assert.match(shell, /Slack[\s\S]*href="\/admin\/threads\/thread-1\?event=message%3Amessage-1"/);
 	assert.match(shell, /discord · Discord[\s\S]*href="\/admin\/threads\/thread-2\?event=message%3Amessage-2"/);
-	assert.match(shell, /aria-disabled="true"[\s\S]*Log out/);
+	assert.match(shell, /data-admin-sidebar-footer-actions/);
+	assert.match(shell, /data-admin-logout/);
+	assert.match(shell, /disabled aria-disabled="true" aria-label="Log out"/);
+	assert.doesNotMatch(shell, /admin-sidebar-links-heading/);
 	assert.match(shell, /id="admin-command"/);
 	assert.match(shell, /href="\/admin\/memory"[^>]+role="menuitem"/);
 
@@ -1285,15 +1288,18 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	assert.match(threadBody, /data-admin-compose-text/);
 	assert.match(threadBody, /data-admin-thread-view="timeline"/);
 	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
-	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*rounded-lg bg-accent/);
+	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*grid w-full min-w-0[\s\S]*rounded-lg bg-accent/);
 	assert.doesNotMatch(threadBody, /data-admin-message-role="user"[\s\S]*bg-primary/);
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);
+	assert.match(threadBody, /data-admin-compose-group/);
+	assert.match(threadBody, /<textarea[^>]+data-control[^>]+data-admin-compose-text/);
+	assert.match(threadBody, /disabled data-admin-compose-submit/);
 	assert.match(threadBody, /data-align="end"/);
 	assert.match(threadBody, /Deployment is ready/);
 	assert.match(threadBody, /<article id="event-message-message-2" data-admin-message-role="assistant"/);
 	assert.match(
 		threadBody,
-		/data-admin-message-role="assistant"[\s\S]*rounded-lg border bg-background[\s\S]*text-foreground/,
+		/data-admin-message-role="assistant"[\s\S]*grid w-full min-w-0[\s\S]*rounded-lg border bg-background[\s\S]*text-foreground/,
 	);
 	assert.match(threadBody, />Empty message<\/p>/);
 	assert.doesNotMatch(threadBody, /\(empty message\)/);
@@ -1457,6 +1463,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /Memory<\/span><span[^>]*>0<\/span>/);
 		assert.match(body, /href="https:\/\/heypi\.dev\/docs"[^>]+data-admin-docs-link/);
 		assert.match(body, /button type="submit"[^>]+data-admin-logout/);
+		assert.match(body, /aria-label="Log out"/);
+		assert.match(body, /data-tooltip="Log out"/);
 		assert.match(body, /Toggle theme/);
 		assert.match(body, /data-admin-theme-icon="moon"/);
 		assert.match(body, /data-admin-theme-icon="sun"/);
@@ -1659,8 +1667,8 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 		assert.equal(adminPage.status, 200);
 		const body = await adminPage.text();
 		assert.match(body, /heypi admin/);
-		assert.match(body, /aria-disabled="true"[\s\S]*Log out/);
-		assert.doesNotMatch(body, /data-admin-logout/);
+		assert.match(body, /data-admin-logout/);
+		assert.match(body, /disabled aria-disabled="true" aria-label="Log out"/);
 		const csrf = requiredMatch(body, /name="csrf" value="([^"]+)"/u);
 		assert.ok(csrf);
 
