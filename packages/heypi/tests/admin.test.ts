@@ -944,6 +944,7 @@ test("admin memory empty state explains saved memory files", () => {
 	assert.match(body, /No memory files/);
 	assert.match(body, /Once the agent starts saving memory/);
 	assert.match(body, /data-admin-empty-state/);
+	assert.match(body, /class="empty[^"]*" data-admin-empty-state/);
 	assert.match(body, /data-admin-empty-title>No memory files<\/h3>/);
 	assert.doesNotMatch(body, /Durable context files stored for future turns/);
 	assert.doesNotMatch(body, /<div class="card/);
@@ -1502,6 +1503,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(loginBody, /https:\/\/heypi\.dev\/docs/);
 		assert.match(loginBody, /target="_blank"/);
 		assert.match(loginBody, /data-admin-empty-state/);
+		assert.match(loginBody, /class="empty[^"]*" data-admin-empty-state/);
 
 		for (const path of ["/admin", "/admin/configuration", "/admin/events", "/admin/_pulse"]) {
 			const protectedRoute = await fetch(`http://127.0.0.1:${port}${path}`, { redirect: "manual" });
@@ -1521,6 +1523,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(reusedBody, /Admin access failed/);
 		assert.match(reusedBody, /Invalid or expired login link/);
 		assert.match(reusedBody, /data-admin-empty-state/);
+		assert.match(reusedBody, /class="empty[^"]*" data-admin-empty-state/);
 		assert.doesNotMatch(reusedBody, /data-admin-theme-toggle/);
 
 		const adminPage = await fetch(`http://127.0.0.1:${port}/admin`, { headers: { cookie } });
@@ -1689,6 +1692,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(missingBody, /https:\/\/heypi\.dev\/docs/);
 		assert.match(missingBody, /target="_blank"/);
 		assert.match(missingBody, /data-admin-empty-state/);
+		assert.match(missingBody, /class="empty[^"]*" data-admin-empty-state/);
 		assert.doesNotMatch(missingBody, /data-admin-theme-toggle/);
 
 		const blocked = await fetch(`http://127.0.0.1:${port}/admin/logout`, {
@@ -1783,6 +1787,52 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 		assert.match(events, /event: summary/);
 	} finally {
 		await app.stop();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("admin no-auth csrf survives local admin restarts", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-admin-no-auth-csrf-"));
+	const port = await freePort();
+	const makeApp = () =>
+		createHeypi({
+			store: sqliteStore({ path: join(root, "heypi.db") }),
+			state: { root: stateRoot(root) },
+			logger: captureLogger([]),
+			http: { port },
+			admin: { auth: false, http: { port } },
+			adapters: [],
+			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
+			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },
+		});
+	let app = makeApp();
+	let running = false;
+	try {
+		await app.start();
+		running = true;
+		const adminPage = await fetch(`http://127.0.0.1:${port}/admin`);
+		assert.equal(adminPage.status, 200);
+		const body = await adminPage.text();
+		const csrf = requiredMatch(body, /name="csrf" value="([^"]+)"/u);
+
+		await app.stop();
+		running = false;
+		app = makeApp();
+		await app.start();
+		running = true;
+
+		const missingText = await fetch(`http://127.0.0.1:${port}/admin/messages`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/x-www-form-urlencoded",
+				origin: `http://127.0.0.1:${port}`,
+			},
+			body: new URLSearchParams({ csrf }),
+			redirect: "manual",
+		});
+		assert.equal(missingText.status, 400);
+	} finally {
+		if (running) await app.stop();
 		await rm(root, { recursive: true, force: true });
 	}
 });

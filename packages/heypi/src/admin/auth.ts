@@ -55,6 +55,10 @@ export function adminSecretPath(stateRoot: string): string {
 	return join(adminDir(stateRoot), "secret");
 }
 
+export function adminCsrfPath(stateRoot: string): string {
+	return join(adminDir(stateRoot), "csrf");
+}
+
 export function canonicalStateRoot(stateRoot: string): string {
 	const path = resolve(stateRoot);
 	try {
@@ -80,6 +84,22 @@ export function ensureAdminSecret(stateRoot: string): string {
 	return secret;
 }
 
+export function ensureAdminCsrf(stateRoot: string): string {
+	const path = adminCsrfPath(stateRoot);
+	ensureAdminDir(stateRoot);
+	if (existsSync(path)) return readAdminCsrf(stateRoot);
+	const token = randomToken(32);
+	try {
+		writeFileSync(path, `${token}\n`, { flag: "wx", mode: 0o600 });
+	} catch (error) {
+		if (errno(error) === "EEXIST") return readAdminCsrf(stateRoot);
+		throw error;
+	}
+	chmodSync(path, 0o600);
+	assertPrivateFile(path, "admin csrf token");
+	return token;
+}
+
 export function readAdminSecret(stateRoot: string): string {
 	const path = adminSecretPath(stateRoot);
 	prepareExistingAdminDir(stateRoot);
@@ -87,6 +107,15 @@ export function readAdminSecret(stateRoot: string): string {
 	const secret = readFileSync(path, "utf8").trim();
 	if (!strongSecret(secret)) throw new Error(`admin secret is invalid: ${path}`);
 	return secret;
+}
+
+function readAdminCsrf(stateRoot: string): string {
+	const path = adminCsrfPath(stateRoot);
+	prepareExistingAdminDir(stateRoot);
+	assertPrivateFile(path, "admin csrf token");
+	const token = readFileSync(path, "utf8").trim();
+	if (!strongSecret(token)) throw new Error(`admin csrf token is invalid: ${path}`);
+	return token;
 }
 
 export function createAdminLoginToken(

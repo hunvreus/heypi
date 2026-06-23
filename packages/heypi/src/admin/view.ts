@@ -1371,13 +1371,13 @@ function emptyState(input: {
 			? `<div class="flex gap-2"><a class="btn-sm-outline inline-flex items-center gap-1.5" href="${escapeHtml(input.actionHref)}"${externalAttrs(input.actionHref)}>${escapeHtml(input.actionLabel ?? "Learn more")}${icon("arrow-up-right", "opacity-50")}</a></div>`
 			: "");
 	const frame = input.frame === "page" ? " min-h-[calc(100vh-2rem)]" : "";
-	return `<div class="flex w-full min-w-0 flex-col items-center justify-center gap-6 rounded-lg${border}${frame} p-6 text-center text-balance text-neutral-800 md:p-12 dark:text-neutral-300" data-admin-empty-state>
-	<header class="flex max-w-sm flex-col items-center gap-2 text-center">
+	return `<section class="empty gap-6 rounded-lg${border}${frame} p-6 text-neutral-800 md:p-12 dark:text-neutral-300" data-admin-empty-state>
+	<header class="gap-2">
 	<h3 class="font-medium tracking-tight" data-admin-empty-title>${escapeHtml(input.title)}</h3>
 	<p class="text-muted-foreground [&>a:hover]:text-primary text-sm/relaxed [&>a]:underline [&>a]:underline-offset-4" data-admin-empty-message>${escapeHtml(input.message)}</p>
 </header>
-${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-center gap-4 text-sm text-balance">${actionHtml}</section>` : ""}
-</div>`;
+${actionHtml ? `<footer class="gap-4 text-sm">${actionHtml}</footer>` : ""}
+</section>`;
 }
 
 function activityBadge(row: AdminActivityRow): Cell {
