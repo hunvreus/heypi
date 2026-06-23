@@ -1768,6 +1768,18 @@ test("admin auth can be disabled for loopback UI testing", async () => {
 		});
 		assert.equal(blocked.status, 403);
 
+		const browserSameOrigin = await fetch(`http://127.0.0.1:${port}/admin/messages`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/x-www-form-urlencoded",
+				origin: "null",
+				"sec-fetch-site": "same-origin",
+			},
+			body: new URLSearchParams({ csrf }),
+			redirect: "manual",
+		});
+		assert.equal(browserSameOrigin.status, 400);
+
 		const missingText = await fetch(`http://127.0.0.1:${port}/admin/messages`, {
 			method: "POST",
 			headers: {

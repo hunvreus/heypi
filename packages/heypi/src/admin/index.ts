@@ -831,10 +831,19 @@ function sameOrigin(req: IncomingMessage): boolean {
 	// Non-browser or HTTP/1.0-style clients may omit all origin headers; CSRF tokens still gate unsafe actions.
 	if (!host) return true;
 	const expected = host.toLowerCase();
+	const fetchSite = headerValue(req.headers["sec-fetch-site"])?.toLowerCase();
+	const browserSameOrigin = fetchSite === "same-origin";
 	const origin = headerValue(req.headers.origin);
-	if (origin) return originHost(origin)?.toLowerCase() === expected;
+	if (origin) {
+		const parsed = originHost(origin)?.toLowerCase();
+		return parsed ? parsed === expected : browserSameOrigin;
+	}
 	const referer = headerValue(req.headers.referer);
-	if (referer) return originHost(referer)?.toLowerCase() === expected;
+	if (referer) {
+		const parsed = originHost(referer)?.toLowerCase();
+		return parsed ? parsed === expected : browserSameOrigin;
+	}
+	if (fetchSite && fetchSite !== "none") return browserSameOrigin;
 	// Same-origin is enforced when a browser sends origin metadata.
 	return true;
 }

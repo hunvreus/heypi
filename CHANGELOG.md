@@ -107,6 +107,7 @@
 - Fixed admin thread scrolling, view toggle state coverage, and stale Basecoat semantic utilities in generated admin CSS.
 - Fixed admin empty and error states to use the Basecoat empty component structure.
 - Fixed no-auth local admin message submissions after a dev restart by persisting the local CSRF token.
+- Fixed browser form submissions to admin actions when the browser sends opaque origin metadata with same-origin fetch metadata.
 - Changed `heypi dev` to run apps under a file watcher so code and admin UI template changes restart automatically during local development.
 - Fixed admin thread pages refreshing the selected conversation by replacing the thread panel instead of reloading the full admin document.
 - Fixed admin live refresh falling back to a full page reload when both the selected thread and chat sidebar data changed in the same pulse.
