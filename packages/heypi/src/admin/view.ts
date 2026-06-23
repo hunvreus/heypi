@@ -64,7 +64,7 @@ ${themeScript(input.nonce, true)}
 </head>
 <body class="min-h-screen overflow-x-hidden bg-background text-foreground" data-live-page="${input.livePage ? "true" : "false"}" data-live-revision="${escapeHtml(input.live.revision)}" data-live-chats-revision="${escapeHtml(input.live.chatsRevision)}" data-live-thread-id="${escapeHtml(input.liveThreadId ?? "")}" data-live-thread-revision="${escapeHtml(input.liveThreadId ? (input.live.threadRevisions[input.liveThreadId] ?? "") : "")}">
 ${adminSidebar(input)}
-<main class="flex min-h-screen min-w-0 flex-col bg-background" data-admin-main>
+<main class="scrollbar flex h-dvh min-w-0 flex-col overflow-y-auto bg-background" data-admin-main>
 	<header class="sticky top-0 z-20 flex min-w-0 items-center gap-2 border-b bg-background px-6 py-3 max-[760px]:px-4" data-admin-main-header>
 		<button type="button" class="btn-sm-icon-ghost text-muted-foreground hover:text-foreground" aria-label="Toggle sidebar" data-admin-sidebar-toggle data-tooltip="Toggle sidebar" data-side="bottom">${icon("panel-left")}</button>
 		<div class="min-w-0 flex-1">
@@ -122,7 +122,7 @@ function fallbackCopy(text) {
 	return copied;
 }
 function threadScrollContainer() {
-	return document.scrollingElement || document.documentElement;
+	return document.querySelector("[data-admin-main]");
 }
 function threadPanelContainer() {
 	return document.querySelector("[data-admin-thread-panel]");
@@ -162,6 +162,7 @@ function openAdminCommand() {
 }
 setupComposeTextareas();
 function setupThreadScroll(restore) {
+	if (!liveThreadId) return;
 	const threadScroll = threadScrollContainer();
 	if (!(threadScroll instanceof HTMLElement)) return;
 	requestAnimationFrame(() => {
@@ -174,12 +175,26 @@ function setupThreadScroll(restore) {
 	});
 }
 setupThreadScroll(true);
+let threadWasAtBottom = true;
+function setupThreadScrollTracking() {
+	const threadScroll = threadScrollContainer();
+	if (!(threadScroll instanceof HTMLElement)) return;
+	threadWasAtBottom = threadAtBottom(threadScroll);
+	threadScroll.addEventListener(
+		"scroll",
+		() => {
+			threadWasAtBottom = threadAtBottom(threadScroll);
+		},
+		{ passive: true },
+	);
+}
+setupThreadScrollTracking();
 async function refreshThreadPanel() {
 	if (!liveThreadId) return false;
 	const panel = threadPanelContainer();
 	if (!(panel instanceof HTMLElement)) return false;
 	const before = threadScrollContainer();
-	const followBottom = before instanceof HTMLElement ? threadAtBottom(before) : true;
+	const followBottom = before instanceof HTMLElement ? threadWasAtBottom && threadAtBottom(before) : true;
 	const scrollTop = before instanceof HTMLElement ? before.scrollTop : 0;
 	const response = await fetch("/admin/threads/" + encodeURIComponent(liveThreadId) + "/_panel" + location.search, {
 		headers: { accept: "text/html" },

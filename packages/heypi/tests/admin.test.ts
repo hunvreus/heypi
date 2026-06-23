@@ -1329,6 +1329,40 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 		threadShell,
 		/href="\/admin\/threads\/thread-1\?event=call%3Acall-1&amp;view=log"[^>]+data-admin-thread-view-link="log"/,
 	);
+	const logThreadShell = page({
+		title: "Thread",
+		active: "chats",
+		csrf: "csrf-1",
+		live: {
+			pendingApprovals: 0,
+			runningRuns: 1,
+			jobs: 0,
+			activeJobs: 0,
+			pausedJobs: 0,
+			recentCalls: 1,
+			checkedAt: now,
+			revision: "live-2",
+			chatsRevision: "chats-2",
+			threadRevisions: { "thread-1": "thread-revision-1" },
+		},
+		memoryFiles: 0,
+		threads: {
+			limit: 25,
+			offset: 0,
+			hasNext: false,
+			rows: [threadRow],
+		},
+		body: threadBody,
+		nonce: "nonce-1",
+		livePage: true,
+		liveThreadId: "thread-1",
+		threadEvent: "call:call-1",
+		threadView: "log",
+	});
+	assert.match(
+		logThreadShell,
+		/href="\/admin\/threads\/thread-1\?event=call%3Acall-1&amp;view=log"[^>]+aria-current="true"[^>]+data-admin-thread-view-link="log"/,
+	);
 	assert.doesNotMatch(threadShell, /data-admin-page-title>Thread<\/h1>/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*New message[\s\S]*<\/header>/);
 	assert.doesNotMatch(threadShell, /data-admin-main-header[\s\S]*data-admin-docs-link[\s\S]*<\/header>/);
@@ -1462,6 +1496,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.doesNotMatch(body, /data-admin-nav-desktop/);
 		assert.doesNotMatch(body, /id="admin-mobile-menu"/);
 		assert.match(body, /data-admin-main/);
+		assert.match(body, /<main class="[^"]*h-dvh[^"]*overflow-y-auto[^"]*" data-admin-main>/);
 		assert.match(body, /data-admin-page-title>Chats<\/h1>/);
 		assert.match(body, /data-admin-thread-panel/);
 		assert.doesNotMatch(body, /Recent conversations across connected channels\./);
@@ -1492,6 +1527,7 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /basecoat:theme/);
 		assert.match(body, /data-admin-theme-toggle/);
 		assert.match(body, /function threadScrollContainer\(\)/);
+		assert.match(body, /return document\.querySelector\("\[data-admin-main\]"\)/);
 		assert.match(body, /heypi:admin:thread-scroll:/);
 		assert.match(body, /data-live-revision="[a-f0-9]{16}"/);
 		assert.match(body, /data-live-chats-revision="[a-f0-9]{16}"/);
@@ -1499,7 +1535,13 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(body, /data\.chatsRevision !== currentChatsRevision/);
 		assert.match(body, /data\.threadRevisions\?\.\[liveThreadId\]/);
 		assert.match(body, /sessionStorage\.setItem\(threadScrollKey\(\), threadAtBottom\(container\) \? "bottom"/);
-		assert.match(body, /const followBottom = before instanceof HTMLElement \? threadAtBottom\(before\) : true/);
+		assert.match(body, /let threadWasAtBottom = true/);
+		assert.match(body, /function setupThreadScrollTracking\(\)/);
+		assert.match(body, /threadWasAtBottom = threadAtBottom\(threadScroll\)/);
+		assert.match(
+			body,
+			/const followBottom = before instanceof HTMLElement \? threadWasAtBottom && threadAtBottom\(before\) : true/,
+		);
 		assert.match(body, /if \(followBottom\) threadScrollBottom\(after\)/);
 		assert.doesNotMatch(body, /new MutationObserver/);
 		assert.doesNotMatch(body, /scrollIntoView/);
