@@ -553,11 +553,7 @@ export function configurationView(input: AdminOverview, admin: AdminInfo): strin
 	const uptime = Math.max(Date.now() - input.startedAt, 0);
 	const memory = memorySummary(input.memory);
 	const activeBypasses = bypassList(input.activeBypasses);
-	return `<div class="grid min-w-0 gap-4">
-${card(
-	"Configuration",
-	checkedAtDescription("Configuration and process details for this heypi instance.", input.live.checkedAt),
-	summaryList(
+	return `<div class="grid min-w-0 gap-4">${summaryList(
 		[
 			["Agent", mono(input.agent.id)],
 			["Model", mono(input.agent.model ?? "-")],
@@ -572,9 +568,7 @@ ${card(
 		],
 		"text-sm md:grid-cols-2",
 		true,
-	),
-)}
-</div>`;
+	)}</div>`;
 }
 
 export function threadsView(
@@ -592,7 +586,7 @@ export function threadsView(
 </div>`;
 }
 
-export function approvalsView(page: AdminPage<Approval>, checkedAt?: number, input: { csrf?: string } = {}): string {
+export function approvalsView(page: AdminPage<Approval>, _checkedAt?: number, input: { csrf?: string } = {}): string {
 	const body = `${tableControls("/admin/approvals", page, {
 		comboboxes: [
 			{
@@ -627,7 +621,7 @@ export function approvalsView(page: AdminPage<Approval>, checkedAt?: number, inp
 			message: "Once a tool call needs a human decision, the pending request will show up here.",
 		}),
 	)}${pagination("/admin/approvals", page)}`;
-	return `<div class="grid min-w-0 gap-4">${card("Approvals", checkedAtDescription("Pending human decisions for approval-gated tool calls.", checkedAt), body)}</div>`;
+	return `<div class="grid min-w-0 gap-4">${body}</div>`;
 }
 
 function approvalActions(row: Approval, csrf?: string): string {
@@ -643,7 +637,7 @@ function approvalActions(row: Approval, csrf?: string): string {
 </form>`;
 }
 
-export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string {
+export function jobsView(page: AdminPage<AdminJob>, _checkedAt?: number): string {
 	const body = `${tableControls("/admin/jobs", page, {
 		selects: [
 			{
@@ -684,7 +678,7 @@ export function jobsView(page: AdminPage<AdminJob>, checkedAt?: number): string 
 			message: "Once scheduled or heartbeat jobs are configured on the heypi app, they will show up here.",
 		}),
 	)}${pagination("/admin/jobs", page)}`;
-	return `<div class="grid min-w-0 gap-4">${card("Jobs", checkedAtDescription("Configured scheduled and heartbeat jobs.", checkedAt), body)}</div>`;
+	return `<div class="grid min-w-0 gap-4">${body}</div>`;
 }
 
 export function evalsView(page: AdminPage<AdminEval>, checkedAt?: number): string {
@@ -706,16 +700,15 @@ export function evalsView(page: AdminPage<AdminEval>, checkedAt?: number): strin
 	return `<div class="grid min-w-0 gap-4">${card("Evals", checkedAtDescription("Loaded agent behavior eval definitions.", checkedAt), body)}</div>`;
 }
 
-export function memoryView(memory: AdminMemory, checkedAt?: number): string {
+export function memoryView(memory: AdminMemory, _checkedAt?: number): string {
 	if (!memory.enabled) {
-		const body = emptyState({
+		return `<div class="grid min-w-0 gap-4">${emptyState({
 			title: "Memory disabled",
 			message:
 				"This heypi app is running without durable memory. Enable memory in the app config to store context files.",
 			frame: "section",
 			variant: "outline",
-		});
-		return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
+		})}</div>`;
 	}
 	const body = `${tableControls("/admin/memory", memory, {
 		comboboxes: [
@@ -747,7 +740,7 @@ export function memoryView(memory: AdminMemory, checkedAt?: number): string {
 		hasNext: memory.hasNext,
 		filters: memory.filters,
 	})}`;
-	return `<div class="grid min-w-0 gap-4">${card("Memory", checkedAtDescription("Durable context files stored for future turns.", checkedAt), body)}</div>`;
+	return `<div class="grid min-w-0 gap-4">${body}</div>`;
 }
 
 function threadHeader(row: AdminThreadRow): string {

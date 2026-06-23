@@ -87,6 +87,7 @@
 - Added `DefaultToolConfig` and `DefaultToolsConfig` as the preferred public type names for `defaultTools()` config.
 
 ### Fixed
+- Removed duplicate card wrappers and section descriptions from the admin approvals, jobs, memory, and configuration pages.
 - Fixed admin thread live refresh pinning the page to the bottom while reading earlier messages.
 - Fixed admin thread scrolling, view toggle state coverage, and stale Basecoat semantic utilities in generated admin CSS.
 - Changed `heypi dev` to run apps under a file watcher so code and admin UI template changes restart automatically during local development.

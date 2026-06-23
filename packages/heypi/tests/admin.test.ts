@@ -66,6 +66,8 @@ test("admin tables preserve pagination and filter state", () => {
 	assert.match(body, /<option value="cron" selected>Cron<\/option>/);
 	assert.match(body, /href="\/admin\/jobs\?limit=50&amp;offset=100&amp;q=daily&amp;type=cron"/);
 	assert.doesNotMatch(body, /Rows 51-51/);
+	assert.doesNotMatch(body, /Configured scheduled and heartbeat jobs/);
+	assert.doesNotMatch(body, /<div class="card/);
 });
 
 test("admin jobs page labels future next runs as upcoming", () => {
@@ -853,7 +855,7 @@ test("admin configuration summarizes essentials", () => {
 		},
 		{ host: "127.0.0.1", port: 3000 },
 	);
-	assert.match(body, /Configuration and process details/);
+	assert.doesNotMatch(body, /Configuration and process details/);
 	assert.match(body, /text-sm md:grid-cols-2/);
 	assert.match(body, /truncate/);
 	assert.match(body, /Agent/);
@@ -878,7 +880,7 @@ test("admin configuration summarizes essentials", () => {
 	assert.match(body, /Enabled, shared by agent, approver writes/);
 	assert.doesNotMatch(body, /1 files/);
 	assert.match(body, /Started/);
-	assert.match(body, /Last updated/);
+	assert.doesNotMatch(body, /Last updated/);
 	assert.doesNotMatch(body, /Threads/);
 	assert.doesNotMatch(body, /Agent folder/);
 });
@@ -923,6 +925,8 @@ test("admin approvals expiry uses duration labels", () => {
 	assert.match(body, /name="actor" value="admin"/);
 	assert.match(body, /name="action" value="approve"/);
 	assert.match(body, /name="action" value="deny"/);
+	assert.doesNotMatch(body, /Pending human decisions for approval-gated tool calls/);
+	assert.doesNotMatch(body, /<div class="card/);
 });
 
 test("admin memory empty state explains saved memory files", () => {
@@ -941,6 +945,8 @@ test("admin memory empty state explains saved memory files", () => {
 	assert.match(body, /Once the agent starts saving memory/);
 	assert.match(body, /data-admin-empty-state/);
 	assert.match(body, /data-admin-empty-title>No memory files<\/h3>/);
+	assert.doesNotMatch(body, /Durable context files stored for future turns/);
+	assert.doesNotMatch(body, /<div class="card/);
 });
 
 test("admin memory page explains disabled memory", () => {
@@ -959,6 +965,8 @@ test("admin memory page explains disabled memory", () => {
 	assert.match(body, /running without durable memory/);
 	assert.match(body, /Enable memory in the app config/);
 	assert.doesNotMatch(body, /No memory files/);
+	assert.doesNotMatch(body, /Durable context files stored for future turns/);
+	assert.doesNotMatch(body, /<div class="card/);
 });
 
 test("admin memory table uses details dialog for file content", () => {
@@ -1007,6 +1015,8 @@ test("admin memory table uses details dialog for file content", () => {
 	assert.match(body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 	assert.doesNotMatch(body, /<script>alert\(1\)<\/script>/);
 	assert.match(body, /aria-label="pagination"/);
+	assert.doesNotMatch(body, /Durable context files stored for future turns/);
+	assert.doesNotMatch(body, /<div class="card/);
 });
 
 test("admin chats threads and thread detail render URL-backed timeline", () => {
@@ -1584,6 +1594,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(configBody, /Memory/);
 		assert.match(configBody, /Started/);
 		assert.match(configBody, /ago \(/);
+		assert.doesNotMatch(configBody, /Configuration and process details/);
+		assert.doesNotMatch(configBody, /<div class="card/);
 		assert.doesNotMatch(configBody, /Uptime/);
 
 		const summary = await fetch(`http://127.0.0.1:${port}/admin/summary`, {
@@ -1606,6 +1618,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		assert.match(jobsBody, /No jobs configured/);
 		assert.match(jobsBody, /Once scheduled or heartbeat jobs are configured/);
 		assert.match(jobsBody, /data-admin-empty-state/);
+		assert.doesNotMatch(jobsBody, /Configured scheduled and heartbeat jobs/);
+		assert.doesNotMatch(jobsBody, /<div class="card/);
 
 		const evals = await fetch(`http://127.0.0.1:${port}/admin/evals`, { headers: { cookie } });
 		assert.equal(evals.status, 200);
@@ -1997,7 +2011,8 @@ test("admin memory page renders memory as escaped read-only text", async () => {
 		const body = await response.text();
 		assert.match(body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 		assert.doesNotMatch(body, /<script>alert\(1\)<\/script>/);
-		assert.match(body, /Durable context files stored for future turns/);
+		assert.doesNotMatch(body, /Durable context files stored for future turns/);
+		assert.doesNotMatch(body, /<div class="card/);
 		assert.doesNotMatch(body, /Memory is durable model context/);
 		assert.doesNotMatch(body, /alert-destructive/);
 		assert.doesNotMatch(body, /Settings/);
