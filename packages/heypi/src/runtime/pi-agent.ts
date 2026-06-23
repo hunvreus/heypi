@@ -508,7 +508,7 @@ async function resourceLoader(
 		additionalSkillPaths: agent.skills ?? [],
 		systemPromptOverride: () => agent.systemPrompt ?? runtimeSystemPrompt(activeTools()),
 		appendSystemPromptOverride: () =>
-			[agent.soul, agent.prompt, ...contextBlocks].filter((text): text is string => Boolean(text)),
+			[agent.instructions, ...contextBlocks].filter((text): text is string => Boolean(text)),
 		agentsFilesOverride: () => ({ agentsFiles: [] }),
 	});
 	await loader.reload();

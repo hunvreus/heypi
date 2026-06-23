@@ -15,10 +15,9 @@ test("runEvalAgent runs an eval through the full loaded agent", {
 	const root = await mkdtemp(join(tmpdir(), "heypi-eval-agent-"));
 	try {
 		await mkdir(join(root, "agent", "tools"), { recursive: true });
-		await writeFile(join(root, "agent", "SOUL.md"), "Answer with only the requested token.", "utf8");
 		await writeFile(
-			join(root, "agent", "AGENTS.md"),
-			"For eval prompts, follow the user instruction exactly.",
+			join(root, "agent", "instructions.md"),
+			"Answer with only the requested token. For eval prompts, follow the user instruction exactly.",
 			"utf8",
 		);
 		await writeFile(

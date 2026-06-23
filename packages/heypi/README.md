@@ -8,9 +8,11 @@
 
 # heypi
 
-AI chat agents for your team (Slack, Discord, Telegram, and webhooks).
+Team chat agents with approvals, audit, and sandboxed tools.
 
 heypi is a lightweight TypeScript framework that wraps around [Pi](https://pi.dev) to make it easy to create team chat agents: adapters, approvals, scoped runtime tools, persisted threads, memory, skills, encrypted secret handoff, generated-file attachments, scheduling, admin, and CLI diagnostics.
+
+The product focus is governed chat-ops: agents that work in shared Slack, Discord, Telegram, and trusted webhook contexts while preserving approval gates, audit trails, and operator visibility. heypi runs as a long-running Node.js service you own; it is not a durable workflow replay platform.
 
 ## Install
 
@@ -54,17 +56,19 @@ Run `npm run dev` in a generated app and open the admin URL to send local test m
 
 ## Agent files
 
-Most app-specific behavior lives under `agent/`. `index.ts` stays for operational wiring: adapters, state, runtime, admin, and deployment policy.
+Most app-specific behavior should live under `agent/`. `index.ts` stays for operational wiring: adapters, state, runtime, admin, and deployment policy.
 
 ```text
 agent/
-|-- AGENTS.md       # task and behavior instructions
-|-- SOUL.md         # voice and style
-|-- tools/          # trusted TypeScript tools
-|-- jobs/           # scheduled jobs
-|-- skills/         # bundled Pi skills
-`-- extensions/     # explicit Pi extensions
+├─ instructions.md # identity, behavior, voice, and standing rules
+├─ system.md       # optional advanced system prompt override
+├─ tools/          # trusted TypeScript tools
+├─ jobs/           # scheduled jobs
+├─ skills/         # bundled Pi skills
+└─ extensions/     # explicit Pi extensions
 ```
+
+This folder convention is the default authoring model. `loadAgent("./agent")` discovers tools, jobs, skills, and extensions from these paths, and discovered tool filenames become model-facing names when the tool omits `name`.
 
 Files under `agent/tools/` and `agent/jobs/` should import from `@hunvreus/heypi/authoring`. Evals live under root `evals/` and use the same authoring entrypoint. The app entrypoint imports from `@hunvreus/heypi`.
 
@@ -74,7 +78,7 @@ Start with [`docs/index.md`](docs/index.md).
 
 - [`docs/quickstart/index.md`](docs/quickstart/index.md): first app
 - [`docs/configuration/index.md`](docs/configuration/index.md): app-level configuration map
-- [`docs/configuration/agent.md`](docs/configuration/agent.md): prompts, model config, and dynamic context
+- [`docs/configuration/agent.md`](docs/configuration/agent.md): instructions, model config, and dynamic context
 - [`docs/configuration/tools.md`](docs/configuration/tools.md): core tools, custom tools, confirmation, managed tools, and trusted code
 - [`docs/adapters/index.md`](docs/adapters/index.md): Slack, Discord, Telegram, and webhook adapters
 - [`docs/configuration/runtime.md`](docs/configuration/runtime.md): runtime backends and lifecycle

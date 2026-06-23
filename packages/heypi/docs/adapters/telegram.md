@@ -99,6 +99,8 @@ Telegram does not allow `getUpdates` polling while a webhook is active for the s
 
 Webhook mode acknowledges Telegram after validating the secret token and request body, then processes the update asynchronously. If the process exits after the acknowledgement but before processing finishes, Telegram will not redeliver that update.
 
+Telegram message updates are deduped by `update_id`. Callback buttons are deduped by callback query id.
+
 heypi syncs Telegram's bot command menu from its built-in command catalog on adapter startup and when `heypi telegram set-webhook` runs. Manual BotFather command-menu entries for the same bot can be overwritten.
 
 ## Config

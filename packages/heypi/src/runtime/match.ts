@@ -5,5 +5,5 @@ export function match(value: string, pattern?: string): boolean {
 		.replace(/\*\*/g, "::STAR::")
 		.replace(/\*/g, "[^/]*")
 		.replace(/::STAR::/g, ".*");
-	return new RegExp(`^${escaped}$`).test(value) || value.includes(pattern);
+	return new RegExp(`^${escaped}$`).test(value);
 }

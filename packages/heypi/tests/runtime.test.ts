@@ -40,6 +40,12 @@ test("just-bash runtime persists files and exposes file operations", async () =>
 
 		const found = await runtime.find?.({ pattern: "**/*.txt" });
 		assert.deepEqual(found?.paths, ["src/a.txt"]);
+
+		await writeFile(join(root, "src/config.txt"), "setting=true", "utf8");
+		const fuzzy = await runtime.find?.({ pattern: "config" });
+		assert.deepEqual(fuzzy?.paths, []);
+		const explicitGlob = await runtime.find?.({ pattern: "**/*config*" });
+		assert.deepEqual(explicitGlob?.paths, ["src/config.txt"]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

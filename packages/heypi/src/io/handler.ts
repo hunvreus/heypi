@@ -456,6 +456,17 @@ export function createHandler(input: {
 			if (!lock) return { text: messages.busyReject, finalPlacement: "thread" };
 			// The active run ended between lock rejection and enqueue; handle this message as a fresh turn.
 		}
+		const stopLockRefresh = lock
+			? startThreadLockRefresh({
+					store: input.store,
+					key: lockKey,
+					owner: lockOwner,
+					ttlMs: input.lockMs,
+					logger: log,
+					trace,
+					agent: agentId,
+				})
+			: undefined;
 		let turn: Awaited<ReturnType<Store["turns"]["create"]>> | undefined;
 		let run: ReturnType<ActiveRuns["start"]> | undefined;
 		let base: TurnContext | undefined;
@@ -696,12 +707,43 @@ export function createHandler(input: {
 				base,
 			});
 		} finally {
+			stopLockRefresh?.();
 			if (lock) await input.store.locks?.release({ key: lockKey, owner: lockOwner });
 			run?.stop();
 		}
 	};
 	handle.attachmentScope = (msg) => scopeFor(msg).workspace;
 	return handle;
+}
+
+function startThreadLockRefresh(input: {
+	store: Store;
+	key: string;
+	owner: string;
+	ttlMs: number | undefined;
+	logger: Logger;
+	trace: string;
+	agent: string;
+}): (() => void) | undefined {
+	if (!input.store.locks?.refresh || !input.ttlMs || input.ttlMs <= 0) return undefined;
+	const refreshMs = Math.max(10, Math.floor(input.ttlMs / 3));
+	const timer = setInterval(() => {
+		void input.store.locks
+			?.refresh({ key: input.key, owner: input.owner, ttlMs: input.ttlMs })
+			.then((row) => {
+				if (!row) {
+					input.logger.error("handler.lock_refresh_lost", {
+						trace: input.trace,
+						agent: input.agent,
+						key: input.key,
+						owner: input.owner,
+					});
+				}
+			})
+			.catch((error) => input.logger.error("handler.lock_refresh_failed", { error: message(error) }));
+	}, refreshMs);
+	timer.unref?.();
+	return () => clearInterval(timer);
 }
 
 export function createStatus(input: { agentId?: string; store: Store }): Status {

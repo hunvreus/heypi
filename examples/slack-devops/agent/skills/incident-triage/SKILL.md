@@ -41,7 +41,7 @@ Use this skill when the user reports a host issue, service outage, degraded serv
 ## Guardrails
 
 - Do not execute destructive commands unless explicitly required. Call the relevant tool with the concrete command.
-- Do not modify the agent's own files, prompts, runbooks, package files, or source code.
+- Do not modify the agent's own files, instructions, runbooks, package files, or source code.
 - Keep command blast radius as small as possible.
 - Prefer deterministic, reversible changes.
 - Keep output concise and operational.

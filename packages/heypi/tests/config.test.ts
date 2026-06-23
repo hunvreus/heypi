@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DEFAULT_AGENT_ID, DEFAULT_SOUL, loadAgent, loadPrompt, modelConfig } from "../src/config.js";
+import { DEFAULT_AGENT_ID, DEFAULT_INSTRUCTIONS, loadAgent, loadPrompt, modelConfig } from "../src/config.js";
 import { renderCall } from "../src/core/format.js";
 import { normalizeMessages } from "../src/core/messages.js";
 import { defaultTools } from "../src/core-tools.js";
@@ -36,23 +36,21 @@ test("modelConfig preserves explicit verbosity", () => {
 	});
 });
 
-test("loadAgent loads SOUL.md separately from AGENTS.md and SYSTEM.md", () => {
+test("loadAgent loads instructions.md and system.md", () => {
 	const root = join(tmpdir(), `heypi-agent-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 	mkdirSync(root, { recursive: true });
-	writeFileSync(join(root, "SOUL.md"), "voice");
-	writeFileSync(join(root, "AGENTS.md"), "ops");
-	writeFileSync(join(root, "SYSTEM.md"), "runtime");
+	writeFileSync(join(root, "instructions.md"), "ops");
+	writeFileSync(join(root, "system.md"), "runtime");
 
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
-	assert.equal(agent.soul, "voice");
-	assert.equal(agent.prompt, "ops");
+	assert.equal(agent.instructions, "ops");
 	assert.equal(agent.systemPrompt, "runtime");
 });
 
-test("loadAgent uses a default SOUL.md fallback", () => {
+test("loadAgent uses default instructions fallback", () => {
 	const root = mkdtempSync(join(tmpdir(), "heypi-agent-"));
 	const agent = loadAgent(root, { model: "openai/gpt-5-mini" });
-	assert.equal(agent.soul, DEFAULT_SOUL);
+	assert.equal(agent.instructions, DEFAULT_INSTRUCTIONS);
 });
 
 test("loadPrompt throws for explicit missing files unless optional", () => {

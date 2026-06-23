@@ -45,16 +45,15 @@ The app-level lock prevents two processes with the same store from running the s
 
 ```text
 agent/
-  SOUL.md
-  SYSTEM.md
-  AGENTS.md
+  instructions.md
+  system.md
   tools/
   jobs/
   skills/
   extensions/
 ```
 
-`SOUL.md` sets identity and voice. `AGENTS.md` sets operating rules. `SYSTEM.md` is a full runtime-prompt override. Missing `SOUL.md` falls back to a concise built-in identity. `tools/` and `jobs/` are discovered recursively in deterministic lexical order. Root `evals/` is discovered by `heypi eval`, not loaded into the runtime agent. The model must be passed explicitly or through `HEYPI_MODEL`.
+`instructions.md` sets identity, voice, behavior, and standing rules. `system.md` is a full runtime-prompt override. Missing `instructions.md` falls back to concise built-in instructions. `tools/` and `jobs/` are discovered recursively in deterministic lexical order. Root `evals/` is discovered by `heypi eval`, not loaded into the runtime agent. The model must be passed explicitly or through `HEYPI_MODEL`.
 
 Programmatic `context` providers run once per turn and append compact dynamic prompt blocks. The handler also injects provider/channel/thread/sender context when available.
 

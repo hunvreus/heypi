@@ -15,7 +15,7 @@ export const adapter: Adapter = {
   name: "internal",
   kind: "internal",
   async start({ handler }) {
-    // Translate provider events into handler.message(...)
+    // Translate provider events into handler(...)
   },
   async send(target, output) {
     // Send replies, approvals, progress, or attachments back.
@@ -27,6 +27,14 @@ export const adapter: Adapter = {
 ```
 
 Pass adapters to `createHeypi({ adapters: [...] })`. The adapter owns provider auth, event normalization, delivery, and provider-specific IDs. heypi owns turns, approvals, runtime execution, scheduling, and state.
+
+Keep custom adapters as ingress and delivery boundaries. They should verify the provider request, normalize the stable routing ids, pass useful message text and metadata to `handler(...)`, and send heypi outputs back to the same trusted destination.
+
+Do not put broad provider clients behind the adapter as model-callable tools. For example, a GitHub webhook adapter should receive issue events and route replies; a separate `agent/tools/comment_on_issue.ts` tool should own the exact GitHub write action, repository allowlist, idempotency key, and approval policy. A Slack adapter should receive mentions and send replies; a separate app tool should own any special action such as paging on-call or posting a release note.
+
+Conversation ids are routing state, not bearer tokens. If a custom route accepts `threadId` from a caller, authenticate the caller and verify they may continue that thread before calling the handler. Do not treat possession of a thread id as permission.
+
+Keep temporary provider capabilities out of normalized input and durable state. Use callback URLs, interaction tokens, and one-shot response handles inside the adapter callback, then discard them. Persist stable provider ids and delivery ids instead, so retries can be deduped without leaking credentials into the model transcript.
 
 ## Runtime provider
 

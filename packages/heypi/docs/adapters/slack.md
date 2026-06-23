@@ -93,6 +93,8 @@ Import the manifest into Slack, then review scopes, events, interactivity, and t
 
 Slack slash command names are workspace-global. If you run multiple heypi Slack apps in one workspace, set a unique command name in both the manifest and adapter config.
 
+Slack slash-command payloads include a short-lived `trigger_id` for immediate Slack interactions. heypi uses it only to derive a non-reversible internal event id for retry dedupe. The raw `trigger_id` is not stored in message data or trace ids.
+
 Typed controls use `/heypi` subcommands:
 
 ```text

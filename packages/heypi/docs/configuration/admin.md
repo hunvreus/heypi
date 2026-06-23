@@ -1,8 +1,8 @@
 # Admin
 
-Admin is a local web panel for inspecting and operating a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, memory files, configuration, approval policy, active approval bypasses, calls, runs, adapters, and activity.
+Admin is a local web panel for inspecting and operating a running heypi app. It shows chats, thread timelines, approvals, scheduled jobs, eval definitions, memory files, configuration, approval policy, active approval bypasses, calls, runs, adapters, and activity.
 
-In dev workflows, the Chats view can send local test messages through the same handler path used by adapters. The Chats sidebar also shows a live pulse for pending approvals, running runs, jobs, and refresh time.
+In dev workflows, the Chats view can send local test messages through the same handler path used by adapters. Thread pages show summarized conversation by default, can expand to full trace logs, and expose cancel/status thread actions when a turn is active. The Chats sidebar groups conversations by adapter, supports filtering, and shows a live pulse for pending approvals, running runs, jobs, and refresh time.
 
 Admin is disabled by default and is served under `/admin/*` when enabled.
 
@@ -69,7 +69,19 @@ Notes:
 - `state.root` is the admin auth boundary. Use a separate state root when admin access should be separated.
 - Admin state is stored under `<state.root>/admin/`.
 - `/admin` is a reserved route prefix. User adapters cannot register routes under it.
+- Local dev test threads are hidden from admin thread lists by default. Set `admin: { localThreads: true }` when you want those loopback test conversations visible beside real adapter conversations.
 - Admin does not edit config, edit secrets, or provide shell access. Its write surface is limited to local chat messages for dev testing, approval approve/deny actions, and thread cancel/status controls.
+
+## Views
+
+| View | Purpose |
+| --- | --- |
+| Chats | Inspect conversations, messages, model events, tool calls, approvals, and trace events. Send local dev messages when using admin for local testing. |
+| Approvals | Review pending approval requests and submit approve/deny decisions through the same handler path used by chat commands. |
+| Jobs | Inspect configured scheduled and heartbeat jobs, targets, next run times, and recent run state. |
+| Evals | Inspect loaded eval definitions, tags, expectations, timeouts, and full prompts. |
+| Memory | Inspect durable memory files by scope, preview content, and copy full file details. |
+| Config | Inspect app, adapter, runtime, approval, task, memory, and admin configuration summaries. |
 
 ## CLI
 

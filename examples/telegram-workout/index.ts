@@ -20,7 +20,7 @@ const app = createHeypi({
 	state: { root: stateRoot },
 	adapters,
 	agent: loadAgent("./agent", {
-		model: "openai/gpt-5-mini",
+		model: "openai/gpt-5.4-mini",
 	}),
 	jobs: process.env.TELEGRAM_BOT_TOKEN
 		? [

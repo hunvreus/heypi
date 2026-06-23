@@ -444,7 +444,7 @@ test("createHeypi de-dupes internal admin adapter names", async () => {
 			logger: consoleLogger({ level: "error", format: "pretty" }),
 			state: { root: join(root, "state") },
 			http: { port: 0 },
-			admin: { auth: false },
+			admin: { auth: false, http: { port: 0 } },
 			adapters: [{ name: "test", kind: "test", start: async () => undefined }],
 			agent: loadAgent("../../examples/slack-devops/agent", { id: "default", model: "openai/gpt-5-mini" }),
 			runtime: { name: "host-bash", root: workspace(join(root, "workspace")) },

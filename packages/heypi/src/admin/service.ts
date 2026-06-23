@@ -29,6 +29,10 @@ type AdminPageInput = {
 	scope?: string;
 };
 
+type AdminServiceOptions = {
+	localThreads?: boolean;
+};
+
 export type AdminPageFilters = Pick<
 	AdminPageInput,
 	"q" | "provider" | "type" | "state" | "channel" | "actor" | "scope"
@@ -215,9 +219,10 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 50;
 const ADMIN_SCAN_LIMIT = 500;
 
-export function createAdminService(start: AdapterStart): AdminService {
+export function createAdminService(start: AdapterStart, options: AdminServiceOptions = {}): AdminService {
 	const app = required(start.app, "admin requires app context");
 	const store = required(start.store, "admin requires store context");
+	const localThreads = options.localThreads === true;
 
 	const service: AdminService = {
 		async overview(): Promise<AdminOverview> {
@@ -401,7 +406,8 @@ export function createAdminService(start: AdapterStart): AdminService {
 				store.threads.list({ agent: app.agent, limit: 1000 }),
 				recentThreadActivityRows(),
 			]);
-			const summaries = threadSummaries(threads, recent);
+			const visibleThreads = localThreads ? threads : threads.filter((thread) => !isLocalThread(thread));
+			const summaries = threadSummaries(visibleThreads, recent);
 			const facets = rowFacets(summaries, {
 				provider: (row) => row.provider,
 				channel: (row) => row.channel,
@@ -807,6 +813,10 @@ function messageWithThread(row: Message, thread: Thread): MessageWithThread {
 		channel: thread.channel,
 		threadActor: thread.actor,
 	};
+}
+
+function isLocalThread(thread: Thread): boolean {
+	return thread.provider === "local" && thread.kind === "local";
 }
 
 function threadSummaries(threads: Thread[], activity: AdminActivityRow[]): AdminThreadRow[] {

@@ -2,7 +2,7 @@
 
 Deploy heypi as one long-running Node.js service with persistent storage. Use a VPS, VM, container host, or single-instance app platform where the process can keep adapters, schedulers, runtime providers, and delivery queues alive.
 
-This guide assumes you already have a heypi app entrypoint, prompt files, and package scripts. For app creation, start with the [Quickstart](../quickstart/index.md).
+This guide assumes you already have a heypi app entrypoint, agent instructions, and package scripts. For app creation, start with the [Quickstart](../quickstart/index.md).
 
 ## Deployment model
 
@@ -15,6 +15,25 @@ Run one heypi process per app/agent store. The process owns:
 - local delivery queues and provider rate-limit retries.
 
 Use the app lock as a guardrail, not as a scaling mechanism. Multi-process deployments need a custom shared store, distributed delivery limiting, and operational review before they are safe.
+
+## Restart and durability
+
+Persistent SQLite state, admin metadata, memory, skills, runtime workspace files, generated attachments, and stored secrets survive process restarts when `state` and `workspace` are on durable storage.
+
+Startup recovery cleans up known interrupted work:
+
+- turns and tool calls left running are marked failed and get recovery events in the trace timeline,
+- scheduled job runs left running are returned to the queued state,
+- database locks expire so future turns can continue.
+
+Process-local coordination does not survive an exact restart:
+
+- pending secret request prompts,
+- active steer and follow-up queues,
+- local delivery queues and provider retry timers,
+- async webhook turns that were accepted and still running when the process stopped.
+
+This is inspection and cleanup, not workflow replay. Use a supervisor to restart the service quickly, avoid multi-instance deployments unless you provide the required shared coordination, and design external webhook callers to retry when they need completion guarantees.
 
 ## Requirements
 
@@ -35,7 +54,7 @@ The server should contain:
 
 - `package.json` and lockfile,
 - app entrypoint such as `index.ts` or built `dist/index.js`,
-- agent prompt folder,
+- agent folder,
 - `.env`,
 - persistent `state/`,
 - persistent `workspace/`.
@@ -66,6 +85,8 @@ SLACK_APP_TOKEN=xapp-...
 HEYPI_ADMIN_SECRET=replace-with-a-long-random-secret
 ```
 
+Use the env var for your selected model provider. For example, Anthropic uses `ANTHROPIC_API_KEY`, Google Gemini uses `GEMINI_API_KEY`, and xAI uses `XAI_API_KEY`.
+
 Use the adapter docs for provider-specific variables:
 
 - [Slack](../adapters/slack.md)
@@ -73,10 +94,10 @@ Use the adapter docs for provider-specific variables:
 - [Telegram](../adapters/telegram.md)
 - [Webhook](../adapters/webhook.md)
 
-Run a setup check before starting the service:
+Run diagnostics before starting the service:
 
 ```bash
-npm exec heypi -- check --env .env --db ./state/heypi.db --runtime-root ./workspace
+npm exec heypi -- doctor --boot --env .env --db ./state/heypi.db --runtime-root ./workspace
 ```
 
 ## Run with systemd
@@ -229,16 +250,18 @@ Monitor for:
 
 ## Upgrade
 
-Stop the service, update packages, run the check, then restart:
+For `0.2.0-beta.0` breaking changes, read the [Migration guide](migration.md) before updating production bots.
+
+Stop the service, update packages, run diagnostics, then restart:
 
 ```bash
 sudo systemctl stop heypi
 npm install
-npm exec heypi -- check --env .env --db ./state/heypi.db --runtime-root ./workspace
+npm exec heypi -- doctor --boot --env .env --db ./state/heypi.db --runtime-root ./workspace
 sudo systemctl start heypi
 ```
 
-Keep `state/` and `workspace/` mounted across releases. If a migration fails, restore the backup, fix the deployment, and rerun `heypi check` before starting the service.
+Keep `state/` and `workspace/` mounted across releases. If a migration fails, restore the backup, fix the deployment, and rerun `heypi doctor --boot` before starting the service.
 
 ## Shutdown
 

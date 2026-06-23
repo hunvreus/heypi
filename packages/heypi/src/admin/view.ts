@@ -743,16 +743,8 @@ export function memoryView(memory: AdminMemory, _checkedAt?: number): string {
 				options: memory.facets?.scopes ?? [],
 			},
 		],
-	})}${table(
-		["Scope", "Content", "Size", "Updated", "Hash", ""],
-		memory.entries.map((entry, index) => [
-			mono(entry.scopePath),
-			truncatedText(memoryPreview(entry)),
-			muted(`${entry.size} bytes`),
-			mutedHtml(relativeTimeHtml(entry.mtimeMs)),
-			mono(entry.sha256.slice(0, 12)),
-			memoryDetails(entry, index),
-		]),
+	})}${memoryList(
+		memory.entries,
 		emptyStateForFilters(memory.filters, {
 			title: "No memory files",
 			message: "Once the agent starts saving memory, durable context files will show up here.",
@@ -765,6 +757,44 @@ export function memoryView(memory: AdminMemory, _checkedAt?: number): string {
 		filters: memory.filters,
 	})}`;
 	return `<div class="grid min-w-0 gap-4">${body}</div>`;
+}
+
+function memoryList(entries: AdminMemory["entries"], emptyInput?: { title: string; message: string }): string {
+	if (!entries.length)
+		return emptyState({
+			title: emptyInput?.title ?? "No memory files",
+			message: emptyInput?.message ?? "There is nothing to show for this view yet.",
+			frame: "section",
+			variant: "outline",
+		});
+	return `<div class="grid min-w-0 gap-2" data-admin-memory-list>${entries.map(memoryRow).join("")}</div>`;
+}
+
+function memoryRow(entry: AdminMemory["entries"][number], index: number): string {
+	return `<article class="grid min-w-0 gap-3 rounded-md border bg-background p-3 text-sm" data-admin-memory-row>
+	<div class="flex min-w-0 items-start justify-between gap-3">
+		<div class="grid min-w-0 gap-2">
+			<div class="flex min-w-0 flex-wrap items-center gap-1.5" title="${escapeHtml(entry.scopePath)}" data-admin-memory-scope>${memoryScope(entry.scopePath)}</div>
+			<p class="min-w-0 break-words leading-6 text-foreground [overflow-wrap:anywhere]" data-admin-memory-preview>${escapeHtml(memoryPreview(entry))}</p>
+			<div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground" data-admin-memory-meta>
+				<span>${escapeHtml(`${entry.size} bytes`)}</span>
+				<span>${relativeTimeHtml(entry.mtimeMs)}</span>
+				<span class="font-mono">${escapeHtml(entry.sha256.slice(0, 12))}</span>
+			</div>
+		</div>
+		<div class="shrink-0">${cellHtml(memoryDetails(entry, index))}</div>
+	</div>
+</article>`;
+}
+
+function memoryScope(scopePath: string): string {
+	const parts = scopePath.split(/[\\/]/u).filter(Boolean);
+	if (!parts.length) return memoryScopePart(scopePath || "agent");
+	return parts.map(memoryScopePart).join("");
+}
+
+function memoryScopePart(part: string): string {
+	return `<span class="inline-flex max-w-full items-center rounded-sm border bg-muted px-1.5 py-0.5 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(part)}</span>`;
 }
 
 function threadHeader(row: AdminThreadRow): string {

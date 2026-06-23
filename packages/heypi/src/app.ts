@@ -281,7 +281,10 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 					serve: secretsConfig.serve,
 				});
 			}
-			for (const adapter of lifecycleAdapters) {
+			const internalAdapters = [devAdapter, adminAdapter].filter(
+				(adapter): adapter is Adapter => adapter !== undefined,
+			);
+			const startAdapter = async (adapter: Adapter) => {
 				const adapterApproval = approvalForAdapter(config.approval, adapter);
 				const adapterHandler =
 					adapter === adminAdapter
@@ -336,9 +339,20 @@ export function createHeypi(config: HeypiConfig): HeypiApp {
 				starts.set(adapter, start);
 				await adapter.start(start);
 				started.push(adapter);
+			};
+			for (const adapter of internalAdapters) {
+				await startAdapter(adapter);
 			}
-			await Promise.all([http.listen(), adminHttp.listen()]);
-			for (const adapter of lifecycleAdapters) {
+			await adminHttp.listen();
+			for (const adapter of internalAdapters) {
+				const start = starts.get(adapter);
+				if (start) await adapter.ready?.(start);
+			}
+			for (const adapter of config.adapters) {
+				await startAdapter(adapter);
+			}
+			await http.listen();
+			for (const adapter of config.adapters) {
 				const start = starts.get(adapter);
 				if (start) await adapter.ready?.(start);
 			}

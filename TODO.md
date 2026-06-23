@@ -3,7 +3,7 @@
 ## Now
 
 - Tag and publish the prepared `0.2.0-beta.0` release when approved.
-	- Release notes, migration notes, package versions, and dry-run package validation are prepared.
+	- Release notes, migration notes, package versions, and dry-run package validation are finalized.
 	- Do not tag or publish until explicitly approved.
 
 ## Next
@@ -21,6 +21,14 @@
 	- Fly.io: persistent volume-backed state/workspace directories and process health checks.
 	- VPS/Docker: bind-mounted state/workspace directories, backups, and systemd/container restart behavior.
 	- Kubernetes: PVC-backed state/workspace directories, single-owner locking, probes, and rollout guidance.
+	- Document the restart contract: persisted DB state survives, but in-flight secret requests, active steer/follow-up queues, process-local delivery queues, and accepted-but-running async webhook turns do not survive process restart.
+- Fill published docs gaps.
+	- Add an evals authoring page covering `defineEval`, assertion shapes, agent-backed runs, persisted eval traces, and CI usage.
+	- Add a trace events reference covering event types, `heypi events`, admin thread timelines, eval persistence, and restart recovery events.
+	- Add a consolidated security and responsible-use page covering prompt-injection posture, trusted custom code, runtime sandboxing, approvals, adapter allowlists, admin exposure, webhook callbacks, and document conversion.
+	- Expand the API reference from an export index into signatures for the public config, authoring, adapter, runtime, and store contracts.
+	- Link or move the manual QA checklist into published docs once the `qa/` flow is stable enough for users.
+	- Document `heypi-convert-document` only if it becomes an intended user-facing CLI instead of an internal attachment helper.
 - Add a live provider QA harness.
 	- Keep `qa/` manual-only until there are runnable commands that consume dedicated QA config.
 	- Add minimal Slack, Discord, Telegram, and webhook QA apps that run outside the examples and use isolated state/workspace roots.
@@ -29,6 +37,7 @@
 	- Support optional driver bots/apps for API-driven message checks, but keep provider-native button and slash-command UI checks manual unless a safe browser-profile lane exists.
 - Add operator audit views.
 	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
+	- Expand `heypi doctor` diagnostics for production readiness, covering env vars, adapter credentials, risky binds, allowlist gaps, approver gaps, pending migrations, runtime roots/providers, document conversion tools, and optional live adapter connectivity.
 	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
 	- Report store access, migration version, lock health, runtime root/provider status, warm scopes, runtime queue depth, adapter connectivity, bot identity, last adapter event/error, active turns, queued follow-ups, pending approvals, due/running jobs, delivery retries/failures, and risky configuration posture.
 - Add thread reset controls.
@@ -58,6 +67,11 @@
 	- Design encrypted secret persistence before making pending secret requests durable.
 	- Do not persist request private keys or plaintext secret values in generic stores.
 	- Decide whether custom tool `ToolContext` should expose a secret-request capability so trusted tools can ask users for credentials without importing internal `Secrets`.
+- Persist accepted async work before execution.
+	- Store active steer/follow-up intents in the database before acknowledging them, and treat in-memory `ActiveRuns` queues as process-local caches over persisted intent.
+	- Store async webhook runs once `202 Accepted` is returned, including current state, final result/error, and restart-interrupted status.
+	- Add durable callback/delivery retry state only when webhook callback guarantees need to survive process restarts.
+	- Add restart/chaos tests that kill or simulate restart during an active turn, queued follow-up, async webhook run, scheduled job run, and pending delivery retry.
 
 ## Later
 

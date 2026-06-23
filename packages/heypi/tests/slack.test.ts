@@ -9,6 +9,7 @@ import {
 	handleAction,
 	postSlackAttachmentUploadNotice,
 	SlackGroupResolver,
+	slackCommandEventId,
 	startProgress,
 	uploadSlackAttachments,
 } from "../src/io/slack.js";
@@ -19,6 +20,37 @@ const logger: Logger = {
 	warn: () => undefined,
 	error: () => undefined,
 };
+
+test("Slack slash command event ids do not persist trigger_id values", () => {
+	const eventId = slackCommandEventId(
+		{
+			text: "status",
+			user_id: "U1",
+			team_id: "T1",
+			channel_id: "C1",
+			trigger_id: "12345.98765.short-lived-trigger",
+		},
+		"/heypi",
+	);
+
+	assert.ok(eventId);
+	assert.match(eventId, /^cmd:[a-f0-9]{24}$/);
+	assert.doesNotMatch(eventId, /12345/);
+	assert.doesNotMatch(eventId, /short-lived-trigger/);
+	assert.equal(
+		eventId,
+		slackCommandEventId(
+			{
+				text: "status",
+				user_id: "U1",
+				team_id: "T1",
+				channel_id: "C1",
+				trigger_id: "12345.98765.short-lived-trigger",
+			},
+			"/heypi",
+		),
+	);
+});
 
 test("Slack attachment upload reports failed uploads", async () => {
 	const store: AttachmentStore = {
@@ -116,7 +148,7 @@ test("Slack approval action uploads attachments from approved continuations", as
 			message: { ts: "1700000000.000001", thread_ts: "1700000000.000000" },
 		},
 		action: { value: "approval-1" },
-		client: client as Parameters<typeof handleAction>[0]["client"],
+		client: client as unknown as Parameters<typeof handleAction>[0]["client"],
 		handler,
 		logger,
 		delivery: new DeliveryQueue(false),
@@ -134,6 +166,64 @@ test("Slack approval action uploads attachments from approved continuations", as
 		channel_id: "C1",
 		thread_ts: "1700000000.000000",
 		file_uploads: [{ file: "/tmp/heypi.dev.html", filename: "heypi.dev.html", title: "heypi.dev.html" }],
+	});
+});
+
+test("Slack action handler strips short-lived callback capabilities from handler data", async () => {
+	let seen: Parameters<Handler>[0] | undefined;
+	const handler = (async (input: Parameters<Handler>[0]) => {
+		seen = input;
+		return { text: "ok" };
+	}) as Handler;
+	const posted: unknown[] = [];
+	const client = {
+		chat: {
+			update: async () => ({ ok: true }),
+			postMessage: async (message: unknown) => {
+				posted.push(message);
+				return { ok: true, ts: "1700000000.000002" };
+			},
+			postEphemeral: async (message: unknown) => {
+				posted.push(message);
+				return { ok: true, ts: "1700000000.000002" };
+			},
+		},
+	};
+
+	await handleAction({
+		kind: "status",
+		body: {
+			type: "block_actions",
+			trigger_id: "12345.98765.short-lived-trigger",
+			response_url: "https://hooks.slack.com/actions/secret",
+			team: { id: "T1" },
+			channel: { id: "C1" },
+			user: { id: "U1" },
+			message: { ts: "1700000000.000001", thread_ts: "1700000000.000000" },
+		},
+		action: { value: "run-1" },
+		client: client as unknown as Parameters<typeof handleAction>[0]["client"],
+		handler,
+		logger,
+		delivery: new DeliveryQueue(false),
+		provider: "slack",
+		adapterKind: "slack",
+		groups: new SlackGroupResolver([], logger),
+		progress: false,
+	});
+
+	assert.ok(seen);
+	const serialized = JSON.stringify({ trace: seen.trace, eventId: seen.eventId, data: seen.data });
+	assert.doesNotMatch(serialized, /short-lived-trigger/);
+	assert.doesNotMatch(serialized, /hooks\.slack\.com/);
+	assert.deepEqual(seen.data, {
+		action: "status",
+		value: "run-1",
+		team: "T1",
+		channel: "C1",
+		actor: "U1",
+		message: "1700000000.000001",
+		thread: "C1:1700000000.000000",
 	});
 });
 

@@ -20,6 +20,10 @@ async function aborted(signal?: AbortSignal): Promise<void> {
 	await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
 }
 
+async function sleep(ms: number): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("sqlite locks reject concurrent owners and allow release", async () => {
 	const db = await tempDb();
 	try {
@@ -228,6 +232,77 @@ test("handler steers same-thread asks into the active run by default", async () 
 		assert.equal(second?.finalPlacement, "thread");
 		assert.deepEqual(steered, ["[Message from Jane (U2)]\nalso check nginx"]);
 		assert.equal(firstOut?.finalPlacement, "thread");
+	} finally {
+		await db.cleanup();
+	}
+});
+
+test("handler refreshes thread locks while a turn is active", async () => {
+	const db = await tempDb();
+	try {
+		const store = sqliteStore({ path: db.path });
+		await store.setup();
+		let release!: () => void;
+		let sessionReady!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			sessionReady = resolve;
+		});
+		const steered: string[] = [];
+		let asks = 0;
+		const handler = createHandler({
+			agentId: "a",
+			store,
+			callRunner: new CallRunner(store.calls, store.approvals, new Queue({}), {
+				name: "host-bash",
+				root: ".",
+			}),
+			agent: {
+				ask: async (req) => {
+					asks++;
+					req.onLiveSession?.({
+						steer: async (text) => {
+							steered.push(text);
+						},
+						followUp: async () => undefined,
+					});
+					sessionReady();
+					await gate;
+					return { text: "done" };
+				},
+				continue: async () => ({ text: "should not run" }),
+			},
+			lockMs: 60,
+		});
+
+		const first = handler({
+			trace: "trace-1",
+			provider: "slack",
+			eventId: "event-1",
+			channel: "C1",
+			actor: "U1",
+			thread: "C1:T1",
+			text: "deploy",
+		});
+		await ready;
+		await sleep(140);
+		const second = await handler({
+			trace: "trace-2",
+			provider: "slack",
+			eventId: "event-2",
+			channel: "C1",
+			actor: "U2",
+			thread: "C1:T1",
+			text: "also check nginx",
+		});
+		release();
+		await first;
+
+		assert.equal(second?.text, "Got it. I'll include that.");
+		assert.deepEqual(steered, ["[Message from U2]\nalso check nginx"]);
+		assert.equal(asks, 1);
 	} finally {
 		await db.cleanup();
 	}

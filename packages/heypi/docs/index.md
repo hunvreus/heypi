@@ -1,31 +1,29 @@
 # Introduction
 
-heypi is a TypeScript framework to build AI chat agents for your team on Slack, Discord, Telegram, or via webhooks.
+heypi is a TypeScript framework for governed AI agents in team chat. It runs [Pi](https://pi.dev) agents in Slack, Discord, Telegram, and trusted webhook entrypoints, with approvals, audit trails, scoped runtime tools, memory, secret handoff, scheduling, and an admin panel.
 
-## Why heypi?
+The core product focus is chat-ops: give an agent useful access to your team's tools while keeping sensitive actions reviewable and visible.
 
-[OpenClaw](https://openclaw.ai/) introduced two ideas:
+## What heypi is for
 
-- **Local first**: run close to the user's machine and tools, so integrations can use existing CLIs, files, browser sessions, and local credentials instead of bespoke SaaS connectors.
-- **Capabilities over workflows**: give the agent context, prompts, skills, and tools, then let the model decide how to compose them instead of forcing every task into a predefined workflow.
+- Shared agents that work in team channels instead of one user's local terminal.
+- Operations, support, project, and internal tooling agents that need trusted TypeScript tools or shell/file access.
+- Use cases where approvals, bypasses, tool calls, failures, and chat context need an audit trail.
+- Long-running Node.js services owned by your team, with persistent SQLite state and workspace files.
 
-heypi extends these ideas with two safety layers:
+## What heypi is not
 
-- **Approvals**: require specific users or groups to approve sensitive operations, with every approval logged for audit.
-- **Sandboxing**: run commands in a separate runtime, such as just-bash, Docker, or a MicroVM.
-
-For example, the [Slack DevOps agent example](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops) gives an AI agent access to servers through host tools. A safe request, such as "What is the load on db-1?", can run without approval. A risky request, such as running a database migration, will require approval from a specific user or group (someone on the DevOps team, for example).
+heypi is not a serverless workflow platform or durable replay engine. It records interrupted work during startup recovery, but it does not replay arbitrary in-flight agent turns after a process crash. For production, run one supervised heypi process per app/store and keep `state` and `workspace` on persistent storage.
 
 ## How it works
 
-At its core, heypi wraps around [Pi](https://pi.dev), a minimalist open-source AI harness:
+- Add adapters for [Slack](adapters/slack.md), [Discord](adapters/discord.md), [Telegram](adapters/telegram.md), or [webhooks](adapters/webhook.md).
+- Load an agent from `agent/instructions.md`, [tools](configuration/tools.md), [skills](configuration/skills.md), jobs, and optional extensions.
+- Persist discussions, actors, turns, calls, approvals, bypasses, memory, and jobs in SQLite.
+- Run command, file, search, and attachment tools through scoped runtimes such as just-bash, Docker, Gondolin, or a custom provider.
+- Enforce approval rules before sensitive tools continue, then expose the trace in chat and admin.
 
-- It adds adapters for [Slack](adapters/slack.md), [Discord](adapters/discord.md), [Telegram](adapters/telegram.md), and [webhooks](adapters/webhook.md).
-- It persists discussions, actors, turns, calls, approvals, and jobs in SQLite.
-- It lets you customize behavior with prompts, [tools](configuration/tools.md), [skills](configuration/skills.md), [memory](configuration/memory.md), [secrets](configuration/secrets.md), [runtime providers](configuration/runtime.md), and [scheduling](configuration/scheduling.md).
-- It enforces approval rules before the agent can run sensitive actions.
-
-You can configure an agent with a single TypeScript or JavaScript file and run it as a long-running Node.js service.
+For example, the [Slack DevOps agent example](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops) gives an AI agent access to servers through host tools. A safe request, such as "What is the load on db-1?", can run without approval. A risky request, such as running a database migration, can require approval from a specific user or group.
 
 Read more in the [configuration guide](configuration/index.md).
 

@@ -8,7 +8,7 @@ This example uses Slack Socket Mode so it can run locally without a public HTTPS
 
 The agent loads:
 
-- `SOUL.md` and `AGENTS.md` for role, style, scope, and operating constraints. `SYSTEM.md` is only for advanced runtime-prompt overrides.
+- `instructions.md` for role, style, scope, and operating constraints. `system.md` is only for advanced runtime-prompt overrides.
 - `skills/incident-triage/SKILL.md` for the incident workflow.
 - Markdown runbooks from `runbooks/`, searched through the `runbook_search` custom tool.
 - Dynamic host context from `state/hosts.json`, appended to the prompt each turn so the agent can recognize host ids, tags, and aliases before choosing tools.
@@ -64,7 +64,7 @@ Leave the `HEYPI_SLACK_*` allowlists empty to accept every event Slack delivers.
 
 `SLACK_SIGNING_SECRET` is only required for HTTP mode. Socket Mode uses `SLACK_APP_TOKEN`. `HEYPI_SECRET_URL` is optional; leave it unset to use the hosted secret handoff page, or set it with a fixed `HEYPI_HTTP_PORT` to self-host `/secret` locally.
 
-This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters.md`](../../packages/heypi/docs/adapters.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
+This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters/index.md`](../../packages/heypi/docs/adapters/index.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup:
 

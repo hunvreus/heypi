@@ -13,7 +13,7 @@ The daily check-in is configured as a heartbeat job. It applies to known Telegra
 This is the simpler boilerplate example. It shows the normal heypi shape without extra infrastructure tools:
 
 - Telegram long polling adapter.
-- `SOUL.md` / `AGENTS.md` prompt files. `SYSTEM.md` is only for advanced runtime-prompt overrides.
+- `instructions.md` for identity, behavior, voice, and standing rules. `system.md` is only for advanced runtime-prompt overrides.
 - Default runtime tools through `loadAgent()`'s `builtinTools` default.
 - Three small custom tools from `agent/tools/workout.ts` for local Markdown memory: `get_profile`, `save_profile`, and `log_workout`.
 - A heartbeat job for daily check-ins.
@@ -47,7 +47,7 @@ HEYPI_TELEGRAM_USERS=
 
 Leave the `HEYPI_TELEGRAM_*` allowlists empty to accept every update Telegram delivers. Set comma-separated IDs to restrict which chats or users may trigger the agent.
 
-This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters.md`](../../packages/heypi/docs/adapters.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
+This example enables `streaming: true`. See [`../../packages/heypi/docs/adapters/index.md`](../../packages/heypi/docs/adapters/index.md) for shared chat defaults, streaming, approvals, cancel, and busy-thread behavior.
 
 Check setup and discover a target chat:
 

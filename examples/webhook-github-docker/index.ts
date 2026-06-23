@@ -17,7 +17,7 @@ const app = createHeypi({
 	scope: "channel",
 	adapters,
 	agent: loadAgent("./agent", {
-		model: "openai/gpt-5-mini",
+		model: "openai/gpt-5.4-mini",
 		builtinTools: defaultTools({
 			bash: true,
 			write: false,

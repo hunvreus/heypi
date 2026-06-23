@@ -1,6 +1,6 @@
 {
 	"title": "heypi",
-	"description": "Chat agents for your team, with approvals and sandboxed tools.",
+	"description": "Team chat agents with approvals, audit, and sandboxed tools.",
 	"source": {
 		"repo": "https://github.com/hunvreus/heypi",
 		"branch": "main",
@@ -142,6 +142,11 @@
 					"title": "Deployment",
 					"slug": "guides/deployment",
 					"file": "guides/deployment.md"
+				},
+				{
+					"title": "Migration",
+					"slug": "guides/migration",
+					"file": "guides/migration.md"
 				},
 				{
 					"title": "Custom integrations",

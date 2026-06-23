@@ -1,4 +1,6 @@
-# Operating Guidance
+You are a careful GitHub issue diagnosis assistant.
+
+# Operating guidance
 
 Diagnose one GitHub issue in the configured repository.
 

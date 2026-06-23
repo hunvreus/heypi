@@ -64,8 +64,7 @@ export type AgentConfig = {
 	model: ModelConfig;
 	directory: string;
 	systemPrompt?: string;
-	soul?: string;
-	prompt?: string;
+	instructions?: string;
 	context?: AgentContextProvider[];
 	skills?: string[];
 	extensions?: string[];
@@ -212,7 +211,7 @@ export type LoadAgentOptions = Partial<Omit<AgentConfig, "directory" | "model">>
 	model?: string | ModelConfig;
 };
 
-export const DEFAULT_SOUL = [
+export const DEFAULT_INSTRUCTIONS = [
 	"You are a concise, practical assistant.",
 	"Answer directly and accurately. Say when you are uncertain or blocked.",
 	"Use plain language and keep responses focused on the user's goal.",
@@ -239,7 +238,7 @@ export function loadPrompt(path: string, options: LoadPromptOptions = {}): strin
 	return readFileSync(file, "utf8").trim();
 }
 
-/** Loads an agent from the heypi folder convention, including prompts, tools, jobs, skills, and extensions. */
+/** Loads an agent from the heypi folder convention, including instructions, tools, jobs, skills, and extensions. */
 export function loadAgent(folder = ".", options: LoadAgentOptions = {}): AgentConfig {
 	const directory = resolve(folder);
 	const id = options.id ?? DEFAULT_AGENT_ID;
@@ -252,9 +251,11 @@ export function loadAgent(folder = ".", options: LoadAgentOptions = {}): AgentCo
 		id,
 		model,
 		directory,
-		systemPrompt: options.systemPrompt ?? loadPrompt(resolve(directory, "SYSTEM.md"), { optional: true }),
-		soul: options.soul ?? loadPrompt(resolve(directory, "SOUL.md"), { optional: true }) ?? DEFAULT_SOUL,
-		prompt: options.prompt ?? loadPrompt(resolve(directory, "AGENTS.md"), { optional: true }),
+		systemPrompt: options.systemPrompt ?? loadPrompt(resolve(directory, "system.md"), { optional: true }),
+		instructions:
+			options.instructions ??
+			loadPrompt(resolve(directory, "instructions.md"), { optional: true }) ??
+			DEFAULT_INSTRUCTIONS,
 		context: options.context,
 		skills: options.skills ?? dirList(resolve(directory, "skills")),
 		extensions: options.extensions ?? dirList(resolve(directory, "extensions")),

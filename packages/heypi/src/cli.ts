@@ -2,7 +2,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import { cac } from "cac";
@@ -43,10 +44,25 @@ import { ThreadRepo } from "./store/repo-thread.js";
 import { TurnRepo } from "./store/repo-turn.js";
 
 const VERSION = packageVersion();
+const require = createRequire(import.meta.url);
 
 type Flags = Record<string, string | number | boolean>;
 type EnvMode = "start" | "dev";
 type SlackMode = "socket" | "http";
+type DoctorSeverity = "ok" | "info" | "warn" | "fail";
+
+type DoctorFinding = {
+	severity: DoctorSeverity;
+	code: string;
+	message: string;
+	path?: string;
+};
+
+type DoctorReport = {
+	root: string;
+	static: DoctorFinding[];
+	boot?: DoctorFinding[];
+};
 
 const slackModes = ["socket", "http"] as const;
 const slackBotScopes = [
@@ -88,11 +104,14 @@ function buildCli() {
 	cli.command("dev [file]", "Start a heypi app for local development with file watching")
 		.option("--env <path>", "Load env file")
 		.action((file: string | undefined, flags: Flags) => withEnv("dev", (input) => devApp(file, input))(flags));
-	cli.command("check", "Run local setup checks")
+	cli.command("doctor", "Run static project diagnostics")
 		.option("--env <path>", "Load env file")
+		.option("--root <path>", "Project root")
 		.option("--db <path>", "SQLite database path")
 		.option("--runtime-root <path>", "Runtime workspace path")
-		.action(withEnv("start", check));
+		.option("--boot", "Also run boot-time setup checks")
+		.option("--json", "Print JSON")
+		.action(withEnv("start", doctor));
 	cli.command("status", "Inspect persisted app status")
 		.option("--env <path>", "Load env file")
 		.option("--db <path>", "SQLite database path")
@@ -286,8 +305,15 @@ async function devApp(file: string | undefined, _flags: Flags): Promise<void> {
 	const start = Date.now();
 	const app = await loadApp(file);
 	const { runHeypi } = await import("./app.js");
-	await runHeypi(app);
-	await printDevHints(Date.now() - start);
+	let cancelled = false;
+	const hints = printDevHintsWhenReady(start, () => cancelled);
+	try {
+		await runHeypi(app);
+	} catch (error) {
+		cancelled = true;
+		throw error;
+	}
+	await hints;
 }
 
 async function printDevHints(elapsedMs: number): Promise<void> {
@@ -307,9 +333,27 @@ async function printDevHints(elapsedMs: number): Promise<void> {
 	line("");
 }
 
+async function printDevHintsWhenReady(startedAt: number, cancelled: () => boolean): Promise<void> {
+	const deadline = Date.now() + 5_000;
+	while (!cancelled()) {
+		const server = await devServerHint();
+		if (server?.admin || server?.base) {
+			await printDevHints(Date.now() - startedAt);
+			return;
+		}
+		if (Date.now() >= deadline) break;
+		await delay(100);
+	}
+	if (!cancelled()) await printDevHints(Date.now() - startedAt);
+}
+
 function formatElapsed(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
 	return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function devServerHint(): Promise<{ admin?: string; base?: string } | undefined> {
@@ -341,7 +385,7 @@ async function spawnWithTsx(command: "start" | "dev", file: string | undefined, 
 		HEYPI_CLI_CHILD: "1",
 		NODE_OPTIONS: watch ? nodeOptionsWithDevelopment(process.env.NODE_OPTIONS) : process.env.NODE_OPTIONS,
 	};
-	const child = spawn("tsx", args, {
+	const child = spawn(process.execPath, [tsxCliPath(), ...args], {
 		cwd: invocationRoot(),
 		env: childEnv,
 		stdio: "inherit",
@@ -379,6 +423,14 @@ async function spawnWithTsx(command: "start" | "dev", file: string | undefined, 
 	}
 }
 
+function tsxCliPath(): string {
+	const pkgPath = require.resolve("tsx/package.json");
+	const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { bin?: string | Record<string, string> };
+	const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsx;
+	if (!bin) throw new Error("cannot resolve tsx CLI entrypoint");
+	return resolve(pkgPath, "..", bin);
+}
+
 function nodeOptionsWithDevelopment(input: string | undefined): string {
 	const value = input?.trim();
 	if (!value) return "--conditions=development";
@@ -405,15 +457,251 @@ function isHeypiApp(input: unknown): input is HeypiApp {
 	);
 }
 
-async function check(flags: Flags): Promise<void> {
-	const rows: string[] = [];
-	rows.push(ok(process.versions.node ? `node ${process.versions.node}` : "node missing"));
-	rows.push(envCheck("OPENAI_API_KEY"));
+async function doctor(flags: Flags): Promise<void> {
+	const root = resolve(invocationRoot(), stringFlag(flags, "root") ?? ".");
+	const report: DoctorReport = { root, static: doctorStatic(root) };
+	if (booleanFlag(flags, "boot")) report.boot = await doctorBoot(flags);
+	if (doctorHasFailures(report)) process.exitCode = 1;
+	if (booleanFlag(flags, "json")) {
+		line(JSON.stringify(report, null, 2));
+		return;
+	}
+	const sections = [`Project: ${root}`, "", "Static diagnostics", doctorText(report.static)];
+	if (report.boot) sections.push("", "Boot diagnostics", doctorText(report.boot));
+	line(sections.join("\n"));
+}
+
+function doctorHasFailures(report: DoctorReport): boolean {
+	return (
+		report.static.some((finding) => finding.severity === "fail") ||
+		!!report.boot?.some((finding) => finding.severity === "fail")
+	);
+}
+
+async function doctorBoot(flags: Flags): Promise<DoctorFinding[]> {
+	const rows: DoctorFinding[] = [];
+	rows.push({
+		severity: "ok",
+		code: "node",
+		message: process.versions.node ? `node ${process.versions.node}` : "node missing",
+	});
+	rows.push({
+		severity: process.env.OPENAI_API_KEY ? "ok" : "warn",
+		code: "env.openai",
+		message: process.env.OPENAI_API_KEY ? "OPENAI_API_KEY present" : "OPENAI_API_KEY missing",
+	});
 	const db = stringFlag(flags, "db");
-	if (db) rows.push(await checkDb(db));
+	if (db) rows.push(await checkDbFinding(db));
 	const root = stringFlag(flags, "runtime-root");
-	if (root) rows.push(checkDir(root, "runtime root"));
-	line(rows.join("\n"));
+	if (root) rows.push(checkDirFinding(root, "runtime root"));
+	return rows;
+}
+
+function doctorStatic(root: string): DoctorFinding[] {
+	const rows: DoctorFinding[] = [];
+	const packagePath = join(root, "package.json");
+	if (existsSync(packagePath)) {
+		rows.push({
+			severity: "ok",
+			code: "package.exists",
+			message: "package.json found",
+			path: rel(root, packagePath),
+		});
+		const pkg = readPackageJson(packagePath);
+		if (pkg) {
+			const deps = { ...record(pkg.dependencies), ...record(pkg.devDependencies) };
+			rows.push(
+				deps["@hunvreus/heypi"]
+					? { severity: "ok", code: "package.heypi", message: "@hunvreus/heypi dependency found" }
+					: { severity: "warn", code: "package.heypi", message: "@hunvreus/heypi dependency not found" },
+			);
+		} else {
+			rows.push({
+				severity: "fail",
+				code: "package.parse",
+				message: "package.json is not valid JSON",
+				path: rel(root, packagePath),
+			});
+		}
+	} else {
+		rows.push({ severity: "warn", code: "package.missing", message: "package.json not found" });
+	}
+
+	const entry = findFirstExisting(root, ["index.ts", "index.mts", "index.js", "index.mjs"]);
+	if (entry) {
+		rows.push({
+			severity: "ok",
+			code: "entry.exists",
+			message: `app entrypoint found: ${rel(root, entry)}`,
+			path: rel(root, entry),
+		});
+		rows.push(...inferAppShape(root, entry));
+	} else {
+		rows.push({
+			severity: "warn",
+			code: "entry.missing",
+			message: "default app entrypoint not found; pass a file to heypi start/dev if intentional",
+		});
+	}
+
+	const agent = join(root, "agent");
+	if (existsSync(agent) && statSync(agent).isDirectory()) {
+		rows.push({ severity: "ok", code: "agent.exists", message: "agent folder found", path: "agent" });
+		const instructions = join(agent, "instructions.md");
+		rows.push(
+			existsSync(instructions)
+				? {
+						severity: "ok",
+						code: "agent.instructions",
+						message: "agent instructions found",
+						path: "agent/instructions.md",
+					}
+				: {
+						severity: "warn",
+						code: "agent.instructions",
+						message: "agent/instructions.md missing; loadAgent() will use its fallback instructions",
+					},
+		);
+	} else {
+		rows.push({
+			severity: "warn",
+			code: "agent.missing",
+			message: "agent folder not found; create agent/instructions.md for the default layout",
+		});
+	}
+
+	for (const stale of ["agent/AGENTS.md", "agent/SOUL.md", "agent/SYSTEM.md"]) {
+		if (existsSync(join(root, stale))) {
+			rows.push({
+				severity: "warn",
+				code: "agent.legacy-file",
+				message: `${stale} is from the old layout; use agent/instructions.md and optional agent/system.md`,
+				path: stale,
+			});
+		}
+	}
+	for (const stale of ["tools", "jobs"]) {
+		const path = join(root, stale);
+		if (existsSync(path) && statSync(path).isDirectory()) {
+			rows.push({
+				severity: "warn",
+				code: "agent.legacy-folder",
+				message: `${stale}/ is outside the agent folder; use agent/${stale}/ for loadAgent() discovery`,
+				path: stale,
+			});
+		}
+	}
+
+	rows.push(...duplicateNameFindings(root, "agent/tools", "tool"));
+	rows.push(...duplicateNameFindings(root, "agent/jobs", "job"));
+	rows.push(...duplicateNameFindings(root, "evals", "eval"));
+	rows.push(...envExampleFindings(root, entry));
+	return rows;
+}
+
+function doctorText(findings: DoctorFinding[]): string {
+	if (!findings.length) return warn("no diagnostics produced");
+	return findings.map((finding) => findingText(finding)).join("\n");
+}
+
+function findingText(finding: DoctorFinding): string {
+	const suffix = finding.path ? ` (${finding.path})` : "";
+	if (finding.severity === "ok") return ok(`${finding.message}${suffix}`);
+	if (finding.severity === "warn") return warn(`${finding.message}${suffix}`);
+	if (finding.severity === "fail") return fail(`${finding.message}${suffix}`);
+	return `info: ${finding.message}${suffix}`;
+}
+
+function inferAppShape(root: string, entry: string): DoctorFinding[] {
+	const text = readText(entry);
+	if (!text) return [];
+	const adapters = ["slack", "discord", "telegram", "webhook", "local"].filter((name) =>
+		new RegExp(`\\b${name}\\s*\\(`, "u").test(text),
+	);
+	const runtimes = [
+		["@hunvreus/heypi-runtime-docker", "Docker runtime package referenced"],
+		["@hunvreus/heypi-runtime-gondolin", "Gondolin runtime package referenced"],
+		["guarded-bash", "guarded-bash runtime referenced"],
+		["host-bash", "host-bash runtime referenced"],
+		["just-bash", "just-bash runtime referenced"],
+	].filter(([needle]) => text.includes(needle));
+	const rows: DoctorFinding[] = [];
+	if (text.includes("loadAgent("))
+		rows.push({ severity: "ok", code: "entry.load-agent", message: "loadAgent() referenced" });
+	else if (text.includes("agentFrom("))
+		rows.push({ severity: "warn", code: "entry.agent-from", message: "agentFrom() is obsolete; use loadAgent()" });
+	else
+		rows.push({
+			severity: "info",
+			code: "entry.agent-unknown",
+			message: "agent loader not inferred from entrypoint",
+		});
+	rows.push({
+		severity: adapters.length ? "info" : "warn",
+		code: "entry.adapters",
+		message: adapters.length
+			? `adapter(s) inferred: ${adapters.join(", ")}`
+			: "no built-in adapter inferred from entrypoint",
+		path: rel(root, entry),
+	});
+	for (const [, message] of runtimes)
+		rows.push({ severity: "info", code: "entry.runtime", message, path: rel(root, entry) });
+	return rows;
+}
+
+function duplicateNameFindings(root: string, folder: string, label: string): DoctorFinding[] {
+	const dir = join(root, folder);
+	if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+	const seen = new Map<string, string[]>();
+	for (const path of walkFiles(dir)) {
+		if (!isModuleFile(path)) continue;
+		const name = moduleStem(path);
+		const rows = seen.get(name) ?? [];
+		rows.push(rel(root, path));
+		seen.set(name, rows);
+	}
+	const findings: DoctorFinding[] = [];
+	for (const [name, paths] of seen) {
+		if (paths.length > 1) {
+			findings.push({
+				severity: "fail",
+				code: `${label}.duplicate-name`,
+				message: `duplicate discovered ${label} name "${name}"; filenames become default ${label} names`,
+				path: paths.join(", "),
+			});
+		}
+	}
+	if (!findings.length) {
+		findings.push({ severity: "ok", code: `${label}.names`, message: `${label} filenames are unique`, path: folder });
+	}
+	return findings;
+}
+
+function envExampleFindings(root: string, entry: string | undefined): DoctorFinding[] {
+	const envExample = join(root, ".env.example");
+	const env = join(root, ".env");
+	const rows: DoctorFinding[] = [];
+	const referenced = new Set<string>();
+	for (const path of [entry, ...walkMaybe(root, "agent/tools"), ...walkMaybe(root, "agent/jobs")]) {
+		if (!path || !isModuleFile(path)) continue;
+		for (const key of processEnvKeys(readText(path))) referenced.add(key);
+	}
+	if (existsSync(envExample)) {
+		rows.push({ severity: "ok", code: "env.example", message: ".env.example found", path: ".env.example" });
+		const exampleKeys = envKeys(envExample);
+		const missing = [...referenced].filter((key) => !exampleKeys.has(key)).sort();
+		for (const key of missing) {
+			rows.push({
+				severity: "warn",
+				code: "env.example.missing-key",
+				message: `.env.example does not list referenced ${key}`,
+				path: ".env.example",
+			});
+		}
+	} else if (existsSync(env) || referenced.size) {
+		rows.push({ severity: "warn", code: "env.example.missing", message: ".env.example missing" });
+	}
+	return rows;
 }
 
 async function status(flags: Flags): Promise<void> {
@@ -1297,6 +1585,16 @@ async function checkDb(path: string): Promise<string> {
 	}
 }
 
+async function checkDbFinding(path: string): Promise<DoctorFinding> {
+	try {
+		const db = dbFor(path);
+		await migrate(db);
+		return { severity: "ok", code: "boot.database", message: `database ok: ${path}` };
+	} catch (error) {
+		return { severity: "fail", code: "boot.database", message: `database failed: ${message(error)}` };
+	}
+}
+
 function dbFor(path: string) {
 	return openDb({ url: `file:${path}` });
 }
@@ -1408,7 +1706,8 @@ Usage:
   heypi init
   heypi dev [index.ts]
   heypi start [index.ts]
-  heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
+  heypi doctor [--root .] [--json]
+  heypi doctor --boot [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace] [--json]
   heypi status --db ./state/heypi.db [--agent <id>] [--runtime-root ./workspace] [--json]
   heypi db check --db ./state/heypi.db
   heypi db migrate --db ./state/heypi.db
@@ -1489,6 +1788,92 @@ function adminStateRoot(flags: Flags): string {
 
 function invocationRoot(): string {
 	return process.env.INIT_CWD ? resolve(process.env.INIT_CWD) : resolve(".");
+}
+
+function rel(root: string, path: string): string {
+	const value = relative(root, path);
+	return value && !value.startsWith("..") ? value : path;
+}
+
+function findFirstExisting(root: string, paths: string[]): string | undefined {
+	return paths.map((path) => join(root, path)).find((path) => existsSync(path));
+}
+
+function readText(path: string): string {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return "";
+	}
+}
+
+function readPackageJson(path: string): Record<string, unknown> | undefined {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function record(input: unknown): Record<string, unknown> {
+	return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+}
+
+function walkMaybe(root: string, folder: string): string[] {
+	const dir = join(root, folder);
+	if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+	return walkFiles(dir);
+}
+
+function walkFiles(root: string): string[] {
+	const out: string[] = [];
+	const walk = (dir: string) => {
+		let entries: string[];
+		try {
+			entries = readdirSync(dir).sort();
+		} catch {
+			return;
+		}
+		for (const name of entries) {
+			if ([".git", "dist", "node_modules", "state", "workspace"].includes(name)) continue;
+			const path = join(dir, name);
+			try {
+				const stat = statSync(path);
+				if (stat.isDirectory()) walk(path);
+				else if (stat.isFile()) out.push(path);
+			} catch {}
+		}
+	};
+	walk(root);
+	return out;
+}
+
+function isModuleFile(path: string): boolean {
+	if (path.endsWith(".d.ts")) return false;
+	return [".ts", ".tsx", ".js", ".jsx", ".mjs", ".mts", ".cjs", ".cts"].includes(extname(path));
+}
+
+function moduleStem(path: string): string {
+	const ext = extname(path);
+	return basename(path, ext);
+}
+
+function processEnvKeys(text: string): string[] {
+	const keys = new Set<string>();
+	for (const match of text.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]*)\b/gu)) keys.add(match[1]);
+	for (const match of text.matchAll(/\bprocess\.env\[['"]([A-Z][A-Z0-9_]*)['"]\]/gu)) keys.add(match[1]);
+	return [...keys].sort();
+}
+
+function envKeys(path: string): Set<string> {
+	try {
+		return new Set(Object.keys(parseEnv(readFileSync(path, "utf8"))));
+	} catch {
+		return new Set();
+	}
 }
 
 async function selectAdminServer(
@@ -1631,16 +2016,18 @@ function packageVersion(): string {
 	return "0.0.0";
 }
 
-function envCheck(name: string): string {
-	return process.env[name] ? ok(`${name} present`) : warn(`${name} missing`);
-}
-
-function checkDir(path: string, label: string): string {
+function checkDirFinding(path: string, label: string): DoctorFinding {
 	try {
 		const stat = statSync(path);
-		return stat.isDirectory() ? ok(`${label} exists: ${path}`) : fail(`${label} is not a directory: ${path}`);
+		return stat.isDirectory()
+			? { severity: "ok", code: `boot.${label.replace(/\s+/g, "-")}`, message: `${label} exists: ${path}` }
+			: {
+					severity: "fail",
+					code: `boot.${label.replace(/\s+/g, "-")}`,
+					message: `${label} is not a directory: ${path}`,
+				};
 	} catch {
-		return warn(`${label} missing: ${path}`);
+		return { severity: "warn", code: `boot.${label.replace(/\s+/g, "-")}`, message: `${label} missing: ${path}` };
 	}
 }
 

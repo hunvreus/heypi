@@ -1,10 +1,4 @@
-import {
-	consoleLogger,
-	createHeypi,
-	loadAgent,
-	slack,
-	workspace,
-} from "@hunvreus/heypi";
+import { consoleLogger, createHeypi, loadAgent, slack, workspace } from "@hunvreus/heypi";
 import { createHostContext } from "./agent/tools/host.js";
 
 function optional(name: string): string | undefined {
@@ -59,7 +53,7 @@ const app = createHeypi({
 	adapters,
 	agent: loadAgent("./agent", {
 		id: "slack-devops",
-		model: "openai/gpt-5-mini",
+		model: "openai/gpt-5.4-mini",
 		context: [hostContext],
 	}),
 	approval: {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type AllMiddlewareArgs, App, HTTPReceiver, type types } from "@slack/bolt";
 import type { PermissionsConfig } from "../config.js";
 import { approvalStateLine, approvalViewRows, approvalViewTitle, codeFence } from "../core/approval-view.js";
@@ -521,7 +522,7 @@ function resolveSlackConfig(input: SlackConfig): ResolvedSlackConfig {
 	};
 }
 
-type SlackCommand = {
+export type SlackCommand = {
 	text: string;
 	user_id: string;
 	team_id?: string;
@@ -545,7 +546,8 @@ async function handleCommand(input: {
 	attachments?: AttachmentStore;
 }): Promise<void> {
 	const command = input.command;
-	const trace = command.trigger_id ? `slack:${command.trigger_id}` : undefined;
+	const eventId = slackCommandEventId(command, input.commandName);
+	const trace = eventId ? `slack:${eventId}` : undefined;
 	const channel = command.channel_id;
 	const actor = command.user_id;
 	const context = (extra?: Record<string, unknown>) =>
@@ -574,7 +576,7 @@ async function handleCommand(input: {
 			trace,
 			provider: input.provider,
 			kind: input.adapterKind,
-			eventId: command.trigger_id,
+			eventId,
 			team: command.team_id,
 			channel,
 			actor,
@@ -632,6 +634,15 @@ async function handleCommand(input: {
 			delivery: input.delivery,
 		}).catch(() => undefined);
 	}
+}
+
+export function slackCommandEventId(command: SlackCommand, commandName: string): string | undefined {
+	if (!command.trigger_id) return undefined;
+	return `cmd:${shortHash(
+		[commandName, command.team_id ?? "", command.channel_id, command.user_id, command.text, command.trigger_id].join(
+			"\0",
+		),
+	)}`;
 }
 
 function slackCommandName(input: string | undefined): string {
@@ -1391,7 +1402,7 @@ export async function handleAction(input: {
 	const actionChannel = context.channel;
 	const actionActor = context.actor;
 	const actorGroups = await input.groups.forUser(input.client, actionActor);
-	const trace = `${input.kind}:${value ?? context.message ?? context.trigger ?? Date.now()}`;
+	const trace = `${input.kind}:${value ?? context.message ?? (context.trigger ? `trigger:${shortHash(context.trigger)}` : Date.now())}`;
 	const target = context.threadTs ?? context.message;
 	const logContext = (extra?: Record<string, unknown>) =>
 		logCtx({ trace, adapter: input.provider, kind: input.adapterKind, channel: actionChannel }, extra);
@@ -1469,7 +1480,7 @@ export async function handleAction(input: {
 			actorGroups,
 			thread: context.thread,
 			text: input.kind === "status" ? "/status" : `/${input.kind} ${value}`,
-			data: input.body,
+			data: slackActionData(input.kind, input.action, context),
 			stream,
 			ack: input.kind === "approve" ? (out) => acknowledge(out) : undefined,
 			replace: input.kind === "approve" || input.kind === "deny" ? replace : undefined,
@@ -1955,6 +1966,27 @@ function actionContext(body: unknown) {
 		threadTs,
 		thread: channel ? `${channel}:${threadTs ?? messageTs ?? channel}` : "unknown",
 	};
+}
+
+function slackActionData(
+	kind: "approve" | "deny" | "cancel" | "status",
+	action: unknown,
+	context: ReturnType<typeof actionContext>,
+) {
+	const value = stringProp(record(action), "value");
+	return {
+		action: kind,
+		value,
+		team: context.team,
+		channel: context.channel,
+		actor: context.actor,
+		message: context.message,
+		thread: context.thread,
+	};
+}
+
+function shortHash(input: string): string {
+	return createHash("sha256").update(input).digest("hex").slice(0, 24);
 }
 
 function slackTeam(body: unknown): string | undefined {

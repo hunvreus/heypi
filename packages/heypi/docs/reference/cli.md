@@ -1,6 +1,6 @@
 # CLI
 
-The `heypi` CLI ships with `@hunvreus/heypi`. Use it to check local setup, discover chat provider IDs, migrate the SQLite store, mint admin links, inspect approvals, and control scheduled jobs.
+The `heypi` CLI ships with `@hunvreus/heypi`. Use it to diagnose project setup, discover chat provider IDs, migrate the SQLite store, mint admin links, inspect approvals, and control scheduled jobs.
 
 ## Entrypoint
 
@@ -29,7 +29,7 @@ Explicit token flags win over environment variables. `--json` is available on ad
 | [`heypi init`](#heypi-init) | Print app scaffolding commands. |
 | [`heypi dev`](#heypi-dev) | Start an exported app for local development. |
 | [`heypi start`](#heypi-start) | Start an exported app for normal runtime. |
-| [`heypi check`](#heypi-check) | Validate Node, env, database, and runtime paths. |
+| [`heypi doctor`](#heypi-doctor) | Run static project diagnostics, with optional boot checks. |
 | [`heypi status`](#heypi-status) | Inspect persisted app status for operators. |
 | [`heypi threads`](#heypi-threads) | List and search persisted threads. |
 | [`heypi thread`](#heypi-thread) | Show one persisted thread transcript. |
@@ -129,24 +129,39 @@ import app from "./index.js";
 await runHeypi(app);
 ```
 
-## heypi check
+## heypi doctor
 
 ```bash
-heypi check [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace]
+heypi doctor [--root .] [--json]
+heypi doctor --boot [--env .env] [--db ./state/heypi.db] [--runtime-root ./workspace] [--json]
 ```
 
-Runs local setup checks. Without optional flags, it checks Node and `OPENAI_API_KEY`. Add `--db` to verify database access and migrations. Add `--runtime-root` to verify the runtime workspace directory exists.
+Runs setup diagnostics. By default, `doctor` is static and does not import your app entrypoint or authored tool modules. Use `--boot` when you also want runtime setup checks for Node, database access, migrations, runtime workspace paths, and the current OpenAI env check. Non-OpenAI model credentials are not provider-validated by `doctor` yet; set the env var for your selected provider from the [Agent](../configuration/agent.md#model-credentials) page.
+
+Static diagnostics include:
+
+- default entrypoint discovery,
+- `loadAgent()` vs obsolete `agentFrom()` hints,
+- current `agent/instructions.md`, `agent/tools/`, `agent/jobs/`, and `evals/` layout checks,
+- stale `AGENTS.md`, `SOUL.md`, `SYSTEM.md`, root `tools/`, and root `jobs/` warnings,
+- duplicate discovered tool, job, and eval filename checks,
+- `.env.example` coverage for statically referenced `process.env.KEY` variables,
+- inferred built-in adapters and runtime package references from the entrypoint text.
 
 | Option | Description |
 | --- | --- |
-| `--env <path>` | Load an env file before checking. Defaults to `./.env` when present. |
-| `--db <path>` | Open the SQLite database and apply/check migrations. |
-| `--runtime-root <path>` | Check that the runtime workspace directory exists. |
+| `--root <path>` | Project root to scan. Defaults to the invocation root. |
+| `--boot` | Also run boot-time setup checks. This still does not import the app, but it reads env, opens the database when `--db` is passed, and checks runtime paths. |
+| `--env <path>` | Load an env file before boot checks. Defaults to `./.env` when present. |
+| `--db <path>` | Open the SQLite database and apply/check migrations during `--boot`. |
+| `--runtime-root <path>` | Check that the runtime workspace directory exists during `--boot`. |
+| `--json` | Print machine-readable diagnostics. |
 
 Example:
 
 ```bash
-heypi check --env .env --db ./state/heypi.db --runtime-root ./workspace
+heypi doctor
+heypi doctor --boot --env .env --db ./state/heypi.db --runtime-root ./workspace
 ```
 
 ## heypi status
@@ -177,7 +192,7 @@ heypi db migrate --db ./state/heypi.db
 heypi eval list [--evals ./evals] [--tag smoke] [--json]
 heypi eval show <name> [--evals ./evals] [--json]
 heypi eval check [--evals ./evals] [--tag smoke] [--json]
-heypi eval run <name> [--evals ./evals] [--agent ./agent] [--model openai/gpt-5-mini] [--runtime-root ./workspace] [--db ./state/heypi.db] [--agent-id default] [--json]
+heypi eval run <name> [--evals ./evals] [--agent ./agent] [--model openai/gpt-5.4-mini] [--runtime-root ./workspace] [--db ./state/heypi.db] [--agent-id default] [--json]
 heypi eval run <name> [--evals ./evals] [--agent ./agent] (--result result.json | --text <text>) [--tools a,b] [--approvals id] [--db ./state/heypi.db] [--agent-id default] [--json]
 ```
 

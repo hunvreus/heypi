@@ -31,14 +31,14 @@ heypi is configured through TypeScript APIs. This page lists the public entrypoi
 
 | Export | Purpose |
 | --- | --- |
-| `loadAgent(folder, options)` | Loads `SYSTEM.md`, `SOUL.md`, `AGENTS.md`, recursive `tools/` and `jobs/`, plus `skills/` and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
+| `loadAgent(folder, options)` | Loads `instructions.md`, optional `system.md`, recursive `tools/` and `jobs/`, plus `skills/` and `extensions/` from a folder. See [Agent](../configuration/agent.md). |
 | `loadPrompt(path, options)` | Loads a UTF-8 prompt file. Missing files throw unless `optional` is true. |
 | `loadTools(folder)` | Loads default-exported tools recursively from a folder. File stems become tool names when omitted. |
 | `loadJobs(folder)` | Loads default-exported jobs recursively from a folder. |
 | `loadEvals(folder)` | Loads default-exported evals recursively from a folder. |
 | `modelConfig(input)` | Parses a `provider/name` model string into a model config object. |
 | `DEFAULT_AGENT_ID` | Canonical default durable agent id, currently `default`. |
-| `AgentConfig` | Pi agent config: model, prompts, context, built-in tools, authored tools, skills, and Pi extensions. |
+| `AgentConfig` | Pi agent config: model, instructions, context, built-in tools, authored tools, skills, and Pi extensions. |
 | `LoadAgentOptions` | Options accepted by `loadAgent()`, including model, id, builtinTools, tools, jobs, context, skills, and extensions. |
 | `LoadPromptOptions` | Options accepted by `loadPrompt()`. |
 | `AgentContextProvider` | Per-turn context callback type. |
@@ -59,11 +59,23 @@ Adapter configs own channel-specific approval identity through `permissions.appr
 
 | Export | Purpose |
 | --- | --- |
-| `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `grep`, `ls`, `attach`, and `history`. |
+| `defaultTools(config)` | Selects built-in runtime tools such as `bash`, `read`, `write`, `edit`, `grep`, `find`, `ls`, `attach`, and `history`. |
 | `DefaultToolsConfig` | Config shape accepted by `defaultTools()`. |
 | `DefaultToolName` | String union of built-in runtime tool names accepted by `defaultTools()`. |
 | `DefaultToolOption` | Per-tool boolean or config entry accepted by `DefaultToolsConfig`. |
 | `DefaultToolDefinition` | Descriptor returned by `defaultTools()` before heypi binds the runtime implementation. |
+
+## Evals
+
+| Export | Purpose |
+| --- | --- |
+| `defineEval(definition)` | Defines a behavior eval for root `evals/` discovery and `heypi eval` inspection. |
+| `evaluateEval(input, result)` | Evaluates text, tool, approval, and custom assertions against a supplied eval result. |
+| `EvalConfig` | Eval definition shape: name, prompt, expectations, tags, and timeout. |
+| `EvalExpect` | Assertion shape accepted by eval definitions. Supports text, includes, tool, approval, and custom function assertions. |
+| `EvalResult` | Result shape evaluated by `evaluateEval()`: text, tools, and approvals. |
+| `EvalReport` | Assertion report returned by `evaluateEval()`. |
+| `EvalAssertion` | Individual assertion result with `ok`, label, and optional message. |
 
 ## Authoring helpers
 
@@ -79,6 +91,15 @@ Import these from `@hunvreus/heypi/authoring` inside `agent/tools/`, `agent/jobs
 | `ToolContext` | Custom tool context containing the selected scoped runtime and abort signal. |
 
 The main `@hunvreus/heypi` entrypoint also exports the authoring helpers for direct config use. Prefer `@hunvreus/heypi/authoring` in discovered modules because `loadAgent()` loads those files during app startup.
+
+## Logging
+
+| Export | Purpose |
+| --- | --- |
+| `consoleLogger(config)` | Creates the default console logger. Use `format: "json"` for production log collectors. |
+| `Logger` | Logging sink contract used by `createHeypi({ logger })`. |
+| `Level` | Logger severity level type. |
+| `Format` | Console logger output format type. |
 
 ## Runtime and state
 

@@ -105,12 +105,20 @@
 		list-style: none;
 	}
 
+	[data-admin-context-row] {
+		overflow: hidden;
+	}
+
 	[data-admin-context-summary]::-webkit-details-marker {
 		display: none;
 	}
 
 	[data-admin-context-summary]:hover {
 		background-color: var(--color-accent);
+	}
+
+	.dark [data-admin-context-summary]:hover {
+		background-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
 	}
 
 	@media (max-width: 760px) {

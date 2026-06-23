@@ -29,8 +29,7 @@ export default createHeypi({
 
 ```bash
 mkdir -p agent/skills agent/tools agent/jobs evals
-printf "You are a concise team assistant.\n" > agent/AGENTS.md
-printf "Answer directly and accurately.\n" > agent/SOUL.md
+printf "You are a concise team assistant. Answer directly and accurately.\n" > agent/instructions.md
 ```
 
 Optional starter tool:
@@ -74,6 +73,6 @@ Use the printed admin URL or `POST /dev/messages` to test locally. If the Slack 
 - `state.root` stores durable heypi state.
 - `heypi dev` starts configured adapters, loads `.env` plus `.env.local`, enables admin by default, and adds loopback-only local test routes.
 - `heypi start` starts configured adapters, loads `.env`, and does not add admin or local test routes unless configured.
-- `loadAgent("./agent", ...)` loads `agent/AGENTS.md`, `agent/SOUL.md`, default built-in tools, bundled skills, app tools, and jobs.
+- `loadAgent("./agent", ...)` loads `agent/instructions.md`, default built-in tools, bundled skills, app tools, and jobs.
 - `evals/` is discovered by `heypi eval`.
 - `runtime.root` is the workspace for runtime tools, generated files, and scoped runtime state.

@@ -217,6 +217,197 @@ test("webhook rejects replyUrl hosts outside the allowlist", async () => {
 	}
 });
 
+test("webhook replyHosts matching is case-insensitive", async () => {
+	const port = await freePort();
+	const secret = "test-secret";
+	const adapter = webhook({ secret, port, replyHosts: ["ALLOWED.example.com"] });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			sync: true,
+			replyUrl: "https://allowed.example.com/callback",
+		});
+		assert.equal(response.status, 200);
+	} finally {
+		await adapter.stop?.();
+	}
+});
+
+test("webhook allows exact replyUrl callbacks", async () => {
+	const port = await freePort();
+	const callbackPort = await freePort();
+	const secret = "test-secret";
+	let callbacks = 0;
+	const callback = createServer((_req, res) => {
+		callbacks++;
+		res.writeHead(204);
+		res.end();
+	});
+	await new Promise<void>((resolve) => callback.listen(callbackPort, "127.0.0.1", resolve));
+	const replyUrl = `http://127.0.0.1:${callbackPort}/callback?token=one`;
+	const adapter = webhook({ secret, port, replyUrls: [replyUrl], unsafeReplyHttp: true });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			sync: true,
+			replyUrl,
+		});
+		assert.equal(response.status, 200);
+		assert.equal(callbacks, 1);
+		const blocked = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			replyUrl: `http://127.0.0.1:${callbackPort}/callback?token=two`,
+		});
+		assert.equal(blocked.status, 400);
+		assert.equal(blocked.body.error, "replyUrl is not allowed");
+	} finally {
+		await adapter.stop?.();
+		callback.closeAllConnections();
+		await new Promise<void>((resolve, reject) => callback.close((error) => (error ? reject(error) : resolve())));
+	}
+});
+
+test("webhook exact replyUrl matching ignores fragments", async () => {
+	const port = await freePort();
+	const callbackPort = await freePort();
+	const secret = "test-secret";
+	let callbacks = 0;
+	const callback = createServer((_req, res) => {
+		callbacks++;
+		res.writeHead(204);
+		res.end();
+	});
+	await new Promise<void>((resolve) => callback.listen(callbackPort, "127.0.0.1", resolve));
+	const replyUrl = `http://127.0.0.1:${callbackPort}/callback?token=one`;
+	const adapter = webhook({ secret, port, replyUrls: [`${replyUrl}#configured`], unsafeReplyHttp: true });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			sync: true,
+			replyUrl: `${replyUrl}#request`,
+		});
+		assert.equal(response.status, 200);
+		assert.equal(callbacks, 1);
+	} finally {
+		await adapter.stop?.();
+		callback.closeAllConnections();
+		await new Promise<void>((resolve, reject) => callback.close((error) => (error ? reject(error) : resolve())));
+	}
+});
+
+test("webhook allows replyUrl callbacks by origin", async () => {
+	const port = await freePort();
+	const callbackPort = await freePort();
+	const secret = "test-secret";
+	let callbacks = 0;
+	const callback = createServer((_req, res) => {
+		callbacks++;
+		res.writeHead(204);
+		res.end();
+	});
+	await new Promise<void>((resolve) => callback.listen(callbackPort, "127.0.0.1", resolve));
+	const adapter = webhook({
+		secret,
+		port,
+		replyOrigins: [`http://127.0.0.1:${callbackPort}`],
+		unsafeReplyHttp: true,
+	});
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			sync: true,
+			replyUrl: `http://127.0.0.1:${callbackPort}/callback/path`,
+		});
+		assert.equal(response.status, 200);
+		assert.equal(callbacks, 1);
+		const blocked = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			replyUrl: "http://127.0.0.1:1/callback",
+		});
+		assert.equal(blocked.status, 400);
+		assert.equal(blocked.body.error, "replyUrl origin is not allowed");
+	} finally {
+		await adapter.stop?.();
+		callback.closeAllConnections();
+		await new Promise<void>((resolve, reject) => callback.close((error) => (error ? reject(error) : resolve())));
+	}
+});
+
+test("webhook rejects replyUrl credentials", async () => {
+	const port = await freePort();
+	const secret = "test-secret";
+	const adapter = webhook({ secret, port, replyOrigins: ["https://allowed.example.com"] });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			replyUrl: "https://user:pass@allowed.example.com/callback",
+		});
+		assert.equal(response.status, 400);
+		assert.equal(response.body.error, "replyUrl must not include credentials");
+	} finally {
+		await adapter.stop?.();
+	}
+});
+
+test("webhook validates replyUrl allowlist config", () => {
+	assert.throws(() => webhook({ secret: "test-secret", replyUrls: ["not a url"] }), /invalid webhook replyUrls/);
+	assert.throws(
+		() => webhook({ secret: "test-secret", replyUrls: ["http://example.com/callback"] }),
+		/replyUrls must use https/,
+	);
+	assert.throws(
+		() => webhook({ secret: "test-secret", replyUrls: ["https://user:pass@example.com/callback"] }),
+		/replyUrls entries must not include credentials/,
+	);
+	assert.throws(
+		() => webhook({ secret: "test-secret", replyOrigins: ["https://example.com/callback"] }),
+		/replyOrigins entries must be origins/,
+	);
+	assert.doesNotThrow(() =>
+		webhook({ secret: "test-secret", replyOrigins: ["http://example.com"], unsafeReplyHttp: true }),
+	);
+});
+
+test("webhook replyUrl requires https unless explicitly allowed", async () => {
+	const port = await freePort();
+	const secret = "test-secret";
+	const adapter = webhook({ secret, port, replyHosts: ["127.0.0.1"] });
+	await adapter.start({
+		handler: async () => ({ text: "ok" }),
+		logger: consoleLogger({ level: "error", format: "pretty" }),
+	});
+	try {
+		const response = await post(port, "/webhook/webhook/messages", secret, {
+			text: "hello",
+			replyUrl: "http://127.0.0.1/callback",
+		});
+		assert.equal(response.status, 400);
+		assert.equal(response.body.error, "replyUrl must use https");
+	} finally {
+		await adapter.stop?.();
+	}
+});
+
 test("webhook times out slow replyUrl callbacks", async () => {
 	const port = await freePort();
 	const callbackPort = await freePort();
@@ -228,7 +419,7 @@ test("webhook times out slow replyUrl callbacks", async () => {
 		}, 300);
 	});
 	await new Promise<void>((resolve) => callback.listen(callbackPort, "127.0.0.1", resolve));
-	const adapter = webhook({ secret, port, replyHosts: ["127.0.0.1"], replyTimeoutMs: 20 });
+	const adapter = webhook({ secret, port, replyHosts: ["127.0.0.1"], replyTimeoutMs: 20, unsafeReplyHttp: true });
 	await adapter.start({
 		handler: async () => ({ text: "ok" }),
 		logger: consoleLogger({ level: "error", format: "pretty" }),

@@ -8,9 +8,9 @@
 
 # heypi
 
-Chat agents for your team, with approvals, durable state, and sandboxed tools. Slack, Discord, Telegram, and webhooks.
+Team chat agents with approvals, audit, and sandboxed tools. Slack, Discord, Telegram, and trusted webhooks.
 
-This repo contains the core heypi package, optional runtime providers, and runnable examples.
+heypi is for governed chat-ops agents that work in shared channels while keeping sensitive actions reviewable. This repo contains the core heypi package, optional runtime providers, and runnable examples.
 
 [Start here: `packages/heypi`](packages/heypi/README.md#minimal-app)
 

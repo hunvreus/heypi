@@ -49,13 +49,13 @@ The public config type is `DefaultToolsConfig`.
 
 ## Custom tools
 
-Custom tools run as trusted JavaScript in the Node app process:
+Custom tools run as trusted JavaScript in the Node app process. Prefer authoring them as default exports under `agent/tools/`:
 
-```ts
+```ts title="agent/tools/inspect_workspace.ts"
 import { defineTool } from "@hunvreus/heypi/authoring";
 import { z } from "zod";
 
-const inspectWorkspace = defineTool({
+export default defineTool({
   description: "List files in the active runtime workspace.",
   input: z.object({}),
   run: async (_params, ctx) => {
@@ -65,9 +65,9 @@ const inspectWorkspace = defineTool({
 });
 ```
 
-When a tool is default-exported from `agent/tools/inspect_workspace.ts` and loaded by `loadAgent("./agent")`, the filename becomes the tool name. Tools passed directly in `agent.tools` must set `name`.
+When this file is loaded by `loadAgent("./agent")`, the filename becomes the tool name: `inspect_workspace`. Tools passed directly in `agent.tools` must set `name`.
 
-Passing `tools` overrides `agent/tools/` discovery for that category. Use `tools: [...loadTools("./agent/tools"), myTool]` when you want convention-loaded tools plus inline tools.
+Passing `tools` overrides `agent/tools/` discovery for that category. Use `tools: [...loadTools("./agent/tools"), myTool]` only when you intentionally want convention-loaded tools plus inline tools.
 
 Do not put `defaultTools()` in `tools`. Built-in runtime tools belong in `builtinTools`; heypi rejects legacy `tools: defaultTools()` config.
 

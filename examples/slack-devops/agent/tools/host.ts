@@ -4,8 +4,8 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
 	type AgentContextProvider,
-	type CommandPolicyConfig,
 	approval,
+	type CommandPolicyConfig,
 	classifyCommand,
 	defineTool,
 } from "@hunvreus/heypi/authoring";

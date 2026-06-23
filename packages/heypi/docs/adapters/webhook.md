@@ -22,7 +22,10 @@ For a runnable advanced example, see [`examples/webhook-github-docker`](https://
 | `replyTimeoutMs` | No | Maximum wait time when posting an async `replyUrl` callback. Defaults to `10_000`. |
 | `maxBodyBytes` | No | Maximum request body size. Defaults to `1_000_000`. |
 | `maxInFlight` | No | Maximum concurrent webhook runs. Defaults to `32`. |
-| `replyHosts` | No | Allowed callback hosts for async `replyUrl` delivery. Required when using `replyUrl`. |
+| `replyUrls` | No | Exact allowed callback URLs for async `replyUrl` delivery. Fragments are ignored. Credentials are rejected. |
+| `replyOrigins` | No | Allowed callback origins for async `replyUrl` delivery, such as `https://internal.example.com`. Values must be origins without paths, queries, fragments, or credentials. |
+| `replyHosts` | No | Legacy allowed callback hosts for async `replyUrl` delivery. Prefer `replyUrls` or `replyOrigins` when possible. |
+| `unsafeReplyHttp` | No | Allows `http:` callback URLs. By default, `replyUrl` must use HTTPS. |
 | `permissions.approvers` | No | Caller-provided `user` values allowed to list and resolve approvals for this adapter. Groups are not supported. |
 | `permissions.admins` | No | Caller-provided `user` values allowed to use approval admin actions for this adapter. Admins inherit approver permissions. |
 
@@ -61,7 +64,7 @@ createHeypi({
   adapters: [
     webhook({
       name: "internal",
-      replyHosts: ["internal.example.com"],
+      replyOrigins: ["https://internal.example.com"],
     }),
   ],
 });
@@ -90,7 +93,7 @@ GET  /webhook/{name}/threads/:threadId/runs/:runId
 
 The base route `POST /webhook/{name}` is an alias for `/messages`.
 
-Message requests are async-first and return `202` while the turn runs. Pass `sync: true` for short requests, or `replyUrl` for a callback. Callback hosts must be listed in `replyHosts`, and callback delivery is bounded by `replyTimeoutMs`.
+Message requests are async-first and return `202` while the turn runs. Pass `sync: true` for short requests, or `replyUrl` for a callback. Callback URLs must match `replyUrls`, `replyOrigins`, or `replyHosts`; exact URLs are the strictest option. Exact URL matching ignores fragments but keeps path and query ordering strict. `replyUrl` must use HTTPS unless `unsafeReplyHttp: true` is set. Callback delivery is bounded by `replyTimeoutMs`. `replyUrl` is a delivery capability: heypi uses it for the callback response, but it is not model instruction text.
 
 Start a thread:
 
@@ -102,6 +105,8 @@ curl -X POST http://localhost:${HEYPI_WEBHOOK_PORT:-3000}/webhook/internal/messa
 ```
 
 Follow up by posting to `/threads/<threadId>/messages`. Check a run with `/threads/<threadId>/runs/<runId>`.
+
+Set `eventId` when the caller may retry the same event. Reusing the same `eventId` in the same stored thread dedupes the inbound turn after the first copy is recorded. If `eventId` is omitted, heypi uses the generated run id, which is unique per request and does not dedupe caller retries.
 
 Requests must include one of:
 
@@ -118,6 +123,6 @@ There is no adapter-specific webhook CLI. Use shared commands:
 
 | Command | Purpose |
 | --- | --- |
-| `heypi check [--env .env] [--db ./state/heypi.db]` | Validate app config and state access. |
+| `heypi doctor --boot [--env .env] [--db ./state/heypi.db]` | Run static diagnostics plus env and state checks. |
 | `heypi approvals list --db ./state/heypi.db` | Inspect pending approvals. |
 | `heypi jobs list --db ./state/heypi.db` | Inspect configured jobs. |

@@ -492,8 +492,30 @@ test("admin service scopes approvals and calls to the current agent", async () =
 		assert.notEqual(afterBypassRevoke.revision, live.revision);
 
 		const threads = await service.threads();
-		assert.deepEqual(threads.rows.map((row) => row.id).sort(), [localThread.id, ownThread.id].sort());
-		assert.deepEqual(threads.facets?.providers, ["local", "slack"]);
+		assert.deepEqual(
+			threads.rows.map((row) => row.id),
+			[ownThread.id],
+		);
+		assert.deepEqual(threads.facets?.providers, ["slack"]);
+		const threadWithLocalService = createAdminService(
+			{
+				store,
+				handler: async () => undefined,
+				logger: consoleLogger({ level: "error", format: "pretty" }),
+				app: {
+					agent: "default",
+					runtime: { name: "host-bash", root: join(root, "workspace") },
+					state: { root: stateRoot(root) },
+					memory: { enabled: false, scope: "agent", writePolicy: "off", maxChars: 4000 },
+					adapters: [],
+					startedAt: now,
+				},
+			} as AdapterStart,
+			{ localThreads: true },
+		);
+		const threadsWithLocal = await threadWithLocalService.threads();
+		assert.deepEqual(threadsWithLocal.rows.map((row) => row.id).sort(), [localThread.id, ownThread.id].sort());
+		assert.deepEqual(threadsWithLocal.facets?.providers, ["local", "slack"]);
 		const slackThreads = await service.threads({ provider: "slack" });
 		assert.deepEqual(
 			slackThreads.rows.map((row) => row.id),
@@ -970,7 +992,7 @@ test("admin memory page explains disabled memory", () => {
 	assert.doesNotMatch(body, /<div class="card/);
 });
 
-test("admin memory table uses details dialog for file content", () => {
+test("admin memory list uses details dialog for file content", () => {
 	const now = Date.now();
 	const body = memoryView({
 		enabled: true,
@@ -993,12 +1015,14 @@ test("admin memory table uses details dialog for file content", () => {
 			},
 		],
 	});
-	assert.match(body, /data-admin-column="Scope"/);
-	assert.match(body, /data-admin-column="Content"/);
-	assert.match(body, /data-admin-column="Size"/);
-	assert.match(body, /data-admin-column="Updated"/);
-	assert.match(body, /data-admin-column="Hash"/);
-	assert.match(body, /user\/U123/);
+	assert.match(body, /data-admin-memory-list/);
+	assert.match(body, /data-admin-memory-row/);
+	assert.match(body, /data-admin-memory-scope/);
+	assert.match(body, />user<\/span>/);
+	assert.match(body, />U123<\/span>/);
+	assert.match(body, /data-admin-memory-preview/);
+	assert.match(body, /data-admin-memory-meta/);
+	assert.match(body, /64 bytes/);
 	assert.match(body, /0123456789ab/);
 	assert.match(body, /data-admin-dialog-open="memory-detail-0"/);
 	assert.match(body, /Memory details/);
@@ -1017,6 +1041,7 @@ test("admin memory table uses details dialog for file content", () => {
 	assert.doesNotMatch(body, /<script>alert\(1\)<\/script>/);
 	assert.match(body, /aria-label="pagination"/);
 	assert.doesNotMatch(body, /Durable context files stored for future turns/);
+	assert.doesNotMatch(body, /data-admin-table/);
 	assert.doesNotMatch(body, /<div class="card/);
 });
 
@@ -1515,6 +1540,8 @@ test("admin one-time login issues a session and logout requires CSRF", async () 
 		const login = await fetch(url, { redirect: "manual" });
 		assert.equal(login.status, 303);
 		assert.equal(login.headers.get("location"), "/admin");
+		assert.equal(login.headers.get("referrer-policy"), "no-referrer");
+		assert.equal(login.headers.get("cache-control"), "no-store");
 		const cookie = cookieHeader(login);
 
 		const reused = await fetch(url, { redirect: "manual" });
@@ -1948,6 +1975,8 @@ test("admin state signs fresh one-time login links", async () => {
 		const cliLogin = await fetch(signedUrl, { redirect: "manual" });
 		assert.equal(cliLogin.status, 303);
 		assert.equal(cliLogin.headers.get("location"), "/admin");
+		assert.equal(cliLogin.headers.get("referrer-policy"), "no-referrer");
+		assert.equal(cliLogin.headers.get("cache-control"), "no-store");
 		const cliReuse = await fetch(signedUrl, { redirect: "manual" });
 		assert.equal(cliReuse.status, 401);
 		const expired = createAdminLoginToken(

@@ -85,6 +85,8 @@ Native controls use flat application commands:
 /bash command
 ```
 
+Discord interaction tokens are short-lived callback credentials. heypi uses Discord interaction ids for dedupe and routing metadata, not interaction tokens.
+
 ### CLI-assisted setup
 
 Generate an invite URL and verify the token:

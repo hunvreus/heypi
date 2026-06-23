@@ -29,7 +29,10 @@ export type WebhookConfig = {
 	replyTimeoutMs?: number;
 	maxBodyBytes?: number;
 	maxInFlight?: number;
+	replyUrls?: string[];
+	replyOrigins?: string[];
 	replyHosts?: string[];
+	unsafeReplyHttp?: boolean;
 	permissions?: PermissionsConfig;
 };
 
@@ -55,7 +58,10 @@ const WEBHOOK_CONFIG_KEYS = new Set([
 	"replyTimeoutMs",
 	"maxBodyBytes",
 	"maxInFlight",
+	"replyUrls",
+	"replyOrigins",
 	"replyHosts",
+	"unsafeReplyHttp",
 	"permissions",
 ]);
 
@@ -71,6 +77,7 @@ export function webhook(input: WebhookConfig = {}): Adapter {
 	if (config.path && !config.unsafePathOverride) {
 		throw new Error("Webhook path override requires unsafePathOverride: true");
 	}
+	validateReplyAllowlist(config);
 	const base = normalizeMessagePath(config.path ?? `/webhook/${name}`);
 	const maxBodyBytes = config.maxBodyBytes ?? 1_000_000;
 	const maxInFlight = config.maxInFlight ?? 32;
@@ -96,9 +103,8 @@ export function webhook(input: WebhookConfig = {}): Adapter {
 					kind,
 					start: input,
 					maxBodyBytes,
-					maxInFlight,
 					replyTimeoutMs,
-					inFlight: () => inFlight++,
+					reserve,
 				});
 			if (input.http) {
 				registerWebhookRoutes(input, { base, host: config.host, port: config.port, handler });
@@ -137,6 +143,12 @@ export function webhook(input: WebhookConfig = {}): Adapter {
 
 	function release(): void {
 		inFlight = Math.max(0, inFlight - 1);
+	}
+
+	function reserve(): boolean {
+		if (inFlight >= maxInFlight) return false;
+		inFlight++;
+		return true;
 	}
 
 	async function route(input: RouteInput): Promise<void> {
@@ -186,9 +198,8 @@ type RouteInput = {
 	kind: string;
 	start: AdapterStart;
 	maxBodyBytes: number;
-	maxInFlight: number;
 	replyTimeoutMs: number;
-	inFlight(): number;
+	reserve(): boolean;
 };
 
 async function routeRequest(input: RouteInput & { release(): void }): Promise<void> {
@@ -228,9 +239,8 @@ async function receive(
 		kind: string;
 		start: AdapterStart;
 		config: WebhookConfig;
-		maxInFlight: number;
 		replyTimeoutMs: number;
-		inFlight(): number;
+		reserve(): boolean;
 		release(): void;
 	},
 	payload: WebhookMessage,
@@ -238,15 +248,12 @@ async function receive(
 ): Promise<void> {
 	const text = payload.text?.trim();
 	if (!text) return json(input.res, 400, { ok: false, error: "text is required" });
-	if (payload.replyUrl) assertReplyUrl(payload.replyUrl, input.config.replyHosts);
+	if (payload.replyUrl) assertReplyUrl(payload.replyUrl, input.config);
 	const suppliedThreadId = payload.threadId?.trim();
 	if (!threadFromRoute && suppliedThreadId?.startsWith("whth_")) {
 		return json(input.res, 400, { ok: false, error: "threadId uses a reserved prefix" });
 	}
-	if (input.inFlight() >= input.maxInFlight) {
-		input.release();
-		return json(input.res, 429, { ok: false, error: "too many in-flight webhook runs" });
-	}
+	if (!input.reserve()) return json(input.res, 429, { ok: false, error: "too many in-flight webhook runs" });
 	const threadId = suppliedThreadId || `whth_${randomBytes(18).toString("base64url")}`;
 	const runId = randomUUID();
 	const done = execute(input, payload, threadId, runId).finally(input.release);
@@ -308,17 +315,74 @@ async function postReply(
 	}
 }
 
-function assertReplyUrl(input: string, hosts: string[] | undefined): void {
+function assertReplyUrl(input: string, config: WebhookConfig): void {
 	let url: URL;
 	try {
 		url = new URL(input);
 	} catch {
 		throw new HttpMessageError(400, "invalid replyUrl");
 	}
-	if (url.protocol !== "https:" && url.protocol !== "http:") throw new HttpMessageError(400, "invalid replyUrl");
-	if (!hosts?.length || !hosts.includes(url.hostname)) {
+	if (url.username || url.password) throw new HttpMessageError(400, "replyUrl must not include credentials");
+	if (url.protocol !== "https:" && !(config.unsafeReplyHttp && url.protocol === "http:")) {
+		throw new HttpMessageError(400, "replyUrl must use https");
+	}
+	if (replyUrlAllowed(url, config)) return;
+	if (config.replyUrls?.length) throw new HttpMessageError(400, "replyUrl is not allowed");
+	if (config.replyOrigins?.length) throw new HttpMessageError(400, "replyUrl origin is not allowed");
+	if (config.replyHosts?.length) {
 		throw new HttpMessageError(400, "replyUrl host is not allowed");
 	}
+	throw new HttpMessageError(400, "replyUrl is not allowed");
+}
+
+function replyUrlAllowed(url: URL, config: WebhookConfig): boolean {
+	const href = canonicalReplyUrl(url);
+	if (config.replyUrls?.some((allowed) => canonicalReplyUrl(new URL(allowed)) === href)) return true;
+	const origin = url.origin.toLowerCase();
+	if (config.replyOrigins?.some((allowed) => canonicalOrigin(allowed) === origin)) return true;
+	return Boolean(config.replyHosts?.some((host) => host.toLowerCase() === url.hostname));
+}
+
+function validateReplyAllowlist(config: WebhookConfig): void {
+	for (const value of config.replyUrls ?? []) {
+		const url = parseConfiguredUrl(value, "replyUrls");
+		assertUrlHasNoCredentials(url, "replyUrls");
+		if (url.protocol !== "https:" && !(config.unsafeReplyHttp && url.protocol === "http:")) {
+			throw new Error("replyUrls must use https unless unsafeReplyHttp is true");
+		}
+	}
+	for (const value of config.replyOrigins ?? []) {
+		const url = parseConfiguredUrl(value, "replyOrigins");
+		assertUrlHasNoCredentials(url, "replyOrigins");
+		if (url.protocol !== "https:" && !(config.unsafeReplyHttp && url.protocol === "http:")) {
+			throw new Error("replyOrigins must use https unless unsafeReplyHttp is true");
+		}
+		if (canonicalReplyUrl(url) !== `${url.origin}/`) {
+			throw new Error("replyOrigins entries must be origins without path, query, or fragment");
+		}
+	}
+}
+
+function assertUrlHasNoCredentials(url: URL, field: string): void {
+	if (url.username || url.password) throw new Error(`webhook ${field} entries must not include credentials`);
+}
+
+function parseConfiguredUrl(input: string, field: string): URL {
+	try {
+		return new URL(input);
+	} catch {
+		throw new Error(`invalid webhook ${field} entry: ${input}`);
+	}
+}
+
+function canonicalReplyUrl(url: URL): string {
+	const copy = new URL(url);
+	copy.hash = "";
+	return copy.toString();
+}
+
+function canonicalOrigin(input: string): string {
+	return new URL(input).origin.toLowerCase();
 }
 
 function authorized(req: IncomingMessage, secret: string): boolean {

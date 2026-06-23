@@ -113,12 +113,78 @@ test("cli prints help and version", () => {
 	assert.match(cli(["init"]), /npm create heypi@latest/);
 });
 
-test("cli check loads env file and validates runtime root", async () => {
-	const root = await mkdtemp(join(tmpdir(), "heypi-cli-check-"));
+test("cli doctor runs static diagnostics without importing app code", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-doctor-static-"));
+	try {
+		await mkdir(join(root, "agent", "tools"), { recursive: true });
+		await writeFile(join(root, "package.json"), '{"dependencies":{"@hunvreus/heypi":"workspace:*"}}\n', "utf8");
+		await writeFile(
+			join(root, "index.ts"),
+			'throw new Error("imported app code");\nloadAgent("./agent");\nslack();\n',
+			"utf8",
+		);
+		await writeFile(join(root, "agent", "instructions.md"), "You are concise.\n", "utf8");
+		const out = cli(["doctor"], { cwd: root });
+		assert.match(out, /Static diagnostics/);
+		assert.match(out, /ok: app entrypoint found: index\.ts/);
+		assert.match(out, /ok: agent instructions found/);
+		assert.match(out, /info: adapter\(s\) inferred: slack/);
+		assert.doesNotMatch(out, /imported app code/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli doctor reports stale layout and duplicate discovered names", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-doctor-stale-"));
+	try {
+		await mkdir(join(root, "agent", "tools", "nested"), { recursive: true });
+		await mkdir(join(root, "tools"), { recursive: true });
+		await writeFile(join(root, "package.json"), '{"dependencies":{"@hunvreus/heypi":"workspace:*"}}\n', "utf8");
+		await writeFile(
+			join(root, "index.ts"),
+			'import { agentFrom } from "@hunvreus/heypi";\nagentFrom("./agent");\n',
+			"utf8",
+		);
+		await writeFile(join(root, "agent", "AGENTS.md"), "old\n", "utf8");
+		await writeFile(join(root, "agent", "tools", "deploy.ts"), "export default {};\n", "utf8");
+		await writeFile(join(root, "agent", "tools", "nested", "deploy.ts"), "export default {};\n", "utf8");
+		const result = spawnSync(process.execPath, [CLI, "doctor", "--json"], {
+			cwd: root,
+			env: cliEnv(),
+			encoding: "utf8",
+		});
+		assert.equal(result.status, 1);
+		const json = JSON.parse(result.stdout) as {
+			static: Array<{ code: string; severity: string; message: string }>;
+		};
+		assert.equal(
+			json.static.some((row) => row.code === "entry.agent-from" && row.severity === "warn"),
+			true,
+		);
+		assert.equal(
+			json.static.some((row) => row.code === "agent.legacy-file" && row.severity === "warn"),
+			true,
+		);
+		assert.equal(
+			json.static.some((row) => row.code === "agent.legacy-folder" && row.severity === "warn"),
+			true,
+		);
+		assert.equal(
+			json.static.some((row) => row.code === "tool.duplicate-name" && row.severity === "fail"),
+			true,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli doctor --boot loads env file and validates runtime root", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-doctor-boot-"));
 	try {
 		const env = join(root, ".env");
 		await writeFile(env, "OPENAI_API_KEY=openai-api-key\n", "utf8");
-		const out = cli(["check", "--env", env, "--runtime-root", root]);
+		const out = cli(["doctor", "--boot", "--env", env, "--runtime-root", root]);
 		assert.match(out, /ok: node /);
 		assert.match(out, /ok: OPENAI_API_KEY present/);
 		assert.match(out, /ok: runtime root exists/);
@@ -127,11 +193,11 @@ test("cli check loads env file and validates runtime root", async () => {
 	}
 });
 
-test("cli check loads .env by default", async () => {
+test("cli doctor --boot loads .env by default", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-default-env-"));
 	try {
 		await writeFile(join(root, ".env"), "OPENAI_API_KEY=openai-api-key\n", "utf8");
-		const out = cli(["check", "--runtime-root", root], { cwd: root });
+		const out = cli(["doctor", "--boot", "--runtime-root", root], { cwd: root });
 		assert.match(out, /ok: OPENAI_API_KEY present/);
 		assert.match(out, /ok: runtime root exists/);
 	} finally {
@@ -186,7 +252,7 @@ test("cli dev watches app files and restarts on change", async () => {
 				const timeout = setTimeout(() => {
 					cleanup();
 					reject(new Error(`timed out waiting for ${pattern}: ${out}`));
-				}, 15_000);
+				}, 30_000);
 				const cleanup = () => {
 					clearTimeout(timeout);
 					child.stdout.off("data", collect);
@@ -211,7 +277,17 @@ test("cli dev watches app files and restarts on change", async () => {
 			await writeFile(appFile, source("v2"), "utf8");
 			await waitFor(/boot=v2/u);
 		} finally {
-			child.kill("SIGTERM");
+			if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+			await new Promise<void>((resolve) => {
+				if (child.exitCode !== null) return resolve();
+				const kill = setTimeout(() => {
+					if (child.exitCode === null) child.kill("SIGKILL");
+				}, 5_000);
+				child.once("exit", () => {
+					clearTimeout(kill);
+					resolve();
+				});
+			});
 		}
 	} finally {
 		await rm(root, { recursive: true, force: true });
@@ -241,7 +317,10 @@ test("cli resolves env paths from original invocation root", async () => {
 		await mkdir(join(root, "config"));
 		await mkdir(join(root, "nested"));
 		await writeFile(join(root, "config", ".env"), "OPENAI_API_KEY=openai-api-key\n", "utf8");
-		const out = cli(["check", "--env", "config/.env"], { cwd: join(root, "nested"), env: { INIT_CWD: root } });
+		const out = cli(["doctor", "--boot", "--env", "config/.env"], {
+			cwd: join(root, "nested"),
+			env: { INIT_CWD: root },
+		});
 		assert.match(out, /ok: OPENAI_API_KEY present/);
 	} finally {
 		await rm(root, { recursive: true, force: true });
@@ -396,7 +475,9 @@ test("cli thread commands list, search, show, and inspect events", async () => {
 			text: "deployment queued",
 			createdAt: 1_700_000_001_000,
 		});
-		await store.events.append({
+		const eventStore = store.events;
+		assert.ok(eventStore);
+		await eventStore.append({
 			agent: "default",
 			trace: "turn:abc",
 			threadId: thread.id,
@@ -758,7 +839,7 @@ test("cli dev prints an exact admin link for dynamic ports", async () => {
 	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-"));
 	try {
 		await mkdir(join(root, "agent"), { recursive: true });
-		await writeFile(join(root, "agent", "AGENTS.md"), "Reply briefly.\n", "utf8");
+		await writeFile(join(root, "agent", "instructions.md"), "Reply briefly.\n", "utf8");
 		await writeFile(
 			join(root, "index.mjs"),
 			[
@@ -819,6 +900,61 @@ test("cli dev prints an exact admin link for dynamic ports", async () => {
 		assert.notEqual(url.port, "0");
 		assert.equal(url.pathname, "/admin");
 		assert.equal(url.search, "");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("cli dev prints admin link before slow adapter startup completes", async () => {
+	const root = await mkdtemp(join(tmpdir(), "heypi-cli-dev-slow-"));
+	try {
+		await writeFile(
+			join(root, "index.mjs"),
+			[
+				'import { mkdirSync, writeFileSync } from "node:fs";',
+				'import { createServer } from "node:http";',
+				"let server;",
+				'const instanceId = "dev-cli-slow-instance";',
+				"export default {",
+				"  async start() {",
+				'    mkdirSync("state/admin", { recursive: true });',
+				"    server = createServer((_req, res) => {",
+				'      res.setHeader("x-heypi-admin-instance", instanceId);',
+				'      res.end("ok");',
+				"    });",
+				'    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));',
+				"    const address = server.address();",
+				'    const port = typeof address === "object" && address ? address.port : 0;',
+				"    writeFileSync(",
+				'      "state/admin/server." + process.pid + ".json",',
+				"      JSON.stringify({",
+				"        version: 1,",
+				"        pid: process.pid,",
+				"        instanceId,",
+				'        hostname: "test",',
+				'        url: "http://127.0.0.1:" + port,',
+				'        agent: "test",',
+				"        project: process.cwd(),",
+				"        startedAt: new Date().toISOString(),",
+				'        adminPath: "/admin",',
+				"        auth: false,",
+				"      }),",
+				"    );",
+				"    await new Promise(() => undefined);",
+				"  },",
+				"  async stop() {",
+				"    if (server) await new Promise((resolve) => server.close(resolve));",
+				"  },",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+		const out = await spawnCliUntil(["dev", "index.mjs"], {
+			cwd: root,
+			env: { HEYPI_CLI_CHILD: "1" },
+			match: /Admin:/u,
+		});
+		assert.match(out, /Admin: http:\/\/127\.0\.0\.1:\d+\/admin/u);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

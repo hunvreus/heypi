@@ -1,6 +1,6 @@
 # Configuration
 
-heypi apps are configured in TypeScript with `createHeypi()`. The config object wires together app state, adapters, the Pi agent, runtime tools, optional features, and operational controls. Most apps use [`loadAgent()`](agent.md) to load the agent prompt, model, tools, context, and Pi extensions from a local folder.
+heypi apps are configured in TypeScript with `createHeypi()`. The config object wires together app state, adapters, the Pi agent, runtime tools, optional features, and operational controls. Most apps use [`loadAgent()`](agent.md) to load the agent instructions, model, tools, context, and Pi extensions from a local folder.
 
 ```ts
 createHeypi({
@@ -17,7 +17,7 @@ The main keys are:
 | --- | --- | --- |
 | `state` | Yes | Durable app state directory. The default store writes SQLite data under `state.root`: threads, messages, calls, approvals, jobs, admin state, and locks. Runtime workspace files live under `runtime.root`, not `state.root`. |
 | `adapters` | Yes | Chat or HTTP entrypoints. Built-ins cover Slack, Discord, Telegram, and webhook. Custom adapters can be passed here too. See [Adapters](../adapters/index.md). |
-| `agent` | Yes | The Pi agent: model, prompt files, SOUL/system text, dynamic context, tools, skills, and Pi extensions. See [Agent](agent.md). |
+| `agent` | Yes | The Pi agent: model, instructions, optional system override, dynamic context, tools, skills, and Pi extensions. See [Agent](agent.md). |
 | `runtime` | Yes | Runtime workspace and execution backend. Runtime-backed default tools include `bash`, file tools, and search tools; `attach` and `history` are default tools too, but are documented with the agent tool surface. No default. See [Runtime](runtime.md) and [Agent tools](tools.md#default-tools). |
 | `http` | Only for HTTP routes | Public Node HTTP listener for HTTP adapters and self-hosted secret pages. Defaults to `127.0.0.1:3000`; admin/dev routes use `admin.http`, which defaults to `127.0.0.1:4321`. See [HTTP listener](http.md). |
 | `scope` | No | Default sharing boundary for runtime files, memory, skills, secrets, and attachments. Defaults to `channel`. See [Scope](scope.md). |

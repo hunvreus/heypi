@@ -45,8 +45,8 @@ test("creates a default Slack app non-interactively", async () => {
 		assert.match(read(app, ".env.example"), /SLACK_APP_TOKEN=/);
 		assert.doesNotMatch(read(app, ".env.example"), /HEYPI_HTTP_PORT/);
 		assert.doesNotMatch(read(app, ".env.example"), /SLACK_SIGNING_SECRET=/);
-		assert.match(read(app, "agent/AGENTS.md"), /concise team assistant/);
-		assert.match(read(app, "agent/SOUL.md"), /Answer directly/);
+		assert.match(read(app, "agent/instructions.md"), /concise team assistant/);
+		assert.match(read(app, "agent/instructions.md"), /Answer directly/);
 		assert.match(read(app, "agent/skills/README.md"), /# Skills/);
 		assert.match(read(app, "agent/tools/README.md"), /# Tools/);
 		assert.match(read(app, "evals/README.md"), /# Evals/);
@@ -130,6 +130,7 @@ test("creates adapter and runtime specific files", async () => {
 		assert.match(read(app, "agent/tools/now.ts"), /z\.object/);
 		assert.match(read(app, "evals/smoke.ts"), /defineEval/);
 		assert.match(read(app, "evals/smoke.ts"), /@hunvreus\/heypi\/authoring/);
+		buildLocalDeps(["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		await linkLocalDeps(app, ["@hunvreus/heypi", "@hunvreus/heypi-runtime-docker"]);
 		runTsc(app);
 	} finally {
@@ -183,6 +184,12 @@ test("help lists non-interactive admin flags", () => {
 	assert.match(out, /--admin \| --no-admin/);
 	assert.match(out, /--samples \| --no-samples/);
 });
+
+function buildLocalDeps(packages: string[]): void {
+	for (const name of packages) {
+		execFileSync("pnpm", ["--filter", name, "run", "build"], { cwd: ROOT, stdio: "ignore" });
+	}
+}
 
 async function linkLocalDeps(app: string, packages: string[]): Promise<void> {
 	await mkdir(join(app, "node_modules", "@hunvreus"), { recursive: true });

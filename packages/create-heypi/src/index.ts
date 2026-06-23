@@ -160,8 +160,7 @@ async function writeProject(root: string, options: Options): Promise<void> {
 	await writeIfMissing(root, ".env", envFile(options));
 	await write(root, ".gitignore", gitignore());
 	await write(root, "README.md", readme(options));
-	await write(root, "agent/AGENTS.md", agentPrompt());
-	await write(root, "agent/SOUL.md", soul());
+	await write(root, "agent/instructions.md", agentInstructions());
 	await write(root, "agent/skills/README.md", skillsReadme());
 	await write(root, "agent/tools/README.md", toolsReadme());
 	await write(root, "agent/jobs/README.md", jobsReadme());
@@ -366,8 +365,7 @@ ${runtimeNotes(options.runtime)}
 
 ## Project Shape
 
-- \`agent/AGENTS.md\`: behavioral instructions.
-- \`agent/SOUL.md\`: voice and style.
+- \`agent/instructions.md\`: identity, behavior, voice, and standing rules.
 - \`agent/skills/\`: reusable skill instructions loaded by \`loadAgent("./agent")\`.
 - \`agent/tools/\`: TypeScript tools discovered by \`loadAgent("./agent")\`.
 - \`agent/jobs/\`: scheduled jobs discovered by \`loadAgent("./agent")\`.
@@ -412,12 +410,13 @@ function runtimeNotes(runtime: Runtime): string {
 	return "Runs tools through heypi's built-in just-bash runtime rooted at `workspace/`.";
 }
 
-function agentPrompt(): string {
-	return "You are a concise team assistant. Ask before taking irreversible actions.\n";
-}
-
-function soul(): string {
-	return "Answer directly and accurately. Keep responses focused on the user's goal.\n";
+function agentInstructions(): string {
+	return [
+		"You are a concise team assistant.",
+		"Answer directly and accurately. Keep responses focused on the user's goal.",
+		"Ask before taking irreversible actions.",
+		"",
+	].join("\n");
 }
 
 function skillsReadme(): string {
@@ -547,7 +546,8 @@ export default defineEval({
 function printNextSteps(root: string, options: Options): void {
 	const run = options.pm === "npm" ? "npm run dev" : `${options.pm} run dev`;
 	const start = options.pm === "npm" ? "npm run start" : `${options.pm} run start`;
-	const devSurface = options.admin !== false ? "Open the printed admin URL or POST to /dev/messages." : "POST to /dev/messages.";
+	const devSurface =
+		options.admin !== false ? "Open the printed admin URL or POST to /dev/messages." : "POST to /dev/messages.";
 	const install = options.pm === "yarn" ? "yarn" : `${options.pm} install`;
 	const modelVars = modelEnvVars(options.model);
 	const adapterVars = adapterEnvVars(options);

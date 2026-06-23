@@ -37,6 +37,7 @@ export type AdminConfig = {
 		host?: string;
 		port?: number | string;
 	};
+	localThreads?: boolean;
 	secret?: string;
 	loginTtlMs?: number;
 	sessionTtlMs?: number;
@@ -169,7 +170,7 @@ export function createAdminAdapter(config: AdminConfig, http: AdminHttpConfig, s
 				usedLoginJtis,
 				sessions,
 				failures,
-				service: createAdminService(input),
+				service: createAdminService(input, { localThreads: config.localThreads === true }),
 				start: input,
 				stateRoot,
 				agent: stateConfig.agent,
@@ -702,7 +703,10 @@ function issueSession(res: ServerResponse, state: AdminState): void {
 		idleExpiresAt: now + state.idleTtlMs,
 	};
 	state.sessions.set(session.hash, session);
-	redirect(res, "/admin", [sessionCookie(state, token)]);
+	redirect(res, "/admin", [sessionCookie(state, token)], {
+		"cache-control": "no-store",
+		"referrer-policy": "no-referrer",
+	});
 }
 
 function currentSession(
@@ -860,9 +864,14 @@ function headerValue(input: string | string[] | undefined): string | undefined {
 	return Array.isArray(input) ? input[0] : input;
 }
 
-function redirect(res: ServerResponse, location: string, cookies: string[] = []): void {
+function redirect(
+	res: ServerResponse,
+	location: string,
+	cookies: string[] = [],
+	headers: Record<string, string> = {},
+): void {
 	if (cookies.length) res.setHeader("set-cookie", cookies);
-	res.writeHead(303, { location });
+	res.writeHead(303, { ...headers, location });
 	res.end();
 }
 

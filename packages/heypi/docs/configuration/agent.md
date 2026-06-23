@@ -1,10 +1,10 @@
 # Agent configuration
 
-The `agent` config defines the Pi agent heypi runs for each accepted turn: model, prompts, built-in tools, authored tools, jobs, dynamic context, skills, and Pi extensions.
+The `agent` config defines the Pi agent heypi runs for each accepted turn: model, instructions, built-in tools, authored tools, jobs, dynamic context, skills, and Pi extensions.
 
 ## Config
 
-Use `loadAgent()` for folder-based agents:
+Prefer `loadAgent()` for file-based agents:
 
 ```ts
 createHeypi({
@@ -20,9 +20,8 @@ That is equivalent to the default folder convention:
 ```ts
 loadAgent("./agent", {
   model: "openai/gpt-5.4-mini",
-  systemPrompt: loadPrompt("./agent/SYSTEM.md", { optional: true }),
-  soul: loadPrompt("./agent/SOUL.md", { optional: true }),
-  prompt: loadPrompt("./agent/AGENTS.md", { optional: true }),
+  systemPrompt: loadPrompt("./agent/system.md", { optional: true }),
+  instructions: loadPrompt("./agent/instructions.md", { optional: true }),
   builtinTools: defaultTools(),
   tools: loadTools("./agent/tools"),
   jobs: loadJobs("./agent/jobs"),
@@ -31,9 +30,11 @@ loadAgent("./agent", {
 });
 ```
 
-Convention files are defaults. Passing an option overrides that category. For example, `tools: []` disables authored tools from `agent/tools/`; use `tools: [...loadTools("./agent/tools"), myTool]` when you want convention tools plus inline tools. This override is intentional and silent: if you pass `tools`, heypi does not also load `agent/tools/` unless you include `loadTools()` yourself. Built-in runtime tools belong in `builtinTools`; legacy `tools: defaultTools()` config is rejected.
+This folder convention is the primary authoring path. Put instructions, trusted tools, scheduled jobs, bundled skills, and Pi extensions in files under `agent/`; keep the app entrypoint for adapters, state, runtime, admin, and deployment policy.
 
-Use a manual Pi-compatible agent config when you do not want heypi's folder convention:
+Convention files are defaults. Passing an option overrides that category. For example, `tools: []` disables authored tools from `agent/tools/`; use `tools: [...loadTools("./agent/tools"), myTool]` when you intentionally need convention tools plus inline tools. This override is intentional and silent: if you pass `tools`, heypi does not also load `agent/tools/` unless you include `loadTools()` yourself. Built-in runtime tools belong in `builtinTools`; legacy `tools: defaultTools()` config is rejected.
+
+Use a manual Pi-compatible agent config only when you do not want heypi's folder convention:
 
 ```ts
 createHeypi({
@@ -41,8 +42,7 @@ createHeypi({
     id: "ops",
     directory: process.cwd(),
     model: { provider: "openai", name: "gpt-5.4-mini" },
-    prompt: "You are a concise operations assistant.",
-    soul: "Answer directly. Ask when blocked.",
+    instructions: "You are a concise operations assistant. Answer directly and ask when blocked.",
     builtinTools: defaultTools(),
     tools: [myTool],
   },
@@ -57,38 +57,35 @@ createHeypi({
 | `id` | No | `loadAgent`, manual | Durable agent id for threads, jobs, approvals, traces, and app locking. Defaults to `default`; set it explicitly for multi-agent apps or when preserving state from an older id. |
 | `model` | Yes, unless `HEYPI_MODEL` is set | `loadAgent`, manual | Model id. `loadAgent()` accepts Pi's `provider/name` string, such as `openai/gpt-5.4-mini`. Manual config uses Pi's lower-level model shape. |
 | `builtinTools` | No | `loadAgent`, manual | Built-in heypi runtime tools. Defaults to `defaultTools()`. See [Tools](tools.md). |
-| `tools` | No | `loadAgent`, manual | Authored trusted JS tools exposed to the agent. Defaults to `loadTools("./agent/tools")` when using `loadAgent()`. |
+| `tools` | No | `loadAgent`, manual | Authored trusted JS tools exposed to the agent. Defaults to `loadTools("./agent/tools")` when using `loadAgent()`. Prefer file modules under `agent/tools/`; direct inline tools are useful for small programmatic integrations and tests. |
 | `evals` | No | manual | Optional runtime-attached eval definitions. Normal eval discovery uses root `evals/` through `heypi eval`. |
 | `context` | No | `loadAgent`, manual | Per-turn context blocks added before the model chooses tools. |
-| `systemPrompt` | No | `loadAgent` | Explicit system prompt. Replaces `SYSTEM.md` and heypi's generated default. |
-| `prompt` | No | manual | Main prompt text for the Pi agent. |
-| `soul` | No | manual | Voice and behavior text for the Pi agent. |
+| `systemPrompt` | No | `loadAgent`, manual | Explicit system prompt. Replaces `system.md` and heypi's generated default. |
+| `instructions` | No | `loadAgent`, manual | Main app instructions: identity, behavior, voice, and standing rules. Defaults to `instructions.md` when using `loadAgent()`, or a concise fallback when omitted. |
 | `directory` | Yes | manual | Agent working directory and base path for relative Pi skill or extension paths. |
 | `skills` | No | `loadAgent`, manual | Explicit Pi-native skill paths. Bundled folder skills are loaded from `agent/skills/` when using `loadAgent()`. |
 | `extensions` | No | `loadAgent`, manual | Explicit Pi extension paths. Folder extensions are loaded from `agent/extensions/` when using `loadAgent()`. |
 
 For the full lower-level Pi agent contract, see Pi's [coding-agent package](https://github.com/earendil-works/pi/tree/main/packages/coding-agent).
 
-## Prompt files
+## Instruction files
 
 `loadAgent("./agent", ...)` loads these files and folders:
 
 ```text
 agent/
-|-- SYSTEM.md       # optional replacement for heypi's generated system prompt
-|-- SOUL.md         # voice and behavior
-|-- AGENTS.md       # main app instructions
-|-- tools/          # trusted TypeScript tools
-|-- jobs/           # scheduled jobs
-|-- skills/         # bundled Pi skills
-`-- extensions/     # explicit Pi extensions
+├─ instructions.md # identity, behavior, voice, and standing rules
+├─ system.md       # optional replacement for heypi's generated system prompt
+├─ tools/          # trusted TypeScript tools
+├─ jobs/           # scheduled jobs
+├─ skills/         # bundled Pi skills
+└─ extensions/     # explicit Pi extensions
 ```
 
 | Path | Description |
 | --- | --- |
-| `SYSTEM.md` | System-level operating rules. Replaces heypi's generated system prompt when present. |
-| `SOUL.md` | Voice and behavior. Uses heypi's concise fallback when omitted. |
-| `AGENTS.md` | Main app instructions. No default. |
+| `instructions.md` | Main app instructions: identity, behavior, voice, and standing rules. Uses heypi's concise fallback when omitted. |
+| `system.md` | Advanced full system-prompt override. Replaces heypi's generated system prompt when present. |
 | `tools/` | Trusted TypeScript tools default-exported from module files under this folder. File stems become tool names when omitted. |
 | `jobs/` | Scheduled jobs default-exported from module files under this folder. |
 | `skills/` | Bundled skills loaded with the agent. Empty when absent. |
@@ -96,7 +93,7 @@ agent/
 
 `skills/` loads bundled skills from the agent folder. They ship with the app and are not managed by `skill_*` tools. Runtime-created managed skills are enabled with top-level [`skills`](skills.md) config.
 
-Discovered tools and jobs are loaded recursively in lexical relative-path order. Passing `tools` or `jobs` overrides discovery for that category. Built-in runtime tools are configured separately through `builtinTools`.
+Discovered tools and jobs are loaded recursively in lexical relative-path order. File-backed tools can omit `name`; the file stem becomes the model-facing name. Passing `tools` or `jobs` overrides discovery for that category. Built-in runtime tools are configured separately through `builtinTools`.
 
 Files discovered under `agent/tools/` and `agent/jobs/` should import authoring helpers from `@hunvreus/heypi/authoring`. Keep `@hunvreus/heypi` imports in app entrypoints such as `index.ts`, where adapters, state, runtime, and admin are wired.
 
@@ -106,9 +103,11 @@ If top-level `jobs` is omitted from `createHeypi()`, jobs discovered under `agen
 
 Behavior evals normally live under root `evals/` and are discovered by `heypi eval`, not by the runtime agent. `heypi eval run` can check assertions against explicit supplied output, or run the eval prompt through a local Pi-backed heypi handler with `--model` or `HEYPI_MODEL`. Agent-backed evals use isolated temporary state by default and are meant for behavior checks, not workflow checkpoint replay.
 
-Prompt order is: `SYSTEM.md` or heypi's generated system prompt, then `SOUL.md`, `AGENTS.md`, and dynamic context blocks.
+Prompt order is: `system.md` or heypi's generated system prompt, then `instructions.md`, and dynamic context blocks.
 
-When `SYSTEM.md` and `systemPrompt` are omitted, heypi generates a system prompt from the active tool set:
+`instructions.md` is the primary app instruction file in the folder convention. Keep durable agent behavior there. Use dynamic context for per-turn facts and explicit `instructions` only when the app intentionally does not use file instructions.
+
+When `system.md` and `systemPrompt` are omitted, heypi generates a system prompt from the active tool set:
 
 ```text
 Use available tools when needed. Prefer the narrowest available tool that directly matches the task. Do not say you used a tool unless you actually called it.
@@ -118,7 +117,7 @@ Approvals are handled by the runtime. Do not ask users to approve tool calls in 
 
 heypi also adds tool-specific guidance, such as preferring file/search tools for file exploration or using `attach` for meaningful generated files.
 
-When `SOUL.md` and `soul` are omitted, heypi uses:
+When `instructions.md` and `instructions` are omitted, heypi uses:
 
 ```text
 You are a concise, practical assistant.
@@ -143,8 +142,9 @@ Common provider env vars:
 | Provider | Example model | Env var |
 | --- | --- | --- |
 | OpenAI | `openai/gpt-5.4-mini` | `OPENAI_API_KEY` |
-| Anthropic | `anthropic/claude-sonnet-4-5` | `ANTHROPIC_API_KEY` |
-| Google Gemini | `google/gemini-2.5-pro` | `GEMINI_API_KEY` |
+| Anthropic | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `google/gemini-3-pro-preview` | `GEMINI_API_KEY` |
+| xAI | `xai/grok-4.3` | `XAI_API_KEY` |
 | OpenRouter | `openrouter/...` | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `vercel-ai-gateway/...` | `AI_GATEWAY_API_KEY` |
 | Amazon Bedrock | `amazon-bedrock/...` | AWS credentials such as `AWS_PROFILE` or workload credentials |
