@@ -820,7 +820,7 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 	const meta = `<footer class="text-xs text-muted-foreground">${author}${relativeTimeHtml(row.time, user ? "end" : undefined)}${state}</footer>`;
 	if (user) {
 		return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="user"${selectedAttr(selected)} class="grid min-w-0 justify-items-end px-2">
-		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg bg-primary px-4 py-3 text-foreground">
+		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg border bg-background px-4 py-3 text-foreground">
 			<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
 			<div class="text-right">${meta}</div>
 		</div>
@@ -839,7 +839,7 @@ function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string)
 	const teaser = chatContextTeaser(row);
 	return `<details id="${escapeHtml(eventDomId(row))}" data-admin-context-row="${row.kind}"${selectedAttr(selected)} class="group rounded-sm px-2 py-2 text-sm hover:bg-muted/40">
 		<summary class="flex min-w-0 items-center gap-2" data-admin-context-summary>
-		${cellHtml(kindBadge(row.kind))}
+		${cellHtml(activityBadge(row))}
 		<span class="min-w-0 truncate font-medium">${escapeHtml(teaser.title)}</span>
 		${teaser.meta ? `<span class="min-w-0 truncate text-muted-foreground">${escapeHtml(teaser.meta)}</span>` : ""}
 		<span class="ml-auto shrink-0 text-xs text-muted-foreground">${relativeTimeHtml(row.time)}</span>
@@ -851,7 +851,7 @@ function chatContextRow(row: AdminActivityRow, selected: boolean, csrf?: string)
 
 function chatContextTeaser(row: AdminActivityRow): { title: string; meta?: string } {
 	if (row.kind === "run") {
-		return { title: `Run ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
+		return { title: `Activity ${lifecycleVerb(row.state)}`, meta: firstText(row.title, row.summary) };
 	}
 	if (row.kind === "call") {
 		const meta = [row.title, row.durationMs ? duration(row.durationMs) : undefined].filter(Boolean).join(" · ");
@@ -938,7 +938,8 @@ function looksJson(input: string): boolean {
 
 function titleCase(input: string): string {
 	const normalized = input.replace(/[_-]+/gu, " ").trim();
-	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Trace";
+	if (normalized === "message" || normalized === "model" || normalized === "turn") return "Activity";
+	return normalized ? normalized[0]?.toUpperCase() + normalized.slice(1) : "Activity";
 }
 
 function chatContextDetails(row: AdminActivityRow, csrf?: string): string {
@@ -1359,9 +1360,10 @@ ${actionHtml ? `<section class="flex w-full max-w-sm min-w-0 flex-col items-cent
 </div>`;
 }
 
-function kindBadge(kind: AdminActivityRow["kind"]): Cell {
+function activityBadge(row: AdminActivityRow): Cell {
+	const bucket = activityBucket(row);
 	return {
-		html: `<span class="badge-secondary ${kindBg(kind)}">${escapeHtml(kindLabel(kind))}</span>`,
+		html: `<span class="badge-secondary ${activityBucketBg(bucket)}">${escapeHtml(activityBucketLabel(bucket))}</span>`,
 	};
 }
 
@@ -1413,15 +1415,33 @@ function truncatedText(input: string): Cell {
 	};
 }
 
-function kindBg(kind: AdminActivityRow["kind"]): string {
-	const classes: Record<AdminActivityRow["kind"], string> = {
-		approval: "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50",
-		call: "bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50",
-		event: "bg-sky-100 text-sky-950 dark:bg-sky-950 dark:text-sky-50",
-		message: "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50",
-		run: "bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-50",
+type ActivityBucket = "activity" | "approval" | "tool";
+
+function activityBucket(row: AdminActivityRow): ActivityBucket {
+	if (row.kind === "approval") return "approval";
+	if (row.kind === "call") return "tool";
+	const eventName = row.eventType ?? row.title;
+	if (row.kind === "event" && eventName.startsWith("tool.")) return "tool";
+	if (row.kind === "event" && eventName.startsWith("approval.")) return "approval";
+	return "activity";
+}
+
+function activityBucketLabel(bucket: ActivityBucket): string {
+	const labels: Record<ActivityBucket, string> = {
+		activity: "Activity",
+		approval: "Approval",
+		tool: "Tool",
 	};
-	return classes[kind];
+	return labels[bucket];
+}
+
+function activityBucketBg(bucket: ActivityBucket): string {
+	const classes: Record<ActivityBucket, string> = {
+		activity: "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50",
+		approval: "bg-amber-100 text-amber-950 dark:bg-amber-900 dark:text-amber-50",
+		tool: "bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50",
+	};
+	return classes[bucket];
 }
 
 function stateBg(state: string): string {
@@ -1602,17 +1622,6 @@ function timeHintHtml(input: number | null, empty: string): string {
 	const delta = input - Date.now();
 	const label = delta > 0 ? `in ${duration(delta)}` : `${duration(Math.abs(delta))} ago`;
 	return `<span data-tooltip="${escapeHtml(time(input))}" data-side="top">${escapeHtml(label)}</span>`;
-}
-
-function kindLabel(kind: AdminActivityRow["kind"]): string {
-	const labels: Record<AdminActivityRow["kind"], string> = {
-		approval: "Approval",
-		call: "Tool call",
-		event: "Trace",
-		message: "Message",
-		run: "Run",
-	};
-	return labels[kind];
 }
 
 function stateLabel(state: string): string {
