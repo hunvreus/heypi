@@ -909,6 +909,14 @@
       border-color: var(--color-amber-900);
     }
   }
+  .dark\:bg-accent\/50 {
+    &:is(.dark *) {
+      background-color: var(--color-accent);
+      @supports (color: color-mix(in lab, red, red)) {
+        background-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
+      }
+    }
+  }
   .dark\:bg-amber-900 {
     &:is(.dark *) {
       background-color: var(--color-amber-900);

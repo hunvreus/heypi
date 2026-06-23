@@ -1335,7 +1335,10 @@ test("admin chats threads and thread detail render URL-backed timeline", () => {
 	);
 	assert.match(threadBody, /class="mx-auto w-full max-w-3xl min-w-0 px-4"[\s\S]*class="input-group w-full"/);
 	assert.match(threadBody, /<article id="event-message-message-1" data-admin-message-role="user"/);
-	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*justify-items-end[\s\S]*rounded-lg bg-accent/);
+	assert.match(
+		threadBody,
+		/data-admin-message-role="user"[\s\S]*justify-items-end[\s\S]*rounded-lg bg-accent[\s\S]*dark:bg-accent\/50/,
+	);
 	assert.match(threadBody, /data-admin-message-role="user"[\s\S]*max-w-\[min\(42rem,80%\)\]/);
 	assert.doesNotMatch(threadBody, /data-admin-message-role="user"[\s\S]*bg-primary/);
 	assert.match(threadBody, />U123 <span aria-hidden="true">·<\/span>/);

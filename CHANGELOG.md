@@ -42,6 +42,7 @@
 - Changed admin thread activity rows to align with assistant messages and use a labeled expand/collapse control.
 - Changed admin thread activity rows to use regular labels, readable structured details, visible summary tooltips, and quieter completed run summaries.
 - Changed the admin sidebar to show Documentation and Log out as footer menu rows and moved the theme toggle beside the logo.
+- Changed admin user message bubbles to use a softer accent background in dark mode.
 - Changed `create-heypi` generated adapter wiring to rely on adapter env defaults instead of inline `process.env.*!` credential plumbing.
 - Changed `heypi dev` to start configured adapters, enable admin by default when omitted, load `.env.local` after `.env`, and install internal loopback local test routes.
 - Changed `heypi start` to load only `.env` and avoid dev-only admin/local route defaults.

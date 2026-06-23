@@ -857,7 +857,7 @@ function chatMessageRow(row: AdminActivityRow, selected: boolean): string {
 	const meta = `<footer class="text-xs text-muted-foreground">${author}${relativeTimeHtml(row.time, user ? "end" : undefined)}${state}</footer>`;
 	if (user) {
 		return `<article id="${escapeHtml(eventDomId(row))}" data-admin-message-role="user"${selectedAttr(selected)} class="grid min-w-0 justify-items-end px-2">
-		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg bg-accent px-4 py-3">
+		<div class="grid max-w-[min(42rem,80%)] min-w-0 gap-2 rounded-lg bg-accent px-4 py-3 dark:bg-accent/50">
 			<div class="grid min-w-0 gap-2 text-sm leading-6">${body}</div>
 			<div class="text-right">${meta}</div>
 		</div>
