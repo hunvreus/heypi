@@ -76,25 +76,14 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",
-		"@libsql/client": "^0.17.3",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
-		"cac": "^7.0.0",
-		"croner": "^10.0.1",
 		"discord.js": "^14.26.4",
-		"drizzle-orm": "^0.45.2",
-		"just-bash": "^3.0.1",
-		"picocolors": "^1.1.1",
-		"unbash": "3.0.0",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",
-		"@tailwindcss/cli": "^4.3.0",
 		"@types/node": "^25.9.1",
-		"basecoat-css": "1.0.0-beta.5",
-		"drizzle-kit": "^0.31.10",
-		"tailwindcss": "^4.3.0",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
 	},
