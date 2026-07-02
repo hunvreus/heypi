@@ -35,6 +35,10 @@ agent/
 `config.json` can define data options such as `id`, `context`, `approvals`, `state`, `tools`,
 `excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file.
 
+`context.range` is either `current` or `delta`. `current` sends only the triggering chat message to
+Pi. `delta` sends chat messages since the last completed trigger. Older chat is not passively
+injected; Pi can ask for it with `chat_history`.
+
 `agent/` is staged into a Pi-visible bundle. `skills/` and `extensions/` are loaded by Pi. Files in
 `tools/` are passed to Pi as extension paths so tool execution stays inside Pi.
 

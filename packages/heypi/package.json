@@ -1,7 +1,7 @@
 {
 	"name": "@hunvreus/heypi",
 	"version": "0.2.0-beta.0",
-	"description": "Chat agents for your team, with approvals and sandboxed tools.",
+	"description": "Pi-native chat adapter shell for team agents.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -65,14 +65,14 @@
 	},
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",
-		"prepack": "pnpm run build",
+		"prepack": "corepack pnpm run build",
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
 		"heypi": "tsx --conditions development src/cli.ts",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "pnpm run build && tsc --noEmit",
-		"test": "pnpm run build"
+		"typecheck": "corepack pnpm run build && tsc --noEmit",
+		"test": "corepack pnpm run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",

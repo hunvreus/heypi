@@ -13,4 +13,3 @@ export const consoleLogger: Logger = {
 };
 
 export type { Logger };
-

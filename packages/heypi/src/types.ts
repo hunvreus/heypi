@@ -78,16 +78,15 @@ export type Adapter = {
 	name?: string;
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
-	send(message: SendMessage): Promise<{ id?: string } | void>;
+	send(message: SendMessage): Promise<{ id?: string } | undefined>;
 	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 	ack?(message: ChatMessage): Promise<void> | void;
 };
 
-export type ContextRange = "current" | "delta" | "thread";
+export type ContextRange = "current" | "delta";
 
 export type ContextConfig = {
 	range?: ContextRange;
-	includeSince?: "lastCompletedTrigger" | "threadStart";
 	maxMessages?: number;
 	maxChars?: number;
 	includeBotMessages?: boolean;

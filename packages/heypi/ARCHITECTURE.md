@@ -56,9 +56,10 @@ to `loadAgent()`.
 
 ## Conversation context
 
-heypi stores a small conversation log for adapter coordination. By default, a Pi job receives only
-the triggering chat message. Older chat is available through the Pi `chat_history` tool, so history
-is retrieved intentionally instead of injected passively into every prompt.
+heypi stores a small conversation log for adapter coordination. A Pi job receives either the
+triggering chat message or the small delta since the last completed trigger. Older chat is available
+through the Pi `chat_history` tool, so history is retrieved intentionally instead of injected
+passively into every prompt.
 
 Pi can send sparse chat updates through `chat_reply`. heypi only renders the adapter side effect;
 the model decides when the update is useful.

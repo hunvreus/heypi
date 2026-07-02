@@ -1,5 +1,5 @@
-import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "@sinclair/typebox";
 
 const chatReplyParameters = Type.Object({
 	text: Type.String({ description: "Short message to send to the current chat thread" }),

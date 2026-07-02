@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { createChatHistoryTool } from "./chat-history.js";
 import { createChatReplyTool } from "./chat-reply.js";
@@ -6,7 +7,6 @@ import { ConversationRuntime } from "./conversation.js";
 import { consoleLogger } from "./log.js";
 import { PiSessionHost, piSessionDir } from "./pi/session.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
-import { stageAgent } from "./agent.js";
 
 export type HeypiApp = {
 	start(): Promise<void>;

@@ -1,5 +1,5 @@
-import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "@sinclair/typebox";
 import type { ConversationRuntime } from "./conversation.js";
 
 const chatHistoryParameters = Type.Object({

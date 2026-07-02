@@ -3,17 +3,17 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "pnpm --filter @hunvreus/heypi run build",
-		"build:all": "pnpm --filter @hunvreus/heypi run build",
-		"prepack": "pnpm run build",
-		"pack:dry": "pnpm --filter @hunvreus/heypi run pack:dry",
-		"pack:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run pack:dry",
-		"publish:dry": "pnpm --filter @hunvreus/heypi run publish:dry",
-		"publish:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
+		"build": "corepack pnpm --filter @hunvreus/heypi run build",
+		"build:all": "corepack pnpm --filter @hunvreus/heypi run build",
+		"prepack": "corepack pnpm run build",
+		"pack:dry": "corepack pnpm --filter @hunvreus/heypi run pack:dry",
+		"pack:dry:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run pack:dry",
+		"publish:dry": "corepack pnpm --filter @hunvreus/heypi run publish:dry",
+		"publish:dry:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "pnpm --filter @hunvreus/heypi run typecheck",
-		"test": "pnpm --filter @hunvreus/heypi run test"
+		"typecheck": "corepack pnpm --filter @hunvreus/heypi run typecheck",
+		"test": "corepack pnpm --filter @hunvreus/heypi run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

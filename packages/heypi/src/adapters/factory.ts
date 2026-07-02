@@ -5,7 +5,7 @@ import type { Adapter, AdapterContext, ApprovalDecision, ApprovalView, ChatMessa
 type BaseAdapterConfig = {
 	name?: string;
 	onStart?: (context: AdapterContext) => Promise<void> | void;
-	onSend?: (message: SendMessage) => Promise<{ id?: string } | void> | { id?: string } | void;
+	onSend?: (message: SendMessage) => Promise<{ id?: string } | undefined> | { id?: string } | undefined;
 	onAck?: (message: ChatMessage) => Promise<void> | void;
 	onApproval?: (view: ApprovalView) => Promise<ApprovalDecision> | ApprovalDecision;
 };
@@ -94,7 +94,7 @@ export function slack(config: SlackConfig = {}): Adapter {
 			app = undefined;
 		},
 		async send(message) {
-			if (config.onSend) return config.onSend(message);
+			if (config.onSend) return sendHook(config, message);
 			const result = await app?.client.chat.postMessage({
 				channel: message.conversation,
 				thread_ts: message.thread,
@@ -168,7 +168,7 @@ export function discord(config: DiscordConfig = {}): Adapter {
 			client = undefined;
 		},
 		async send(message) {
-			if (config.onSend) return config.onSend(message);
+			if (config.onSend) return sendHook(config, message);
 			const channel = await client?.channels.fetch(message.conversation);
 			if (!channel?.send) return undefined;
 			const result = await channel.send(message.text);
@@ -189,16 +189,21 @@ export function telegram(config: TelegramConfig = {}): Adapter {
 			stopped = false;
 			await config.onStart?.(context);
 			if (!config.token) return;
-			void pollTelegram(config, context, () => stopped, (nextOffset) => {
-				offset = nextOffset;
-			});
+			void pollTelegram(
+				config,
+				context,
+				() => stopped,
+				(nextOffset) => {
+					offset = nextOffset;
+				},
+			);
 			context.logger.info("adapter.telegram.start");
 		},
 		stop() {
 			stopped = true;
 		},
 		async send(message) {
-			if (config.onSend) return config.onSend(message);
+			if (config.onSend) return sendHook(config, message);
 			if (!config.token) return undefined;
 			const result = await telegramApi<TelegramSendMessageResult>(config.token, "sendMessage", {
 				chat_id: message.conversation,
@@ -269,7 +274,7 @@ export function webhook(config: WebhookConfig = {}): Adapter {
 			server = undefined;
 		},
 		async send(message) {
-			if (config.onSend) return config.onSend(message);
+			if (config.onSend) return sendHook(config, message);
 			context?.logger.info("adapter.webhook.outbound", { conversation: message.conversation, text: message.text });
 			return undefined;
 		},
@@ -281,6 +286,10 @@ export function webhook(config: WebhookConfig = {}): Adapter {
 function approvalHook(config: BaseAdapterConfig): Adapter["requestApproval"] {
 	if (!config.onApproval) return undefined;
 	return async (view) => config.onApproval?.(view) ?? { approved: false };
+}
+
+async function sendHook(config: BaseAdapterConfig, message: SendMessage): Promise<{ id?: string } | undefined> {
+	return (await config.onSend?.(message)) ?? undefined;
 }
 
 async function handleWebhook(

@@ -1,156 +1,19 @@
 # TODO
 
-## Now
+## Rewrite
 
-- Tag and publish the prepared `0.2.0-beta.0` release when approved.
-	- Release notes, migration notes, package versions, and dry-run package validation are finalized.
-	- Do not tag or publish until explicitly approved.
+- Keep gutting old heypi-owned harness behavior.
+- Keep Pi responsible for sessions, transcript, compaction, retries, tools, and
+  extension state.
+- Keep heypi focused on adapters, config, resource staging, approval UI, and
+  later admin/event mirrors.
 
 ## Next
 
-- Harden the Cloudflare Containers deployment path.
-	- Treat Containers as restartable Node/container mode, not a pure Worker rewrite.
-	- Add a Worker front door that routes signed HTTP adapter traffic to one or more explicit container instances.
-	- Add a Cloudflare D1-backed `Store` adapter or another supported durable store path for container deployments.
-	- Add a `examples/cloudflare-containers-d1` starter app once the store path exists.
-	- Decide the durable `Store` backend for container mode; do not rely on local SQLite surviving container sleep unless it is on a platform-supported persistent filesystem with the required locking and fsync semantics.
-	- Make startup, shutdown, lock recovery, scheduler recovery, and rolling deploy behavior tolerate container sleep, restart, and fresh disks.
-	- Keep Slack Socket Mode, Discord gateway, and Telegram polling in container mode; use Worker ingress only for HTTP/webhook paths.
-	- Add container health/readiness checks, status hooks, and operational docs for logs, SSH/debug access, image rollout, and instance IDs.
-- Add provider-specific deployment guides.
-	- Fly.io: persistent volume-backed state/workspace directories and process health checks.
-	- VPS/Docker: bind-mounted state/workspace directories, backups, and systemd/container restart behavior.
-	- Kubernetes: PVC-backed state/workspace directories, single-owner locking, probes, and rollout guidance.
-	- Document the restart contract: persisted DB state survives, but in-flight secret requests, active steer/follow-up queues, process-local delivery queues, and accepted-but-running async webhook turns do not survive process restart.
-- Fill published docs gaps.
-	- Add an evals authoring page covering `defineEval`, assertion shapes, agent-backed runs, persisted eval traces, and CI usage.
-	- Add a trace events reference covering event types, `heypi events`, admin thread timelines, eval persistence, and restart recovery events.
-	- Add a consolidated security and responsible-use page covering prompt-injection posture, trusted custom code, runtime sandboxing, approvals, adapter allowlists, admin exposure, webhook callbacks, and document conversion.
-	- Expand the API reference from an export index into signatures for the public config, authoring, adapter, runtime, and store contracts.
-	- Link or move the manual QA checklist into published docs once the `qa/` flow is stable enough for users.
-	- Document `heypi-convert-document` only if it becomes an intended user-facing CLI instead of an internal attachment helper.
-- Add a live provider QA harness.
-	- Keep `qa/` manual-only until there are runnable commands that consume dedicated QA config.
-	- Add minimal Slack, Discord, Telegram, and webhook QA apps that run outside the examples and use isolated state/workspace roots.
-	- Add `pnpm run qa:slack`, `pnpm run qa:discord`, `pnpm run qa:telegram`, and `pnpm run qa:webhook` or an equivalent `heypi qa` command.
-	- Keep examples focused on user-facing demos; keep QA focused on repeatable smoke behavior, attachment uploads, approvals, native commands, and provider-specific delivery.
-	- Support optional driver bots/apps for API-driven message checks, but keep provider-native button and slash-command UI checks manual unless a safe browser-profile lane exists.
-- Add operator audit views.
-	- Add audit views for failed turns, blocked commands, approval decisions, long-running calls, and recent delivery failures.
-	- Expand `heypi doctor` diagnostics for production readiness, covering env vars, adapter credentials, risky binds, allowlist gaps, approver gaps, pending migrations, runtime roots/providers, document conversion tools, and optional live adapter connectivity.
-	- Extend operator status with live process-only diagnostics if persisted state is insufficient, such as adapter connectivity and in-memory follow-up queue depth.
-	- Report store access, migration version, lock health, runtime root/provider status, warm scopes, runtime queue depth, adapter connectivity, bot identity, last adapter event/error, active turns, queued follow-ups, pending approvals, due/running jobs, delivery retries/failures, and risky configuration posture.
-- Add thread reset controls.
-	- Decide whether `/new` or `/reset` should start a fresh Pi conversation, archive the current thread state, or both.
-	- Keep reset controls permissioned and explicit because they affect shared team context.
-- Clarify heartbeat scope semantics.
-	- Document how `scope.channels` and `scope.users` map to stored provider threads before redesigning targeted heartbeat routing.
-	- Decide whether user-scoped heartbeat jobs should use direct-message discovery, actor-filtered channel threads, or explicit targets.
-- Add model configuration visibility and selection.
-	- Add configured model aliases, such as `fast`, `deep`, or `ops`, that map to explicit provider/model settings.
-	- Add CLI/admin picker support for selecting from configured aliases instead of typing raw provider/model strings.
-	- Add per-job, per-adapter, and per-agent model overrides.
-	- Decide whether any chat-side model switching should exist; if added, keep it permissioned and auditable rather than open to all channel participants.
-- Add transcript recall.
-	- Keep Pi responsible for active-session context, branching, and compaction.
-	- Add heypi-level search across persisted DB messages and Pi JSONL sessions outside the current thread/context window.
-	- Add conversation hydration for existing provider conversations: when the bot is invited, first mentioned, or attached to an existing channel/thread, fetch recent provider history where APIs and permissions allow it.
-	- Return compact, source-linked summaries over prior chats, jobs, approvals, and resolved incidents.
-	- Add memory/recall improvements that keep scoped file memory as the writable durable context layer while adding scoped, source-linked recall over older transcripts, tool calls, jobs, approvals, and attachments.
-- Add blob/file spillover for large stored output.
-	- Spill large call stdout/stderr, tool logs, attachments, and generated artifacts to blobs/files.
-	- Keep DB rows to previews, metadata, and blob refs.
-- Add store retention controls.
-	- Prune old provider-message index rows once they are no longer useful for reply continuation.
-	- Keep retention configurable per store/deployment so long-lived team channels do not grow unbounded.
-- Design durable secret request support.
-	- Design encrypted secret persistence before making pending secret requests durable.
-	- Do not persist request private keys or plaintext secret values in generic stores.
-	- Decide whether custom tool `ToolContext` should expose a secret-request capability so trusted tools can ask users for credentials without importing internal `Secrets`.
-- Persist accepted async work before execution.
-	- Store active steer/follow-up intents in the database before acknowledging them, and treat in-memory `ActiveRuns` queues as process-local caches over persisted intent.
-	- Store async webhook runs once `202 Accepted` is returned, including current state, final result/error, and restart-interrupted status.
-	- Add durable callback/delivery retry state only when webhook callback guarantees need to survive process restarts.
-	- Add restart/chaos tests that kill or simulate restart during an active turn, queued follow-up, async webhook run, scheduled job run, and pending delivery retry.
-
-## Later
-
-- Tighten runtime provider operations.
-	- Add CLI commands for runtime provider `status`, `stop`, and `restart` once provider management stabilizes.
-	- Add direct tests for provider-backed file/search behavior against real Docker/Gondolin when CI can run those dependencies.
-	- Replace Docker container reset detection that depends on matching stderr/stdout text with structured Docker state checks where possible.
-- Harden document conversion.
-	- Document the trust boundary for host-side document parsing.
-	- Consider sandboxed conversion for untrusted attachments if document processing becomes common in shared channels.
-- Review scoped-skill resources.
-	- Decide whether scoped skills should remain single-file `SKILL.md` entries or support scoped resource files.
-	- If resource files are added, define safe paths, size limits, write/delete policy, prompt loading rules, and whether resource mutation needs separate approval.
-	- Extend the skills ecosystem with controlled import/install/sync for approved skill bundles, admin/CLI visibility for installed skills, scope, provenance, and write policy.
-	- Add admin commands to install approved skills from configured registries or local bundles.
-	- Decide whether non-admin users can request skill installs; if allowed, route through the existing approval flow instead of installing directly from chat.
-	- Add on-demand skill creation from chat/admin commands with scoped write policy, provenance, and review status.
-	- Add autonomous skill extraction from completed turns, incidents, runbooks, and repeated workflows, but require admin/approver review before generated skills become active by default.
-- Extend GitHub webhook automation.
-	- Decide whether to add labels, branches, or pull requests.
-	- Keep write-side GitHub tokens in host-side custom tools, not runtime containers.
-- Improve automation UX.
-	- Define whether scheduled jobs need configurable approval behavior beyond the current default of waiting on normal approval, denial, or expiry.
-	- Decide whether pausing or removing a scheduled job should offer explicit cancellation for already queued runs; current behavior leaves paused-job runs queued and skips runs whose source job row is gone.
-	- Add named webhook subscriptions with route, auth, event filters, prompt templates, delivery target, enabled/disabled state, and last-run status.
-	- Add automation templates for common team workflows such as incident triage, PR review, deploy verification, docs drift, and daily or weekly digests.
-	- Add trusted script preprocessing for jobs and webhook subscriptions where script output becomes compact turn context before the agent runs.
-	- Add explicit multi-skill job/subscription configuration so automations can load selected skills without relying on prompt-only instructions.
-	- Add admin/CLI visibility for configured automations, recent runs, delivery results, and failures.
-- Add a memory provider plugin surface.
-	- Keep scoped file memory as the default.
-	- Let optional plugins provide semantic memory, profile/user memory, or external recall providers without coupling them to core chat storage.
-	- Start only after transcript recall proves the missing use cases.
-- Add browser and web tools as an optional package.
-	- Start with local Chrome/CDP or local browser automation before paid cloud providers.
-	- Include navigation, accessibility snapshot, click/type, screenshot, extraction, web fetch, and web search.
-	- Keep logged-in browser use explicit and separate from plain HTTP fetch/search.
-	- Add team-safe approval rules for logged-in sessions, form submission, downloads/uploads, and external network access.
-	- Persist compact tool outputs and generated screenshots/artifacts through the normal call and attachment paths.
-- Add additional runtime providers where the lifecycle is clear.
-	- Evaluate Cloudflare Sandbox, Vercel Sandbox, Daytona, and Modal as runtime provider backends.
-	- Define persistence, idle timeout, cold start, networking, secrets, file sync, logs, cancellation, and cleanup semantics before exposing a provider publicly.
-- Add email approval transport.
-	- Treat email as an approval delivery channel, not just a chat adapter.
-	- Decisions should write to the existing approval store and resume the original turn.
-	- Include signed, expiring approve/reject links and enough context for audit.
-- Add email adapter.
-	- Treat this as a chat/inbound adapter, separate from email approval delivery.
-- Add an outbound delivery-attempt ledger if needed.
-	- Add only if current message state and delivery queue cannot answer sent, failed, retried, ambiguous outcomes, provider message ids, and attempts.
-- Review cleanup candidates before implementation.
-	- Add shared test helpers for repeated temp roots, temp SQLite stores, cleanup, fake agents, fake runtimes, fake delivery queues, and common adapter assertions.
-	- Add focused runtime file-tool tests before changing runtime behavior: read offsets, write limits, edit uniqueness, grep scan/file limits, find patterns, symlink/path escape behavior, aborts, and binary/large-file failures.
-	- Add focused adapter tests before larger adapter behavior changes: progress update/stop behavior, skipped first chunks after streaming/progress, private replies, stale approvals, approval replacement, attachments, and provider-specific mention handling.
-	- Split `create-heypi/src/index.ts` only when touching scaffolder generation or when file size blocks maintenance.
-- Review bot-to-bot loop controls.
-	- `allow.bots` permits peer bot messages; heypi drops its own bot identity but does not prevent chains where another bot auto-replies to heypi output.
-	- Consider provider-specific loop metadata, hop/depth limits, or cooldowns only if real integrations show loops.
-- Add more adapters.
-	- Teams.
-- Add voice memo media support.
-	- Acknowledge unsupported inbound audio/voice attachments before transcription support exists.
-	- Decode and transcribe inbound voice/audio attachments where adapters expose them.
-	- Support uploading generated audio or media files through the existing attachment path.
-	- Treat live calls or phone-call handling as out of scope unless explicitly designed later.
-- Document trusted MCP usage through Pi extensions.
-	- MCP is not built into Pi core.
-	- heypi should only load preapproved MCP extensions.
-	- First-class MCP config, tool filtering, and MCP-specific approval policy can come later if needed.
-	- Add MCP support starting with trusted, config-declared MCP servers loaded through Pi extensions.
-	- Add tool allowlists, naming collision handling, per-tool approval policy, and admin visibility before allowing broad team use.
-	- Do not let agents install or start arbitrary MCP servers from chat.
-- Add subagent and programmatic pipeline support through Pi extensions.
-	- Prefer Pi extensions for subagents, tool-pipeline execution, and process tracking instead of building a second agent runtime in heypi core.
-	- Keep sensitive pipeline steps inside the existing approval, audit, runtime scope, and cancellation paths.
-	- Define how pipeline progress, artifacts, failures, and spawned work are shown in team chats and admin views.
-
-## Won't do for now
-
-- Letting agents install arbitrary MCP servers at runtime.
-- Broad bot-side admin/config mutation.
-- Running Telegram polling and webhook delivery for the same bot token at the same time.
+- Add built-in approval controls for Discord and Telegram or explicitly document
+  that those adapters require `onApproval`.
+- Add todo/planning as a Pi extension with heypi rendering, not prompt machinery.
+- Add memory as a Pi extension.
+- Add an admin/event mirror sourced from Pi and adapter events.
+- Add runtime provider boundaries after the Pi-native core is stable.
+- Rebuild examples at the end; do not let stale examples drive core design.

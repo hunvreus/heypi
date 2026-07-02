@@ -1,57 +1,52 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="packages/heypi/docs/assets/heypi-white.png">
-    <source media="(prefers-color-scheme: light)" srcset="packages/heypi/docs/assets/heypi-black.png">
-    <img alt="heypi" src="packages/heypi/docs/assets/heypi-black.png" width="320">
-  </picture>
-</p>
-
 # heypi
 
-Team chat agents with approvals, audit, and sandboxed tools. Slack, Discord, Telegram, and trusted webhooks.
+Pi-native chat adapters for team agents.
 
-heypi is for governed chat-ops agents that work in shared channels while keeping sensitive actions reviewable. This repo contains the core heypi package, optional runtime providers, and runnable examples.
+heypi is being rebuilt as a small shell around [Pi](https://pi.dev). Pi owns the
+agent session, transcript, compaction, retries, tool execution, and extension
+state. heypi owns chat adapters, agent folder loading, resource staging, and
+product surfaces such as approvals.
 
-[Start here: `packages/heypi`](packages/heypi/README.md#minimal-app)
+## Current package
 
-## Packages
+- [`packages/heypi`](packages/heypi): core Pi-native adapter shell.
 
-- [`packages/heypi`](packages/heypi): Core framework: adapters, tools, approvals, state, admin, scheduler, CLI.
-- [`packages/create-heypi`](packages/create-heypi): App scaffolder for `npm create heypi@latest`.
-- [`packages/heypi-runtime-docker`](packages/heypi-runtime-docker): Docker runtime provider with one warm container per runtime scope.
-- [`packages/heypi-runtime-gondolin`](packages/heypi-runtime-gondolin): Gondolin runtime provider with one warm VM per runtime scope.
+Other packages and examples are not part of the current rewrite target yet.
 
-## Examples
+## Minimal shape
 
-- [`examples/slack-devops`](examples/slack-devops): Slack DevOps assistant with runtime tools, runbooks, memory, secrets, SSH host inventory, and approvals.
-- [`examples/discord-gondolin`](examples/discord-gondolin): Discord project assistant with Gondolin, memory, scoped skills, secret requests, and file attachments.
-- [`examples/telegram-workout`](examples/telegram-workout): Telegram fitness coach with saved profile/plan and heartbeat check-ins.
-- [`examples/webhook-github-docker`](examples/webhook-github-docker): GitHub issue automation with webhook input, Docker repo inspection, and trusted GitHub writeback.
+```ts
+import { createHeypi, loadAgent, slack } from "@hunvreus/heypi";
+
+const agent = loadAgent("./agent", {
+  model,
+  adapters: [slack({ token: process.env.SLACK_BOT_TOKEN })],
+});
+
+const app = await createHeypi({ agent });
+await app.start();
+```
+
+Agent folders are still file-based:
+
+```text
+agent/
+  config.json
+  instructions.md
+  system.md
+  skills/
+  tools/
+  extensions/
+```
 
 ## Development
 
 ```bash
-pnpm install
-pnpm run check
-pnpm run typecheck
-pnpm run test
-pnpm run build:all
-```
-
-Run examples:
-
-```bash
-(cd examples/slack-devops && pnpm dev)
-(cd examples/discord-gondolin && pnpm dev)
-(cd examples/telegram-workout && pnpm dev)
-(cd examples/webhook-github-docker && pnpm dev)
-```
-
-Dry-run packages before publishing:
-
-```bash
-pnpm run pack:dry:packages
-pnpm run publish:dry:packages
+corepack pnpm install
+corepack pnpm run check
+corepack pnpm run typecheck
+corepack pnpm run test
+corepack pnpm run build
 ```
 
 ## License

@@ -36,7 +36,11 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 	};
 }
 
-function approvalViewForTool(event: ToolCallEvent, requestedBy: string | undefined, config: ApprovalConfig): ApprovalView {
+function approvalViewForTool(
+	event: ToolCallEvent,
+	requestedBy: string | undefined,
+	config: ApprovalConfig,
+): ApprovalView {
 	const command = event.toolName === "bash" ? stringInput(event.input, "command") : undefined;
 	return {
 		id: event.toolCallId,

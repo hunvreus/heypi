@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import {
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
-	SessionManager,
 	type AgentSession,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionFromServices,
+	createAgentSessionRuntime,
+	createAgentSessionServices,
 	type ExtensionFactory,
+	SessionManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../types.js";
@@ -37,7 +37,12 @@ export class PiSessionHost {
 		]
 			.filter(Boolean)
 			.join("\n\n");
-		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+		const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+			cwd,
+			agentDir,
+			sessionManager,
+			sessionStartEvent,
+		}) => {
 			const services = await createAgentSessionServices({
 				cwd,
 				agentDir,

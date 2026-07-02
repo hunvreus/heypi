@@ -43,7 +43,6 @@ export class ConversationRuntime {
 	constructor(private readonly options: ConversationRuntimeOptions) {
 		this.context = {
 			range: options.context?.range ?? "current",
-			includeSince: options.context?.includeSince ?? "lastCompletedTrigger",
 			maxMessages: options.context?.maxMessages ?? 20,
 			maxChars: options.context?.maxChars ?? 12_000,
 			includeBotMessages: options.context?.includeBotMessages ?? false,
@@ -165,12 +164,7 @@ export class ConversationRuntime {
 	}
 
 	private buildPrompt(triggerRecord: number): string {
-		const min =
-			this.context.range === "current"
-				? triggerRecord - 1
-				: this.context.includeSince === "lastCompletedTrigger"
-					? this.lastCompletedTrigger()
-					: 0;
+		const min = this.context.range === "current" ? triggerRecord - 1 : this.lastCompletedTrigger();
 		const messages = this.records
 			.filter((record): record is ConversationRecord & { type: "inbound" } => record.type === "inbound")
 			.filter((record) => record.record > min && record.record <= triggerRecord)
@@ -185,7 +179,8 @@ export class ConversationRuntime {
 		const lines = [`- [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text || "(no text)"}`];
 		if (this.context.includeAttachments && message.attachments?.length) {
 			lines.push("  attachments:");
-			for (const attachment of message.attachments) lines.push(`  - ${attachment.path ?? attachment.url ?? attachment.name}`);
+			for (const attachment of message.attachments)
+				lines.push(`  - ${attachment.path ?? attachment.url ?? attachment.name}`);
 		}
 		return lines.join("\n");
 	}
