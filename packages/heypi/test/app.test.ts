@@ -240,4 +240,60 @@ describe("createHeypi", () => {
 		expect(warnings).toEqual(["adapter.ack_failed"]);
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Still done." }]);
 	});
+
+	it("serializes concurrent first messages onto one channel session", async () => {
+		const root = await makeDir("app-concurrent-agent");
+		const state = await makeDir("app-concurrent-state");
+		const adapter = local();
+		let piStarts = 0;
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				piStarts++;
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await Promise.all([
+			adapter.receive({
+				id: "m1",
+				user: { id: "u1", name: "Ronan" },
+				text: "first",
+			}),
+			adapter.receive({
+				id: "m2",
+				user: { id: "u1", name: "Ronan" },
+				text: "second",
+			}),
+		]);
+		await app.stop();
+
+		expect(piStarts).toBe(1);
+		expect(adapter.sent).toHaveLength(2);
+		expect(adapter.sent).toContainEqual({ conversation: "local", thread: "m1", text: "Done." });
+		expect(adapter.sent).toContainEqual({ conversation: "local", thread: "m2", text: "Done." });
+	});
 });

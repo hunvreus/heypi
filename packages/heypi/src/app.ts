@@ -47,19 +47,30 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
 	const staged = await stageAgent(agent, stateDir);
 	const channels = new Map<string, RunningChannel>();
+	const loadingChannels = new Map<string, Promise<RunningChannel>>();
 
 	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
 		const key = keyFor(message);
 		const cached = channels.get(key);
 		if (cached) return cached;
+		const loading = loadingChannels.get(key);
+		if (loading) return loading;
 		const channel = createChannel({
 			logPath: join(stateDir, "channels", `${key}.jsonl`),
 			context: agent.context,
 		});
-		await channel.load();
-		const running = { adapter, channel };
-		channels.set(key, running);
-		return running;
+		const loadingChannel = (async () => {
+			await channel.load();
+			const running = { adapter, channel };
+			channels.set(key, running);
+			return running;
+		})();
+		loadingChannels.set(key, loadingChannel);
+		try {
+			return await loadingChannel;
+		} finally {
+			loadingChannels.delete(key);
+		}
 	}
 
 	async function startPi(running: RunningChannel, message: ChatMessage): Promise<PiHost> {
