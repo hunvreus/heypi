@@ -38,3 +38,4 @@
 - Export public config and approval integration types from the package entrypoint.
 - Added explicit `memory_store` and `memory_search` Pi tools backed by per-conversation JSONL
   storage.
+- Added exact-match adapter/account/conversation/user allowlists before Pi work is queued.

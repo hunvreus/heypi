@@ -44,6 +44,21 @@ function assistantText(message: { role?: string; content?: unknown }): string {
 	return typeof content === "string" ? content : "";
 }
 
+function includes(values: string[] | undefined, value: string): boolean {
+	return !values || values.includes(value);
+}
+
+function allowed(agent: AgentConfig, message: ChatMessage): boolean {
+	const allow = agent.allow;
+	if (!allow) return true;
+	return (
+		includes(allow.adapters, message.adapter) &&
+		includes(allow.accounts, message.account) &&
+		includes(allow.conversations, message.conversation) &&
+		includes(allow.users, message.user.id)
+	);
+}
+
 export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp> {
 	const agent = await options.agent;
 	const logger = options.logger ?? consoleLogger;
@@ -188,6 +203,15 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 
 	async function receive(adapter: Adapter, message: ChatMessage): Promise<void> {
 		if (stopping) return;
+		if (!allowed(agent, message)) {
+			logger.warn("adapter.message_denied", {
+				adapter: message.adapter,
+				account: message.account,
+				conversation: message.conversation,
+				user: message.user.id,
+			});
+			return;
+		}
 		try {
 			await adapter.ack?.(message);
 		} catch (error) {

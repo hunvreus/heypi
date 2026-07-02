@@ -52,6 +52,11 @@ Function values such as models, adapters, and approval predicates belong in code
 ```json
 {
   "id": "codex",
+  "allow": {
+    "adapters": ["slack"],
+    "conversations": ["C0123456789"],
+    "users": ["U0123456789"]
+  },
   "context": {
     "mode": "current",
     "maxMessages": 20,
@@ -109,6 +114,22 @@ last completed trigger in the same conversation.
 
 Older chat is available through the `chat_history` Pi tool. The model can call it when history is
 actually needed instead of carrying old Slack/Discord/Telegram context in every request.
+
+## Access
+
+Set `allow` to restrict which adapter events can reach Pi. Lists are exact-match. If a list is
+omitted, that field is unrestricted. Denied messages are not acknowledged, queued, or sent to Pi.
+
+```json
+{
+  "allow": {
+    "adapters": ["slack"],
+    "accounts": ["T0123456789"],
+    "conversations": ["C0123456789"],
+    "users": ["U0123456789"]
+  }
+}
+```
 
 ## Todo
 
@@ -246,6 +267,7 @@ Included:
 - clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
   into Pi-native resource names and folders
 - local runtime workspace selection
+- exact-match adapter/account/conversation/user allowlists before Pi work is queued
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress

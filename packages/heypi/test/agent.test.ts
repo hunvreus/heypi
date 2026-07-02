@@ -19,6 +19,7 @@ describe("loadAgent", () => {
 			join(root, "config.json"),
 			JSON.stringify({
 				id: "file-id",
+				allow: { users: ["file-user"], conversations: ["file-channel"] },
 				context: { mode: "delta", maxMessages: 5 },
 				approvals: { layout: "card" },
 				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
@@ -30,6 +31,7 @@ describe("loadAgent", () => {
 
 		const agent = await loadAgent(root, {
 			id: "option-id",
+			allow: { users: ["option-user"] },
 			context: { maxMessages: 2 },
 			approvals: { showId: true },
 			runtime: { workspaceDir: "/tmp/option-workspace" },
@@ -39,6 +41,7 @@ describe("loadAgent", () => {
 		});
 
 		expect(agent.id).toBe("option-id");
+		expect(agent.allow).toEqual({ users: ["option-user"], conversations: ["file-channel"] });
 		expect(agent.instructions).toBe("Use Pi.");
 		expect(agent.system).toBe("System note.");
 		expect(agent.context).toEqual({ mode: "delta", maxMessages: 2 });
@@ -74,6 +77,12 @@ describe("loadAgent", () => {
 
 		await writeFile(config, JSON.stringify({ id: 123 }));
 		await expect(loadAgent(root)).rejects.toThrow("id must be a string");
+
+		await writeFile(config, JSON.stringify({ allow: { users: [123] } }));
+		await expect(loadAgent(root)).rejects.toThrow("allow.users must be an array of strings");
+
+		await writeFile(config, JSON.stringify({ allow: { conversations: [false] } }));
+		await expect(loadAgent(root)).rejects.toThrow("allow.conversations must be an array of strings");
 
 		await writeFile(config, JSON.stringify({ context: { maxMessages: 0 } }));
 		await expect(loadAgent(root)).rejects.toThrow("context.maxMessages must be a positive integer");

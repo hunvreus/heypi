@@ -33,6 +33,7 @@ export type {
 	AdminConfig,
 	AgentConfig,
 	AgentFileConfig,
+	AllowConfig,
 	ApprovalConfig,
 	ApprovalContext,
 	ApprovalDecision,

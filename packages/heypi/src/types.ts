@@ -69,6 +69,13 @@ export type ContextConfig = {
 	includeAttachments?: boolean;
 };
 
+export type AllowConfig = {
+	adapters?: string[];
+	accounts?: string[];
+	conversations?: string[];
+	users?: string[];
+};
+
 export type ApprovalLayout = "message" | "card";
 
 export type ApprovalConfig = {
@@ -160,6 +167,7 @@ export type MemoryConfig = {
 
 export type AgentFileConfig = {
 	id?: string;
+	allow?: AllowConfig;
 	context?: ContextConfig;
 	approvals?: ApprovalConfig;
 	runtime?: RuntimeConfig;

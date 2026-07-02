@@ -27,6 +27,18 @@ function validateConfig(value: unknown, path: string): AgentFileConfig {
 	if (config.id !== undefined && typeof config.id !== "string") {
 		throw new Error(`id must be a string in ${path}`);
 	}
+	if (config.allow?.adapters !== undefined && !isStringArray(config.allow.adapters)) {
+		throw new Error(`allow.adapters must be an array of strings in ${path}`);
+	}
+	if (config.allow?.accounts !== undefined && !isStringArray(config.allow.accounts)) {
+		throw new Error(`allow.accounts must be an array of strings in ${path}`);
+	}
+	if (config.allow?.conversations !== undefined && !isStringArray(config.allow.conversations)) {
+		throw new Error(`allow.conversations must be an array of strings in ${path}`);
+	}
+	if (config.allow?.users !== undefined && !isStringArray(config.allow.users)) {
+		throw new Error(`allow.users must be an array of strings in ${path}`);
+	}
 	if (config.context?.mode && config.context.mode !== "current" && config.context.mode !== "delta") {
 		throw new Error(`context.mode must be "current" or "delta" in ${path}`);
 	}
@@ -111,6 +123,7 @@ function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions
 	return {
 		...fileConfig,
 		...options,
+		allow: { ...fileConfig.allow, ...options.allow },
 		context: { ...fileConfig.context, ...options.context },
 		approvals: { ...fileConfig.approvals, ...options.approvals },
 		runtime: { ...fileConfig.runtime, ...options.runtime },

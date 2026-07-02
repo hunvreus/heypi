@@ -192,6 +192,60 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([]);
 	});
 
+	it("does not acknowledge or start Pi for messages outside the allowlist", async () => {
+		const root = await makeDir("app-denied-agent");
+		const state = await makeDir("app-denied-state");
+		const adapter = local();
+		let acks = 0;
+		let piStarts = 0;
+		const warnings: string[] = [];
+		adapter.ack = () => {
+			acks++;
+		};
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				allow: { users: ["u2"] },
+				approvals: { enabled: false },
+			}),
+			logger: {
+				debug() {},
+				info() {},
+				warn(event) {
+					warnings.push(event);
+				},
+				error() {},
+			},
+			piHost() {
+				piStarts++;
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(acks).toBe(0);
+		expect(piStarts).toBe(0);
+		expect(warnings).toEqual(["adapter.message_denied"]);
+		expect(adapter.sent).toEqual([]);
+	});
+
 	it("does not send blank final replies when Pi produces no assistant text", async () => {
 		const root = await makeDir("app-empty-agent");
 		const state = await makeDir("app-empty-state");

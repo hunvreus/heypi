@@ -3,6 +3,7 @@ import type {
 	AdapterKind,
 	AdminConfig,
 	AgentFileConfig,
+	AllowConfig,
 	ApprovalExtensionOptions,
 	ApprovalLayout,
 	ApprovalRow,
@@ -21,6 +22,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<RuntimeKind>().toEqualTypeOf<"local">();
 		expectTypeOf<ApprovalLayout>().toEqualTypeOf<"message" | "card">();
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
+		expectTypeOf<AllowConfig>().toMatchTypeOf<{ users?: string[]; conversations?: string[] }>();
 		expectTypeOf<AgentFileConfig>().toMatchTypeOf<{ context?: { mode?: ContextMode } }>();
 		expectTypeOf<AdminConfig>().toMatchTypeOf<{ enabled?: boolean; port?: number }>();
 		expectTypeOf<TodoConfig>().toMatchTypeOf<{ enabled?: boolean }>();
