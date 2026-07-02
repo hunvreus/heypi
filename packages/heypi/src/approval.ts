@@ -1,16 +1,7 @@
 import type { ExtensionFactory, ToolCallEvent } from "@earendil-works/pi-coding-agent";
-import type { ApprovalConfig, ApprovalDecision, ApprovalLayout, ApprovalView } from "./types.js";
+import type { ApprovalConfig, ApprovalDecision, ApprovalView } from "./types.js";
 
 export type { ApprovalDecision, ApprovalView } from "./types.js";
-
-export type ApprovalOptions = {
-	layout?: ApprovalLayout;
-	showId?: boolean;
-};
-
-export function approval(options: ApprovalOptions = {}): ApprovalOptions {
-	return options;
-}
 
 export type ApprovalExtensionOptions = {
 	config: ApprovalConfig;

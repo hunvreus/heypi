@@ -121,16 +121,9 @@ export type AgentFileConfig = Pick<
 	"id" | "context" | "approvals" | "state" | "tools" | "excludeTools" | "noTools"
 >;
 
-export type AgentResource = {
-	path: string;
-	name: string;
-	kind: "instruction" | "system" | "config" | "skill" | "tool" | "extension";
-};
-
 export type AgentConfig = LoadAgentOptions & {
 	id: string;
 	root: string;
 	instructions?: string;
 	system?: string;
-	resources: AgentResource[];
 };

@@ -9,6 +9,7 @@
 - Removed old runtime, admin, persistence, job, eval, scaffold, and managed
   context machinery from the active package surface.
 - Removed stale examples and manual QA files from the rewrite branch.
+- Removed the no-op `approval()` helper and internal agent resource mirror.
 - Removed the redundant `@hunvreus/heypi/adapter` subpath. Adapter types are
   exported from the package root.
 - Removed broad passive chat history injection. Current turns send only the

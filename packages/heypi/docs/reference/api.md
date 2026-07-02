@@ -9,7 +9,6 @@ Current public API:
 - `discord(config)`
 - `telegram(config)`
 - `webhook(config)`
-- `approval(config)`
 - `renderApprovalMessage(view)`
 
 The package root also exports the public adapter, approval, model, context, and
