@@ -38,6 +38,7 @@ The app author writes:
 
 ```text
 agent/
+  config.json
   instructions.md
   system.md
   skills/
@@ -49,6 +50,9 @@ heypi copies that tree into `.heypi/agents/<agent>/agent`. Pi then discovers ski
 from that staged agent directory. `agent/tools/*.ts|*.js` is passed to Pi as extension paths.
 
 Host source paths are not put into the model prompt.
+
+`config.json` is data-only. Runtime values such as models and adapters stay in code and are passed
+to `loadAgent()`.
 
 ## Conversation context
 

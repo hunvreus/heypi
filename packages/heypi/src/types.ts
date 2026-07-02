@@ -115,10 +115,15 @@ export type LoadAgentOptions = {
 	noTools?: CreateAgentSessionOptions["noTools"];
 };
 
+export type AgentFileConfig = Pick<
+	LoadAgentOptions,
+	"id" | "context" | "approvals" | "state" | "tools" | "excludeTools" | "noTools"
+>;
+
 export type AgentResource = {
 	path: string;
 	name: string;
-	kind: "instruction" | "system" | "skill" | "tool" | "extension";
+	kind: "instruction" | "system" | "config" | "skill" | "tool" | "extension";
 };
 
 export type AgentConfig = LoadAgentOptions & {

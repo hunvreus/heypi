@@ -24,6 +24,7 @@ Agent resources are file-based:
 
 ```text
 agent/
+  config.json
   instructions.md
   system.md
   skills/
@@ -31,12 +32,16 @@ agent/
   extensions/
 ```
 
+`config.json` can define data options such as `id`, `context`, `approvals`, `state`, `tools`,
+`excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file.
+
 `agent/` is staged into a Pi-visible bundle. `skills/` and `extensions/` are loaded by Pi. Files in
 `tools/` are passed to Pi as extension paths so tool execution stays inside Pi.
 
 ## Included now
 
 - `loadAgent("./agent", options)`
+- Agent `config.json` discovery for data-only options
 - Pi session runtime creation via `@earendil-works/pi-coding-agent`
 - Current-turn chat delivery with older chat available through the Pi `chat_history` tool
 - Model-authored progress updates through the Pi `chat_reply` tool

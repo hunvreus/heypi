@@ -12,6 +12,9 @@ Current public API:
 - `approval(config)`
 - `renderApprovalMessage(view)`
 
+`loadAgent()` reads optional `agent/config.json` first, then applies explicit options. The config
+file is data-only; models and adapters stay in code.
+
 Default chat context is the current triggering message. Older mirrored chat is available to Pi
 through the built-in `chat_history` tool. Pi can send sparse progress updates through the built-in
 `chat_reply` tool.

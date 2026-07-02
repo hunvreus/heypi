@@ -1,13 +1,19 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import type { AgentConfig, AgentResource, LoadAgentOptions } from "./types.js";
+import type { AgentConfig, AgentFileConfig, AgentResource, LoadAgentOptions } from "./types.js";
 
 const DISCOVERED_DIRS = ["skills", "tools", "extensions"] as const;
 
 async function readOptional(path: string): Promise<string | undefined> {
 	if (!existsSync(path)) return undefined;
 	return readFile(path, "utf8");
+}
+
+async function readConfig(path: string): Promise<AgentFileConfig | undefined> {
+	const text = await readOptional(path);
+	if (!text) return undefined;
+	return JSON.parse(text) as AgentFileConfig;
 }
 
 async function listFiles(root: string, kind: AgentResource["kind"]): Promise<AgentResource[]> {
@@ -28,18 +34,22 @@ export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Pr
 	const root = resolve(dir);
 	const instructionsPath = join(root, "instructions.md");
 	const systemPath = join(root, "system.md");
+	const configPath = join(root, "config.json");
 	const resources: AgentResource[] = [];
 	const instructions = await readOptional(instructionsPath);
 	const system = await readOptional(systemPath);
+	const fileConfig = (await readConfig(configPath)) ?? {};
 	if (instructions) resources.push({ path: instructionsPath, name: "instructions.md", kind: "instruction" });
 	if (system) resources.push({ path: systemPath, name: "system.md", kind: "system" });
+	if (existsSync(configPath)) resources.push({ path: configPath, name: "config.json", kind: "config" });
 	for (const dirName of DISCOVERED_DIRS) {
 		const kind = dirName.slice(0, -1) as "skill" | "tool" | "extension";
 		resources.push(...(await listFiles(join(root, dirName), kind)));
 	}
 	return {
+		...fileConfig,
 		...options,
-		id: options.id ?? (basename(root) || "agent"),
+		id: options.id ?? fileConfig.id ?? (basename(root) || "agent"),
 		root,
 		instructions,
 		system,
