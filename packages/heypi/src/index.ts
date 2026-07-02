@@ -1,4 +1,4 @@
-export { type LocalAdapter, local } from "./adapters.js";
+export { type LocalAdapter, local, type WebhookAdapter, type WebhookConfig, webhook } from "./adapters.js";
 export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, runHeypi } from "./app.js";
 export { createApprovalExtension, renderApprovalMessage } from "./approval.js";
