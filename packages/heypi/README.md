@@ -68,6 +68,9 @@ Function values such as models, adapters, and approval predicates belong in code
   "admin": {
     "enabled": true,
     "port": 4321
+  },
+  "todo": {
+    "enabled": true
   }
 }
 ```
@@ -103,6 +106,19 @@ last completed trigger in the same conversation.
 
 Older chat is available through the `chat_history` Pi tool. The model can call it when history is
 actually needed instead of carrying old Slack/Discord/Telegram context in every request.
+
+## Todo
+
+heypi registers a `todo_update` Pi tool by default. Pi can use it for substantial multi-step work,
+and heypi renders the current task list into the active chat thread. Disable it with:
+
+```json
+{
+  "todo": {
+    "enabled": false
+  }
+}
+```
 
 ## Audit
 
@@ -222,9 +238,10 @@ Included:
 - approval message rendering and Pi tool-call approval extension
 - programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
+- `todo_update` Pi extension for visible task progress
 - audit helpers for heypi-owned adapter coordination logs
 - read-only admin HTTP audit endpoints
 
 Not included yet:
 
-- memory, todo/planning, richer admin UI, and non-local runtime providers
+- memory, richer admin UI, and non-local runtime providers

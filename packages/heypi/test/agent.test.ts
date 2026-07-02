@@ -23,6 +23,7 @@ describe("loadAgent", () => {
 				approvals: { layout: "card" },
 				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
 				admin: { enabled: true, port: 4321 },
+				todo: { enabled: false },
 			}),
 		);
 
@@ -32,6 +33,7 @@ describe("loadAgent", () => {
 			approvals: { showId: true },
 			runtime: { workspaceDir: "/tmp/option-workspace" },
 			admin: { port: 4322 },
+			todo: { enabled: true },
 		});
 
 		expect(agent.id).toBe("option-id");
@@ -41,6 +43,7 @@ describe("loadAgent", () => {
 		expect(agent.approvals).toEqual({ layout: "card", showId: true });
 		expect(agent.runtime).toEqual({ kind: "local", workspaceDir: "/tmp/option-workspace" });
 		expect(agent.admin).toEqual({ enabled: true, port: 4322 });
+		expect(agent.todo).toEqual({ enabled: true });
 	});
 
 	it("reports malformed config files with their path", async () => {
@@ -104,6 +107,9 @@ describe("loadAgent", () => {
 
 		await writeFile(config, JSON.stringify({ admin: { path: 123 } }));
 		await expect(loadAgent(root)).rejects.toThrow("admin.path must be a string");
+
+		await writeFile(config, JSON.stringify({ todo: { enabled: "yes" } }));
+		await expect(loadAgent(root)).rejects.toThrow("todo.enabled must be a boolean");
 
 		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
 		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");

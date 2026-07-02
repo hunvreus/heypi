@@ -150,12 +150,17 @@ export type AdminConfig = {
 	path?: string;
 };
 
+export type TodoConfig = {
+	enabled?: boolean;
+};
+
 export type AgentFileConfig = {
 	id?: string;
 	context?: ContextConfig;
 	approvals?: ApprovalConfig;
 	runtime?: RuntimeConfig;
 	admin?: AdminConfig;
+	todo?: TodoConfig;
 	state?: StateConfig;
 	tools?: string[];
 	excludeTools?: string[];

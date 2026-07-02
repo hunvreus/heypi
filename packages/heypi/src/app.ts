@@ -6,6 +6,7 @@ import { type Channel, createChannel } from "./channel.js";
 import { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 import { consoleLogger } from "./log.js";
 import { createPiHost, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
+import { createTodoExtension, renderTodo } from "./todo.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
 
 export type HeypiApp = {
@@ -101,6 +102,18 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							}) ??
 							Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
 					});
+		const todoExtension =
+			agent.todo?.enabled === false
+				? undefined
+				: createTodoExtension({
+						send: async (update) => {
+							await adapter.send({
+								conversation: message.conversation,
+								thread: channel.activeMessageId(),
+								text: renderTodo(update),
+							});
+						},
+					});
 		const pi = piHost({
 			agent,
 			agentDir: staged.agentDir,
@@ -113,7 +126,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					await adapter.send({ conversation: message.conversation, thread: channel.activeMessageId(), text });
 				}),
 			],
-			extensions: approvalExtension ? [approvalExtension] : undefined,
+			extensions: [approvalExtension, todoExtension].filter((extension) => extension !== undefined),
 		});
 		await pi.start();
 		running.pi = pi;

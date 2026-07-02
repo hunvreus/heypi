@@ -10,6 +10,7 @@ import type {
 	AuditChannel,
 	ContextMode,
 	RuntimeKind,
+	TodoConfig,
 } from "../src/index.js";
 
 describe("public entrypoint", () => {
@@ -21,6 +22,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
 		expectTypeOf<AgentFileConfig>().toMatchTypeOf<{ context?: { mode?: ContextMode } }>();
 		expectTypeOf<AdminConfig>().toMatchTypeOf<{ enabled?: boolean; port?: number }>();
+		expectTypeOf<TodoConfig>().toMatchTypeOf<{ enabled?: boolean }>();
 		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();
