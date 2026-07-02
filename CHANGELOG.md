@@ -18,3 +18,4 @@
   `default` helpers.
 - Clarified staged resource loading: `skills/` and `extensions/` use Pi discovery, while `tools/`
   is treated as an extension-file alias.
+- Made local adapter test/embedding messages trigger by default.

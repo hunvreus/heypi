@@ -1,10 +1,28 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Adapter, AdapterContext, ChatMessage, SendMessage } from "./types.js";
 
+export type LocalMessage = Omit<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned"> &
+	Partial<Pick<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned">>;
+
 export type LocalAdapter = Adapter & {
-	receive(message: Omit<ChatMessage, "adapter" | "account" | "conversation"> & Partial<ChatMessage>): Promise<void>;
+	receive(message: LocalMessage): Promise<void>;
 	sent: SendMessage[];
 };
+
+function localMessage(input: LocalMessage): ChatMessage {
+	return {
+		id: input.id,
+		adapter: "local",
+		account: "local",
+		conversation: "local",
+		user: input.user,
+		text: input.text,
+		mentioned: input.mentioned ?? true,
+		dm: input.dm ?? true,
+		time: input.time,
+		attachments: input.attachments,
+	};
+}
 
 export function local(name = "local"): LocalAdapter {
 	let context: AdapterContext | undefined;
@@ -22,12 +40,7 @@ export function local(name = "local"): LocalAdapter {
 		},
 		async receive(message) {
 			if (!context) throw new Error("Local adapter is not started");
-			await context.receive({
-				adapter: "local",
-				account: "local",
-				conversation: "local",
-				...message,
-			});
+			await context.receive(localMessage(message));
 		},
 	};
 }
