@@ -1,11 +1,12 @@
 import { join } from "node:path";
 import {
-	createAgentSession,
-	DefaultResourceLoader,
+	createAgentSessionFromServices,
+	createAgentSessionRuntime,
+	createAgentSessionServices,
 	SessionManager,
-	SettingsManager,
 	type AgentSession,
-	type CreateAgentSessionOptions,
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../types.js";
@@ -20,7 +21,7 @@ export type PiSessionHostOptions = {
 };
 
 export class PiSessionHost {
-	private session: AgentSession | undefined;
+	private runtime: AgentSessionRuntime | undefined;
 
 	constructor(private readonly options: PiSessionHostOptions) {}
 
@@ -34,44 +35,48 @@ export class PiSessionHost {
 		]
 			.filter(Boolean)
 			.join("\n\n");
-		const settingsManager = SettingsManager.create(this.options.workspaceDir, this.options.agentDir);
-		const resourceLoader = new DefaultResourceLoader({
+		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+			const services = await createAgentSessionServices({
+				cwd,
+				agentDir,
+				resourceLoaderOptions: {
+					additionalExtensionPaths: this.options.toolPaths,
+					appendSystemPrompt: appendSystemPrompt ? [appendSystemPrompt] : undefined,
+				},
+			});
+			const result = await createAgentSessionFromServices({
+				services,
+				sessionManager,
+				sessionStartEvent,
+				model: this.options.agent.model,
+				tools: this.options.agent.tools,
+				excludeTools: this.options.agent.excludeTools,
+				noTools: this.options.agent.noTools,
+				customTools: this.options.customTools,
+			});
+			return { ...result, services, diagnostics: services.diagnostics };
+		};
+		this.runtime = await createAgentSessionRuntime(createRuntime, {
 			cwd: this.options.workspaceDir,
 			agentDir: this.options.agentDir,
-			settingsManager,
-			additionalExtensionPaths: this.options.toolPaths,
-			appendSystemPrompt: appendSystemPrompt ? [appendSystemPrompt] : undefined,
-		});
-		await resourceLoader.reload();
-		const result = await createAgentSession({
-			cwd: this.options.workspaceDir,
-			agentDir: this.options.agentDir,
-			model: this.options.agent.model,
 			sessionManager,
-			settingsManager,
-			resourceLoader,
-			tools: this.options.agent.tools,
-			excludeTools: this.options.agent.excludeTools,
-			noTools: this.options.agent.noTools,
-			customTools: this.options.customTools,
-		} satisfies CreateAgentSessionOptions);
-		this.session = result.session;
-		this.session.sessionManager.appendSessionInfo(`heypi ${this.options.agent.id}`);
+		});
+		this.runtime.session.sessionManager.appendSessionInfo(`heypi ${this.options.agent.id}`);
 	}
 
 	subscribe(listener: AgentSession["subscribe"] extends (listener: infer T) => unknown ? T : never): () => void {
-		if (!this.session) throw new Error("Pi session is not started");
-		return this.session.subscribe(listener);
+		if (!this.runtime) throw new Error("Pi session is not started");
+		return this.runtime.session.subscribe(listener);
 	}
 
 	async send(prompt: string): Promise<void> {
-		if (!this.session) throw new Error("Pi session is not started");
-		await this.session.sendUserMessage(prompt);
+		if (!this.runtime) throw new Error("Pi session is not started");
+		await this.runtime.session.sendUserMessage(prompt);
 	}
 
 	async stop(): Promise<void> {
-		this.session?.dispose();
-		this.session = undefined;
+		await this.runtime?.dispose();
+		this.runtime = undefined;
 	}
 }
 

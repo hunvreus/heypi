@@ -6,7 +6,7 @@ heypi is a Pi-native chat adapter shell.
 Slack / Discord / Telegram / webhook
   -> adapter event
   -> conversation runtime
-  -> Pi session
+  -> Pi session runtime
   -> Pi events
   -> adapter renderer
 ```
