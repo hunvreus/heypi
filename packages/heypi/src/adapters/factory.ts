@@ -90,7 +90,47 @@ export function slack(config: SlackConfig = {}): Adapter {
 }
 
 export function discord(config: DiscordConfig = {}): Adapter {
-	return adapter("discord", config);
+	let client: DiscordClient | undefined;
+	return {
+		kind: "discord",
+		name: config.name,
+		async start(context) {
+			if (!config.token) return config.onStart?.(context);
+			const discordJs = (await import("discord.js")) as unknown as DiscordJsModule;
+			client = new discordJs.Client({
+				intents: [
+					discordJs.GatewayIntentBits.Guilds,
+					discordJs.GatewayIntentBits.GuildMessages,
+					discordJs.GatewayIntentBits.DirectMessages,
+					discordJs.GatewayIntentBits.MessageContent,
+				],
+				partials: [discordJs.Partials.Channel],
+			});
+			client.on("messageCreate", (message) => {
+				if (message.author.bot) return;
+				const botId = client?.user?.id;
+				const mentioned = botId ? message.mentions.users.has(botId) : false;
+				const dm = message.channel.isDMBased();
+				if (!mentioned && !dm) return;
+				void context.receive(discordMessage(message, mentioned, dm));
+			});
+			await client.login(config.token);
+			await config.onStart?.(context);
+			context.logger.info("adapter.discord.start");
+		},
+		async stop() {
+			client?.destroy();
+			client = undefined;
+		},
+		async send(message) {
+			if (config.onSend) return config.onSend(message);
+			const channel = await client?.channels.fetch(message.conversation);
+			if (!channel?.send) return undefined;
+			const result = await channel.send(message.text);
+			return { id: result.id };
+		},
+		ack: (message) => config.onAck?.(message),
+	};
 }
 
 export function telegram(config: TelegramConfig = {}): Adapter {
@@ -246,6 +286,63 @@ function slackMessage(event: Record<string, unknown>, mentioned: boolean, dm: bo
 		user: {
 			id: user,
 			isBot: typeof event.bot_id === "string",
+		},
+	};
+}
+
+type DiscordJsModule = {
+	Client: new (options: { intents: number[]; partials: number[] }) => DiscordClient;
+	GatewayIntentBits: Record<"Guilds" | "GuildMessages" | "DirectMessages" | "MessageContent", number>;
+	Partials: Record<"Channel", number>;
+};
+
+type DiscordClient = {
+	user?: { id: string };
+	on(event: "messageCreate", handler: (message: DiscordMessage) => void): void;
+	login(token: string): Promise<string>;
+	destroy(): void;
+	channels: {
+		fetch(id: string): Promise<DiscordSendChannel | undefined | null>;
+	};
+};
+
+type DiscordSendChannel = {
+	send(content: string): Promise<{ id: string }>;
+};
+
+type DiscordMessage = {
+	id: string;
+	content: string;
+	channelId: string;
+	guildId?: string | null;
+	author: {
+		id: string;
+		username?: string;
+		bot: boolean;
+	};
+	channel: {
+		isDMBased(): boolean;
+	};
+	mentions: {
+		users: {
+			has(id: string): boolean;
+		};
+	};
+};
+
+function discordMessage(message: DiscordMessage, mentioned: boolean, dm: boolean): ChatMessage {
+	return {
+		id: message.id,
+		adapter: "discord",
+		account: message.guildId ?? "dm",
+		conversation: message.channelId,
+		text: message.content,
+		mentioned,
+		dm,
+		user: {
+			id: message.author.id,
+			name: message.author.username,
+			isBot: message.author.bot,
 		},
 	};
 }
