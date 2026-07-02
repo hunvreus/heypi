@@ -43,10 +43,12 @@ describe("stageAgent", () => {
 		const root = await makeDir("stage");
 		const state = await makeDir("state");
 		await mkdir(join(root, "tools"), { recursive: true });
+		await mkdir(join(root, "extensions"), { recursive: true });
 		await mkdir(join(root, "skills"), { recursive: true });
 		await mkdir(join(root, "node_modules", "ignored"), { recursive: true });
 		await writeFile(join(root, "instructions.md"), "Instruction");
 		await writeFile(join(root, "tools", "tool.ts"), "export {};");
+		await writeFile(join(root, "extensions", "extension.ts"), "export {};");
 		await writeFile(join(root, "skills", "skill.md"), "skill");
 		await writeFile(join(root, "node_modules", "ignored", "x.ts"), "ignored");
 
@@ -57,8 +59,9 @@ describe("stageAgent", () => {
 
 		await expect(readFile(join(second.agentDir, "instructions.md"), "utf8")).resolves.toBe("Instruction");
 		await expect(readFile(join(second.agentDir, "skills", "skill.md"), "utf8")).resolves.toBe("skill");
+		await expect(readFile(join(second.agentDir, "extensions", "extension.ts"), "utf8")).resolves.toBe("export {};");
 		await expect(readFile(join(second.agentDir, "stale.txt"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, "node_modules", "ignored", "x.ts"), "utf8")).rejects.toThrow();
-		expect(second.toolPaths).toEqual([join(second.agentDir, "tools", "tool.ts")]);
+		expect(second.extensionPaths).toEqual([join(second.agentDir, "tools", "tool.ts")]);
 	});
 });

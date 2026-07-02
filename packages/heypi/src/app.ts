@@ -58,7 +58,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			agentDir: staged.agentDir,
 			workspaceDir: staged.workspaceDir,
 			sessionDir: sessionDir(stateDir, key),
-			toolPaths: staged.toolPaths,
+			extensionPaths: staged.extensionPaths,
 			tools: [
 				createChatHistoryTool(channel),
 				createChatReplyTool(async (text) => {

@@ -17,7 +17,7 @@ export type PiHostOptions = {
 	agentDir: string;
 	workspaceDir: string;
 	sessionDir: string;
-	toolPaths?: string[];
+	extensionPaths?: string[];
 	extensions?: ExtensionFactory[];
 	tools?: ToolDefinition[];
 };
@@ -57,7 +57,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 					cwd,
 					agentDir,
 					resourceLoaderOptions: {
-						additionalExtensionPaths: options.toolPaths,
+						additionalExtensionPaths: options.extensionPaths,
 						extensionFactories: options.extensions,
 						appendSystemPrompt: prompt ? [prompt] : undefined,
 					},

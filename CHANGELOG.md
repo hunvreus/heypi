@@ -16,3 +16,5 @@
 - Added Discord and Telegram approval button payloads and callback handling.
 - Added programmable approval policies with `never`, `always`, `once`, `when`, `command`, and
   `default` helpers.
+- Clarified staged resource loading: `skills/` and `extensions/` use Pi discovery, while `tools/`
+  is treated as an extension-file alias.
