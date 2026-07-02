@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { renderApprovalMessage } from "../approval.js";
 import type { Adapter, AdapterContext, ApprovalDecision, ApprovalView, ChatMessage, SendMessage } from "../types.js";
 
 type BaseAdapterConfig = {
@@ -34,6 +35,7 @@ export type WebhookConfig = BaseAdapterConfig & {
 
 export function slack(config: SlackConfig = {}): Adapter {
 	let app: SlackBoltApp | undefined;
+	const pendingApprovals = new Map<string, PendingSlackApproval>();
 	return {
 		kind: "slack",
 		name: config.name,
@@ -54,6 +56,34 @@ export function slack(config: SlackConfig = {}): Adapter {
 			app.event("message", async ({ event }) => {
 				if (event.channel_type !== "im") return;
 				await context.receive(slackMessage(event, false, true));
+			});
+			app.action(/^heypi_approval:(approve|reject):(.+)$/, async ({ ack, body, action }) => {
+				await ack();
+				const [, decision, id] = action.action_id.match(/^heypi_approval:(approve|reject):(.+)$/) ?? [];
+				if (!decision || !id) return;
+				const pending = pendingApprovals.get(id);
+				if (!pending) return;
+				pendingApprovals.delete(id);
+				const resolvedBy = slackUserLabel(body.user);
+				const approved = decision === "approve";
+				const resolvedView: ApprovalView = {
+					...pending.view,
+					state: approved ? "approved" : "rejected",
+					resolvedBy,
+				};
+				await app?.client.chat
+					.update({
+						channel: pending.channel,
+						ts: pending.ts,
+						text: renderApprovalMessage(resolvedView),
+						blocks: slackApprovalBlocks(resolvedView, false),
+					})
+					.catch(() => undefined);
+				pending.resolve({
+					approved,
+					resolvedBy,
+					reason: approved ? undefined : `Rejected by ${resolvedBy}`,
+				});
 			});
 			await app.start();
 			await config.onStart?.(context);
@@ -79,7 +109,28 @@ export function slack(config: SlackConfig = {}): Adapter {
 				.add({ channel: message.conversation, timestamp: message.id, name: "eyes" })
 				.catch(() => undefined);
 		},
-		requestApproval: approvalHook(config),
+		requestApproval: async (view) => {
+			if (config.onApproval) return config.onApproval(view);
+			if (!app) return { approved: false, reason: "Slack adapter is not started" };
+			if (!view.conversation) return { approved: false, reason: "Slack approval is missing conversation" };
+			const id = view.id ?? crypto.randomUUID();
+			const pendingView: ApprovalView = { ...view, id, showId: view.showId ?? false };
+			const result = await app.client.chat.postMessage({
+				channel: view.conversation,
+				thread_ts: view.thread,
+				text: renderApprovalMessage(pendingView),
+				blocks: slackApprovalBlocks(pendingView, true),
+			});
+			if (!result?.ts) return { approved: false, reason: "Slack approval message failed" };
+			return new Promise<ApprovalDecision>((resolve) => {
+				pendingApprovals.set(id, {
+					channel: view.conversation!,
+					ts: result.ts!,
+					view: pendingView,
+					resolve,
+				});
+			});
+		},
 	};
 }
 
@@ -314,19 +365,105 @@ type SlackEventHandlerArgs = {
 	event: Record<string, unknown>;
 };
 
+type SlackActionHandlerArgs = {
+	ack(): Promise<void>;
+	action: {
+		action_id: string;
+	};
+	body: {
+		user?: {
+			id?: string;
+			username?: string;
+			name?: string;
+		};
+	};
+};
+
 type SlackBoltApp = {
 	event(name: string, handler: (args: SlackEventHandlerArgs) => Promise<void> | void): void;
+	action(pattern: RegExp, handler: (args: SlackActionHandlerArgs) => Promise<void> | void): void;
 	start(): Promise<void>;
 	stop(): Promise<void>;
 	client: {
 		chat: {
-			postMessage(input: { channel: string; thread_ts?: string; text: string }): Promise<{ ts?: string }>;
+			postMessage(input: SlackPostMessageInput): Promise<{ ts?: string }>;
+			update(input: SlackUpdateMessageInput): Promise<{ ts?: string }>;
 		};
 		reactions: {
 			add(input: { channel: string; timestamp: string; name: string }): Promise<unknown>;
 		};
 	};
 };
+
+type SlackPostMessageInput = {
+	channel: string;
+	thread_ts?: string;
+	text: string;
+	blocks?: SlackBlock[];
+};
+
+type SlackUpdateMessageInput = {
+	channel: string;
+	ts: string;
+	text: string;
+	blocks?: SlackBlock[];
+};
+
+type SlackBlock =
+	| {
+			type: "section";
+			text: { type: "mrkdwn"; text: string };
+	  }
+	| {
+			type: "actions";
+			elements: Array<{
+				type: "button";
+				text: { type: "plain_text"; text: string };
+				style?: "primary" | "danger";
+				action_id: string;
+			}>;
+	  };
+
+type PendingSlackApproval = {
+	channel: string;
+	ts: string;
+	view: ApprovalView;
+	resolve(decision: ApprovalDecision): void;
+};
+
+function slackApprovalBlocks(view: ApprovalView, includeActions: boolean): SlackBlock[] {
+	const blocks: SlackBlock[] = [
+		{
+			type: "section",
+			text: { type: "mrkdwn", text: renderApprovalMessage(view) },
+		},
+	];
+	if (includeActions && view.id) {
+		blocks.push({
+			type: "actions",
+			elements: [
+				{
+					type: "button",
+					text: { type: "plain_text", text: "Approve" },
+					style: "primary",
+					action_id: `heypi_approval:approve:${view.id}`,
+				},
+				{
+					type: "button",
+					text: { type: "plain_text", text: "Reject" },
+					style: "danger",
+					action_id: `heypi_approval:reject:${view.id}`,
+				},
+			],
+		});
+	}
+	return blocks;
+}
+
+function slackUserLabel(user: SlackActionHandlerArgs["body"]["user"]): string {
+	if (!user?.id) return "unknown";
+	return `<@${user.id}>`;
+}
 
 function slackMessage(event: Record<string, unknown>, mentioned: boolean, dm: boolean): ChatMessage {
 	const text = typeof event.text === "string" ? event.text : "";

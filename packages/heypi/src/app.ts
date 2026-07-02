@@ -52,7 +52,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							config: agent.approvals,
 							requestedBy: () => runtime.activeUserName(),
 							request: (view) =>
-								adapter.requestApproval?.(view) ??
+								adapter.requestApproval?.({
+									...view,
+									conversation: message.conversation,
+									thread: runtime.activeMessageId(),
+								}) ??
 								Promise.resolve({
 									approved: false,
 									reason: `${adapter.kind} adapter does not implement approval UI`,

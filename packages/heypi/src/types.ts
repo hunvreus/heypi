@@ -48,6 +48,8 @@ export type SendMessage = {
 export type ApprovalState = "pending" | "approved" | "rejected";
 
 export type ApprovalView = {
+	conversation?: string;
+	thread?: string;
 	reason: string;
 	requestedBy?: string;
 	detailLabel?: string;
