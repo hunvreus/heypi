@@ -68,8 +68,8 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 			return !parts.includes(".git") && !parts.includes("node_modules");
 		},
 	});
-	// Pi discovers staged `extensions/` and `skills/` from agentDir. The legacy
-	// `tools/` folder is treated as a set of extra extension files.
+	// Pi discovers staged `extensions/` and `skills/` from agentDir. `tools/`
+	// is an authoring alias for extension files that register callable tools.
 	const extensionPaths = (await listFiles(join(agentDir, "tools"))).filter(
 		(path) => path.endsWith(".ts") || path.endsWith(".js"),
 	);

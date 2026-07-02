@@ -33,6 +33,24 @@ describe("channel", () => {
 		expect(turn?.prompt).not.toContain("not for you");
 	});
 
+	it("can build delta prompts since the last completed trigger", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-delta-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath, context: { mode: "delta" } });
+		await channel.load();
+
+		await channel.ingest(message("a", "first trigger"));
+		channel.next();
+		await channel.complete("done");
+		await expect(channel.ingest(message("b", "ambient follow-up", false))).resolves.toBe(false);
+		await expect(channel.ingest(message("c", "second trigger"))).resolves.toBe(true);
+
+		const turn = channel.next();
+		expect(turn?.messageId).toBe("c");
+		expect(turn?.prompt).not.toContain("first trigger");
+		expect(turn?.prompt).toContain("ambient follow-up");
+		expect(turn?.prompt).toContain("second trigger");
+	});
+
 	it("keeps only adapter coordination records", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-log-${Date.now()}-${Math.random()}.jsonl`);
 		const channel = createChannel({ logPath });
