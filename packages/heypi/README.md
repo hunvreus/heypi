@@ -1,109 +1,55 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/heypi-white.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/heypi-black.png">
-    <img alt="heypi" src="docs/assets/heypi-black.png" width="320">
-  </picture>
-</p>
-
 # heypi
 
-Team chat agents with approvals, audit, and sandboxed tools.
+Pi-native chat adapters for team agents.
 
-heypi is a lightweight TypeScript framework that wraps around [Pi](https://pi.dev) to make it easy to create team chat agents: adapters, approvals, scoped runtime tools, persisted threads, memory, skills, encrypted secret handoff, generated-file attachments, scheduling, admin, and CLI diagnostics.
+heypi is being rewritten as a small shell around [Pi](https://pi.dev). Pi owns the model loop,
+transcript, compaction, retries, tools, extensions, and session state. heypi owns chat ingress and
+egress, agent folder loading, resource staging, and later product UI for approvals/admin.
 
-The product focus is governed chat-ops: agents that work in shared Slack, Discord, Telegram, and trusted webhook contexts while preserving approval gates, audit trails, and operator visibility. heypi runs as a long-running Node.js service you own; it is not a durable workflow replay platform.
-
-## Install
-
-Requirements:
-
-- Node.js 22 or newer.
-- Optional for document conversion: Python 3 plus `uv`, or Python 3 with [Microsoft MarkItDown](https://github.com/microsoft/markitdown) already installed.
-
-Create a new app:
-
-```bash
-npm create heypi@latest
-```
-
-For an existing TypeScript app:
-
-```bash
-npm install @hunvreus/heypi
-```
-
-## Minimal app
+## Current shape
 
 ```ts
-import { createHeypi, loadAgent, slack, workspace } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, slack } from "@hunvreus/heypi";
 
-export default createHeypi({
-  state: { root: "./state" },
-  adapters: [
-    slack({
-      mode: "socket",
-    }),
-  ],
-  agent: loadAgent("./agent", { model: "openai/gpt-5.4-mini" }),
-  runtime: { root: workspace("./workspace") },
+const agent = loadAgent("./agent", {
+  model,
+  adapters: [slack({ token: process.env.SLACK_BOT_TOKEN, appToken: process.env.SLACK_APP_TOKEN })],
 });
+
+const app = await createHeypi({ agent });
+await app.start();
 ```
 
-Run `npm run dev` in a generated app and open the admin URL to send local test messages from Chats. The generated dev script runs `heypi dev`, which starts the configured adapters, enables loopback-only local test routes, and turns the admin panel on by default when omitted. `npm run start` starts the configured app without dev-only defaults.
-
-`OPENAI_API_KEY` is read by Pi through its normal provider auth path. Pass `model` explicitly or set `HEYPI_MODEL`; heypi does not pick a model implicitly.
-
-## Agent files
-
-Most app-specific behavior should live under `agent/`. `index.ts` stays for operational wiring: adapters, state, runtime, admin, and deployment policy.
+Agent resources are file-based:
 
 ```text
 agent/
-├─ instructions.md # identity, behavior, voice, and standing rules
-├─ system.md       # optional advanced system prompt override
-├─ tools/          # trusted TypeScript tools
-├─ jobs/           # scheduled jobs
-├─ skills/         # bundled Pi skills
-└─ extensions/     # explicit Pi extensions
+  instructions.md
+  system.md
+  skills/
+  tools/
+  extensions/
 ```
 
-This folder convention is the default authoring model. `loadAgent("./agent")` discovers tools, jobs, skills, and extensions from these paths, and discovered tool filenames become model-facing names when the tool omits `name`.
+`agent/` is staged into a Pi-visible bundle. `skills/` and `extensions/` are loaded by Pi. Files in
+`tools/` are passed to Pi as extension paths so tool execution stays inside Pi.
 
-Files under `agent/tools/` and `agent/jobs/` should import from `@hunvreus/heypi/authoring`. Evals live under root `evals/` and use the same authoring entrypoint. The app entrypoint imports from `@hunvreus/heypi`.
+## Included now
 
-## Documentation
+- `loadAgent("./agent", options)`
+- Pi session creation via `@earendil-works/pi-coding-agent`
+- Bounded chat-delta conversation queue
+- Slack, Discord, Telegram, and webhook adapter shells
+- Approval message rendering helper
 
-Start with [`docs/index.md`](docs/index.md).
+## Not included yet
 
-- [`docs/quickstart/index.md`](docs/quickstart/index.md): first app
-- [`docs/configuration/index.md`](docs/configuration/index.md): app-level configuration map
-- [`docs/configuration/agent.md`](docs/configuration/agent.md): instructions, model config, and dynamic context
-- [`docs/configuration/tools.md`](docs/configuration/tools.md): core tools, custom tools, confirmation, managed tools, and trusted code
-- [`docs/adapters/index.md`](docs/adapters/index.md): Slack, Discord, Telegram, and webhook adapters
-- [`docs/configuration/runtime.md`](docs/configuration/runtime.md): runtime backends and lifecycle
-- [`docs/configuration/scope.md`](docs/configuration/scope.md): scope model and filesystem layout
-- [`docs/configuration/memory.md`](docs/configuration/memory.md), [`docs/configuration/skills.md`](docs/configuration/skills.md), [`docs/configuration/secrets.md`](docs/configuration/secrets.md): persistent context and secret handoff
-- [`docs/configuration/scheduling.md`](docs/configuration/scheduling.md), [`docs/configuration/admin.md`](docs/configuration/admin.md), [`docs/reference/cli.md`](docs/reference/cli.md): scheduling, admin, and CLI
-- [`docs/guides/integrations.md`](docs/guides/integrations.md): custom adapters, stores, attachment stores, runtime providers, and Pi extensions
-- [`docs/guides/deployment.md`](docs/guides/deployment.md): production deployment
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): maintainer internals
-
-## Runtime
-
-`just-bash` is built in and is the default runtime. Optional provider packages add stronger isolation:
-
-- [`@hunvreus/heypi-runtime-docker`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-docker): Docker provider.
-- [`@hunvreus/heypi-runtime-gondolin`](https://www.npmjs.com/package/@hunvreus/heypi-runtime-gondolin): Gondolin VM provider.
-
-Both provider packages implement heypi's runtime API, so core bash, file, and search tools run through the selected sandbox.
-
-## Examples
-
-- [`examples/slack-devops`](https://github.com/hunvreus/heypi/tree/main/examples/slack-devops): Slack DevOps assistant with runtime tools, runbooks, memory, secrets, SSH host inventory, and approvals.
-- [`examples/discord-gondolin`](https://github.com/hunvreus/heypi/tree/main/examples/discord-gondolin): Discord assistant with a channel-scoped Gondolin VM, memory, skills, secret requests, and generated-file attachments.
-- [`examples/telegram-workout`](https://github.com/hunvreus/heypi/tree/main/examples/telegram-workout): Telegram fitness coach with saved profile/plan and heartbeat check-ins.
-- [`examples/webhook-github-docker`](https://github.com/hunvreus/heypi/tree/main/examples/webhook-github-docker): GitHub issue automation with webhook input, Docker repo inspection, and trusted GitHub writeback.
+- Approval execution as a Pi extension
+- Memory as a Pi extension
+- Todo/planning as a Pi extension
+- Admin/event mirror
+- Docker/Gondolin runtime extensions
+- Cleaned examples
 
 ## License
 

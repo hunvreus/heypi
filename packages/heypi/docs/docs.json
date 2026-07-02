@@ -1,6 +1,6 @@
 {
 	"title": "heypi",
-	"description": "Team chat agents with approvals, audit, and sandboxed tools.",
+	"description": "Pi-native chat adapters for team agents.",
 	"source": {
 		"repo": "https://github.com/hunvreus/heypi",
 		"branch": "main",
@@ -8,150 +8,13 @@
 	},
 	"groups": [
 		{
-			"title": "Getting started",
+			"title": "Start",
 			"pages": [
 				{
 					"title": "Introduction",
 					"slug": "",
 					"file": "index.md",
 					"icon": "info"
-				},
-				{
-					"title": "Quickstart",
-					"slug": "quickstart",
-					"file": "quickstart/index.md",
-					"icon": "zap"
-				},
-				{
-					"title": "Manual setup",
-					"slug": "quickstart/manual",
-					"file": "quickstart/manual.md",
-					"icon": "wrench"
-				}
-			]
-		},
-		{
-			"title": "Configuration",
-			"pages": [
-				{
-					"title": "Overview",
-					"slug": "configuration",
-					"file": "configuration/index.md"
-				},
-				{
-					"title": "Agent",
-					"slug": "configuration/agent",
-					"file": "configuration/agent.md"
-				},
-				{
-					"title": "Tools",
-					"slug": "configuration/tools",
-					"file": "configuration/tools.md"
-				},
-				{
-					"title": "Runtime",
-					"slug": "configuration/runtime",
-					"file": "configuration/runtime.md"
-				},
-				{
-					"title": "HTTP listener",
-					"slug": "configuration/http",
-					"file": "configuration/http.md"
-				},
-				{
-					"title": "Scope",
-					"slug": "configuration/scope",
-					"file": "configuration/scope.md"
-				},
-				{
-					"title": "Approvals",
-					"slug": "configuration/approvals",
-					"file": "configuration/approvals.md"
-				},
-				{
-					"title": "Task behavior",
-					"slug": "configuration/task",
-					"file": "configuration/task.md"
-				},
-				{
-					"title": "Attachments",
-					"slug": "configuration/attachments",
-					"file": "configuration/attachments.md"
-				},
-				{
-					"title": "Memory",
-					"slug": "configuration/memory",
-					"file": "configuration/memory.md"
-				},
-				{
-					"title": "Skills",
-					"slug": "configuration/skills",
-					"file": "configuration/skills.md"
-				},
-				{
-					"title": "Secrets",
-					"slug": "configuration/secrets",
-					"file": "configuration/secrets.md"
-				},
-				{
-					"title": "Scheduling",
-					"slug": "configuration/scheduling",
-					"file": "configuration/scheduling.md"
-				},
-				{
-					"title": "Admin",
-					"slug": "configuration/admin",
-					"file": "configuration/admin.md"
-				}
-			]
-		},
-		{
-			"title": "Adapters",
-			"pages": [
-				{
-					"title": "Overview",
-					"slug": "adapters",
-					"file": "adapters/index.md"
-				},
-				{
-					"title": "Slack",
-					"slug": "adapters/slack",
-					"file": "adapters/slack.md"
-				},
-				{
-					"title": "Discord",
-					"slug": "adapters/discord",
-					"file": "adapters/discord.md"
-				},
-				{
-					"title": "Telegram",
-					"slug": "adapters/telegram",
-					"file": "adapters/telegram.md"
-				},
-				{
-					"title": "Webhook",
-					"slug": "adapters/webhook",
-					"file": "adapters/webhook.md"
-				}
-			]
-		},
-		{
-			"title": "Guides",
-			"pages": [
-				{
-					"title": "Deployment",
-					"slug": "guides/deployment",
-					"file": "guides/deployment.md"
-				},
-				{
-					"title": "Migration",
-					"slug": "guides/migration",
-					"file": "guides/migration.md"
-				},
-				{
-					"title": "Custom integrations",
-					"slug": "guides/integrations",
-					"file": "guides/integrations.md"
 				}
 			]
 		},
@@ -162,11 +25,6 @@
 					"title": "API",
 					"slug": "reference/api",
 					"file": "reference/api.md"
-				},
-				{
-					"title": "CLI",
-					"slug": "reference/cli",
-					"file": "reference/cli.md"
 				}
 			]
 		}
