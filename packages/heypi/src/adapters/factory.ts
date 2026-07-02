@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Adapter, AdapterContext, AdapterKind, ChatMessage, SendMessage } from "../types.js";
+import type { Adapter, AdapterContext, ChatMessage, SendMessage } from "../types.js";
 
 type BaseAdapterConfig = {
 	name?: string;
@@ -7,16 +7,6 @@ type BaseAdapterConfig = {
 	onSend?: (message: SendMessage) => Promise<{ id?: string } | void> | { id?: string } | void;
 	onAck?: (message: ChatMessage) => Promise<void> | void;
 };
-
-function adapter(kind: AdapterKind, config: BaseAdapterConfig = {}): Adapter {
-	return {
-		kind,
-		name: config.name,
-		start: (context) => config.onStart?.(context),
-		send: async (message) => config.onSend?.(message),
-		ack: (message) => config.onAck?.(message),
-	};
-}
 
 export type SlackConfig = BaseAdapterConfig & {
 	token?: string;
@@ -31,6 +21,8 @@ export type DiscordConfig = BaseAdapterConfig & {
 
 export type TelegramConfig = BaseAdapterConfig & {
 	token?: string;
+	botUsername?: string;
+	pollMs?: number;
 };
 
 export type WebhookConfig = BaseAdapterConfig & {
@@ -134,7 +126,63 @@ export function discord(config: DiscordConfig = {}): Adapter {
 }
 
 export function telegram(config: TelegramConfig = {}): Adapter {
-	return adapter("telegram", config);
+	let stopped = false;
+	let offset = 0;
+	return {
+		kind: "telegram",
+		name: config.name,
+		async start(context) {
+			stopped = false;
+			await config.onStart?.(context);
+			if (!config.token) return;
+			void pollTelegram(config, context, () => stopped, (nextOffset) => {
+				offset = nextOffset;
+			});
+			context.logger.info("adapter.telegram.start");
+		},
+		stop() {
+			stopped = true;
+		},
+		async send(message) {
+			if (config.onSend) return config.onSend(message);
+			if (!config.token) return undefined;
+			const result = await telegramApi<TelegramSendMessageResult>(config.token, "sendMessage", {
+				chat_id: message.conversation,
+				text: message.text,
+				reply_to_message_id: numericThread(message.thread),
+			});
+			return { id: String(result.result.message_id) };
+		},
+		ack: (message) => config.onAck?.(message),
+	};
+
+	async function pollTelegram(
+		nextConfig: TelegramConfig,
+		context: AdapterContext,
+		isStopped: () => boolean,
+		setOffset: (nextOffset: number) => void,
+	): Promise<void> {
+		while (!isStopped()) {
+			try {
+				const result = await telegramApi<TelegramUpdateResult>(nextConfig.token ?? "", "getUpdates", {
+					offset,
+					timeout: Math.max(1, Math.floor((nextConfig.pollMs ?? 20_000) / 1000)),
+					allowed_updates: ["message"],
+				});
+				for (const update of result.result) {
+					setOffset(update.update_id + 1);
+					if (!update.message?.text) continue;
+					const message = telegramMessage(update.message, nextConfig.botUsername);
+					if (!message.dm && !message.mentioned) continue;
+					await context.receive(message);
+				}
+			} catch (error) {
+				const detail = error instanceof Error ? error.message : String(error);
+				context.logger.error("adapter.telegram.poll_error", { error: detail });
+				await delay(nextConfig.pollMs ?? 5_000);
+			}
+		}
+	}
 }
 
 export function webhook(config: WebhookConfig = {}): Adapter {
@@ -345,4 +393,81 @@ function discordMessage(message: DiscordMessage, mentioned: boolean, dm: boolean
 			isBot: message.author.bot,
 		},
 	};
+}
+
+type TelegramApiResult<T> = {
+	ok: boolean;
+	result: T;
+	description?: string;
+};
+
+type TelegramUpdateResult = TelegramApiResult<TelegramUpdate[]>;
+
+type TelegramSendMessageResult = TelegramApiResult<{
+	message_id: number;
+}>;
+
+type TelegramUpdate = {
+	update_id: number;
+	message?: TelegramMessage;
+};
+
+type TelegramMessage = {
+	message_id: number;
+	text?: string;
+	chat: {
+		id: number | string;
+		type: string;
+	};
+	from?: {
+		id: number | string;
+		username?: string;
+		first_name?: string;
+		is_bot?: boolean;
+	};
+};
+
+async function telegramApi<T extends TelegramApiResult<unknown>>(
+	token: string,
+	method: string,
+	body: Record<string, unknown>,
+): Promise<T> {
+	const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+	const result = (await response.json()) as T;
+	if (!response.ok || !result.ok) throw new Error(result.description ?? `Telegram ${method} failed`);
+	return result;
+}
+
+function telegramMessage(message: TelegramMessage, botUsername: string | undefined): ChatMessage {
+	const text = message.text ?? "";
+	const mentioned = botUsername ? text.toLowerCase().includes(`@${botUsername.toLowerCase()}`) : false;
+	const dm = message.chat.type === "private";
+	return {
+		id: String(message.message_id),
+		adapter: "telegram",
+		account: "default",
+		conversation: String(message.chat.id),
+		text,
+		mentioned,
+		dm,
+		user: {
+			id: String(message.from?.id ?? "unknown"),
+			name: message.from?.username ?? message.from?.first_name,
+			isBot: message.from?.is_bot ?? false,
+		},
+	};
+}
+
+function numericThread(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+async function delay(ms: number): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, ms));
 }
