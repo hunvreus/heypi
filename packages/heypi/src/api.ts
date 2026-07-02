@@ -9,6 +9,7 @@ export type {
 	AgentConfig,
 	AgentResource,
 	ApprovalConfig,
+	ApprovalDecision,
 	ChatAttachment,
 	ChatMessage,
 	ContextConfig,

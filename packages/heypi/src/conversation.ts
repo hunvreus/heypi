@@ -93,12 +93,20 @@ export class ConversationRuntime {
 	}
 
 	activeMessageId(): string | undefined {
+		return this.activeMessage()?.id;
+	}
+
+	activeUserName(): string | undefined {
+		const user = this.activeMessage()?.user;
+		return user?.name ?? user?.id;
+	}
+
+	private activeMessage(): (ConversationRecord & { type: "inbound" }) | undefined {
 		if (!this.active) return undefined;
-		const trigger = this.records.find(
+		return this.records.find(
 			(record): record is ConversationRecord & { type: "inbound" } =>
 				record.type === "inbound" && record.record === this.active?.trigger,
 		);
-		return trigger?.id;
 	}
 
 	async complete(reply?: string): Promise<void> {

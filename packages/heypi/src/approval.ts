@@ -1,18 +1,7 @@
-import type { ApprovalLayout } from "./types.js";
+import type { ExtensionFactory, ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import type { ApprovalConfig, ApprovalDecision, ApprovalLayout, ApprovalView } from "./types.js";
 
-export type ApprovalState = "pending" | "approved" | "rejected";
-
-export type ApprovalView = {
-	reason: string;
-	requestedBy?: string;
-	detailLabel?: string;
-	detail?: string;
-	command?: string;
-	state?: ApprovalState;
-	resolvedBy?: string;
-	showId?: boolean;
-	id?: string;
-};
+export type { ApprovalDecision, ApprovalView } from "./types.js";
 
 export type ApprovalOptions = {
 	layout?: ApprovalLayout;
@@ -21,6 +10,48 @@ export type ApprovalOptions = {
 
 export function approval(options: ApprovalOptions = {}): ApprovalOptions {
 	return options;
+}
+
+export type ApprovalExtensionOptions = {
+	config: ApprovalConfig;
+	requestedBy(): string | undefined;
+	request(view: ApprovalView): Promise<ApprovalDecision>;
+};
+
+const DEFAULT_APPROVAL_TOOLS = ["bash", "edit", "write"];
+
+export function createApprovalExtension(options: ApprovalExtensionOptions): ExtensionFactory {
+	const tools = new Set(options.config.tools ?? DEFAULT_APPROVAL_TOOLS);
+	return (pi) => {
+		pi.on("tool_call", async (event) => {
+			if (!tools.has(event.toolName)) return undefined;
+			const view = approvalViewForTool(event, options.requestedBy(), options.config);
+			const decision = await options.request(view);
+			if (decision.approved) return undefined;
+			return {
+				block: true,
+				reason: decision.reason ?? `${event.toolName} was not approved`,
+			};
+		});
+	};
+}
+
+function approvalViewForTool(event: ToolCallEvent, requestedBy: string | undefined, config: ApprovalConfig): ApprovalView {
+	const command = event.toolName === "bash" ? stringInput(event.input, "command") : undefined;
+	return {
+		id: event.toolCallId,
+		showId: config.layout === "card",
+		reason: `Run ${event.toolName} tool.`,
+		detailLabel: command ? undefined : "Input",
+		detail: command ? undefined : JSON.stringify(event.input),
+		command,
+		requestedBy,
+	};
+}
+
+function stringInput(input: Record<string, unknown>, key: string): string | undefined {
+	const value = input[key];
+	return typeof value === "string" ? value : undefined;
 }
 
 export function renderApprovalMessage(view: ApprovalView): string {

@@ -7,6 +7,7 @@ import {
 	type AgentSession,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
+	type ExtensionFactory,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../types.js";
@@ -18,6 +19,7 @@ export type PiSessionHostOptions = {
 	sessionDir: string;
 	toolPaths: string[];
 	customTools?: ToolDefinition[];
+	extensionFactories?: ExtensionFactory[];
 };
 
 export class PiSessionHost {
@@ -41,6 +43,7 @@ export class PiSessionHost {
 				agentDir,
 				resourceLoaderOptions: {
 					additionalExtensionPaths: this.options.toolPaths,
+					extensionFactories: this.options.extensionFactories,
 					appendSystemPrompt: appendSystemPrompt ? [appendSystemPrompt] : undefined,
 				},
 			});

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createApprovalExtension } from "./approval.js";
 import { createChatHistoryTool } from "./chat-history.js";
 import { createChatReplyTool } from "./chat-reply.js";
 import { ConversationRuntime } from "./conversation.js";
@@ -45,6 +46,20 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			workspaceDir: staged.workspaceDir,
 			sessionDir: piSessionDir(stateDir, key),
 			toolPaths: staged.toolPaths,
+			extensionFactories: agent.approvals
+				? [
+						createApprovalExtension({
+							config: agent.approvals,
+							requestedBy: () => runtime.activeUserName(),
+							request: (view) =>
+								adapter.requestApproval?.(view) ??
+								Promise.resolve({
+									approved: false,
+									reason: `${adapter.kind} adapter does not implement approval UI`,
+								}),
+						}),
+					]
+				: undefined,
 			customTools: [
 				createChatHistoryTool(runtime),
 				createChatReplyTool(async (text) => {

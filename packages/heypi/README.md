@@ -41,11 +41,11 @@ agent/
 - Current-turn chat delivery with older chat available through the Pi `chat_history` tool
 - Model-authored progress updates through the Pi `chat_reply` tool
 - Slack, Discord, Telegram, and webhook adapter shells
-- Approval message rendering helper
+- Approval tool-call gating through a Pi extension boundary
 
 ## Not included yet
 
-- Approval execution as a Pi extension
+- Adapter-specific approval UI implementations
 - Memory as a Pi extension
 - Todo/planning as a Pi extension
 - Admin/event mirror

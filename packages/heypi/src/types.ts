@@ -45,6 +45,26 @@ export type SendMessage = {
 	attachments?: ChatAttachment[];
 };
 
+export type ApprovalState = "pending" | "approved" | "rejected";
+
+export type ApprovalView = {
+	reason: string;
+	requestedBy?: string;
+	detailLabel?: string;
+	detail?: string;
+	command?: string;
+	state?: ApprovalState;
+	resolvedBy?: string;
+	showId?: boolean;
+	id?: string;
+};
+
+export type ApprovalDecision = {
+	approved: boolean;
+	resolvedBy?: string;
+	reason?: string;
+};
+
 export type AdapterContext = {
 	agentId: string;
 	receive(message: ChatMessage): Promise<void>;
@@ -57,6 +77,7 @@ export type Adapter = {
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
 	send(message: SendMessage): Promise<{ id?: string } | void>;
+	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 	ack?(message: ChatMessage): Promise<void> | void;
 };
 
@@ -75,6 +96,7 @@ export type ApprovalLayout = "message" | "card";
 
 export type ApprovalConfig = {
 	layout?: ApprovalLayout;
+	tools?: string[];
 };
 
 export type StateConfig = {
@@ -106,4 +128,3 @@ export type AgentConfig = LoadAgentOptions & {
 	system?: string;
 	resources: AgentResource[];
 };
-
