@@ -1,11 +1,9 @@
 import { join } from "node:path";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
-import { createChatHistoryTool } from "./chat-history.js";
-import { createChatReplyTool } from "./chat-reply.js";
-import { ConversationRuntime } from "./conversation.js";
+import { type Channel, createChannel } from "./channel.js";
 import { consoleLogger } from "./log.js";
-import { PiSessionHost, piSessionDir } from "./pi/session.js";
+import { createPiHost, type PiHost, sessionDir } from "./pi.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
 
 export type HeypiApp = {
@@ -18,118 +16,110 @@ export type CreateHeypiOptions = {
 	logger?: Logger;
 };
 
-type RunningConversation = {
-	runtime: ConversationRuntime;
-	pi: PiSessionHost;
+type RunningChannel = {
+	channel: Channel;
+	pi: PiHost;
 	adapter: Adapter;
 };
+
+function keyFor(message: ChatMessage): string {
+	return `${message.adapter}:${message.account}:${message.conversation}`.replace(/[^a-zA-Z0-9_.:-]/g, "_");
+}
+
+function assistantText(message: { role?: string; content?: unknown }): string {
+	const content = message.content;
+	if (Array.isArray(content)) {
+		return content
+			.map((part) => (part && typeof part === "object" && "text" in part ? String(part.text) : ""))
+			.join("");
+	}
+	return typeof content === "string" ? content : "";
+}
 
 export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp> {
 	const agent = await options.agent;
 	const logger = options.logger ?? consoleLogger;
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
 	const staged = await stageAgent(agent, stateDir);
-	const conversations = new Map<string, RunningConversation>();
+	const channels = new Map<string, RunningChannel>();
 
-	async function conversationFor(adapter: Adapter, message: ChatMessage): Promise<RunningConversation> {
-		const key = `${message.adapter}:${message.account}:${message.conversation}`.replace(/[^a-zA-Z0-9_.:-]/g, "_");
-		const cached = conversations.get(key);
+	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
+		const key = keyFor(message);
+		const cached = channels.get(key);
 		if (cached) return cached;
-		const runtime = new ConversationRuntime({
-			logPath: join(stateDir, "conversations", `${key}.jsonl`),
+		const channel = createChannel({
+			logPath: join(stateDir, "channels", `${key}.jsonl`),
 			context: agent.context,
 		});
-		await runtime.load();
-		const pi = new PiSessionHost({
+		await channel.load();
+		const pi = createPiHost({
 			agent,
 			agentDir: staged.agentDir,
 			workspaceDir: staged.workspaceDir,
-			sessionDir: piSessionDir(stateDir, key),
+			sessionDir: sessionDir(stateDir, key),
 			toolPaths: staged.toolPaths,
-			extensionFactories: agent.approvals
+			extensions: agent.approvals
 				? [
 						createApprovalExtension({
 							config: agent.approvals,
-							requestedBy: () => runtime.activeUserName(),
+							requestedBy: () => channel.activeUserName(),
 							request: (view) =>
 								adapter.requestApproval?.({
 									...view,
 									conversation: message.conversation,
-									thread: runtime.activeMessageId(),
+									thread: channel.activeMessageId(),
 								}) ??
-								Promise.resolve({
-									approved: false,
-									reason: `${adapter.kind} adapter does not implement approval UI`,
-								}),
+								Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
 						}),
 					]
 				: undefined,
-			customTools: [
-				createChatHistoryTool(runtime),
-				createChatReplyTool(async (text) => {
-					await adapter.send({ conversation: message.conversation, thread: runtime.activeMessageId(), text });
-				}),
-			],
 		});
 		await pi.start();
-		const running = { runtime, pi, adapter };
-		conversations.set(key, running);
+		const running = { adapter, channel, pi };
+		channels.set(key, running);
 		return running;
+	}
+
+	async function dispatch(running: RunningChannel, conversation: string): Promise<void> {
+		const turn = running.channel.next();
+		if (!turn) return;
+		let finalText = "";
+		const unsubscribe = running.pi.subscribe((event) => {
+			if (event.type === "message_end" && event.message.role === "assistant") {
+				finalText = assistantText(event.message);
+			}
+		});
+		try {
+			await running.pi.send(turn.prompt);
+			await running.adapter.send({ conversation, thread: turn.messageId, text: finalText });
+			await running.channel.complete(finalText);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			await running.channel.fail(message);
+			await running.adapter.send({ conversation, thread: turn.messageId, text: `The agent failed: ${message}` });
+		} finally {
+			unsubscribe();
+		}
+		await dispatch(running, conversation);
 	}
 
 	async function receive(adapter: Adapter, message: ChatMessage): Promise<void> {
 		await adapter.ack?.(message);
-		const conversation = await conversationFor(adapter, message);
-		const queued = await conversation.runtime.ingest(message);
-		if (!queued) return;
-		await dispatch(conversation, message.conversation);
+		const running = await channelFor(adapter, message);
+		const queued = await running.channel.ingest(message);
+		if (queued) await dispatch(running, message.conversation);
 	}
 
-	async function dispatch(conversation: RunningConversation, remoteConversation: string): Promise<void> {
-		const job = conversation.runtime.beginNext();
-		if (!job) return;
-		try {
-			let finalText = "";
-			const unsubscribe = conversation.pi.subscribe((event) => {
-				if (event.type === "message_end" && event.message.role === "assistant") {
-					const content = event.message.content;
-					finalText = Array.isArray(content)
-						? content.map((part) => (part.type === "text" ? part.text : "")).join("")
-						: String(content);
-				}
-			});
-			await conversation.pi.send(job.prompt);
-			unsubscribe();
-			await conversation.adapter.send({ conversation: remoteConversation, thread: job.messageId, text: finalText });
-			await conversation.runtime.complete(finalText);
-			await dispatch(conversation, remoteConversation);
-		} catch (error) {
-			const messageText = error instanceof Error ? error.message : String(error);
-			await conversation.runtime.fail(messageText);
-			await conversation.adapter.send({
-				conversation: remoteConversation,
-				thread: job.messageId,
-				text: `The agent failed: ${messageText}`,
-			});
-			await dispatch(conversation, remoteConversation);
-		}
-	}
-
-	const adapters = agent.adapters ?? [];
 	return {
 		async start() {
-			for (const adapter of adapters) {
-				await adapter.start({
-					agentId: agent.id,
-					logger,
-					receive: (message) => receive(adapter, message),
-				});
+			for (const adapter of agent.adapters ?? []) {
+				await adapter.start({ agentId: agent.id, logger, receive: (message) => receive(adapter, message) });
 			}
-			logger.info("app.start", { agent: agent.id, adapters: adapters.length });
+			logger.info("app.start", { agent: agent.id, adapters: agent.adapters?.length ?? 0 });
 		},
 		async stop() {
-			for (const conversation of conversations.values()) await conversation.pi.stop();
-			for (const adapter of adapters) await adapter.stop?.();
+			for (const channel of channels.values()) await channel.pi.stop();
+			for (const adapter of agent.adapters ?? []) await adapter.stop?.();
 			logger.info("app.stop", { agent: agent.id });
 		},
 	};

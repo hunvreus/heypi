@@ -1,33 +1,23 @@
 {
 	"name": "@hunvreus/heypi",
-	"version": "0.2.0-beta.0",
+	"version": "0.1.0",
 	"description": "Pi-native chat adapter shell for team agents.",
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"bin": {
-		"heypi": "bin/heypi"
-	},
 	"exports": {
 		".": {
-			"development": "./src/index.ts",
 			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"default": "./dist/index.js"
+			"import": "./dist/index.js"
 		},
 		"./authoring": {
-			"development": "./src/authoring.ts",
 			"types": "./dist/authoring.d.ts",
-			"import": "./dist/authoring.js",
-			"default": "./dist/authoring.js"
+			"import": "./dist/authoring.js"
 		}
 	},
 	"files": [
-		"bin/heypi",
 		"dist",
-		"docs",
-		"ARCHITECTURE.md",
 		"README.md",
 		"LICENSE"
 	],
@@ -35,38 +25,14 @@
 	"engines": {
 		"node": ">=22"
 	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/hunvreus/heypi.git",
-		"directory": "packages/heypi"
-	},
-	"bugs": {
-		"url": "https://github.com/hunvreus/heypi/issues"
-	},
-	"homepage": "https://heypi.dev",
-	"keywords": [
-		"agent",
-		"ai",
-		"chatbot",
-		"discord",
-		"pi",
-		"slack",
-		"telegram",
-		"tools"
-	],
-	"publishConfig": {
-		"access": "public"
-	},
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",
-		"prepack": "corepack pnpm run build",
-		"pack:dry": "npm pack --dry-run",
-		"publish:dry": "npm publish --dry-run --access public",
-		"heypi": "tsx --conditions development src/cli.ts",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "corepack pnpm run build && tsc --noEmit",
-		"test": "corepack pnpm run build"
+		"test": "vitest --run",
+		"pack:dry": "npm pack --dry-run",
+		"publish:dry": "npm publish --dry-run --access public"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",
@@ -75,10 +41,6 @@
 		"discord.js": "^14.26.4"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.15",
-		"@types/node": "^25.9.1",
-		"tsx": "^4.22.3",
-		"typescript": "^6.0.3"
-	},
-	"packageManager": "pnpm@10.17.1"
+		"vitest": "^4.1.9"
+	}
 }

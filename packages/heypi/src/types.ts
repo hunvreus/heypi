@@ -1,6 +1,6 @@
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+export type ModelConfig = CreateAgentSessionOptions["model"];
 
 export type Logger = {
 	debug(event: string, data?: Record<string, unknown>): void;
@@ -9,9 +9,7 @@ export type Logger = {
 	error(event: string, data?: Record<string, unknown>): void;
 };
 
-export type ModelConfig = CreateAgentSessionOptions["model"];
-
-export type AdapterKind = "slack" | "discord" | "telegram" | "webhook";
+export type AdapterKind = "slack" | "discord" | "telegram" | "webhook" | "local";
 
 export type ChatAttachment = {
 	id?: string;
@@ -45,32 +43,10 @@ export type SendMessage = {
 	attachments?: ChatAttachment[];
 };
 
-export type ApprovalState = "pending" | "approved" | "rejected";
-
-export type ApprovalView = {
-	conversation?: string;
-	thread?: string;
-	reason: string;
-	requestedBy?: string;
-	detailLabel?: string;
-	detail?: string;
-	command?: string;
-	state?: ApprovalState;
-	resolvedBy?: string;
-	showId?: boolean;
-	id?: string;
-};
-
-export type ApprovalDecision = {
-	approved: boolean;
-	resolvedBy?: string;
-	reason?: string;
-};
-
 export type AdapterContext = {
 	agentId: string;
-	receive(message: ChatMessage): Promise<void>;
 	logger: Logger;
+	receive(message: ChatMessage): Promise<void>;
 };
 
 export type Adapter = {
@@ -79,14 +55,14 @@ export type Adapter = {
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
-	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 	ack?(message: ChatMessage): Promise<void> | void;
+	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 };
 
-export type ContextRange = "current" | "delta";
+export type ContextMode = "current" | "delta";
 
 export type ContextConfig = {
-	range?: ContextRange;
+	mode?: ContextMode;
 	maxMessages?: number;
 	maxChars?: number;
 	includeBotMessages?: boolean;
@@ -98,16 +74,37 @@ export type ApprovalLayout = "message" | "card";
 export type ApprovalConfig = {
 	layout?: ApprovalLayout;
 	tools?: string[];
+	showId?: boolean;
+};
+
+export type ApprovalState = "pending" | "approved" | "rejected";
+
+export type ApprovalView = {
+	id: string;
+	conversation?: string;
+	thread?: string;
+	reason: string;
+	requestedBy?: string;
+	detailLabel?: string;
+	detail?: string;
+	command?: string;
+	state?: ApprovalState;
+	resolvedBy?: string;
+	showId?: boolean;
+};
+
+export type ApprovalDecision = {
+	approved: boolean;
+	resolvedBy?: string;
+	reason?: string;
 };
 
 export type StateConfig = {
 	dir?: string;
 };
 
-export type LoadAgentOptions = {
+export type AgentFileConfig = {
 	id?: string;
-	model?: ModelConfig;
-	adapters?: Adapter[];
 	context?: ContextConfig;
 	approvals?: ApprovalConfig;
 	state?: StateConfig;
@@ -116,10 +113,10 @@ export type LoadAgentOptions = {
 	noTools?: CreateAgentSessionOptions["noTools"];
 };
 
-export type AgentFileConfig = Pick<
-	LoadAgentOptions,
-	"id" | "context" | "approvals" | "state" | "tools" | "excludeTools" | "noTools"
->;
+export type LoadAgentOptions = AgentFileConfig & {
+	model?: ModelConfig;
+	adapters?: Adapter[];
+};
 
 export type AgentConfig = LoadAgentOptions & {
 	id: string;

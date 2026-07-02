@@ -1,21 +1,11 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
 	"files": {
-		"includes": [
-			"**",
-			"!.claude",
-			"!examples",
-			"!**/dist",
-			"!packages/heypi/drizzle/meta",
-			"!.heypi",
-			"!packages/heypi/src/admin/assets",
-			"!packages/heypi/src/core/assets"
-		]
+		"includes": ["**", "!.claude", "!**/dist", "!.heypi"]
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
 			"style": {
 				"noNonNullAssertion": "off",
 				"useConst": "error",

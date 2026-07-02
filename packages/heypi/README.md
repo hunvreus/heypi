@@ -2,18 +2,20 @@
 
 Pi-native chat adapters for team agents.
 
-heypi is being rewritten as a small shell around [Pi](https://pi.dev). Pi owns the model loop,
-transcript, compaction, retries, tools, extensions, and session state. heypi owns chat ingress and
-egress, agent folder loading, resource staging, and later product UI for approvals/admin.
+heypi is a thin product shell around Pi. Pi owns the model loop, session state, compaction, retries,
+tools, extensions, and transcript. heypi owns agent folder loading, resource staging, chat adapters,
+approval UI, and small adapter coordination.
 
-## Current shape
+## Usage
 
 ```ts
-import { createHeypi, loadAgent, slack } from "@hunvreus/heypi";
+import { createHeypi, loadAgent, local } from "@hunvreus/heypi";
 
+const adapter = local();
 const agent = loadAgent("./agent", {
-  model,
-  adapters: [slack({ token: process.env.SLACK_BOT_TOKEN, appToken: process.env.SLACK_APP_TOKEN })],
+	model,
+	adapters: [adapter],
+	approvals: { layout: "message" },
 });
 
 const app = await createHeypi({ agent });
@@ -32,37 +34,24 @@ agent/
   extensions/
 ```
 
-`config.json` can define data options such as `id`, `context`, `approvals`, `state`, `tools`,
+`config.json` can define data-only defaults such as `id`, `context`, `approvals`, `state`, `tools`,
 `excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file.
 
-`context.range` is either `current` or `delta`. `current` sends only the triggering chat message to
-Pi. `delta` sends chat messages since the last completed trigger. Older chat is not passively
-injected; Pi can ask for it with `chat_history`.
+The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loads staged resources
+from that bundle; heypi does not expose host source paths to the model.
 
-`agent/` is staged into a clean Pi-visible bundle on startup. `skills/` and `extensions/` are
-loaded by Pi. Files in `tools/` are passed to Pi as extension paths so tool execution stays inside
-Pi.
+## Current scope
 
-## Included now
+Included:
 
 - `loadAgent("./agent", options)`
-- Agent `config.json` discovery for data-only options
-- Pi session runtime creation via `@earendil-works/pi-coding-agent`
-- Current-turn chat delivery with older chat available through the Pi `chat_history` tool
-- Model-authored progress updates through the Pi `chat_reply` tool
-- Slack, Discord, Telegram, and webhook adapter shells
-- Approval tool-call gating through a Pi extension boundary
-- Built-in Slack approval buttons; `onApproval` hooks for other adapters
+- clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
+- Pi session creation through `@earendil-works/pi-coding-agent`
+- local adapter for tests and embedding
+- approval message rendering and Pi tool-call approval extension
 
-## Not included yet
+Not included yet:
 
-- Built-in Discord/Telegram approval button implementations
-- Memory as a Pi extension
-- Todo/planning as a Pi extension
-- Admin/event mirror
-- Docker/Gondolin runtime extensions
-- Rebuilt examples
-
-## License
-
-[MIT](LICENSE)
+- Slack, Discord, Telegram, and webhook adapters
+- approval buttons/cards in live adapters
+- memory, todo/planning, admin, and runtime providers

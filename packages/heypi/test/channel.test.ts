@@ -1,0 +1,50 @@
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { createChannel } from "../src/channel.js";
+import type { ChatMessage } from "../src/types.js";
+
+function message(id: string, text: string, mentioned = true): ChatMessage {
+	return {
+		id,
+		adapter: "local",
+		account: "test",
+		conversation: "room",
+		user: { id: "u1", name: "Ronan" },
+		text,
+		mentioned,
+		dm: false,
+	};
+}
+
+describe("channel", () => {
+	it("queues only triggering user messages and builds current prompt", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await expect(channel.ingest(message("a", "not for you", false))).resolves.toBe(false);
+		await expect(channel.ingest(message("b", "help me"))).resolves.toBe(true);
+
+		const turn = channel.next();
+		expect(turn?.messageId).toBe("b");
+		expect(turn?.prompt).toContain("[uid:u1] Ronan: help me");
+		expect(turn?.prompt).not.toContain("not for you");
+	});
+
+	it("keeps only adapter coordination records", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-log-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+		await channel.ingest(message("a", "hello"));
+		channel.next();
+		await channel.complete("done");
+
+		const records = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { type: string });
+		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_completed"]);
+	});
+});

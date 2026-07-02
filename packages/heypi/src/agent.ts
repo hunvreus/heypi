@@ -8,9 +8,9 @@ async function readOptional(path: string): Promise<string | undefined> {
 	return readFile(path, "utf8");
 }
 
-async function readConfig(path: string): Promise<AgentFileConfig | undefined> {
+async function readJsonConfig(path: string): Promise<AgentFileConfig> {
 	const text = await readOptional(path);
-	if (!text) return undefined;
+	if (!text) return {};
 	return JSON.parse(text) as AgentFileConfig;
 }
 
@@ -19,29 +19,30 @@ async function listFiles(root: string): Promise<string[]> {
 	const entries = await readdir(root, { recursive: true, withFileTypes: true });
 	return entries
 		.filter((entry) => entry.isFile())
-		.map((entry) => {
-			const parent = entry.parentPath ?? root;
-			return resolve(parent, entry.name);
-		})
+		.map((entry) => resolve(entry.parentPath ?? root, entry.name))
 		.sort((a, b) => a.localeCompare(b));
 }
 
-/** Loads an agent folder and discovers authored resources without starting Pi. */
-export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Promise<AgentConfig> {
-	const root = resolve(dir);
-	const instructionsPath = join(root, "instructions.md");
-	const systemPath = join(root, "system.md");
-	const configPath = join(root, "config.json");
-	const instructions = await readOptional(instructionsPath);
-	const system = await readOptional(systemPath);
-	const fileConfig = (await readConfig(configPath)) ?? {};
+function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions): LoadAgentOptions {
 	return {
 		...fileConfig,
 		...options,
-		id: options.id ?? fileConfig.id ?? (basename(root) || "agent"),
+		context: { ...fileConfig.context, ...options.context },
+		approvals: { ...fileConfig.approvals, ...options.approvals },
+		state: { ...fileConfig.state, ...options.state },
+	};
+}
+
+export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Promise<AgentConfig> {
+	const root = resolve(dir);
+	const fileConfig = await readJsonConfig(join(root, "config.json"));
+	const merged = mergeAgentConfig(fileConfig, options);
+	return {
+		...merged,
+		id: merged.id ?? (basename(root) || "agent"),
 		root,
-		instructions,
-		system,
+		instructions: await readOptional(join(root, "instructions.md")),
+		system: await readOptional(join(root, "system.md")),
 	};
 }
 
@@ -52,12 +53,6 @@ export type StagedAgent = {
 	toolPaths: string[];
 };
 
-/**
- * Stages agent-authored files into a Pi-visible bundle.
- *
- * The source tree is copied, not mounted. Pi can read the staged bundle, while
- * heypi avoids leaking host source paths into the model prompt.
- */
 export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<StagedAgent> {
 	const root = join(stateDir, "agents", agent.id);
 	const agentDir = join(root, "agent");
@@ -70,7 +65,7 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 		force: true,
 		filter: (source) => {
 			const parts = relative(agent.root, source).split(sep);
-			return !parts.includes("node_modules") && !parts.includes(".git");
+			return !parts.includes(".git") && !parts.includes("node_modules");
 		},
 	});
 	const toolPaths = (await listFiles(join(agentDir, "tools"))).filter(

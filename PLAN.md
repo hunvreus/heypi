@@ -25,6 +25,8 @@ parallel transcript for model execution.
 
 ## Initial build
 
+Status: first clean baseline is in place.
+
 - Keep package shape only where it helps users:
   - `loadAgent("./agent", { model, adapters, ... })`
   - `agent/instructions.md`
@@ -37,15 +39,22 @@ parallel transcript for model execution.
   - append inbound records,
   - trigger jobs from mentions/DM/webhook,
   - send only the current chat delta to Pi,
-  - expose older history through explicit tools later.
-- Support Slack, Discord, Telegram, and webhook as adapter shells.
+  - do not own Pi transcript, compaction, retries, or tool-result shaping.
+- Include a local adapter for tests and embedding.
 - Do not implement Docker or Gondolin runtimes in the first pass. Use Pi-chat’s Gondolin boundary only
   as inspiration for future runtime providers.
 - Ignore examples until the new core compiles and the basic chat flow works.
 
+## Next build
+
+- Add Slack, Discord, Telegram, and webhook adapter shells.
+- Add live approval buttons/card rendering where supported.
+- Add explicit chat history and progress/update tools only if they stay Pi-native.
+- Keep adding tests with each feature.
+
 ## Later features
 
-- Approvals: Pi extension plus heypi adapter UI for approval cards/messages.
+- Approvals: live adapter UI for approval cards/messages.
 - Memory: Pi extension, not heypi prompt injection.
 - Todo/planning: Pi extension plus heypi renderer, not model-managed core planning.
 - Admin: mirror Pi/session/adapter events, do not drive model context.
