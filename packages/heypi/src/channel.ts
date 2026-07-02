@@ -182,9 +182,11 @@ export function createChannel(options: ChannelOptions): Channel {
 			const after = query.after ? Date.parse(query.after) : undefined;
 			const before = query.before ? Date.parse(query.before) : undefined;
 			const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+			const activeTrigger = active?.trigger;
 			return records
 				.filter(isInbound)
 				.filter((record) => {
+					if (record.record === activeTrigger) return false;
 					if (record.user.isBot && !context.includeBotMessages) return false;
 					if (search && !record.text.toLowerCase().includes(search)) return false;
 					const time = record.time ? Date.parse(record.time) : undefined;
