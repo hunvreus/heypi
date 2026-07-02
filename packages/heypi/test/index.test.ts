@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from "vitest";
 import type {
 	AdapterKind,
+	AdminConfig,
 	AgentFileConfig,
 	ApprovalExtensionOptions,
 	ApprovalLayout,
@@ -19,6 +20,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<ApprovalLayout>().toEqualTypeOf<"message" | "card">();
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
 		expectTypeOf<AgentFileConfig>().toMatchTypeOf<{ context?: { mode?: ContextMode } }>();
+		expectTypeOf<AdminConfig>().toMatchTypeOf<{ enabled?: boolean; port?: number }>();
 		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();

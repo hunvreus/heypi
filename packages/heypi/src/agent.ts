@@ -63,6 +63,18 @@ function validateConfig(value: unknown, path: string): AgentFileConfig {
 	if (config.state?.dir !== undefined && typeof config.state.dir !== "string") {
 		throw new Error(`state.dir must be a string in ${path}`);
 	}
+	if (config.admin?.enabled !== undefined && typeof config.admin.enabled !== "boolean") {
+		throw new Error(`admin.enabled must be a boolean in ${path}`);
+	}
+	if (config.admin?.host !== undefined && typeof config.admin.host !== "string") {
+		throw new Error(`admin.host must be a string in ${path}`);
+	}
+	if (config.admin?.port !== undefined && !isPositiveInteger(config.admin.port)) {
+		throw new Error(`admin.port must be a positive integer in ${path}`);
+	}
+	if (config.admin?.path !== undefined && typeof config.admin.path !== "string") {
+		throw new Error(`admin.path must be a string in ${path}`);
+	}
 	if (config.tools !== undefined && !isStringArray(config.tools)) {
 		throw new Error(`tools must be an array of strings in ${path}`);
 	}
@@ -96,6 +108,7 @@ function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions
 		context: { ...fileConfig.context, ...options.context },
 		approvals: { ...fileConfig.approvals, ...options.approvals },
 		runtime: { ...fileConfig.runtime, ...options.runtime },
+		admin: { ...fileConfig.admin, ...options.admin },
 		state: { ...fileConfig.state, ...options.state },
 	};
 }

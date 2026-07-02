@@ -143,11 +143,19 @@ export type RuntimeConfig = {
 	workspaceDir?: string;
 };
 
+export type AdminConfig = {
+	enabled?: boolean;
+	host?: string;
+	port?: number;
+	path?: string;
+};
+
 export type AgentFileConfig = {
 	id?: string;
 	context?: ContextConfig;
 	approvals?: ApprovalConfig;
 	runtime?: RuntimeConfig;
+	admin?: AdminConfig;
 	state?: StateConfig;
 	tools?: string[];
 	excludeTools?: string[];

@@ -6,6 +6,7 @@ export {
 	type WebhookConfig,
 	webhook,
 } from "./adapters.js";
+export { type AdminServer, createAdmin } from "./admin.js";
 export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory, runHeypi } from "./app.js";
 export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
@@ -21,6 +22,7 @@ export type {
 	Adapter,
 	AdapterContext,
 	AdapterKind,
+	AdminConfig,
 	AgentConfig,
 	AgentFileConfig,
 	ApprovalConfig,

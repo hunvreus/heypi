@@ -22,6 +22,7 @@ describe("loadAgent", () => {
 				context: { mode: "delta", maxMessages: 5 },
 				approvals: { layout: "card" },
 				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
+				admin: { enabled: true, port: 4321 },
 			}),
 		);
 
@@ -30,6 +31,7 @@ describe("loadAgent", () => {
 			context: { maxMessages: 2 },
 			approvals: { showId: true },
 			runtime: { workspaceDir: "/tmp/option-workspace" },
+			admin: { port: 4322 },
 		});
 
 		expect(agent.id).toBe("option-id");
@@ -38,6 +40,7 @@ describe("loadAgent", () => {
 		expect(agent.context).toEqual({ mode: "delta", maxMessages: 2 });
 		expect(agent.approvals).toEqual({ layout: "card", showId: true });
 		expect(agent.runtime).toEqual({ kind: "local", workspaceDir: "/tmp/option-workspace" });
+		expect(agent.admin).toEqual({ enabled: true, port: 4322 });
 	});
 
 	it("reports malformed config files with their path", async () => {
@@ -89,6 +92,18 @@ describe("loadAgent", () => {
 
 		await writeFile(config, JSON.stringify({ state: { dir: 123 } }));
 		await expect(loadAgent(root)).rejects.toThrow("state.dir must be a string");
+
+		await writeFile(config, JSON.stringify({ admin: { enabled: "yes" } }));
+		await expect(loadAgent(root)).rejects.toThrow("admin.enabled must be a boolean");
+
+		await writeFile(config, JSON.stringify({ admin: { host: 123 } }));
+		await expect(loadAgent(root)).rejects.toThrow("admin.host must be a string");
+
+		await writeFile(config, JSON.stringify({ admin: { port: 0 } }));
+		await expect(loadAgent(root)).rejects.toThrow("admin.port must be a positive integer");
+
+		await writeFile(config, JSON.stringify({ admin: { path: 123 } }));
+		await expect(loadAgent(root)).rejects.toThrow("admin.path must be a string");
 
 		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
 		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");

@@ -64,6 +64,10 @@ Function values such as models, adapters, and approval predicates belong in code
   },
   "runtime": {
     "kind": "local"
+  },
+  "admin": {
+    "enabled": true,
+    "port": 4321
   }
 }
 ```
@@ -111,6 +115,13 @@ import { listAuditChannels, readAuditChannel } from "@hunvreus/heypi";
 const channels = await listAuditChannels({ stateDir: ".heypi" });
 const records = await readAuditChannel(channels[0].path);
 ```
+
+Enable the read-only admin HTTP surface with `admin.enabled`. It exposes JSON audit endpoints under
+`/admin` by default:
+
+- `GET /admin/health`
+- `GET /admin/channels`
+- `GET /admin/channels/:key`
 
 ## Adapters
 
@@ -212,7 +223,8 @@ Included:
 - programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
 - audit helpers for heypi-owned adapter coordination logs
+- read-only admin HTTP audit endpoints
 
 Not included yet:
 
-- memory, todo/planning, admin UI, and non-local runtime providers
+- memory, todo/planning, richer admin UI, and non-local runtime providers

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
@@ -48,6 +49,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const staged = await stageAgent(agent, stateDir);
 	const channels = new Map<string, RunningChannel>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
+	const admin = agent.admin?.enabled ? createAdmin({ ...agent.admin, stateDir }) : undefined;
 	let stopping = false;
 
 	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
@@ -179,6 +181,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	return {
 		async start() {
 			stopping = false;
+			await admin?.start();
 			for (const adapter of agent.adapters ?? []) {
 				await adapter.start({ agentId: agent.id, logger, receive: (message) => receive(adapter, message) });
 			}
@@ -188,6 +191,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			stopping = true;
 			for (const channel of channels.values()) await channel.pi?.stop();
 			for (const adapter of agent.adapters ?? []) await adapter.stop?.();
+			await admin?.stop();
 			logger.info("app.stop", { agent: agent.id });
 		},
 	};

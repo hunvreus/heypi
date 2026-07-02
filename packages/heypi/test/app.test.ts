@@ -13,6 +13,10 @@ async function makeDir(name: string): Promise<string> {
 	return root;
 }
 
+function freePort(): number {
+	return 20_000 + Math.floor(Math.random() * 20_000);
+}
+
 describe("createHeypi", () => {
 	it("routes triggered adapter messages through Pi and replies in the source thread", async () => {
 		const root = await makeDir("app-agent");
@@ -299,6 +303,42 @@ describe("createHeypi", () => {
 
 		expect(stops).toBe(1);
 		expect(adapter.sent).toEqual([]);
+	});
+
+	it("starts and stops the optional admin server", async () => {
+		const root = await makeDir("app-admin-agent");
+		const state = await makeDir("app-admin-state");
+		const adapter = local();
+		const port = freePort();
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				admin: { enabled: true, port },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await expect(fetch(`http://127.0.0.1:${port}/admin/health`).then((response) => response.json())).resolves.toEqual(
+			{
+				ok: true,
+			},
+		);
+		await app.stop();
+		await expect(fetch(`http://127.0.0.1:${port}/admin/health`)).rejects.toThrow();
 	});
 
 	it("serializes concurrent first messages onto one channel session", async () => {
