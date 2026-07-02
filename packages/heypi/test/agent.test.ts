@@ -55,6 +55,35 @@ describe("loadAgent", () => {
 		await writeFile(config, JSON.stringify({ approvals: { layout: "panel" } }));
 		await expect(loadAgent(root)).rejects.toThrow("approvals.layout must be");
 	});
+
+	it("rejects invalid config primitive shapes", async () => {
+		const root = await makeDir("bad-shapes");
+		const config = join(root, "config.json");
+
+		await writeFile(config, JSON.stringify({ id: 123 }));
+		await expect(loadAgent(root)).rejects.toThrow("id must be a string");
+
+		await writeFile(config, JSON.stringify({ context: { maxMessages: 0 } }));
+		await expect(loadAgent(root)).rejects.toThrow("context.maxMessages must be a positive integer");
+
+		await writeFile(config, JSON.stringify({ context: { maxChars: 1.5 } }));
+		await expect(loadAgent(root)).rejects.toThrow("context.maxChars must be a positive integer");
+
+		await writeFile(config, JSON.stringify({ context: { includeBotMessages: "yes" } }));
+		await expect(loadAgent(root)).rejects.toThrow("context.includeBotMessages must be a boolean");
+
+		await writeFile(config, JSON.stringify({ approvals: { enabled: "yes" } }));
+		await expect(loadAgent(root)).rejects.toThrow("approvals.enabled must be a boolean");
+
+		await writeFile(config, JSON.stringify({ approvals: { tools: ["bash", 1] } }));
+		await expect(loadAgent(root)).rejects.toThrow("approvals.tools must be an array of strings");
+
+		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
+		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");
+
+		await writeFile(config, JSON.stringify({ excludeTools: [false] }));
+		await expect(loadAgent(root)).rejects.toThrow("excludeTools must be an array of strings");
+	});
 });
 
 describe("stageAgent", () => {

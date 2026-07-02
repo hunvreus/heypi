@@ -24,13 +24,51 @@ function validateConfig(value: unknown, path: string): AgentFileConfig {
 		throw new Error("expected an object");
 	}
 	const config = value as AgentFileConfig;
+	if (config.id !== undefined && typeof config.id !== "string") {
+		throw new Error(`id must be a string in ${path}`);
+	}
 	if (config.context?.mode && config.context.mode !== "current" && config.context.mode !== "delta") {
 		throw new Error(`context.mode must be "current" or "delta" in ${path}`);
+	}
+	if (config.context?.maxMessages !== undefined && !isPositiveInteger(config.context.maxMessages)) {
+		throw new Error(`context.maxMessages must be a positive integer in ${path}`);
+	}
+	if (config.context?.maxChars !== undefined && !isPositiveInteger(config.context.maxChars)) {
+		throw new Error(`context.maxChars must be a positive integer in ${path}`);
+	}
+	if (config.context?.includeBotMessages !== undefined && typeof config.context.includeBotMessages !== "boolean") {
+		throw new Error(`context.includeBotMessages must be a boolean in ${path}`);
+	}
+	if (config.context?.includeAttachments !== undefined && typeof config.context.includeAttachments !== "boolean") {
+		throw new Error(`context.includeAttachments must be a boolean in ${path}`);
+	}
+	if (config.approvals?.enabled !== undefined && typeof config.approvals.enabled !== "boolean") {
+		throw new Error(`approvals.enabled must be a boolean in ${path}`);
 	}
 	if (config.approvals?.layout && config.approvals.layout !== "message" && config.approvals.layout !== "card") {
 		throw new Error(`approvals.layout must be "message" or "card" in ${path}`);
 	}
+	if (config.approvals?.tools !== undefined && !isStringArray(config.approvals.tools)) {
+		throw new Error(`approvals.tools must be an array of strings in ${path}`);
+	}
+	if (config.approvals?.showId !== undefined && typeof config.approvals.showId !== "boolean") {
+		throw new Error(`approvals.showId must be a boolean in ${path}`);
+	}
+	if (config.tools !== undefined && !isStringArray(config.tools)) {
+		throw new Error(`tools must be an array of strings in ${path}`);
+	}
+	if (config.excludeTools !== undefined && !isStringArray(config.excludeTools)) {
+		throw new Error(`excludeTools must be an array of strings in ${path}`);
+	}
 	return config;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 async function listFiles(root: string): Promise<string[]> {
