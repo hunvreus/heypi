@@ -12,6 +12,9 @@ Current public API:
 - `approval(config)`
 - `renderApprovalMessage(view)`
 
+The package root also exports the public adapter, approval, model, context, and
+message types. The old `@hunvreus/heypi/adapter` compatibility subpath is gone.
+
 `loadAgent()` reads optional `agent/config.json` first, then applies explicit options. The config
 file is data-only; models and adapters stay in code.
 

@@ -8,6 +8,8 @@
   heypi-owned agent harness.
 - Removed old runtime, admin, persistence, job, eval, scaffold, and managed
   context machinery from the active package surface.
+- Removed the redundant `@hunvreus/heypi/adapter` subpath. Adapter types are
+  exported from the package root.
 - Removed broad passive chat history injection. Current turns send only the
   triggering message or the small delta since the last completed trigger; older
   chat is available through the `chat_history` Pi tool.

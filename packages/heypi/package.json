@@ -16,12 +16,6 @@
 			"import": "./dist/index.js",
 			"default": "./dist/index.js"
 		},
-		"./adapter": {
-			"development": "./src/adapter/index.ts",
-			"types": "./dist/adapter/index.d.ts",
-			"import": "./dist/adapter/index.js",
-			"default": "./dist/adapter/index.js"
-		},
 		"./authoring": {
 			"development": "./src/authoring.ts",
 			"types": "./dist/authoring.d.ts",
