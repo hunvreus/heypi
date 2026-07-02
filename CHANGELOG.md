@@ -33,3 +33,4 @@
 - Validate `context.mode` and `approvals.layout` values loaded from `config.json`.
 - Report Pi startup failures back to the source chat thread and mark the queued turn failed.
 - Treat adapter acknowledgement failures as non-fatal so reaction/typing errors do not drop turns.
+- Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.

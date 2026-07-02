@@ -65,4 +65,18 @@ describe("channel", () => {
 			.map((line) => JSON.parse(line) as { type: string });
 		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_completed"]);
 	});
+
+	it("restores queued turns after reload", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-restore-${Date.now()}-${Math.random()}.jsonl`);
+		const first = createChannel({ logPath });
+		await first.load();
+		await first.ingest(message("a", "hello"));
+
+		const second = createChannel({ logPath });
+		await second.load();
+
+		const turn = second.next();
+		expect(turn?.messageId).toBe("a");
+		expect(turn?.prompt).toContain("hello");
+	});
 });

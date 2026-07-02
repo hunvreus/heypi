@@ -81,6 +81,19 @@ export function createChannel(options: ChannelOptions): Channel {
 		return 0;
 	}
 
+	function restoreQueue(): void {
+		queued.splice(0, queued.length);
+		const finished = new Set<string>();
+		for (const record of records) {
+			if (record.type === "turn_completed" || record.type === "turn_failed") finished.add(record.id);
+		}
+		for (const record of records) {
+			if (record.type === "turn_queued" && !finished.has(record.id)) {
+				queued.push({ id: record.id, trigger: record.trigger });
+			}
+		}
+	}
+
 	function shouldTrigger(message: ChatMessage): boolean {
 		if (message.user.isBot) return false;
 		return message.dm || message.mentioned;
@@ -118,6 +131,7 @@ export function createChannel(options: ChannelOptions): Channel {
 					.filter(Boolean)
 					.map((line) => JSON.parse(line) as ChannelRecord);
 				nextRecord = records.reduce((max, record) => Math.max(max, record.record), 0) + 1;
+				restoreQueue();
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
