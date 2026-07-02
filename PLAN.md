@@ -35,6 +35,8 @@ Status: first clean baseline is in place.
   - `agent/skills/`
   - `agent/extensions/`
 - Stage authored resources into a Pi-visible bundle instead of exposing host source paths.
+  - Map `system.md` to Pi `SYSTEM.md`.
+  - Map `instructions.md` to Pi `APPEND_SYSTEM.md`.
 - Implement a minimal conversation runtime inspired by `../_sandbox/pi-chat`:
   - append inbound records,
   - trigger jobs from mentions/DM/webhook,

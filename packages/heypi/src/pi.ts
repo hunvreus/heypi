@@ -43,8 +43,6 @@ export function createPiHost(options: PiHostOptions): PiHost {
 		async start() {
 			const manager = SessionManager.create(options.workspaceDir, options.sessionDir);
 			const prompt = [
-				options.agent.instructions,
-				options.agent.system,
 				"Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
 				"Use staged agent skills, tools, and extensions when they apply.",
 			]

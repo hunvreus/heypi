@@ -47,6 +47,7 @@ describe("stageAgent", () => {
 		await mkdir(join(root, "skills"), { recursive: true });
 		await mkdir(join(root, "node_modules", "ignored"), { recursive: true });
 		await writeFile(join(root, "instructions.md"), "Instruction");
+		await writeFile(join(root, "system.md"), "System");
 		await writeFile(join(root, "tools", "tool.ts"), "export {};");
 		await writeFile(join(root, "extensions", "extension.ts"), "export {};");
 		await writeFile(join(root, "skills", "skill.md"), "skill");
@@ -58,6 +59,8 @@ describe("stageAgent", () => {
 		const second = await stageAgent(agent, state);
 
 		await expect(readFile(join(second.agentDir, "instructions.md"), "utf8")).resolves.toBe("Instruction");
+		await expect(readFile(join(second.agentDir, "APPEND_SYSTEM.md"), "utf8")).resolves.toBe("Instruction");
+		await expect(readFile(join(second.agentDir, "SYSTEM.md"), "utf8")).resolves.toBe("System");
 		await expect(readFile(join(second.agentDir, "skills", "skill.md"), "utf8")).resolves.toBe("skill");
 		await expect(readFile(join(second.agentDir, "extensions", "extension.ts"), "utf8")).resolves.toBe("export {};");
 		await expect(readFile(join(second.agentDir, "stale.txt"), "utf8")).rejects.toThrow();

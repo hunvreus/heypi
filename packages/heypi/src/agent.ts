@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import type { AgentConfig, AgentFileConfig, LoadAgentOptions } from "./types.js";
 
@@ -68,6 +68,8 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 			return !parts.includes(".git") && !parts.includes("node_modules");
 		},
 	});
+	if (agent.system) await writeFile(join(agentDir, "SYSTEM.md"), agent.system);
+	if (agent.instructions) await writeFile(join(agentDir, "APPEND_SYSTEM.md"), agent.instructions);
 	// Pi discovers staged `extensions/` and `skills/` from agentDir. `tools/`
 	// is an authoring alias for extension files that register callable tools.
 	const extensionPaths = (await listFiles(join(agentDir, "tools"))).filter(

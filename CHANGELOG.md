@@ -25,3 +25,5 @@
 - Added real Slack and Discord card approval layouts.
 - Avoid starting Pi sessions for non-triggering adapter messages.
 - Avoid sending blank final adapter replies when Pi produces no assistant text.
+- Stage `system.md` and `instructions.md` into Pi-native prompt files instead of manually appending
+  them in the heypi runtime wrapper.

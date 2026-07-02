@@ -42,6 +42,9 @@ agent/
   extensions/
 ```
 
+During staging, `system.md` is written as Pi's native `SYSTEM.md`, and `instructions.md` is written
+as `APPEND_SYSTEM.md`. `skills/` and `extensions/` stay as Pi-discovered resource folders.
+
 `config.json` can define data-only defaults such as `id`, `context`, `approvals`, `state`, `tools`,
 `excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file. Function values
 such as models, adapters, and approval predicates belong in code, not JSON.
@@ -165,6 +168,7 @@ Included:
 
 - `loadAgent("./agent", options)`
 - clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
+  into Pi-native resource names and folders
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress
