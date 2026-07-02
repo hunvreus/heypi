@@ -81,6 +81,18 @@ last completed trigger in the same conversation.
 Older chat is available through the `chat_history` Pi tool. The model can call it when history is
 actually needed instead of carrying old Slack/Discord/Telegram context in every request.
 
+## Audit
+
+heypi stores adapter coordination logs under `.heypi/channels/*.jsonl`. These records are for
+admin/audit surfaces; they are not Pi's model transcript.
+
+```ts
+import { listAuditChannels, readAuditChannel } from "@hunvreus/heypi";
+
+const channels = await listAuditChannels({ stateDir: ".heypi" });
+const records = await readAuditChannel(channels[0].path);
+```
+
 ## Adapters
 
 Local is for tests and embedding:
@@ -179,7 +191,8 @@ Included:
 - approval message rendering and Pi tool-call approval extension
 - programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
+- audit helpers for heypi-owned adapter coordination logs
 
 Not included yet:
 
-- memory, todo/planning, admin, and runtime providers
+- memory, todo/planning, admin UI, and runtime providers

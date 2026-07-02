@@ -6,6 +6,7 @@ import type {
 	ApprovalLayout,
 	ApprovalRow,
 	ApprovalState,
+	AuditChannel,
 	ContextMode,
 } from "../src/index.js";
 
@@ -16,6 +17,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<ApprovalLayout>().toEqualTypeOf<"message" | "card">();
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
 		expectTypeOf<AgentFileConfig>().toMatchTypeOf<{ context?: { mode?: ContextMode } }>();
+		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();
 	});
