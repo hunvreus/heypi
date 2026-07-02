@@ -78,8 +78,7 @@
 		"@earendil-works/pi-coding-agent": "^0.79.6",
 		"@sinclair/typebox": "^0.34.49",
 		"@slack/bolt": "^4.7.2",
-		"discord.js": "^14.26.4",
-		"zod": "^4.4.3"
+		"discord.js": "^14.26.4"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

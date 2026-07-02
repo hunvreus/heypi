@@ -44,9 +44,6 @@ importers:
       discord.js:
         specifier: ^14.26.4
         version: 14.26.4
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.15
