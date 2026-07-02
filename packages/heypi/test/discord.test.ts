@@ -78,4 +78,30 @@ describe("discordMessage", () => {
 		expect(payload.components[0].components.map((button) => button.disabled)).toEqual([true, true]);
 		expect(payload.content).toContain("- Approved by: @Ronan");
 	});
+
+	it("renders approval cards as embeds", () => {
+		expect(
+			discordApprovalPayload({
+				id: "abc",
+				layout: "card",
+				reason: "Run bash tool.",
+				command: "git push",
+				requestedBy: "@Ronan",
+			}),
+		).toMatchObject({
+			content: "",
+			embeds: [
+				{
+					title: "Approval required",
+					color: 0xecb22e,
+					fields: [
+						{ name: "Reason", value: "Run bash tool." },
+						{ name: "Command", value: "```\ngit push\n```" },
+						{ name: "Requested by", value: "@Ronan" },
+					],
+				},
+			],
+			components: [{ type: 1 }],
+		});
+	});
 });

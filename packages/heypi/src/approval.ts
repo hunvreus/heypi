@@ -5,8 +5,10 @@ import type {
 	ApprovalConfig,
 	ApprovalContext,
 	ApprovalDecision,
+	ApprovalLayout,
 	ApprovalPolicy,
 	ApprovalPolicyResult,
+	ApprovalState,
 	ApprovalView,
 } from "./types.js";
 
@@ -19,6 +21,12 @@ export type CommandPolicyConfig = {
 export type CommandRisk = {
 	risk: "allow" | "approval" | "block";
 	reason: string;
+};
+
+export type ApprovalRow = {
+	label: string;
+	value: string;
+	format?: "code" | "text";
 };
 
 const BLOCK_COMMANDS: RegExp[] = [/\brm\s+-rf\s+\/(?:\s|$)/i, /\bmkfs\b/i, /\bshutdown\b/i, /\breboot\b/i];
@@ -39,15 +47,34 @@ const APPROVAL_COMMANDS: RegExp[] = [
 	/\brm\s+-rf\b/i,
 ];
 
+export function approvalLayout(config?: ApprovalConfig): ApprovalLayout {
+	return config?.layout === "card" ? "card" : "message";
+}
+
+export function approvalTitle(state: ApprovalState = "pending"): string {
+	if (state === "approved") return "Approved";
+	if (state === "rejected") return "Rejected";
+	return "Approval required";
+}
+
+export function approvalRows(view: ApprovalView): ApprovalRow[] {
+	const rows: ApprovalRow[] = [{ label: "Reason", value: view.reason }];
+	if (view.detail && view.detailLabel) rows.push({ label: view.detailLabel, value: view.detail });
+	if (view.command) rows.push({ label: "Command", value: view.command, format: "code" });
+	if (view.showId) rows.push({ label: "Approval ID", value: view.id });
+	if (view.requestedBy) rows.push({ label: "Requested by", value: view.requestedBy });
+	if (view.state === "approved" && view.resolvedBy) rows.push({ label: "Approved by", value: view.resolvedBy });
+	if (view.state === "rejected" && view.resolvedBy) rows.push({ label: "Rejected by", value: view.resolvedBy });
+	return rows;
+}
+
 export function renderApprovalMessage(view: ApprovalView): string {
-	const lines = ["*Approval required*"];
-	lines.push(`- Reason: ${view.reason}`);
-	if (view.detail && view.detailLabel) lines.push(`- ${view.detailLabel}: ${view.detail}`);
-	if (view.command) lines.push(`- Command:\n\`\`\`\n${view.command}\n\`\`\``);
-	if (view.showId) lines.push(`- Approval ID: ${view.id}`);
-	if (view.requestedBy) lines.push(`- Requested by: ${view.requestedBy}`);
-	if (view.state === "approved" && view.resolvedBy) lines.push(`- Approved by: ${view.resolvedBy}`);
-	if (view.state === "rejected" && view.resolvedBy) lines.push(`- Rejected by: ${view.resolvedBy}`);
+	const lines = [`*${approvalTitle(view.state)}*`];
+	for (const row of approvalRows(view)) {
+		lines.push(
+			row.format === "code" ? `- ${row.label}:\n\`\`\`\n${row.value}\n\`\`\`` : `- ${row.label}: ${row.value}`,
+		);
+	}
 	return lines.join("\n");
 }
 
@@ -107,9 +134,11 @@ function approvalView(
 	context: ApprovalContext,
 	result: Extract<ApprovalPolicyResult, { type: "approve" }>,
 	showId: boolean,
+	layout: ApprovalLayout,
 ): ApprovalView {
 	return {
 		id,
+		layout,
 		reason: result.reason,
 		requestedBy: context.actor?.name ?? context.actor?.id,
 		showId,
@@ -194,7 +223,13 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 			if (!result) return;
 			if (result.type === "block") return { block: true, reason: result.reason };
 			const id = randomUUID();
-			const view = approvalView(id, context, result, options.config?.showId ?? false);
+			const view = approvalView(
+				id,
+				context,
+				result,
+				options.config?.showId ?? false,
+				approvalLayout(options.config),
+			);
 			const decision = await options.request(view);
 			if (!decision.approved) return { block: true, reason: decision.reason ?? "Tool call rejected." };
 			approvedTools.add(context.toolName);

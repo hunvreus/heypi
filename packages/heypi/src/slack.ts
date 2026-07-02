@@ -1,6 +1,6 @@
 import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
-import { renderApprovalMessage } from "./approval.js";
+import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import type { Adapter, AdapterContext, ApprovalDecision, ApprovalView, ChatMessage } from "./types.js";
 
 const APPROVE = "heypi_approve";
@@ -24,7 +24,16 @@ type SlackEvent = {
 };
 
 type PendingApproval = {
+	channel: string;
+	message: string;
+	view: ApprovalView;
 	resolve(decision: ApprovalDecision): void;
+};
+
+type SlackApprovalPayload = {
+	text: string;
+	blocks?: KnownBlock[];
+	attachments?: Array<{ color: string; fallback: string; blocks: KnownBlock[] }>;
 };
 
 export function slackMessage(event: SlackEvent, mentioned: boolean): ChatMessage {
@@ -77,7 +86,13 @@ export function slack(config: SlackConfig): Adapter {
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
 				pending.delete(id);
-				approval.resolve({ approved: true, resolvedBy: bodyUser(body) });
+				const resolvedBy = bodyUser(body);
+				await app?.client.chat.update({
+					channel: approval.channel,
+					ts: approval.message,
+					...slackApprovalPayload({ ...approval.view, state: "approved", resolvedBy }),
+				});
+				approval.resolve({ approved: true, resolvedBy });
 			});
 			app.action(REJECT, async ({ ack, body }) => {
 				await ack();
@@ -85,7 +100,13 @@ export function slack(config: SlackConfig): Adapter {
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
 				pending.delete(id);
-				approval.resolve({ approved: false, resolvedBy: bodyUser(body), reason: "Rejected in Slack." });
+				const resolvedBy = bodyUser(body);
+				await app?.client.chat.update({
+					channel: approval.channel,
+					ts: approval.message,
+					...slackApprovalPayload({ ...approval.view, state: "rejected", resolvedBy }),
+				});
+				approval.resolve({ approved: false, resolvedBy, reason: "Rejected in Slack." });
 			});
 			await app.start();
 			context.logger.info("adapter.slack.start", { mode: "socket" });
@@ -114,42 +135,72 @@ export function slack(config: SlackConfig): Adapter {
 		async requestApproval(view) {
 			if (!app) return { approved: false, reason: "Slack adapter is not started." };
 			if (!view.conversation) return { approved: false, reason: "Slack approval has no target conversation." };
-			await app.client.chat.postMessage({
+			const result = await app.client.chat.postMessage({
 				channel: view.conversation,
 				thread_ts: view.thread,
-				text: renderApprovalMessage(view),
-				blocks: approvalBlocks(view),
+				...slackApprovalPayload(view),
 			});
 			return new Promise<ApprovalDecision>((resolve) => {
-				pending.set(view.id, { resolve });
+				pending.set(view.id, { channel: view.conversation ?? "", message: result.ts ?? "", view, resolve });
 			});
 		},
 	};
 }
 
-function approvalBlocks(view: ApprovalView): KnownBlock[] {
+export function slackApprovalPayload(view: ApprovalView): SlackApprovalPayload {
+	const actions = approvalActions(view);
+	if (view.layout === "card") {
+		const blocks = slackApprovalCardBlocks(view);
+		return {
+			text: "",
+			attachments: [{ color: approvalColor(view.state), fallback: renderApprovalMessage(view), blocks }],
+			blocks: view.state ? [] : [actions],
+		};
+	}
+	return {
+		text: renderApprovalMessage(view),
+		blocks: view.state
+			? [{ type: "section", text: { type: "mrkdwn", text: renderApprovalMessage(view) } }]
+			: [{ type: "section", text: { type: "mrkdwn", text: renderApprovalMessage(view) } }, actions],
+	};
+}
+
+function slackApprovalCardBlocks(view: ApprovalView): KnownBlock[] {
 	return [
-		{ type: "section", text: { type: "mrkdwn", text: renderApprovalMessage(view) } },
-		{
-			type: "actions",
-			elements: [
-				{
-					type: "button",
-					text: { type: "plain_text", text: "Approve" },
-					style: "primary",
-					value: view.id,
-					action_id: APPROVE,
-				},
-				{
-					type: "button",
-					text: { type: "plain_text", text: "Reject" },
-					style: "danger",
-					value: view.id,
-					action_id: REJECT,
-				},
-			],
-		},
+		{ type: "section", text: { type: "mrkdwn", text: `*${approvalTitle(view.state)}*` } },
+		...approvalRows(view).map((row): KnownBlock => {
+			const value = row.format === "code" ? `\`\`\`\n${row.value}\n\`\`\`` : row.value;
+			return { type: "section", text: { type: "mrkdwn", text: `*${row.label}*\n${value}` } };
+		}),
 	];
+}
+
+function approvalActions(view: ApprovalView): KnownBlock {
+	return {
+		type: "actions",
+		elements: [
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Approve" },
+				style: "primary",
+				value: view.id,
+				action_id: APPROVE,
+			},
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Reject" },
+				style: "danger",
+				value: view.id,
+				action_id: REJECT,
+			},
+		],
+	};
+}
+
+function approvalColor(state?: ApprovalView["state"]): string {
+	if (state === "approved") return "#2EB67D";
+	if (state === "rejected") return "#E01E5A";
+	return "#ECB22E";
 }
 
 function actionValue(body: unknown): string | undefined {

@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import { renderApprovalMessage } from "./approval.js";
+import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import type { Adapter, ApprovalDecision, ApprovalView, ChatMessage } from "./types.js";
 
 const APPROVE = "heypi_approve";
@@ -34,6 +34,11 @@ type PendingApproval = {
 
 export type DiscordApprovalPayload = {
 	content: string;
+	embeds?: Array<{
+		title: string;
+		color: number;
+		fields: Array<{ name: string; value: string; inline?: boolean }>;
+	}>;
 	components: Array<{
 		type: 1;
 		components: Array<{
@@ -71,30 +76,55 @@ export function discordMessage(message: DiscordMessageInput, botUserId?: string)
 
 export function discordApprovalPayload(view: ApprovalView): DiscordApprovalPayload {
 	const disabled = view.state === "approved" || view.state === "rejected";
+	const components = [
+		{
+			type: 1 as const,
+			components: [
+				{
+					type: 2 as const,
+					style: 3 as const,
+					label: "Approve",
+					custom_id: `${APPROVE}:${view.id}`,
+					disabled,
+				},
+				{
+					type: 2 as const,
+					style: 4 as const,
+					label: "Reject",
+					custom_id: `${REJECT}:${view.id}`,
+					disabled,
+				},
+			],
+		},
+	];
+	if (view.layout === "card") {
+		return {
+			content: "",
+			embeds: [discordApprovalEmbed(view)],
+			components,
+		};
+	}
 	return {
 		content: renderApprovalMessage(view),
-		components: [
-			{
-				type: 1,
-				components: [
-					{
-						type: 2,
-						style: 3,
-						label: "Approve",
-						custom_id: `${APPROVE}:${view.id}`,
-						disabled,
-					},
-					{
-						type: 2,
-						style: 4,
-						label: "Reject",
-						custom_id: `${REJECT}:${view.id}`,
-						disabled,
-					},
-				],
-			},
-		],
+		components,
 	};
+}
+
+function discordApprovalEmbed(view: ApprovalView): NonNullable<DiscordApprovalPayload["embeds"]>[number] {
+	return {
+		title: approvalTitle(view.state),
+		color: approvalColor(view.state),
+		fields: approvalRows(view).map((row) => ({
+			name: row.label.slice(0, 256),
+			value: (row.format === "code" ? `\`\`\`\n${row.value}\n\`\`\`` : row.value).slice(0, 1024),
+		})),
+	};
+}
+
+function approvalColor(state?: ApprovalView["state"]): number {
+	if (state === "approved") return 0x2eb67d;
+	if (state === "rejected") return 0xe01e5a;
+	return 0xecb22e;
 }
 
 export function discord(config: DiscordConfig): Adapter {

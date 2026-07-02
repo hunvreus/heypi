@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slackMessage } from "../src/slack.js";
+import { slackApprovalPayload, slackMessage } from "../src/slack.js";
 
 describe("slackMessage", () => {
 	it("normalizes Slack app mentions", () => {
@@ -30,5 +30,41 @@ describe("slackMessage", () => {
 
 	it("treats Slack IMs as DMs", () => {
 		expect(slackMessage({ ts: "1", channel: "D1", channel_type: "im", user: "U1", text: "hi" }, false).dm).toBe(true);
+	});
+
+	it("renders approval message payloads", () => {
+		expect(
+			slackApprovalPayload({
+				id: "abc",
+				reason: "Run bash tool.",
+				command: "git push",
+				requestedBy: "@Ronan",
+			}),
+		).toMatchObject({
+			text: [
+				"*Approval required*",
+				"- Reason: Run bash tool.",
+				"- Command:\n```\ngit push\n```",
+				"- Requested by: @Ronan",
+			].join("\n"),
+			blocks: [{ type: "section" }, { type: "actions" }],
+		});
+	});
+
+	it("renders approval card payloads", () => {
+		const payload = slackApprovalPayload({
+			id: "abc",
+			layout: "card",
+			reason: "Run bash tool.",
+			command: "git push",
+			requestedBy: "@Ronan",
+		});
+		expect(payload.text).toBe("");
+		expect(payload.blocks).toEqual([{ type: "actions", elements: expect.any(Array) }]);
+		expect(payload.attachments?.[0]).toMatchObject({
+			color: "#ECB22E",
+			fallback: expect.stringContaining("Run bash tool."),
+			blocks: [{ type: "section" }, { type: "section" }, { type: "section" }, { type: "section" }],
+		});
 	});
 });

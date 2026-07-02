@@ -22,3 +22,4 @@
 - Documented the approval policy context boundary.
 - Enabled the default approval extension unless `approvals.enabled` is explicitly false.
 - Added an injectable Pi host boundary and app-level chat routing test.
+- Added real Slack and Discord card approval layouts.

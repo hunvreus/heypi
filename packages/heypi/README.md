@@ -126,6 +126,8 @@ originating conversation.
 Approvals run at the Pi tool-call boundary. heypi renders the approval UI through the active adapter,
 then the Pi tool call either continues, is rejected by a person, or is blocked by policy.
 They are enabled by default. Set `approvals.enabled` to `false` to disable the approval extension.
+`layout: "message"` renders a compact text list with buttons. `layout: "card"` uses Slack
+attachments and Discord embeds; Telegram keeps text plus inline buttons.
 
 Policies are programmable:
 
@@ -175,5 +177,4 @@ Included:
 
 Not included yet:
 
-- Card-style approval attachments beyond Slack/Discord/Telegram native buttons
 - memory, todo/planning, admin, and runtime providers

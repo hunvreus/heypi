@@ -25,7 +25,7 @@ describe("renderApprovalMessage", () => {
 			}),
 		).toBe(
 			[
-				"*Approval required*",
+				"*Approved*",
 				"- Reason: Run bash command.",
 				"- Command:\n```\ngit push\n```",
 				"- Approval ID: abc",

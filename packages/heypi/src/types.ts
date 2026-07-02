@@ -113,6 +113,7 @@ export type ApprovalState = "pending" | "approved" | "rejected";
 
 export type ApprovalView = {
 	id: string;
+	layout?: ApprovalLayout;
 	conversation?: string;
 	thread?: string;
 	reason: string;

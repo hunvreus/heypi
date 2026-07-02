@@ -14,7 +14,7 @@ export { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
 export { consoleLogger } from "./log.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
-export { type SlackConfig, slack, slackMessage } from "./slack.js";
+export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
 export { type TelegramConfig, telegram, telegramApprovalPayload, telegramMessage } from "./telegram.js";
 export type {
 	Adapter,
