@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createChatHistoryTool } from "./chat-history.js";
 import { ConversationRuntime } from "./conversation.js";
 import { consoleLogger } from "./log.js";
 import { PiSessionHost, piSessionDir } from "./pi/session.js";
@@ -43,6 +44,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			workspaceDir: staged.workspaceDir,
 			sessionDir: piSessionDir(stateDir, key),
 			toolPaths: staged.toolPaths,
+			customTools: [createChatHistoryTool(runtime)],
 		});
 		await pi.start();
 		const running = { runtime, pi, adapter };

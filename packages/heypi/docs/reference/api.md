@@ -12,5 +12,8 @@ Current public API:
 - `approval(config)`
 - `renderApprovalMessage(view)`
 
+Default chat context is the current triggering message. Older mirrored chat is available to Pi
+through the built-in `chat_history` tool.
+
 The old store, scheduler, runtime-provider, managed-memory, and heypi-owned tool-loop APIs are not
 part of the rewrite surface.

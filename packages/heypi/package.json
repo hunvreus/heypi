@@ -7,8 +7,7 @@
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"bin": {
-		"heypi": "bin/heypi",
-		"heypi-convert-document": "bin/heypi-convert-document"
+		"heypi": "bin/heypi"
 	},
 	"exports": {
 		".": {
@@ -23,29 +22,15 @@
 			"import": "./dist/adapter/index.js",
 			"default": "./dist/adapter/index.js"
 		},
-		"./attachments": {
-			"development": "./src/attachments/index.ts",
-			"types": "./dist/attachments/index.d.ts",
-			"import": "./dist/attachments/index.js",
-			"default": "./dist/attachments/index.js"
-		},
 		"./authoring": {
 			"development": "./src/authoring.ts",
 			"types": "./dist/authoring.d.ts",
 			"import": "./dist/authoring.js",
 			"default": "./dist/authoring.js"
-		},
-		"./runtime": {
-			"development": "./src/runtime/public.ts",
-			"types": "./dist/runtime/public.d.ts",
-			"import": "./dist/runtime/public.js",
-			"default": "./dist/runtime/public.js"
 		}
 	},
 	"files": [
 		"bin/heypi",
-		"bin/heypi-convert-document",
-		"bin/heypi-convert-document.py",
 		"dist",
 		"docs",
 		"ARCHITECTURE.md",

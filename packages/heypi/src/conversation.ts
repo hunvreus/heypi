@@ -16,6 +16,13 @@ export type DispatchJob = {
 	prompt: string;
 };
 
+export type ChatHistoryQuery = {
+	query?: string;
+	after?: string;
+	before?: string;
+	limit?: number;
+};
+
 type PendingJob = {
 	id: string;
 	trigger: number;
@@ -35,7 +42,7 @@ export class ConversationRuntime {
 
 	constructor(private readonly options: ConversationRuntimeOptions) {
 		this.context = {
-			range: options.context?.range ?? "delta",
+			range: options.context?.range ?? "current",
 			includeSince: options.context?.includeSince ?? "lastCompletedTrigger",
 			maxMessages: options.context?.maxMessages ?? 20,
 			maxChars: options.context?.maxChars ?? 12_000,
@@ -109,6 +116,24 @@ export class ConversationRuntime {
 		this.active = undefined;
 	}
 
+	findHistory(query: ChatHistoryQuery = {}): Array<ConversationRecord & { type: "inbound" }> {
+		const search = query.query?.trim().toLowerCase();
+		const after = query.after ? Date.parse(query.after) : undefined;
+		const before = query.before ? Date.parse(query.before) : undefined;
+		const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+		return this.records
+			.filter((record): record is ConversationRecord & { type: "inbound" } => record.type === "inbound")
+			.filter((record) => {
+				if (record.user.isBot && !this.context.includeBotMessages) return false;
+				if (search && !record.text.toLowerCase().includes(search)) return false;
+				const time = record.time ? Date.parse(record.time) : undefined;
+				if (after !== undefined && time !== undefined && time < after) return false;
+				if (before !== undefined && time !== undefined && time > before) return false;
+				return true;
+			})
+			.slice(-limit);
+	}
+
 	private shouldTrigger(message: ConversationRecord & { type: "inbound" }): boolean {
 		if (message.user.isBot) return false;
 		return message.dm || message.mentioned;
@@ -124,9 +149,11 @@ export class ConversationRuntime {
 
 	private buildPrompt(triggerRecord: number): string {
 		const min =
-			this.context.range === "current" || this.context.includeSince === "lastCompletedTrigger"
-				? this.lastCompletedTrigger()
-				: 0;
+			this.context.range === "current"
+				? triggerRecord - 1
+				: this.context.includeSince === "lastCompletedTrigger"
+					? this.lastCompletedTrigger()
+					: 0;
 		const messages = this.records
 			.filter((record): record is ConversationRecord & { type: "inbound" } => record.type === "inbound")
 			.filter((record) => record.record > min && record.record <= triggerRecord)

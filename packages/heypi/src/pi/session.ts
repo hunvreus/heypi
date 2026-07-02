@@ -6,6 +6,7 @@ import {
 	SettingsManager,
 	type AgentSession,
 	type CreateAgentSessionOptions,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../types.js";
 
@@ -15,6 +16,7 @@ export type PiSessionHostOptions = {
 	workspaceDir: string;
 	sessionDir: string;
 	toolPaths: string[];
+	customTools?: ToolDefinition[];
 };
 
 export class PiSessionHost {
@@ -51,6 +53,7 @@ export class PiSessionHost {
 			tools: this.options.agent.tools,
 			excludeTools: this.options.agent.excludeTools,
 			noTools: this.options.agent.noTools,
+			customTools: this.options.customTools,
 		} satisfies CreateAgentSessionOptions);
 		this.session = result.session;
 		this.session.sessionManager.appendSessionInfo(`heypi ${this.options.agent.id}`);

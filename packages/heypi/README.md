@@ -38,7 +38,7 @@ agent/
 
 - `loadAgent("./agent", options)`
 - Pi session creation via `@earendil-works/pi-coding-agent`
-- Bounded chat-delta conversation queue
+- Current-turn chat delivery with older chat available through the Pi `chat_history` tool
 - Slack, Discord, Telegram, and webhook adapter shells
 - Approval message rendering helper
 

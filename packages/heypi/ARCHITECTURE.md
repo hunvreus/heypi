@@ -52,9 +52,9 @@ Host source paths are not put into the model prompt.
 
 ## Conversation context
 
-heypi stores a small conversation log for adapter coordination. A Pi job receives only the current
-chat delta, defaulting to messages since the last completed trigger. Older chat should be exposed
-through explicit tools, not injected passively into every prompt.
+heypi stores a small conversation log for adapter coordination. By default, a Pi job receives only
+the triggering chat message. Older chat is available through the Pi `chat_history` tool, so history
+is retrieved intentionally instead of injected passively into every prompt.
 
 ## Future features
 
