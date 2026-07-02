@@ -26,6 +26,10 @@ const app = await createHeypi({ agent });
 await app.start();
 ```
 
+`createHeypi()` accepts an optional `piHost` factory for tests and future runtime providers. The
+factory must return the Pi host contract; heypi still sends chat deltas to Pi instead of running its
+own model loop.
+
 Agent resources are file-based:
 
 ```text

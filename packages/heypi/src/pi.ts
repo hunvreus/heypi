@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import {
-	type AgentSession,
+	type AgentSessionEvent,
+	type AgentSessionEventListener,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
@@ -25,9 +26,11 @@ export type PiHostOptions = {
 export type PiHost = {
 	start(): Promise<void>;
 	send(text: string): Promise<void>;
-	subscribe(listener: AgentSession["subscribe"] extends (listener: infer T) => unknown ? T : never): () => void;
+	subscribe(listener: AgentSessionEventListener): () => void;
 	stop(): Promise<void>;
 };
+
+export type PiEvent = AgentSessionEvent;
 
 export function sessionDir(stateDir: string, key: string): string {
 	return join(stateDir, "sessions", key);

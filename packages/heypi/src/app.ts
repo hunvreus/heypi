@@ -4,7 +4,7 @@ import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
 import { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 import { consoleLogger } from "./log.js";
-import { createPiHost, type PiHost, sessionDir } from "./pi.js";
+import { createPiHost, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
 
 export type HeypiApp = {
@@ -15,7 +15,10 @@ export type HeypiApp = {
 export type CreateHeypiOptions = {
 	agent: AgentConfig | Promise<AgentConfig>;
 	logger?: Logger;
+	piHost?: PiHostFactory;
 };
+
+export type PiHostFactory = (options: PiHostOptions) => PiHost;
 
 type RunningChannel = {
 	channel: Channel;
@@ -40,6 +43,7 @@ function assistantText(message: { role?: string; content?: unknown }): string {
 export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp> {
 	const agent = await options.agent;
 	const logger = options.logger ?? consoleLogger;
+	const piHost = options.piHost ?? createPiHost;
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
 	const staged = await stageAgent(agent, stateDir);
 	const channels = new Map<string, RunningChannel>();
@@ -73,7 +77,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							}) ??
 							Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
 					});
-		const pi = createPiHost({
+		const pi = piHost({
 			agent,
 			agentDir: staged.agentDir,
 			workspaceDir: staged.workspaceDir,
