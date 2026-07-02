@@ -44,6 +44,17 @@ describe("loadAgent", () => {
 
 		await expect(loadAgent(root)).rejects.toThrow(`Failed to read ${config}`);
 	});
+
+	it("rejects invalid config enum values", async () => {
+		const root = await makeDir("bad-enum");
+		const config = join(root, "config.json");
+
+		await writeFile(config, JSON.stringify({ context: { mode: "thread" } }));
+		await expect(loadAgent(root)).rejects.toThrow("context.mode must be");
+
+		await writeFile(config, JSON.stringify({ approvals: { layout: "panel" } }));
+		await expect(loadAgent(root)).rejects.toThrow("approvals.layout must be");
+	});
 });
 
 describe("stageAgent", () => {

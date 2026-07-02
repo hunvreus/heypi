@@ -12,11 +12,25 @@ async function readJsonConfig(path: string): Promise<AgentFileConfig> {
 	const text = await readOptional(path);
 	if (!text) return {};
 	try {
-		return JSON.parse(text) as AgentFileConfig;
+		return validateConfig(JSON.parse(text), path);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Failed to read ${path}: ${message}`);
 	}
+}
+
+function validateConfig(value: unknown, path: string): AgentFileConfig {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error("expected an object");
+	}
+	const config = value as AgentFileConfig;
+	if (config.context?.mode && config.context.mode !== "current" && config.context.mode !== "delta") {
+		throw new Error(`context.mode must be "current" or "delta" in ${path}`);
+	}
+	if (config.approvals?.layout && config.approvals.layout !== "message" && config.approvals.layout !== "card") {
+		throw new Error(`approvals.layout must be "message" or "card" in ${path}`);
+	}
+	return config;
 }
 
 async function listFiles(root: string): Promise<string[]> {

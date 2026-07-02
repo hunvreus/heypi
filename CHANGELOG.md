@@ -30,3 +30,4 @@
 - Exclude `.heypi` state from staged agent resources so session/channel data is not exposed to Pi as
   authored context.
 - Report malformed `config.json` files with the failing path.
+- Validate `context.mode` and `approvals.layout` values loaded from `config.json`.
