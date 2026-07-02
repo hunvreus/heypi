@@ -154,6 +154,10 @@ export type TodoConfig = {
 	enabled?: boolean;
 };
 
+export type MemoryConfig = {
+	enabled?: boolean;
+};
+
 export type AgentFileConfig = {
 	id?: string;
 	context?: ContextConfig;
@@ -161,6 +165,7 @@ export type AgentFileConfig = {
 	runtime?: RuntimeConfig;
 	admin?: AdminConfig;
 	todo?: TodoConfig;
+	memory?: MemoryConfig;
 	state?: StateConfig;
 	tools?: string[];
 	excludeTools?: string[];

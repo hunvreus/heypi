@@ -71,7 +71,7 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Done." }]);
 		expect(piOptions).toHaveLength(1);
 		expect(piOptions[0]?.tools).toHaveLength(2);
-		expect(piOptions[0]?.extensions).toHaveLength(1);
+		expect(piOptions[0]?.extensions).toHaveLength(2);
 		expect(piOptions[0]?.agentDir).toBe(join(state, "agents", "agent", "agent"));
 	});
 
@@ -110,7 +110,45 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(piOptions[0]?.extensions).toEqual([]);
+		expect(piOptions[0]?.extensions).toHaveLength(1);
+	});
+
+	it("can disable the memory extension", async () => {
+		const root = await makeDir("app-no-memory-agent");
+		const state = await makeDir("app-no-memory-state");
+		const adapter = local();
+		const piOptions: PiHostOptions[] = [];
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+				memory: { enabled: false },
+			}),
+			piHost(options) {
+				piOptions.push(options);
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(piOptions[0]?.extensions).toHaveLength(1);
 	});
 
 	it("does not start Pi for non-triggering adapter messages", async () => {

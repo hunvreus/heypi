@@ -71,6 +71,9 @@ Function values such as models, adapters, and approval predicates belong in code
   },
   "todo": {
     "enabled": true
+  },
+  "memory": {
+    "enabled": true
   }
 }
 ```
@@ -115,6 +118,20 @@ and heypi renders the current task list into the active chat thread. Disable it 
 ```json
 {
   "todo": {
+    "enabled": false
+  }
+}
+```
+
+## Memory
+
+heypi registers `memory_store` and `memory_search` Pi tools by default. Memory is stored per
+conversation under `.heypi/memory/*.jsonl`. It is not injected into every prompt; Pi stores and
+searches it explicitly through tools. Disable it with:
+
+```json
+{
+  "memory": {
     "enabled": false
   }
 }
@@ -239,9 +256,10 @@ Included:
 - programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
 - `todo_update` Pi extension for visible task progress
+- `memory_store` and `memory_search` Pi tools for durable explicit memory
 - audit helpers for heypi-owned adapter coordination logs
 - read-only admin HTTP audit endpoints
 
 Not included yet:
 
-- memory, richer admin UI, and non-local runtime providers
+- richer admin UI and non-local runtime providers

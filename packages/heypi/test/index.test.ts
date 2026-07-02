@@ -9,6 +9,7 @@ import type {
 	ApprovalState,
 	AuditChannel,
 	ContextMode,
+	MemoryConfig,
 	RuntimeKind,
 	TodoConfig,
 } from "../src/index.js";
@@ -23,6 +24,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<AgentFileConfig>().toMatchTypeOf<{ context?: { mode?: ContextMode } }>();
 		expectTypeOf<AdminConfig>().toMatchTypeOf<{ enabled?: boolean; port?: number }>();
 		expectTypeOf<TodoConfig>().toMatchTypeOf<{ enabled?: boolean }>();
+		expectTypeOf<MemoryConfig>().toMatchTypeOf<{ enabled?: boolean }>();
 		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();

@@ -24,6 +24,7 @@ describe("loadAgent", () => {
 				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
 				admin: { enabled: true, port: 4321 },
 				todo: { enabled: false },
+				memory: { enabled: false },
 			}),
 		);
 
@@ -34,6 +35,7 @@ describe("loadAgent", () => {
 			runtime: { workspaceDir: "/tmp/option-workspace" },
 			admin: { port: 4322 },
 			todo: { enabled: true },
+			memory: { enabled: true },
 		});
 
 		expect(agent.id).toBe("option-id");
@@ -44,6 +46,7 @@ describe("loadAgent", () => {
 		expect(agent.runtime).toEqual({ kind: "local", workspaceDir: "/tmp/option-workspace" });
 		expect(agent.admin).toEqual({ enabled: true, port: 4322 });
 		expect(agent.todo).toEqual({ enabled: true });
+		expect(agent.memory).toEqual({ enabled: true });
 	});
 
 	it("reports malformed config files with their path", async () => {
@@ -110,6 +113,9 @@ describe("loadAgent", () => {
 
 		await writeFile(config, JSON.stringify({ todo: { enabled: "yes" } }));
 		await expect(loadAgent(root)).rejects.toThrow("todo.enabled must be a boolean");
+
+		await writeFile(config, JSON.stringify({ memory: { enabled: "yes" } }));
+		await expect(loadAgent(root)).rejects.toThrow("memory.enabled must be a boolean");
 
 		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
 		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");

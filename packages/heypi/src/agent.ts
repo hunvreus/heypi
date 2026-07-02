@@ -78,6 +78,9 @@ function validateConfig(value: unknown, path: string): AgentFileConfig {
 	if (config.todo?.enabled !== undefined && typeof config.todo.enabled !== "boolean") {
 		throw new Error(`todo.enabled must be a boolean in ${path}`);
 	}
+	if (config.memory?.enabled !== undefined && typeof config.memory.enabled !== "boolean") {
+		throw new Error(`memory.enabled must be a boolean in ${path}`);
+	}
 	if (config.tools !== undefined && !isStringArray(config.tools)) {
 		throw new Error(`tools must be an array of strings in ${path}`);
 	}
@@ -113,6 +116,7 @@ function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions
 		runtime: { ...fileConfig.runtime, ...options.runtime },
 		admin: { ...fileConfig.admin, ...options.admin },
 		todo: { ...fileConfig.todo, ...options.todo },
+		memory: { ...fileConfig.memory, ...options.memory },
 		state: { ...fileConfig.state, ...options.state },
 	};
 }

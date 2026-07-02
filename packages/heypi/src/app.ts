@@ -1,10 +1,12 @@
 import { join } from "node:path";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
 import { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 import { consoleLogger } from "./log.js";
+import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
 import { createPiHost, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
 import { createTodoExtension, renderTodo } from "./todo.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
@@ -114,6 +116,16 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							});
 						},
 					});
+		const memoryExtension =
+			agent.memory?.enabled === false
+				? undefined
+				: createMemoryExtension({
+						store: createFileMemoryStore(join(stateDir, "memory", `${key}.jsonl`)),
+					});
+		const extensions: ExtensionFactory[] = [];
+		if (approvalExtension) extensions.push(approvalExtension);
+		if (todoExtension) extensions.push(todoExtension);
+		if (memoryExtension) extensions.push(memoryExtension);
 		const pi = piHost({
 			agent,
 			agentDir: staged.agentDir,
@@ -126,7 +138,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					await adapter.send({ conversation: message.conversation, thread: channel.activeMessageId(), text });
 				}),
 			],
-			extensions: [approvalExtension, todoExtension].filter((extension) => extension !== undefined),
+			extensions,
 		});
 		await pi.start();
 		running.pi = pi;
