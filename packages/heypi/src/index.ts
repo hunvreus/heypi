@@ -24,7 +24,13 @@ export {
 } from "./memory.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
-export { type TelegramConfig, telegram, telegramApprovalPayload, telegramMessage } from "./telegram.js";
+export {
+	type TelegramConfig,
+	telegram,
+	telegramApprovalPayload,
+	telegramMessage,
+	telegramTypingPayload,
+} from "./telegram.js";
 export { createTodoExtension, renderTodo, type TodoExtensionOptions, type TodoItem, type TodoStatus } from "./todo.js";
 export type {
 	Adapter,

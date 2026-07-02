@@ -194,6 +194,13 @@ export function discord(config: DiscordConfig): Adapter {
 			await client?.destroy();
 			client = undefined;
 		},
+		async ack(message) {
+			if (!client) return;
+			const channel = await client.channels.fetch(message.conversation);
+			if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") {
+				await channel.sendTyping();
+			}
+		},
 		async send(message) {
 			if (!client) throw new Error("Discord adapter is not started");
 			const channel = await client.channels.fetch(message.conversation);

@@ -63,6 +63,11 @@ export type TelegramApprovalPayload = {
 	};
 };
 
+export type TelegramTypingPayload = {
+	chat_id: string;
+	action: "typing";
+};
+
 export function telegramMessage(message: TelegramMessage, botUsername?: string): ChatMessage {
 	const text = message.text ?? "";
 	const username = botUsername?.replace(/^@/, "");
@@ -91,6 +96,13 @@ export function telegramMessage(message: TelegramMessage, botUsername?: string):
 				: []),
 			...(message.photo?.map((photo) => ({ id: photo.file_id, name: "photo" })) ?? []),
 		],
+	};
+}
+
+export function telegramTypingPayload(message: ChatMessage): TelegramTypingPayload {
+	return {
+		chat_id: message.conversation,
+		action: "typing",
 	};
 }
 
@@ -188,6 +200,9 @@ export function telegram(config: TelegramConfig): Adapter {
 		},
 		stop() {
 			running = false;
+		},
+		async ack(message) {
+			await call("sendChatAction", telegramTypingPayload(message));
 		},
 		async send(message) {
 			const result = await call<{ message_id: number }>("sendMessage", {

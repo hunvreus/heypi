@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { telegramApprovalPayload, telegramMessage } from "../src/telegram.js";
+import { telegramApprovalPayload, telegramMessage, telegramTypingPayload } from "../src/telegram.js";
 
 describe("telegramMessage", () => {
 	it("normalizes private messages", () => {
@@ -59,5 +59,20 @@ describe("telegramMessage", () => {
 				],
 			},
 		});
+	});
+
+	it("renders typing acknowledgements", () => {
+		expect(
+			telegramTypingPayload({
+				id: "1",
+				adapter: "telegram",
+				account: "telegram",
+				conversation: "10",
+				user: { id: "20" },
+				text: "hello",
+				mentioned: false,
+				dm: true,
+			}),
+		).toEqual({ chat_id: "10", action: "typing" });
 	});
 });

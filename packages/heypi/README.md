@@ -272,8 +272,10 @@ Included:
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress
 - Slack Socket Mode adapter shell with replies, reactions, and approval buttons
-- Discord adapter shell with mention/DM normalization, replies, and approval buttons
-- Telegram adapter shell with polling, mention/DM normalization, replies, and approval buttons
+- Discord adapter shell with mention/DM normalization, typing acknowledgements, replies, and approval
+  buttons
+- Telegram adapter shell with polling, mention/DM normalization, typing acknowledgements, replies, and
+  approval buttons
 - approval message rendering and Pi tool-call approval extension
 - programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates

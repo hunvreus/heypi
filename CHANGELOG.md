@@ -39,3 +39,4 @@
 - Added explicit `memory_store` and `memory_search` Pi tools backed by per-conversation JSONL
   storage.
 - Added exact-match adapter/account/conversation/user allowlists before Pi work is queued.
+- Added Discord and Telegram typing acknowledgements for accepted messages.
