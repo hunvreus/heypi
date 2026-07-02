@@ -47,12 +47,11 @@ Status: first clean baseline is in place.
 
 ## Next build
 
-- Add live approval buttons/card rendering where supported.
 - Keep adding tests with each feature.
 
 ## Later features
 
-- Approvals: live adapter UI for approval cards/messages.
+- Approvals: richer card-style layouts where adapters support them.
 - Memory: Pi extension, not heypi prompt injection.
 - Todo/planning: Pi extension plus heypi renderer, not model-managed core planning.
 - Admin: mirror Pi/session/adapter events, do not drive model context.

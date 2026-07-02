@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { telegramMessage } from "../src/telegram.js";
+import { telegramApprovalPayload, telegramMessage } from "../src/telegram.js";
 
 describe("telegramMessage", () => {
 	it("normalizes private messages", () => {
@@ -35,5 +35,29 @@ describe("telegramMessage", () => {
 				"Codex",
 			).mentioned,
 		).toBe(true);
+	});
+
+	it("renders approval inline keyboard", () => {
+		expect(
+			telegramApprovalPayload({
+				id: "abc",
+				conversation: "10",
+				thread: "99",
+				reason: "Run bash tool.",
+				command: "git push",
+			}),
+		).toEqual({
+			chat_id: "10",
+			reply_to_message_id: 99,
+			text: ["*Approval required*", "- Reason: Run bash tool.", "- Command:\n```\ngit push\n```"].join("\n"),
+			reply_markup: {
+				inline_keyboard: [
+					[
+						{ text: "Approve", callback_data: "heypi_approve:abc" },
+						{ text: "Reject", callback_data: "heypi_reject:abc" },
+					],
+				],
+			},
+		});
 	});
 });

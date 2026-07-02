@@ -1,5 +1,9 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import type { Adapter, ChatMessage } from "./types.js";
+import { renderApprovalMessage } from "./approval.js";
+import type { Adapter, ApprovalDecision, ApprovalView, ChatMessage } from "./types.js";
+
+const APPROVE = "heypi_approve";
+const REJECT = "heypi_reject";
 
 export type DiscordConfig = {
 	name?: string;
@@ -21,6 +25,25 @@ export type DiscordMessageInput = {
 		has(userId: string): boolean;
 	};
 	attachments?: Array<{ id: string; name?: string; url: string; contentType?: string | null }>;
+};
+
+type PendingApproval = {
+	view: ApprovalView;
+	resolve(decision: ApprovalDecision): void;
+};
+
+export type DiscordApprovalPayload = {
+	content: string;
+	components: Array<{
+		type: 1;
+		components: Array<{
+			type: 2;
+			style: 3 | 4;
+			label: string;
+			custom_id: string;
+			disabled?: boolean;
+		}>;
+	}>;
 };
 
 export function discordMessage(message: DiscordMessageInput, botUserId?: string): ChatMessage {
@@ -46,8 +69,37 @@ export function discordMessage(message: DiscordMessageInput, botUserId?: string)
 	};
 }
 
+export function discordApprovalPayload(view: ApprovalView): DiscordApprovalPayload {
+	const disabled = view.state === "approved" || view.state === "rejected";
+	return {
+		content: renderApprovalMessage(view),
+		components: [
+			{
+				type: 1,
+				components: [
+					{
+						type: 2,
+						style: 3,
+						label: "Approve",
+						custom_id: `${APPROVE}:${view.id}`,
+						disabled,
+					},
+					{
+						type: 2,
+						style: 4,
+						label: "Reject",
+						custom_id: `${REJECT}:${view.id}`,
+						disabled,
+					},
+				],
+			},
+		],
+	};
+}
+
 export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
+	const pending = new Map<string, PendingApproval>();
 	return {
 		kind: "discord",
 		name: config.name,
@@ -84,6 +136,27 @@ export function discord(config: DiscordConfig): Adapter {
 				if (!normalized.dm && !normalized.mentioned) return;
 				await context.receive(normalized);
 			});
+			client.on("interactionCreate", async (interaction) => {
+				if (!interaction.isButton()) return;
+				const [action, id] = interaction.customId.split(":");
+				const approval = id ? pending.get(id) : undefined;
+				if (!approval || (action !== APPROVE && action !== REJECT)) return;
+				pending.delete(id);
+				const resolvedBy = `<@${interaction.user.id}>`;
+				const approved = action === APPROVE;
+				await interaction.update(
+					discordApprovalPayload({
+						...approval.view,
+						state: approved ? "approved" : "rejected",
+						resolvedBy,
+					}),
+				);
+				approval.resolve({
+					approved,
+					resolvedBy,
+					reason: approved ? undefined : "Rejected in Discord.",
+				});
+			});
 			await client.login(config.token);
 			context.logger.info("adapter.discord.start");
 		},
@@ -99,6 +172,18 @@ export function discord(config: DiscordConfig): Adapter {
 			}
 			const result = await channel.send({ content: message.text });
 			return { id: result.id };
+		},
+		async requestApproval(view) {
+			if (!client) return { approved: false, reason: "Discord adapter is not started." };
+			if (!view.conversation) return { approved: false, reason: "Discord approval has no target conversation." };
+			const channel = await client.channels.fetch(view.conversation);
+			if (!channel || !("send" in channel) || typeof channel.send !== "function") {
+				return { approved: false, reason: `Discord channel cannot receive approvals: ${view.conversation}` };
+			}
+			await channel.send(discordApprovalPayload(view));
+			return new Promise<ApprovalDecision>((resolve) => {
+				pending.set(view.id, { view, resolve });
+			});
 		},
 	};
 }

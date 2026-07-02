@@ -13,3 +13,4 @@
 - Added a minimal Discord adapter shell with mention/DM normalization and replies.
 - Added a minimal Telegram adapter shell with polling, mention/DM normalization, and replies.
 - Added explicit `chat_history` and `chat_reply` Pi tools.
+- Added Discord and Telegram approval button payloads and callback handling.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { discordMessage } from "../src/discord.js";
+import { discordApprovalPayload, discordMessage } from "../src/discord.js";
 
 describe("discordMessage", () => {
 	it("normalizes mentioned guild messages", () => {
@@ -39,5 +39,43 @@ describe("discordMessage", () => {
 				guildId: null,
 			}).dm,
 		).toBe(true);
+	});
+
+	it("renders approval buttons", () => {
+		expect(
+			discordApprovalPayload({
+				id: "abc",
+				reason: "Run bash tool.",
+				command: "git push",
+				requestedBy: "@Ronan",
+			}),
+		).toEqual({
+			content: [
+				"*Approval required*",
+				"- Reason: Run bash tool.",
+				"- Command:\n```\ngit push\n```",
+				"- Requested by: @Ronan",
+			].join("\n"),
+			components: [
+				{
+					type: 1,
+					components: [
+						{ type: 2, style: 3, label: "Approve", custom_id: "heypi_approve:abc", disabled: false },
+						{ type: 2, style: 4, label: "Reject", custom_id: "heypi_reject:abc", disabled: false },
+					],
+				},
+			],
+		});
+	});
+
+	it("disables resolved approval buttons", () => {
+		const payload = discordApprovalPayload({
+			id: "abc",
+			reason: "Run bash tool.",
+			state: "approved",
+			resolvedBy: "@Ronan",
+		});
+		expect(payload.components[0].components.map((button) => button.disabled)).toEqual([true, true]);
+		expect(payload.content).toContain("- Approved by: @Ronan");
 	});
 });
