@@ -29,3 +29,4 @@
   them in the heypi runtime wrapper.
 - Exclude `.heypi` state from staged agent resources so session/channel data is not exposed to Pi as
   authored context.
+- Report malformed `config.json` files with the failing path.

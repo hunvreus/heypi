@@ -11,7 +11,12 @@ async function readOptional(path: string): Promise<string | undefined> {
 async function readJsonConfig(path: string): Promise<AgentFileConfig> {
 	const text = await readOptional(path);
 	if (!text) return {};
-	return JSON.parse(text) as AgentFileConfig;
+	try {
+		return JSON.parse(text) as AgentFileConfig;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to read ${path}: ${message}`);
+	}
 }
 
 async function listFiles(root: string): Promise<string[]> {

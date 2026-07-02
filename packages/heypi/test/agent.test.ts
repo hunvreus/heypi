@@ -36,6 +36,14 @@ describe("loadAgent", () => {
 		expect(agent.context).toEqual({ mode: "delta", maxMessages: 2 });
 		expect(agent.approvals).toEqual({ layout: "card", showId: true });
 	});
+
+	it("reports malformed config files with their path", async () => {
+		const root = await makeDir("bad-config");
+		const config = join(root, "config.json");
+		await writeFile(config, "{");
+
+		await expect(loadAgent(root)).rejects.toThrow(`Failed to read ${config}`);
+	});
 });
 
 describe("stageAgent", () => {
