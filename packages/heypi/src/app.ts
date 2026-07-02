@@ -106,30 +106,35 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		return pi;
 	}
 
-	async function dispatch(running: RunningChannel, conversation: string): Promise<void> {
+	async function dispatch(running: RunningChannel, message: ChatMessage): Promise<void> {
 		const turn = running.channel.next();
 		if (!turn) return;
 		let finalText = "";
-		if (!running.pi) throw new Error("Pi session is not started");
-		const unsubscribe = running.pi.subscribe((event) => {
-			if (event.type === "message_end" && event.message.role === "assistant") {
-				finalText = assistantText(event.message);
-			}
-		});
+		let unsubscribe: (() => void) | undefined;
 		try {
-			await running.pi.send(turn.prompt);
+			const pi = await startPi(running, message);
+			unsubscribe = pi.subscribe((event) => {
+				if (event.type === "message_end" && event.message.role === "assistant") {
+					finalText = assistantText(event.message);
+				}
+			});
+			await pi.send(turn.prompt);
 			if (finalText.trim()) {
-				await running.adapter.send({ conversation, thread: turn.messageId, text: finalText });
+				await running.adapter.send({ conversation: message.conversation, thread: turn.messageId, text: finalText });
 			}
 			await running.channel.complete(finalText);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			await running.channel.fail(message);
-			await running.adapter.send({ conversation, thread: turn.messageId, text: `The agent failed: ${message}` });
+			const text = error instanceof Error ? error.message : String(error);
+			await running.channel.fail(text);
+			await running.adapter.send({
+				conversation: message.conversation,
+				thread: turn.messageId,
+				text: `The agent failed: ${text}`,
+			});
 		} finally {
-			unsubscribe();
+			unsubscribe?.();
 		}
-		await dispatch(running, conversation);
+		await dispatch(running, message);
 	}
 
 	async function receive(adapter: Adapter, message: ChatMessage): Promise<void> {
@@ -137,8 +142,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		const running = await channelFor(adapter, message);
 		const queued = await running.channel.ingest(message);
 		if (queued) {
-			await startPi(running, message);
-			await dispatch(running, message.conversation);
+			await dispatch(running, message);
 		}
 	}
 

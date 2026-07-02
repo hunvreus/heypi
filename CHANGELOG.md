@@ -31,3 +31,4 @@
   authored context.
 - Report malformed `config.json` files with the failing path.
 - Validate `context.mode` and `approvals.layout` values loaded from `config.json`.
+- Report Pi startup failures back to the source chat thread and mark the queued turn failed.

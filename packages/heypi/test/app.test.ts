@@ -146,4 +146,41 @@ describe("createHeypi", () => {
 
 		expect(adapter.sent).toEqual([]);
 	});
+
+	it("reports Pi startup failures to the source thread", async () => {
+		const root = await makeDir("app-start-fail-agent");
+		const state = await makeDir("app-start-fail-state");
+		const adapter = local();
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				return {
+					async start() {
+						throw new Error("Pi unavailable");
+					},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "The agent failed: Pi unavailable" }]);
+	});
 });
