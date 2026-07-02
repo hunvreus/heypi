@@ -2,6 +2,7 @@ export { type LocalAdapter, local, type WebhookAdapter, type WebhookConfig, webh
 export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, runHeypi } from "./app.js";
 export { createApprovalExtension, renderApprovalMessage } from "./approval.js";
+export { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordMessage } from "./discord.js";
 export { consoleLogger } from "./log.js";
 export { createPiHost, type PiHost, sessionDir } from "./pi.js";

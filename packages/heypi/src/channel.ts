@@ -33,6 +33,14 @@ export type Channel = {
 	fail(error: string): Promise<void>;
 	activeMessageId(): string | undefined;
 	activeUserName(): string | undefined;
+	findHistory(query?: ChatHistoryQuery): Array<ChannelRecord & { type: "inbound" }>;
+};
+
+export type ChatHistoryQuery = {
+	query?: string;
+	after?: string;
+	before?: string;
+	limit?: number;
 };
 
 export function createChannel(options: ChannelOptions): Channel {
@@ -152,6 +160,24 @@ export function createChannel(options: ChannelOptions): Channel {
 		activeUserName() {
 			const user = activeMessage()?.user;
 			return user?.name ?? user?.id;
+		},
+
+		findHistory(query = {}) {
+			const search = query.query?.trim().toLowerCase();
+			const after = query.after ? Date.parse(query.after) : undefined;
+			const before = query.before ? Date.parse(query.before) : undefined;
+			const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+			return records
+				.filter(isInbound)
+				.filter((record) => {
+					if (record.user.isBot && !context.includeBotMessages) return false;
+					if (search && !record.text.toLowerCase().includes(search)) return false;
+					const time = record.time ? Date.parse(record.time) : undefined;
+					if (after !== undefined && time !== undefined && time < after) return false;
+					if (before !== undefined && time !== undefined && time > before) return false;
+					return true;
+				})
+				.slice(-limit);
 		},
 	};
 }

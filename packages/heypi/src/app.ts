@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
+import { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 import { consoleLogger } from "./log.js";
 import { createPiHost, type PiHost, sessionDir } from "./pi.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
@@ -58,6 +59,12 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			workspaceDir: staged.workspaceDir,
 			sessionDir: sessionDir(stateDir, key),
 			toolPaths: staged.toolPaths,
+			tools: [
+				createChatHistoryTool(channel),
+				createChatReplyTool(async (text) => {
+					await adapter.send({ conversation: message.conversation, thread: channel.activeMessageId(), text });
+				}),
+			],
 			extensions: agent.approvals
 				? [
 						createApprovalExtension({

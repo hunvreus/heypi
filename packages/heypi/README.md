@@ -53,6 +53,7 @@ Included:
 - Discord adapter shell with mention/DM normalization and replies
 - Telegram adapter shell with polling, mention/DM normalization, and replies
 - approval message rendering and Pi tool-call approval extension
+- `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
 
 Not included yet:
 
