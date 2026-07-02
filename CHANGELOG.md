@@ -36,3 +36,5 @@
 - Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.
 - Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
 - Export public config and approval integration types from the package entrypoint.
+- Added explicit `memory_store` and `memory_search` Pi tools backed by per-conversation JSONL
+  storage.

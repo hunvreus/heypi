@@ -48,17 +48,26 @@ Status: first clean baseline is in place.
 - Ignore examples until the new core compiles and the basic chat flow works.
 - Gate risky Pi tool calls through programmable approval policies and adapter-rendered approval UI.
 
+## Current state
+
+- Agent folder loading and Pi-visible staging are implemented.
+- Local, webhook, Slack, Discord, and Telegram adapter shells are implemented.
+- Approval policy and adapter-rendered approval UI are implemented at the Pi tool-call boundary.
+- `chat_history`, `chat_reply`, `todo_update`, `memory_store`, and `memory_search` are Pi tools.
+- Admin/audit reads heypi-owned adapter coordination logs; it does not drive model context.
+
 ## Next build
 
 - Keep adding tests with each feature.
+- Tighten adapter parity where current shells are still minimal.
+- Add non-local runtime providers only after the local Pi-native boundary stays small.
 
 ## Later features
 
-- Approvals: richer card-style layouts where adapters support them.
-- Memory: Pi extension, not heypi prompt injection.
-- Todo/planning: Pi extension plus heypi renderer, not model-managed core planning.
-- Admin: mirror Pi/session/adapter events, do not drive model context.
-- Runtimes: add provider boundaries after the core is Pi-native.
+- Richer admin UI over mirrored Pi/session/adapter events.
+- Generated skills through Pi-native extension/tooling.
+- Subagents through Pi-native extensions, not prompt machinery.
+- Docker/Gondolin-style runtime providers behind the runtime boundary.
 
 ## Non-goals
 
