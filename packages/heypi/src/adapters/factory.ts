@@ -22,6 +22,7 @@ export type SlackConfig = BaseAdapterConfig & {
 	token?: string;
 	appToken?: string;
 	signingSecret?: string;
+	botUserId?: string;
 };
 
 export type DiscordConfig = BaseAdapterConfig & {
@@ -39,7 +40,53 @@ export type WebhookConfig = BaseAdapterConfig & {
 };
 
 export function slack(config: SlackConfig = {}): Adapter {
-	return adapter("slack", config);
+	let app: SlackBoltApp | undefined;
+	return {
+		kind: "slack",
+		name: config.name,
+		async start(context) {
+			if (!config.token) return config.onStart?.(context);
+			const { App } = (await import("@slack/bolt")) as unknown as {
+				App: new (options: SlackBoltOptions) => SlackBoltApp;
+			};
+			app = new App({
+				token: config.token,
+				appToken: config.appToken,
+				signingSecret: config.signingSecret,
+				socketMode: Boolean(config.appToken),
+			});
+			app.event("app_mention", async ({ event }) => {
+				await context.receive(slackMessage(event, true, false));
+			});
+			app.event("message", async ({ event }) => {
+				if (event.channel_type !== "im") return;
+				await context.receive(slackMessage(event, false, true));
+			});
+			await app.start();
+			await config.onStart?.(context);
+			context.logger.info("adapter.slack.start", { socketMode: Boolean(config.appToken) });
+		},
+		async stop() {
+			await app?.stop();
+			app = undefined;
+		},
+		async send(message) {
+			if (config.onSend) return config.onSend(message);
+			const result = await app?.client.chat.postMessage({
+				channel: message.conversation,
+				thread_ts: message.thread,
+				text: message.text,
+			});
+			return { id: result?.ts };
+		},
+		async ack(message) {
+			await config.onAck?.(message);
+			if (!app || message.adapter !== "slack") return;
+			await app.client.reactions
+				.add({ channel: message.conversation, timestamp: message.id, name: "eyes" })
+				.catch(() => undefined);
+		},
+	};
 }
 
 export function discord(config: DiscordConfig = {}): Adapter {
@@ -156,4 +203,49 @@ function optionalStringField(input: Record<string, unknown>, key: string): strin
 function booleanField(input: Record<string, unknown>, key: string, fallback: boolean): boolean {
 	const value = input[key];
 	return typeof value === "boolean" ? value : fallback;
+}
+
+type SlackBoltOptions = {
+	token: string;
+	appToken?: string;
+	signingSecret?: string;
+	socketMode: boolean;
+};
+
+type SlackEventHandlerArgs = {
+	event: Record<string, unknown>;
+};
+
+type SlackBoltApp = {
+	event(name: string, handler: (args: SlackEventHandlerArgs) => Promise<void> | void): void;
+	start(): Promise<void>;
+	stop(): Promise<void>;
+	client: {
+		chat: {
+			postMessage(input: { channel: string; thread_ts?: string; text: string }): Promise<{ ts?: string }>;
+		};
+		reactions: {
+			add(input: { channel: string; timestamp: string; name: string }): Promise<unknown>;
+		};
+	};
+};
+
+function slackMessage(event: Record<string, unknown>, mentioned: boolean, dm: boolean): ChatMessage {
+	const text = typeof event.text === "string" ? event.text : "";
+	const channel = typeof event.channel === "string" ? event.channel : "unknown";
+	const ts = typeof event.ts === "string" ? event.ts : crypto.randomUUID();
+	const user = typeof event.user === "string" ? event.user : "unknown";
+	return {
+		id: ts,
+		adapter: "slack",
+		account: typeof event.team === "string" ? event.team : "default",
+		conversation: channel,
+		text,
+		mentioned,
+		dm,
+		user: {
+			id: user,
+			isBot: typeof event.bot_id === "string",
+		},
+	};
 }
