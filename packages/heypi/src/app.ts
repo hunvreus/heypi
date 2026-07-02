@@ -53,6 +53,26 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			context: agent.context,
 		});
 		await channel.load();
+		const approvalExtension =
+			agent.approvals?.enabled === false
+				? undefined
+				: createApprovalExtension({
+						config: agent.approvals,
+						context: () => ({
+							adapter: message.adapter,
+							account: message.account,
+							conversation: message.conversation,
+							thread: channel.activeMessageId(),
+							actor: channel.activeUser(),
+						}),
+						request: (view) =>
+							adapter.requestApproval?.({
+								...view,
+								conversation: message.conversation,
+								thread: channel.activeMessageId(),
+							}) ??
+							Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
+					});
 		const pi = createPiHost({
 			agent,
 			agentDir: staged.agentDir,
@@ -65,27 +85,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					await adapter.send({ conversation: message.conversation, thread: channel.activeMessageId(), text });
 				}),
 			],
-			extensions: agent.approvals
-				? [
-						createApprovalExtension({
-							config: agent.approvals,
-							context: () => ({
-								adapter: message.adapter,
-								account: message.account,
-								conversation: message.conversation,
-								thread: channel.activeMessageId(),
-								actor: channel.activeUser(),
-							}),
-							request: (view) =>
-								adapter.requestApproval?.({
-									...view,
-									conversation: message.conversation,
-									thread: channel.activeMessageId(),
-								}) ??
-								Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
-						}),
-					]
-				: undefined,
+			extensions: approvalExtension ? [approvalExtension] : undefined,
 		});
 		await pi.start();
 		const running = { adapter, channel, pi };

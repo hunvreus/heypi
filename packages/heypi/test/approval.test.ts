@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approval, classifyCommand, renderApprovalMessage } from "../src/approval.js";
+import { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "../src/approval.js";
 import type { ApprovalContext } from "../src/types.js";
 
 function context(input: Partial<ApprovalContext> = {}): ApprovalContext {
@@ -107,5 +107,30 @@ describe("approval policies", () => {
 		});
 		approvedTools.add("bash");
 		expect(await policy(context({ approvedTools }))).toBe(false);
+	});
+});
+
+describe("createApprovalExtension", () => {
+	it("uses default approval policy when no config is supplied", async () => {
+		type ToolCall = { toolName: string; input: unknown };
+		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
+		let handler: ToolHandler | undefined;
+		const extension = createApprovalExtension({
+			async request() {
+				return { approved: false };
+			},
+		});
+
+		extension({
+			on(event: string, next: ToolHandler) {
+				if (event === "tool_call") handler = next;
+			},
+		} as never);
+
+		expect(await handler?.({ toolName: "bash", input: { command: "git push" } })).toEqual({
+			block: true,
+			reason: "Tool call rejected.",
+		});
+		expect(await handler?.({ toolName: "bash", input: { command: "git status" } })).toBeUndefined();
 	});
 });

@@ -16,6 +16,7 @@ const agent = loadAgent("./agent", {
 	model,
 	adapters: [adapter],
 	approvals: {
+		enabled: true,
 		layout: "message",
 		policy: approval.default(),
 	},
@@ -50,6 +51,7 @@ such as models, adapters, and approval predicates belong in code, not JSON.
     "maxChars": 12000
   },
   "approvals": {
+    "enabled": true,
     "layout": "message",
     "showId": false
   }
@@ -119,6 +121,7 @@ originating conversation.
 
 Approvals run at the Pi tool-call boundary. heypi renders the approval UI through the active adapter,
 then the Pi tool call either continues, is rejected by a person, or is blocked by policy.
+They are enabled by default. Set `approvals.enabled` to `false` to disable the approval extension.
 
 Policies are programmable:
 

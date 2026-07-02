@@ -72,6 +72,7 @@ export type ContextConfig = {
 export type ApprovalLayout = "message" | "card";
 
 export type ApprovalConfig = {
+	enabled?: boolean;
 	layout?: ApprovalLayout;
 	tools?: string[];
 	policy?: ApprovalPolicy;

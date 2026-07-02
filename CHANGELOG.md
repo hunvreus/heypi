@@ -20,3 +20,4 @@
   is treated as an extension-file alias.
 - Made local adapter test/embedding messages trigger by default.
 - Documented the approval policy context boundary.
+- Enabled the default approval extension unless `approvals.enabled` is explicitly false.
