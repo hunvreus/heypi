@@ -75,6 +75,29 @@ describe("approval policies", () => {
 		});
 	});
 
+	it("passes tool input and request metadata to programmable policies", async () => {
+		const policy = approval.when(
+			({ actor, conversation, input, toolName }) =>
+				toolName === "bash" &&
+				actor?.id === "u1" &&
+				conversation === "c1" &&
+				(input as { command?: string }).command === "git push",
+			"Push changes.",
+		);
+		expect(
+			await policy(
+				context({
+					input: { command: "git push" },
+					adapter: "slack",
+					account: "workspace",
+					conversation: "c1",
+					thread: "t1",
+					actor: { id: "u1", name: "Ronan" },
+				}),
+			),
+		).toEqual({ type: "approve", reason: "Push changes." });
+	});
+
 	it("supports once-per-tool approval", async () => {
 		const approvedTools = new Set<string>();
 		const policy = approval.once();

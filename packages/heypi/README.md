@@ -145,6 +145,11 @@ Built-in helpers:
 - `approval.default()` uses command classification for `bash` and requires approval for `edit` and
   `write`.
 
+Policy predicates receive the attempted tool call and request metadata: `toolName`, `input`,
+`adapter`, `account`, `conversation`, `thread`, `actor`, and `approvedTools`. They do not receive the
+full Pi transcript or chat history. Use approval decisions for side-effect safety, not model
+reasoning.
+
 ## Current scope
 
 Included:
