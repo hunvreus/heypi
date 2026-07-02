@@ -10,3 +10,4 @@
 - Added a minimal webhook adapter with HTTP ingress tests.
 - Added a minimal Slack Socket Mode adapter shell with message normalization, replies, reactions,
   and approval buttons.
+- Added a minimal Discord adapter shell with mention/DM normalization and replies.

@@ -50,10 +50,11 @@ Included:
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress
 - Slack Socket Mode adapter shell with replies, reactions, and approval buttons
+- Discord adapter shell with mention/DM normalization and replies
 - approval message rendering and Pi tool-call approval extension
 
 Not included yet:
 
-- Discord and Telegram adapters
+- Telegram adapter
 - approval buttons/cards in live adapters
 - memory, todo/planning, admin, and runtime providers
