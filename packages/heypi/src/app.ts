@@ -54,6 +54,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		const conversation = await conversationFor(adapter, message);
 		const queued = await conversation.runtime.ingest(message);
 		if (!queued) return;
+		await dispatch(conversation, message.conversation);
+	}
+
+	async function dispatch(conversation: RunningConversation, remoteConversation: string): Promise<void> {
 		const job = conversation.runtime.beginNext();
 		if (!job) return;
 		try {
@@ -68,16 +72,18 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			});
 			await conversation.pi.send(job.prompt);
 			unsubscribe();
-			await conversation.adapter.send({ conversation: message.conversation, thread: message.id, text: finalText });
+			await conversation.adapter.send({ conversation: remoteConversation, thread: job.messageId, text: finalText });
 			await conversation.runtime.complete(finalText);
+			await dispatch(conversation, remoteConversation);
 		} catch (error) {
 			const messageText = error instanceof Error ? error.message : String(error);
 			await conversation.runtime.fail(messageText);
 			await conversation.adapter.send({
-				conversation: message.conversation,
-				thread: message.id,
+				conversation: remoteConversation,
+				thread: job.messageId,
 				text: `The agent failed: ${messageText}`,
 			});
+			await dispatch(conversation, remoteConversation);
 		}
 	}
 
