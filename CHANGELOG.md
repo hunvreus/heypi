@@ -27,3 +27,5 @@
 - Avoid sending blank final adapter replies when Pi produces no assistant text.
 - Stage `system.md` and `instructions.md` into Pi-native prompt files instead of manually appending
   them in the heypi runtime wrapper.
+- Exclude `.heypi` state from staged agent resources so session/channel data is not exposed to Pi as
+  authored context.

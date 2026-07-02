@@ -66,7 +66,8 @@ such as models, adapters, and approval predicates belong in code, not JSON.
 ```
 
 The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loads staged resources
-from that bundle; heypi does not expose host source paths to the model.
+from that bundle; heypi does not expose host source paths to the model. Staging excludes `.git`,
+`.heypi`, and `node_modules`.
 
 `skills/` and `extensions/` use Pi's native resource discovery. `tools/` is kept as an ergonomic
 alias for authored extension files that register tools.

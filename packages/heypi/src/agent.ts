@@ -65,7 +65,7 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 		force: true,
 		filter: (source) => {
 			const parts = relative(agent.root, source).split(sep);
-			return !parts.includes(".git") && !parts.includes("node_modules");
+			return !parts.includes(".git") && !parts.includes(".heypi") && !parts.includes("node_modules");
 		},
 	});
 	if (agent.system) await writeFile(join(agentDir, "SYSTEM.md"), agent.system);
