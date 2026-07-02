@@ -39,8 +39,9 @@ agent/
 Pi. `delta` sends chat messages since the last completed trigger. Older chat is not passively
 injected; Pi can ask for it with `chat_history`.
 
-`agent/` is staged into a Pi-visible bundle. `skills/` and `extensions/` are loaded by Pi. Files in
-`tools/` are passed to Pi as extension paths so tool execution stays inside Pi.
+`agent/` is staged into a clean Pi-visible bundle on startup. `skills/` and `extensions/` are
+loaded by Pi. Files in `tools/` are passed to Pi as extension paths so tool execution stays inside
+Pi.
 
 ## Included now
 

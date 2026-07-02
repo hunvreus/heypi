@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { basename, join, relative, resolve, sep } from "node:path";
 import type { AgentConfig, AgentFileConfig, LoadAgentOptions } from "./types.js";
 
 async function readOptional(path: string): Promise<string | undefined> {
@@ -63,11 +63,15 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 	const agentDir = join(root, "agent");
 	const workspaceDir = join(root, "workspace");
 	await mkdir(root, { recursive: true });
+	await rm(agentDir, { recursive: true, force: true });
 	await mkdir(workspaceDir, { recursive: true });
 	await cp(agent.root, agentDir, {
 		recursive: true,
 		force: true,
-		filter: (source) => !source.includes(`${agent.root}/node_modules`) && !source.includes(`${agent.root}/.git`),
+		filter: (source) => {
+			const parts = relative(agent.root, source).split(sep);
+			return !parts.includes("node_modules") && !parts.includes(".git");
+		},
 	});
 	const toolPaths = (await listFiles(join(agentDir, "tools"))).filter(
 		(path) => path.endsWith(".ts") || path.endsWith(".js"),

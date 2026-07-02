@@ -21,7 +21,7 @@
 - Added file-based agent loading for `instructions.md`, `system.md`,
   `config.json`, `skills/`, `tools/`, and `extensions/`.
 - Added Pi-visible resource staging so authored agent files are copied into a
-  runtime bundle without leaking host source paths.
+  clean runtime bundle without leaking host source paths or stale removed files.
 - Added Slack, Discord, Telegram, and webhook adapter shells.
 - Added approval gating through Pi tool-call events.
 - Added built-in Slack approval buttons and provider-neutral approval message
