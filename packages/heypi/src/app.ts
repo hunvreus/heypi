@@ -138,7 +138,14 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	}
 
 	async function receive(adapter: Adapter, message: ChatMessage): Promise<void> {
-		await adapter.ack?.(message);
+		try {
+			await adapter.ack?.(message);
+		} catch (error) {
+			logger.warn("adapter.ack_failed", {
+				adapter: adapter.kind,
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
 		const running = await channelFor(adapter, message);
 		const queued = await running.channel.ingest(message);
 		if (queued) {

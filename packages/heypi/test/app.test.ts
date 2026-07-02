@@ -183,4 +183,61 @@ describe("createHeypi", () => {
 
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "The agent failed: Pi unavailable" }]);
 	});
+
+	it("continues processing when adapter ack fails", async () => {
+		const root = await makeDir("app-ack-fail-agent");
+		const state = await makeDir("app-ack-fail-state");
+		const adapter = local();
+		adapter.ack = async () => {
+			throw new Error("reaction failed");
+		};
+		const warnings: string[] = [];
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			logger: {
+				debug() {},
+				info() {},
+				warn(event) {
+					warnings.push(event);
+				},
+				error() {},
+			},
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Still done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(warnings).toEqual(["adapter.ack_failed"]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Still done." }]);
+	});
 });
