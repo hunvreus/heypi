@@ -54,6 +54,15 @@ function validateConfig(value: unknown, path: string): AgentFileConfig {
 	if (config.approvals?.showId !== undefined && typeof config.approvals.showId !== "boolean") {
 		throw new Error(`approvals.showId must be a boolean in ${path}`);
 	}
+	if (config.runtime?.kind && config.runtime.kind !== "local") {
+		throw new Error(`runtime.kind must be "local" in ${path}`);
+	}
+	if (config.runtime?.workspaceDir !== undefined && typeof config.runtime.workspaceDir !== "string") {
+		throw new Error(`runtime.workspaceDir must be a string in ${path}`);
+	}
+	if (config.state?.dir !== undefined && typeof config.state.dir !== "string") {
+		throw new Error(`state.dir must be a string in ${path}`);
+	}
 	if (config.tools !== undefined && !isStringArray(config.tools)) {
 		throw new Error(`tools must be an array of strings in ${path}`);
 	}
@@ -86,6 +95,7 @@ function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions
 		...options,
 		context: { ...fileConfig.context, ...options.context },
 		approvals: { ...fileConfig.approvals, ...options.approvals },
+		runtime: { ...fileConfig.runtime, ...options.runtime },
 		state: { ...fileConfig.state, ...options.state },
 	};
 }
@@ -113,7 +123,7 @@ export type StagedAgent = {
 export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<StagedAgent> {
 	const root = join(stateDir, "agents", agent.id);
 	const agentDir = join(root, "agent");
-	const workspaceDir = join(root, "workspace");
+	const workspaceDir = agent.runtime?.workspaceDir ? resolve(agent.runtime.workspaceDir) : join(root, "workspace");
 	await mkdir(root, { recursive: true });
 	await rm(agentDir, { recursive: true, force: true });
 	await mkdir(workspaceDir, { recursive: true });

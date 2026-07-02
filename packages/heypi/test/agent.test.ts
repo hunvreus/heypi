@@ -21,6 +21,7 @@ describe("loadAgent", () => {
 				id: "file-id",
 				context: { mode: "delta", maxMessages: 5 },
 				approvals: { layout: "card" },
+				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
 			}),
 		);
 
@@ -28,6 +29,7 @@ describe("loadAgent", () => {
 			id: "option-id",
 			context: { maxMessages: 2 },
 			approvals: { showId: true },
+			runtime: { workspaceDir: "/tmp/option-workspace" },
 		});
 
 		expect(agent.id).toBe("option-id");
@@ -35,6 +37,7 @@ describe("loadAgent", () => {
 		expect(agent.system).toBe("System note.");
 		expect(agent.context).toEqual({ mode: "delta", maxMessages: 2 });
 		expect(agent.approvals).toEqual({ layout: "card", showId: true });
+		expect(agent.runtime).toEqual({ kind: "local", workspaceDir: "/tmp/option-workspace" });
 	});
 
 	it("reports malformed config files with their path", async () => {
@@ -78,6 +81,15 @@ describe("loadAgent", () => {
 		await writeFile(config, JSON.stringify({ approvals: { tools: ["bash", 1] } }));
 		await expect(loadAgent(root)).rejects.toThrow("approvals.tools must be an array of strings");
 
+		await writeFile(config, JSON.stringify({ runtime: { kind: "docker" } }));
+		await expect(loadAgent(root)).rejects.toThrow('runtime.kind must be "local"');
+
+		await writeFile(config, JSON.stringify({ runtime: { workspaceDir: 123 } }));
+		await expect(loadAgent(root)).rejects.toThrow("runtime.workspaceDir must be a string");
+
+		await writeFile(config, JSON.stringify({ state: { dir: 123 } }));
+		await expect(loadAgent(root)).rejects.toThrow("state.dir must be a string");
+
 		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
 		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");
 
@@ -117,5 +129,17 @@ describe("stageAgent", () => {
 		await expect(readFile(join(second.agentDir, ".heypi", "sessions", "state.jsonl"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, "node_modules", "ignored", "x.ts"), "utf8")).rejects.toThrow();
 		expect(second.extensionPaths).toEqual([join(second.agentDir, "tools", "tool.ts")]);
+	});
+
+	it("uses an explicit local runtime workspace when configured", async () => {
+		const root = await makeDir("stage-runtime");
+		const state = await makeDir("state-runtime");
+		const workspace = await makeDir("workspace-runtime");
+
+		const agent = await loadAgent(root, { id: "agent", runtime: { kind: "local", workspaceDir: workspace } });
+		const staged = await stageAgent(agent, state);
+
+		expect(staged.workspaceDir).toBe(workspace);
+		expect(staged.agentDir).toBe(join(state, "agents", "agent", "agent"));
 	});
 });

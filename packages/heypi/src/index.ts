@@ -38,6 +38,8 @@ export type {
 	LoadAgentOptions,
 	Logger,
 	ModelConfig,
+	RuntimeConfig,
+	RuntimeKind,
 	SendMessage,
 	StateConfig,
 } from "./types.js";

@@ -46,8 +46,8 @@ During staging, `system.md` is written as Pi's native `SYSTEM.md`, and `instruct
 as `APPEND_SYSTEM.md`. `skills/` and `extensions/` stay as Pi-discovered resource folders.
 
 `config.json` can define data-only defaults such as `id`, `context`, `approvals`, `state`, `tools`,
-`excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file. Function values
-such as models, adapters, and approval predicates belong in code, not JSON.
+`excludeTools`, `noTools`, and `runtime`. Options passed to `loadAgent()` override the file.
+Function values such as models, adapters, and approval predicates belong in code, not JSON.
 
 ```json
 {
@@ -61,6 +61,9 @@ such as models, adapters, and approval predicates belong in code, not JSON.
     "enabled": true,
     "layout": "message",
     "showId": false
+  },
+  "runtime": {
+    "kind": "local"
   }
 }
 ```
@@ -71,6 +74,22 @@ from that bundle; heypi does not expose host source paths to the model. Staging 
 
 `skills/` and `extensions/` use Pi's native resource discovery. `tools/` is kept as an ergonomic
 alias for authored extension files that register tools.
+
+## Runtime
+
+The first runtime is local Pi execution:
+
+```json
+{
+  "runtime": {
+    "kind": "local",
+    "workspaceDir": "./workspace"
+  }
+}
+```
+
+If `workspaceDir` is omitted, heypi creates a clean staged workspace under `.heypi`. Future Docker or
+Gondolin-style runtimes should plug into this boundary rather than changing the chat loop.
 
 ## History
 
@@ -182,6 +201,7 @@ Included:
 - `loadAgent("./agent", options)`
 - clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
   into Pi-native resource names and folders
+- local runtime workspace selection
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress
@@ -195,4 +215,4 @@ Included:
 
 Not included yet:
 
-- memory, todo/planning, admin UI, and runtime providers
+- memory, todo/planning, admin UI, and non-local runtime providers

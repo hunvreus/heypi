@@ -136,10 +136,18 @@ export type StateConfig = {
 	dir?: string;
 };
 
+export type RuntimeKind = "local";
+
+export type RuntimeConfig = {
+	kind?: RuntimeKind;
+	workspaceDir?: string;
+};
+
 export type AgentFileConfig = {
 	id?: string;
 	context?: ContextConfig;
 	approvals?: ApprovalConfig;
+	runtime?: RuntimeConfig;
 	state?: StateConfig;
 	tools?: string[];
 	excludeTools?: string[];
