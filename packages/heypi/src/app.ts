@@ -22,8 +22,8 @@ export type PiHostFactory = (options: PiHostOptions) => PiHost;
 
 type RunningChannel = {
 	channel: Channel;
-	pi: PiHost;
 	adapter: Adapter;
+	pi?: PiHost;
 };
 
 function keyFor(message: ChatMessage): string {
@@ -57,6 +57,16 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			context: agent.context,
 		});
 		await channel.load();
+		const running = { adapter, channel };
+		channels.set(key, running);
+		return running;
+	}
+
+	async function startPi(running: RunningChannel, message: ChatMessage): Promise<PiHost> {
+		if (running.pi) return running.pi;
+		const adapter = running.adapter;
+		const channel = running.channel;
+		const key = keyFor(message);
 		const approvalExtension =
 			agent.approvals?.enabled === false
 				? undefined
@@ -92,15 +102,15 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			extensions: approvalExtension ? [approvalExtension] : undefined,
 		});
 		await pi.start();
-		const running = { adapter, channel, pi };
-		channels.set(key, running);
-		return running;
+		running.pi = pi;
+		return pi;
 	}
 
 	async function dispatch(running: RunningChannel, conversation: string): Promise<void> {
 		const turn = running.channel.next();
 		if (!turn) return;
 		let finalText = "";
+		if (!running.pi) throw new Error("Pi session is not started");
 		const unsubscribe = running.pi.subscribe((event) => {
 			if (event.type === "message_end" && event.message.role === "assistant") {
 				finalText = assistantText(event.message);
@@ -124,7 +134,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		await adapter.ack?.(message);
 		const running = await channelFor(adapter, message);
 		const queued = await running.channel.ingest(message);
-		if (queued) await dispatch(running, message.conversation);
+		if (queued) {
+			await startPi(running, message);
+			await dispatch(running, message.conversation);
+		}
 	}
 
 	return {
@@ -135,7 +148,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			logger.info("app.start", { agent: agent.id, adapters: agent.adapters?.length ?? 0 });
 		},
 		async stop() {
-			for (const channel of channels.values()) await channel.pi.stop();
+			for (const channel of channels.values()) await channel.pi?.stop();
 			for (const adapter of agent.adapters ?? []) await adapter.stop?.();
 			logger.info("app.stop", { agent: agent.id });
 		},

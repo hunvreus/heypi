@@ -69,4 +69,45 @@ describe("createHeypi", () => {
 		expect(piOptions[0]?.tools).toHaveLength(2);
 		expect(piOptions[0]?.agentDir).toBe(join(state, "agents", "agent", "agent"));
 	});
+
+	it("does not start Pi for non-triggering adapter messages", async () => {
+		const root = await makeDir("app-passive-agent");
+		const state = await makeDir("app-passive-state");
+		const adapter = local();
+		let piStarts = 0;
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				piStarts++;
+				const host: PiHost = {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+				return host;
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "ambient channel message",
+			mentioned: false,
+			dm: false,
+		});
+		await app.stop();
+
+		expect(piStarts).toBe(0);
+		expect(adapter.sent).toEqual([]);
+	});
 });
