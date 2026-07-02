@@ -17,9 +17,6 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.4
-      tsx:
-        specifier: ^4.22.3
-        version: 4.22.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -2826,6 +2823,7 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.1
       '@esbuild/win32-ia32': 0.28.1
       '@esbuild/win32-x64': 0.28.1
+    optional: true
 
   escape-html@1.0.3: {}
 
@@ -3436,6 +3434,7 @@ snapshots:
       esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
+    optional: true
 
   type-is@2.1.0:
     dependencies:

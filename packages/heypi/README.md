@@ -38,7 +38,23 @@ agent/
 ```
 
 `config.json` can define data-only defaults such as `id`, `context`, `approvals`, `state`, `tools`,
-`excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file.
+`excludeTools`, and `noTools`. Options passed to `loadAgent()` override the file. Function values
+such as models, adapters, and approval predicates belong in code, not JSON.
+
+```json
+{
+  "id": "codex",
+  "context": {
+    "mode": "current",
+    "maxMessages": 20,
+    "maxChars": 12000
+  },
+  "approvals": {
+    "layout": "message",
+    "showId": false
+  }
+}
+```
 
 The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loads staged resources
 from that bundle; heypi does not expose host source paths to the model.
@@ -51,6 +67,50 @@ last completed trigger in the same conversation.
 
 Older chat is available through the `chat_history` Pi tool. The model can call it when history is
 actually needed instead of carrying old Slack/Discord/Telegram context in every request.
+
+## Adapters
+
+Local is for tests and embedding:
+
+```ts
+const adapter = local();
+```
+
+Webhook accepts JSON over HTTP:
+
+```ts
+const adapter = webhook({ port: 4321, path: "/webhook" });
+```
+
+Slack uses Socket Mode:
+
+```ts
+const adapter = slack({
+	token: process.env.SLACK_BOT_TOKEN!,
+	appToken: process.env.SLACK_APP_TOKEN!,
+});
+```
+
+Discord listens for DMs and bot mentions:
+
+```ts
+const adapter = discord({
+	token: process.env.DISCORD_TOKEN!,
+	clientId: process.env.DISCORD_CLIENT_ID,
+});
+```
+
+Telegram uses long polling:
+
+```ts
+const adapter = telegram({
+	token: process.env.TELEGRAM_BOT_TOKEN!,
+	botUsername: "heypi_bot",
+});
+```
+
+All adapters normalize inbound events into the same `ChatMessage` shape and send replies back to the
+originating conversation.
 
 ## Approvals
 

@@ -3,6 +3,15 @@
 	"version": "0.1.0",
 	"description": "Pi-native chat adapter shell for team agents.",
 	"license": "MIT",
+	"homepage": "https://github.com/hunvreus/heypi#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com/hunvreus/heypi.git",
+		"directory": "packages/heypi"
+	},
+	"bugs": {
+		"url": "https://github.com/hunvreus/heypi/issues"
+	},
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -31,8 +40,8 @@
 		"fmt": "biome format --write .",
 		"typecheck": "corepack pnpm run build && tsc --noEmit",
 		"test": "vitest --run",
-		"pack:dry": "npm pack --dry-run",
-		"publish:dry": "npm publish --dry-run --access public"
+		"pack:dry": "corepack pnpm run build && npm pack --dry-run",
+		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",
