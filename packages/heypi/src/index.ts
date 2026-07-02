@@ -8,7 +8,7 @@ export {
 } from "./adapters.js";
 export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory, runHeypi } from "./app.js";
-export type { CommandPolicyConfig, CommandRisk } from "./approval.js";
+export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
 export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
@@ -19,12 +19,16 @@ export { type TelegramConfig, telegram, telegramApprovalPayload, telegramMessage
 export type {
 	Adapter,
 	AdapterContext,
+	AdapterKind,
 	AgentConfig,
+	AgentFileConfig,
 	ApprovalConfig,
 	ApprovalContext,
 	ApprovalDecision,
+	ApprovalLayout,
 	ApprovalPolicy,
 	ApprovalPolicyResult,
+	ApprovalState,
 	ApprovalView,
 	ChatAttachment,
 	ChatMessage,

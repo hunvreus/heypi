@@ -35,3 +35,4 @@
 - Treat adapter acknowledgement failures as non-fatal so reaction/typing errors do not drop turns.
 - Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.
 - Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
+- Export public config and approval integration types from the package entrypoint.
