@@ -40,3 +40,5 @@
   storage.
 - Added exact-match adapter/account/conversation/user allowlists before Pi work is queued.
 - Added Discord and Telegram typing acknowledgements for accepted messages.
+- Added normalized inbound thread ids so thread-capable adapters keep separate Pi sessions and reply
+  targets.

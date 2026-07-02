@@ -152,7 +152,12 @@ export function createChannel(options: ChannelOptions): Channel {
 			const turn = queued.shift();
 			if (!turn) return undefined;
 			active = turn;
-			return { id: turn.id, messageId: activeMessage()?.id ?? turn.id, prompt: buildPrompt(turn.trigger) };
+			const message = activeMessage();
+			return {
+				id: turn.id,
+				messageId: message?.thread ?? message?.id ?? turn.id,
+				prompt: buildPrompt(turn.trigger),
+			};
 		},
 
 		async complete(reply) {
@@ -168,7 +173,8 @@ export function createChannel(options: ChannelOptions): Channel {
 		},
 
 		activeMessageId() {
-			return activeMessage()?.id;
+			const message = activeMessage();
+			return message?.thread ?? message?.id;
 		},
 
 		activeUser() {

@@ -15,6 +15,7 @@ describe("telegramMessage", () => {
 			adapter: "telegram",
 			account: "telegram",
 			conversation: "10",
+			thread: undefined,
 			user: { id: "20", name: "ronan", isBot: false },
 			text: "hello",
 			mentioned: false,
@@ -35,6 +36,18 @@ describe("telegramMessage", () => {
 				"Codex",
 			).mentioned,
 		).toBe(true);
+	});
+
+	it("preserves Telegram forum topic ids", () => {
+		expect(
+			telegramMessage({
+				message_id: 1,
+				message_thread_id: 42,
+				text: "hello",
+				chat: { id: 10, type: "supergroup" },
+				from: { id: 20 },
+			}).thread,
+		).toBe("42");
 	});
 
 	it("renders approval inline keyboard", () => {

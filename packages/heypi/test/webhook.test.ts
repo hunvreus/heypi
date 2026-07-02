@@ -37,6 +37,7 @@ describe("webhook", () => {
 					adapter: "webhook",
 					account: "acct",
 					conversation: "room",
+					thread: undefined,
 					user: { id: "u1", name: "Ronan", isBot: false },
 					text: "hello",
 					mentioned: true,

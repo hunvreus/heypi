@@ -220,6 +220,8 @@ const adapter = telegram({
 
 All adapters normalize inbound events into the same `ChatMessage` shape and send replies back to the
 originating conversation.
+Thread-capable adapters preserve the source thread id when available, so separate Slack threads or
+Telegram forum topics get separate Pi sessions and replies stay in the originating thread.
 
 ## Approvals
 
@@ -268,6 +270,7 @@ Included:
   into Pi-native resource names and folders
 - local runtime workspace selection
 - exact-match adapter/account/conversation/user allowlists before Pi work is queued
+- thread-aware session keys and reply targets for thread-capable adapters
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress

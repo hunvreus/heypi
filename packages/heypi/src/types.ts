@@ -24,6 +24,7 @@ export type ChatMessage = {
 	adapter: AdapterKind | string;
 	account: string;
 	conversation: string;
+	thread?: string;
 	user: {
 		id: string;
 		name?: string;

@@ -33,6 +33,18 @@ describe("channel", () => {
 		expect(turn?.prompt).not.toContain("not for you");
 	});
 
+	it("uses normalized chat thread ids as reply targets", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-thread-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await channel.ingest({ ...message("reply", "threaded"), thread: "root" });
+
+		const turn = channel.next();
+		expect(turn?.messageId).toBe("root");
+		expect(channel.activeMessageId()).toBe("root");
+	});
+
 	it("can build delta prompts since the last completed trigger", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-delta-${Date.now()}-${Math.random()}.jsonl`);
 		const channel = createChannel({ logPath, context: { mode: "delta" } });

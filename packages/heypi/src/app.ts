@@ -31,7 +31,10 @@ type RunningChannel = {
 };
 
 function keyFor(message: ChatMessage): string {
-	return `${message.adapter}:${message.account}:${message.conversation}`.replace(/[^a-zA-Z0-9_.:-]/g, "_");
+	return `${message.adapter}:${message.account}:${message.conversation}:${message.thread ?? ""}`.replace(
+		/[^a-zA-Z0-9_.:-]/g,
+		"_",
+	);
 }
 
 function assistantText(message: { role?: string; content?: unknown }): string {

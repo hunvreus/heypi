@@ -26,11 +26,33 @@ describe("local", () => {
 				adapter: "local",
 				account: "local",
 				conversation: "local",
+				thread: undefined,
 				user: { id: "u1" },
 				text: "hello",
 				mentioned: true,
 				dm: true,
 			},
 		]);
+	});
+
+	it("preserves explicit thread ids", async () => {
+		const received: ChatMessage[] = [];
+		const adapter = local();
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			async receive(message) {
+				received.push(message);
+			},
+		});
+
+		await adapter.receive({
+			id: "m1",
+			thread: "root",
+			user: { id: "u1" },
+			text: "hello",
+		});
+
+		expect(received[0]?.thread).toBe("root");
 	});
 });

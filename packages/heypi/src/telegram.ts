@@ -19,6 +19,7 @@ export type TelegramUpdate = {
 
 export type TelegramMessage = {
 	message_id: number;
+	message_thread_id?: number;
 	text?: string;
 	chat: {
 		id: number;
@@ -76,6 +77,7 @@ export function telegramMessage(message: TelegramMessage, botUsername?: string):
 		adapter: "telegram",
 		account: "telegram",
 		conversation: String(message.chat.id),
+		thread: message.message_thread_id ? String(message.message_thread_id) : undefined,
 		user: {
 			id: String(message.from?.id ?? "unknown"),
 			name: message.from?.username ?? message.from?.first_name,

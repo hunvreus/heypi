@@ -15,6 +15,7 @@ function localMessage(input: LocalMessage): ChatMessage {
 		adapter: "local",
 		account: "local",
 		conversation: "local",
+		thread: input.thread,
 		user: input.user,
 		text: input.text,
 		mentioned: input.mentioned ?? true,
@@ -77,6 +78,7 @@ function webhookMessage(input: unknown): ChatMessage {
 		adapter: "webhook",
 		account: typeof record.account === "string" ? record.account : "webhook",
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
+		thread: typeof record.thread === "string" ? record.thread : undefined,
 		user: {
 			id: typeof user.id === "string" ? user.id : "webhook",
 			name: typeof user.name === "string" ? user.name : undefined,

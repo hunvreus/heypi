@@ -20,6 +20,7 @@ describe("slackMessage", () => {
 			adapter: "slack",
 			account: "slack",
 			conversation: "C1",
+			thread: "123.456",
 			user: { id: "U1", name: "Ronan", isBot: false },
 			text: "hey <@BOT>",
 			mentioned: true,
@@ -30,6 +31,13 @@ describe("slackMessage", () => {
 
 	it("treats Slack IMs as DMs", () => {
 		expect(slackMessage({ ts: "1", channel: "D1", channel_type: "im", user: "U1", text: "hi" }, false).dm).toBe(true);
+	});
+
+	it("preserves Slack thread roots", () => {
+		expect(
+			slackMessage({ ts: "124.000", thread_ts: "123.456", channel: "C1", user: "U1", text: "follow-up" }, true)
+				.thread,
+		).toBe("123.456");
 	});
 
 	it("renders approval message payloads", () => {

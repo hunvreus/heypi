@@ -15,6 +15,7 @@ export type SlackConfig = {
 
 type SlackEvent = {
 	ts?: string;
+	thread_ts?: string;
 	channel?: string;
 	channel_type?: string;
 	user?: string;
@@ -43,6 +44,7 @@ export function slackMessage(event: SlackEvent, mentioned: boolean): ChatMessage
 		adapter: "slack",
 		account: "slack",
 		conversation,
+		thread: event.channel_type === "im" ? undefined : (event.thread_ts ?? event.ts),
 		user: {
 			id: event.user ?? "unknown",
 			name: event.username,
