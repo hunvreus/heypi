@@ -85,11 +85,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "rm -rf dist && pnpm run build:secret-css && tsc -p tsconfig.build.json && mkdir -p dist/drizzle dist/core/assets && cp drizzle/*.sql dist/drizzle/ && cp src/core/assets/secret.css dist/core/assets/secret.css && pnpm run build:admin-assets",
-		"build:admin-assets": "rm -rf dist/admin/assets && mkdir -p dist/admin && cp -R src/admin/assets dist/admin/",
-		"build:admin-css": "mkdir -p src/admin/assets && tailwindcss -i src/admin/style.css -o src/admin/assets/admin.css --minify && cp node_modules/basecoat-css/dist/js/all.min.js src/admin/assets/basecoat.all.min.js",
-		"build:secret-css": "mkdir -p src/core/assets && tailwindcss -i src/core/secret.css -o src/core/assets/secret.css --minify",
-		"dev:admin-css": "mkdir -p src/admin/assets && tailwindcss -i src/admin/style.css -o src/admin/assets/admin.css --watch",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
 		"prepack": "pnpm run build",
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
@@ -97,8 +93,7 @@
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "pnpm run build && tsc --noEmit",
-		"db:generate": "drizzle-kit generate",
-		"test": "pnpm run build && node --import tsx --test"
+		"test": "pnpm run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",

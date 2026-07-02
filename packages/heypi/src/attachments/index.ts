@@ -1,9 +1,6 @@
-export type {
-	Attachment,
-	AttachmentInput,
-	AttachmentProcessingConfig,
-	AttachmentStore,
-	DocumentConverterConfig,
-	ImageAttachment,
-	ResolvedAttachment,
-} from "../io/attachments.js";
+export type Attachment = {
+	name?: string;
+	path?: string;
+	url?: string;
+	mime?: string;
+};

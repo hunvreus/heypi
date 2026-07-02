@@ -1,34 +1,18 @@
-export type { RuntimeErrorKind } from "./errors.js";
-export {
-	isRuntimeStartupError,
-	isRuntimeStartupErrorText,
-	RUNTIME_STARTUP_ERROR_KIND,
-	RuntimeStartupError,
-} from "./errors.js";
-export type {
-	BashInput,
-	BashResult,
-	EditInput,
-	EditResult,
-	FindInput,
-	FindResult,
-	GrepHit,
-	GrepInput,
-	GrepResult,
-	LsEntry,
-	LsInput,
-	LsResult,
-	ReadInput,
-	ReadResult,
-	Runtime,
-	RuntimeEvent,
-	RuntimeEventHandler,
-	RuntimeEventKind,
-	RuntimeLogger,
-	RuntimeName,
-	RuntimeProvider,
-	RuntimeScope,
-	RuntimeStatus,
-	WriteInput,
-	WriteResult,
-} from "./types.js";
+export type RuntimeScope = {
+	path: string;
+	root?: string;
+};
+
+export type RuntimeStatus = {
+	name: string;
+	scope?: string;
+	status: "idle" | "starting" | "running" | "stopped" | "error";
+	message?: string;
+};
+
+export class RuntimeStartupError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "RuntimeStartupError";
+	}
+}

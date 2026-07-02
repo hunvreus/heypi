@@ -1,26 +1,7 @@
-export type {
-	Approval,
-	Approvals,
-	Call,
-	Calls,
-	Event,
-	Events,
-	EventType,
-	HistoryMessage,
-	Job,
-	JobRun,
-	JobRuns,
-	Jobs,
-	Lock,
-	Locks,
-	Message,
-	Messages,
-	ProviderMessage,
-	ProviderMessages,
-	Store,
-	StoredMessage,
-	Thread,
-	Threads,
-	Turn,
-	Turns,
-} from "./types.js";
+export type Store = {
+	close?(): Promise<void> | void;
+};
+
+export function sqliteStore(): Store {
+	return {};
+}
