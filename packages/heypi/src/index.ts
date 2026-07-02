@@ -4,6 +4,7 @@ export { type CreateHeypiOptions, createHeypi, type HeypiApp, runHeypi } from ".
 export { createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export { consoleLogger } from "./log.js";
 export { createPiHost, type PiHost, sessionDir } from "./pi.js";
+export { type SlackConfig, slack, slackMessage } from "./slack.js";
 export type {
 	Adapter,
 	AdapterContext,

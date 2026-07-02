@@ -49,10 +49,11 @@ Included:
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
 - webhook adapter for simple HTTP ingress
+- Slack Socket Mode adapter shell with replies, reactions, and approval buttons
 - approval message rendering and Pi tool-call approval extension
 
 Not included yet:
 
-- Slack, Discord, and Telegram adapters
+- Discord and Telegram adapters
 - approval buttons/cards in live adapters
 - memory, todo/planning, admin, and runtime providers
