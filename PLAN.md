@@ -44,6 +44,7 @@ Status: first clean baseline is in place.
 - Do not implement Docker or Gondolin runtimes in the first pass. Use Pi-chat’s Gondolin boundary only
   as inspiration for future runtime providers.
 - Ignore examples until the new core compiles and the basic chat flow works.
+- Gate risky Pi tool calls through programmable approval policies and adapter-rendered approval UI.
 
 ## Next build
 

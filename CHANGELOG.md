@@ -14,3 +14,5 @@
 - Added a minimal Telegram adapter shell with polling, mention/DM normalization, and replies.
 - Added explicit `chat_history` and `chat_reply` Pi tools.
 - Added Discord and Telegram approval button payloads and callback handling.
+- Added programmable approval policies with `never`, `always`, `once`, `when`, `command`, and
+  `default` helpers.

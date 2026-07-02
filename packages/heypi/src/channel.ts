@@ -32,7 +32,7 @@ export type Channel = {
 	complete(reply?: string): Promise<void>;
 	fail(error: string): Promise<void>;
 	activeMessageId(): string | undefined;
-	activeUserName(): string | undefined;
+	activeUser(): { id: string; name?: string } | undefined;
 	findHistory(query?: ChatHistoryQuery): Array<ChannelRecord & { type: "inbound" }>;
 };
 
@@ -157,9 +157,10 @@ export function createChannel(options: ChannelOptions): Channel {
 			return activeMessage()?.id;
 		},
 
-		activeUserName() {
+		activeUser() {
 			const user = activeMessage()?.user;
-			return user?.name ?? user?.id;
+			if (!user) return undefined;
+			return { id: user.id, name: user.name };
 		},
 
 		findHistory(query = {}) {

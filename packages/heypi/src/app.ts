@@ -69,7 +69,13 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				? [
 						createApprovalExtension({
 							config: agent.approvals,
-							requestedBy: () => channel.activeUserName(),
+							context: () => ({
+								adapter: message.adapter,
+								account: message.account,
+								conversation: message.conversation,
+								thread: channel.activeMessageId(),
+								actor: channel.activeUser(),
+							}),
 							request: (view) =>
 								adapter.requestApproval?.({
 									...view,

@@ -9,13 +9,16 @@ approval UI, and small adapter coordination.
 ## Usage
 
 ```ts
-import { createHeypi, loadAgent, local } from "@hunvreus/heypi";
+import { approval, createHeypi, loadAgent, local } from "@hunvreus/heypi";
 
 const adapter = local();
 const agent = loadAgent("./agent", {
 	model,
 	adapters: [adapter],
-	approvals: { layout: "message" },
+	approvals: {
+		layout: "message",
+		policy: approval.default(),
+	},
 });
 
 const app = await createHeypi({ agent });
@@ -40,6 +43,45 @@ agent/
 The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loads staged resources
 from that bundle; heypi does not expose host source paths to the model.
 
+## History
+
+heypi does not paste broad adapter history into every model turn. By default, the Pi session receives
+only the current triggered message. Set `context.mode` to `"delta"` to include messages since the
+last completed trigger in the same conversation.
+
+Older chat is available through the `chat_history` Pi tool. The model can call it when history is
+actually needed instead of carrying old Slack/Discord/Telegram context in every request.
+
+## Approvals
+
+Approvals run at the Pi tool-call boundary. heypi renders the approval UI through the active adapter,
+then the Pi tool call either continues, is rejected by a person, or is blocked by policy.
+
+Policies are programmable:
+
+```ts
+import { approval } from "@hunvreus/heypi";
+
+const agent = loadAgent("./agent", {
+	approvals: {
+		policy: approval.when(
+			({ toolName, actor }) => toolName === "bash" && actor?.id !== "admin",
+			"Run bash command.",
+		),
+	},
+});
+```
+
+Built-in helpers:
+
+- `approval.never()` allows every call.
+- `approval.always(reason)` asks every time.
+- `approval.once(reason)` asks once per tool in a session.
+- `approval.when(predicate, reason)` asks only when the predicate matches.
+- `approval.command(config)` classifies bash commands with `allow`, `approve`, and `block` regexes.
+- `approval.default()` uses command classification for `bash` and requires approval for `edit` and
+  `write`.
+
 ## Current scope
 
 Included:
@@ -53,10 +95,10 @@ Included:
 - Discord adapter shell with mention/DM normalization, replies, and approval buttons
 - Telegram adapter shell with polling, mention/DM normalization, replies, and approval buttons
 - approval message rendering and Pi tool-call approval extension
+- programmable approval policies with command classification
 - `chat_history` and `chat_reply` Pi tools for explicit older-context lookup and sparse progress updates
 
 Not included yet:
 
 - Card-style approval attachments beyond Slack/Discord/Telegram native buttons
-- approval buttons/cards in live adapters
 - memory, todo/planning, admin, and runtime providers

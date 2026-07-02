@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { renderApprovalMessage } from "../src/approval.js";
+import { approval, classifyCommand, renderApprovalMessage } from "../src/approval.js";
+import type { ApprovalContext } from "../src/types.js";
+
+function context(input: Partial<ApprovalContext> = {}): ApprovalContext {
+	return {
+		toolName: "bash",
+		input: {},
+		approvedTools: new Set(),
+		...input,
+	};
+}
 
 describe("renderApprovalMessage", () => {
 	it("renders the message layout as a compact list", () => {
@@ -23,5 +33,56 @@ describe("renderApprovalMessage", () => {
 				"- Approved by: @Ronan",
 			].join("\n"),
 		);
+	});
+});
+
+describe("approval policies", () => {
+	it("classifies command risk", () => {
+		expect(classifyCommand("git status").risk).toBe("allow");
+		expect(classifyCommand("git push").risk).toBe("approval");
+		expect(classifyCommand("rm -rf /").risk).toBe("block");
+	});
+
+	it("allows command policy overrides", () => {
+		expect(classifyCommand("curl https://example.com", { allow: [/^curl https:\/\/example\.com$/] }).risk).toBe(
+			"allow",
+		);
+		expect(classifyCommand("echo ok", { approve: [/^echo/] }).risk).toBe("approval");
+		expect(classifyCommand("git status", { block: [/^git/] }).risk).toBe("block");
+	});
+
+	it("turns risky bash commands into approval requests", async () => {
+		expect(await approval.command()(context({ input: { command: "git push" } }))).toMatchObject({
+			type: "approve",
+			reason: "Run bash command.",
+			command: "git push",
+		});
+		expect(await approval.command()(context({ input: { command: "git status" } }))).toBe(false);
+		expect(await approval.command()(context({ input: { command: "rm -rf /" } }))).toMatchObject({
+			type: "block",
+		});
+	});
+
+	it("supports context-aware predicates", async () => {
+		const policy = approval.when(
+			({ actor }) => actor?.id !== "admin",
+			({ toolName }) => `Approve ${toolName}.`,
+		);
+		expect(await policy(context({ actor: { id: "admin" } }))).toBe(false);
+		expect(await policy(context({ actor: { id: "user" } }))).toEqual({
+			type: "approve",
+			reason: "Approve bash.",
+		});
+	});
+
+	it("supports once-per-tool approval", async () => {
+		const approvedTools = new Set<string>();
+		const policy = approval.once();
+		expect(await policy(context({ approvedTools }))).toEqual({
+			type: "approve",
+			reason: "Run bash tool.",
+		});
+		approvedTools.add("bash");
+		expect(await policy(context({ approvedTools }))).toBe(false);
 	});
 });

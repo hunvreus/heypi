@@ -1,7 +1,8 @@
 export { type LocalAdapter, local, type WebhookAdapter, type WebhookConfig, webhook } from "./adapters.js";
 export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, runHeypi } from "./app.js";
-export { createApprovalExtension, renderApprovalMessage } from "./approval.js";
+export type { CommandPolicyConfig, CommandRisk } from "./approval.js";
+export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
 export { consoleLogger } from "./log.js";
@@ -13,7 +14,10 @@ export type {
 	AdapterContext,
 	AgentConfig,
 	ApprovalConfig,
+	ApprovalContext,
 	ApprovalDecision,
+	ApprovalPolicy,
+	ApprovalPolicyResult,
 	ApprovalView,
 	ChatAttachment,
 	ChatMessage,

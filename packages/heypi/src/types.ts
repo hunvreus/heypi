@@ -74,8 +74,39 @@ export type ApprovalLayout = "message" | "card";
 export type ApprovalConfig = {
 	layout?: ApprovalLayout;
 	tools?: string[];
+	policy?: ApprovalPolicy;
 	showId?: boolean;
 };
+
+export type ApprovalContext = {
+	toolName: string;
+	input: unknown;
+	adapter?: AdapterKind | string;
+	account?: string;
+	conversation?: string;
+	thread?: string;
+	actor?: {
+		id: string;
+		name?: string;
+	};
+	approvedTools: ReadonlySet<string>;
+};
+
+export type ApprovalPolicyResult =
+	| false
+	| {
+			type: "approve";
+			reason: string;
+			detailLabel?: string;
+			detail?: string;
+			command?: string;
+	  }
+	| {
+			type: "block";
+			reason: string;
+	  };
+
+export type ApprovalPolicy = (context: ApprovalContext) => ApprovalPolicyResult | Promise<ApprovalPolicyResult>;
 
 export type ApprovalState = "pending" | "approved" | "rejected";
 
