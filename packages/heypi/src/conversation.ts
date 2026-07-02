@@ -92,6 +92,15 @@ export class ConversationRuntime {
 		};
 	}
 
+	activeMessageId(): string | undefined {
+		if (!this.active) return undefined;
+		const trigger = this.records.find(
+			(record): record is ConversationRecord & { type: "inbound" } =>
+				record.type === "inbound" && record.record === this.active?.trigger,
+		);
+		return trigger?.id;
+	}
+
 	async complete(reply?: string): Promise<void> {
 		if (!this.active) return;
 		await this.append({

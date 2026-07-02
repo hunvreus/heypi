@@ -56,6 +56,9 @@ heypi stores a small conversation log for adapter coordination. By default, a Pi
 the triggering chat message. Older chat is available through the Pi `chat_history` tool, so history
 is retrieved intentionally instead of injected passively into every prompt.
 
+Pi can send sparse chat updates through `chat_reply`. heypi only renders the adapter side effect;
+the model decides when the update is useful.
+
 ## Future features
 
 Approvals, memory, and todo/planning should be Pi extensions with heypi renderers. They should not

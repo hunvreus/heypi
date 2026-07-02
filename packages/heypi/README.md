@@ -39,6 +39,7 @@ agent/
 - `loadAgent("./agent", options)`
 - Pi session runtime creation via `@earendil-works/pi-coding-agent`
 - Current-turn chat delivery with older chat available through the Pi `chat_history` tool
+- Model-authored progress updates through the Pi `chat_reply` tool
 - Slack, Discord, Telegram, and webhook adapter shells
 - Approval message rendering helper
 
