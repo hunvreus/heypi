@@ -24,3 +24,4 @@
 - Added an injectable Pi host boundary and app-level chat routing test.
 - Added real Slack and Discord card approval layouts.
 - Avoid starting Pi sessions for non-triggering adapter messages.
+- Avoid sending blank final adapter replies when Pi produces no assistant text.

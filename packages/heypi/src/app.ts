@@ -118,7 +118,9 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		});
 		try {
 			await running.pi.send(turn.prompt);
-			await running.adapter.send({ conversation, thread: turn.messageId, text: finalText });
+			if (finalText.trim()) {
+				await running.adapter.send({ conversation, thread: turn.messageId, text: finalText });
+			}
 			await running.channel.complete(finalText);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

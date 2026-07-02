@@ -110,4 +110,40 @@ describe("createHeypi", () => {
 		expect(piStarts).toBe(0);
 		expect(adapter.sent).toEqual([]);
 	});
+
+	it("does not send blank final replies when Pi produces no assistant text", async () => {
+		const root = await makeDir("app-empty-agent");
+		const state = await makeDir("app-empty-state");
+		const adapter = local();
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				const host: PiHost = {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+				return host;
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([]);
+	});
 });
