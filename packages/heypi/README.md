@@ -60,7 +60,7 @@ injected; Pi can ask for it with `chat_history`.
 - Todo/planning as a Pi extension
 - Admin/event mirror
 - Docker/Gondolin runtime extensions
-- Cleaned examples
+- Rebuilt examples
 
 ## License
 

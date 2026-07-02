@@ -11,7 +11,7 @@ product surfaces such as approvals.
 
 - [`packages/heypi`](packages/heypi): core Pi-native adapter shell.
 
-Other packages and examples are not part of the current rewrite target yet.
+Examples will be rebuilt after the Pi-native core settles.
 
 ## Minimal shape
 

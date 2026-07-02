@@ -10,6 +10,4 @@ mise.toml
 *.log
 *.tgz
 coverage/
-examples/*/workspace/
-examples/*/memory/
-examples/*/state/
+examples/
