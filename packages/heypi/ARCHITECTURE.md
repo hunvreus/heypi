@@ -64,5 +64,5 @@ the model decides when the update is useful.
 Memory and todo/planning should be Pi extensions with heypi renderers. They should not be
 implemented as heypi-owned prompt machinery or a second model loop.
 
-Approval policy is already hooked through Pi `tool_call` events. Adapter-specific approval UI still
-needs to implement `requestApproval`.
+Approval policy is already hooked through Pi `tool_call` events. Adapter factories expose
+`onApproval(view)`; built-in Slack/Discord/Telegram button renderers are still future work.

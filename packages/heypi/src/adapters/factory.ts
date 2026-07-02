@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Adapter, AdapterContext, ChatMessage, SendMessage } from "../types.js";
+import type { Adapter, AdapterContext, ApprovalDecision, ApprovalView, ChatMessage, SendMessage } from "../types.js";
 
 type BaseAdapterConfig = {
 	name?: string;
 	onStart?: (context: AdapterContext) => Promise<void> | void;
 	onSend?: (message: SendMessage) => Promise<{ id?: string } | void> | { id?: string } | void;
 	onAck?: (message: ChatMessage) => Promise<void> | void;
+	onApproval?: (view: ApprovalView) => Promise<ApprovalDecision> | ApprovalDecision;
 };
 
 export type SlackConfig = BaseAdapterConfig & {
@@ -78,6 +79,7 @@ export function slack(config: SlackConfig = {}): Adapter {
 				.add({ channel: message.conversation, timestamp: message.id, name: "eyes" })
 				.catch(() => undefined);
 		},
+		requestApproval: approvalHook(config),
 	};
 }
 
@@ -122,6 +124,7 @@ export function discord(config: DiscordConfig = {}): Adapter {
 			return { id: result.id };
 		},
 		ack: (message) => config.onAck?.(message),
+		requestApproval: approvalHook(config),
 	};
 }
 
@@ -154,6 +157,7 @@ export function telegram(config: TelegramConfig = {}): Adapter {
 			return { id: String(result.result.message_id) };
 		},
 		ack: (message) => config.onAck?.(message),
+		requestApproval: approvalHook(config),
 	};
 
 	async function pollTelegram(
@@ -219,7 +223,13 @@ export function webhook(config: WebhookConfig = {}): Adapter {
 			return undefined;
 		},
 		ack: (message) => config.onAck?.(message),
+		requestApproval: approvalHook(config),
 	};
+}
+
+function approvalHook(config: BaseAdapterConfig): Adapter["requestApproval"] {
+	if (!config.onApproval) return undefined;
+	return async (view) => config.onApproval?.(view) ?? { approved: false };
 }
 
 async function handleWebhook(
