@@ -47,7 +47,6 @@ Status: first clean baseline is in place.
 
 ## Next build
 
-- Add Telegram adapter shell.
 - Add live approval buttons/card rendering where supported.
 - Add explicit chat history and progress/update tools only if they stay Pi-native.
 - Keep adding tests with each feature.

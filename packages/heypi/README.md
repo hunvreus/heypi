@@ -51,10 +51,11 @@ Included:
 - webhook adapter for simple HTTP ingress
 - Slack Socket Mode adapter shell with replies, reactions, and approval buttons
 - Discord adapter shell with mention/DM normalization and replies
+- Telegram adapter shell with polling, mention/DM normalization, and replies
 - approval message rendering and Pi tool-call approval extension
 
 Not included yet:
 
-- Telegram adapter
+- Built-in Discord and Telegram approval buttons/cards
 - approval buttons/cards in live adapters
 - memory, todo/planning, admin, and runtime providers

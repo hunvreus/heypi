@@ -11,3 +11,4 @@
 - Added a minimal Slack Socket Mode adapter shell with message normalization, replies, reactions,
   and approval buttons.
 - Added a minimal Discord adapter shell with mention/DM normalization and replies.
+- Added a minimal Telegram adapter shell with polling, mention/DM normalization, and replies.

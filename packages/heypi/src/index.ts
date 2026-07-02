@@ -6,6 +6,7 @@ export { type DiscordConfig, discord, discordMessage } from "./discord.js";
 export { consoleLogger } from "./log.js";
 export { createPiHost, type PiHost, sessionDir } from "./pi.js";
 export { type SlackConfig, slack, slackMessage } from "./slack.js";
+export { type TelegramConfig, telegram, telegramMessage } from "./telegram.js";
 export type {
 	Adapter,
 	AdapterContext,
