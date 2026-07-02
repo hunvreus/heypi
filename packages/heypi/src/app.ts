@@ -42,6 +42,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			agentDir: staged.agentDir,
 			workspaceDir: staged.workspaceDir,
 			sessionDir: piSessionDir(stateDir, key),
+			toolPaths: staged.toolPaths,
 		});
 		await pi.start();
 		const running = { runtime, pi, adapter };

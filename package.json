@@ -4,25 +4,20 @@
 	"type": "module",
 	"scripts": {
 		"build": "pnpm --filter @hunvreus/heypi run build",
-		"build:all": "pnpm --filter @hunvreus/heypi run build && pnpm --filter \"./packages/heypi-runtime-*\" run build:package && pnpm --filter create-heypi run build",
-		"build:admin-css": "pnpm --filter @hunvreus/heypi run build:admin-css",
-		"dev:admin-css": "pnpm --filter @hunvreus/heypi run dev:admin-css",
-		"prepack": "pnpm run build:all",
+		"build:all": "pnpm --filter @hunvreus/heypi run build",
+		"prepack": "pnpm run build",
 		"pack:dry": "pnpm --filter @hunvreus/heypi run pack:dry",
 		"pack:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run pack:dry",
 		"publish:dry": "pnpm --filter @hunvreus/heypi run publish:dry",
 		"publish:dry:packages": "pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "pnpm --filter @hunvreus/heypi run typecheck && tsc --noEmit -p tsconfig.json && pnpm --filter \"./packages/heypi-runtime-*\" run check && pnpm --filter create-heypi run check",
-		"db:generate": "pnpm --filter @hunvreus/heypi run db:generate",
-		"test": "pnpm --filter @hunvreus/heypi run test && pnpm --filter \"./packages/heypi-runtime-*\" run test && pnpm --filter create-heypi run test"
+		"typecheck": "pnpm --filter @hunvreus/heypi run typecheck",
+		"test": "pnpm --filter @hunvreus/heypi run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",
 		"@hunvreus/heypi": "workspace:*",
-		"@hunvreus/heypi-runtime-docker": "workspace:*",
-		"@hunvreus/heypi-runtime-gondolin": "workspace:*",
 		"@sinclair/typebox": "^0.34.49",
 		"@tailwindcss/cli": "^4.3.0",
 		"@types/node": "^25.9.1",
@@ -31,14 +26,6 @@
 		"tailwindcss": "^4.3.0",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3"
-	},
-	"pnpm": {
-		"overrides": {
-			"@esbuild-kit/core-utils>esbuild": "^0.25.12",
-			"brace-expansion": "^5.0.6",
-			"qs": "^6.15.2",
-			"ws": "^8.20.1"
-		}
 	},
 	"packageManager": "pnpm@10.17.1"
 }

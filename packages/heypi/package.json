@@ -40,12 +40,6 @@
 			"types": "./dist/runtime/public.d.ts",
 			"import": "./dist/runtime/public.js",
 			"default": "./dist/runtime/public.js"
-		},
-		"./store": {
-			"development": "./src/store/index.ts",
-			"types": "./dist/store/index.d.ts",
-			"import": "./dist/store/index.js",
-			"default": "./dist/store/index.js"
 		}
 	},
 	"files": [

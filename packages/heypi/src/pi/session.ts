@@ -14,6 +14,7 @@ export type PiSessionHostOptions = {
 	agentDir: string;
 	workspaceDir: string;
 	sessionDir: string;
+	toolPaths: string[];
 };
 
 export class PiSessionHost {
@@ -36,6 +37,7 @@ export class PiSessionHost {
 			cwd: this.options.workspaceDir,
 			agentDir: this.options.agentDir,
 			settingsManager,
+			additionalExtensionPaths: this.options.toolPaths,
 			appendSystemPrompt: appendSystemPrompt ? [appendSystemPrompt] : undefined,
 		});
 		await resourceLoader.reload();

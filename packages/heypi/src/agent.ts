@@ -51,6 +51,7 @@ export type StagedAgent = {
 	root: string;
 	agentDir: string;
 	workspaceDir: string;
+	toolPaths: string[];
 };
 
 /**
@@ -70,5 +71,8 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 		force: true,
 		filter: (source) => !source.includes(`${agent.root}/node_modules`) && !source.includes(`${agent.root}/.git`),
 	});
-	return { root, agentDir, workspaceDir };
+	const toolPaths = (await listFiles(join(agentDir, "tools"), "tool"))
+		.map((tool) => tool.path)
+		.filter((path) => path.endsWith(".ts") || path.endsWith(".js"));
+	return { root, agentDir, workspaceDir, toolPaths };
 }
