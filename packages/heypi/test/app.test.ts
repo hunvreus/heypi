@@ -241,6 +241,66 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Still done." }]);
 	});
 
+	it("does not send replies after stop begins", async () => {
+		const root = await makeDir("app-stop-agent");
+		const state = await makeDir("app-stop-state");
+		const adapter = local();
+		let releaseSend: (() => void) | undefined;
+		let markSendStarted: (() => void) | undefined;
+		const sendStarted = new Promise<void>((resolve) => {
+			markSendStarted = resolve;
+		});
+		let stops = 0;
+
+		const app = await createHeypi({
+			agent: loadAgent(root, {
+				id: "agent",
+				adapters: [adapter],
+				state: { dir: state },
+				approvals: { enabled: false },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						markSendStarted?.();
+						await new Promise<void>((resolve) => {
+							releaseSend = resolve;
+						});
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Late reply." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {
+						stops++;
+					},
+				};
+			},
+		});
+
+		await app.start();
+		const receive = adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await sendStarted;
+		await app.stop();
+		releaseSend?.();
+		await receive;
+
+		expect(stops).toBe(1);
+		expect(adapter.sent).toEqual([]);
+	});
+
 	it("serializes concurrent first messages onto one channel session", async () => {
 		const root = await makeDir("app-concurrent-agent");
 		const state = await makeDir("app-concurrent-state");
