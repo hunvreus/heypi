@@ -1,0 +1,19 @@
+{
+	"name": "heypi-example-codex-tag",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"docker:build": "docker build -t heypi-codex-tag:local .",
+		"predev": "pnpm --dir ../.. --filter @hunvreus/heypi run build && (docker image inspect heypi-codex-tag:local >/dev/null 2>&1 || pnpm run docker:build)",
+		"dev": "node --env-file-if-exists=.env --import tsx index.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@hunvreus/heypi": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.1",
+		"tsx": "^4.21.0",
+		"typescript": "^6.0.3"
+	}
+}

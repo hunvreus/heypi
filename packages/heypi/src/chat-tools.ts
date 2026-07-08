@@ -9,12 +9,7 @@ const chatHistoryParameters = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum messages to return", minimum: 1, maximum: 100 })),
 });
 
-const chatReplyParameters = Type.Object({
-	text: Type.String({ description: "Short progress update to send to the current chat thread" }),
-});
-
 type ChatHistoryParams = Static<typeof chatHistoryParameters>;
-type ChatReplyParams = Static<typeof chatReplyParameters>;
 
 export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof chatHistoryParameters> {
 	return {
@@ -40,26 +35,6 @@ export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof c
 							.join("\n")
 					: "No matching chat history found.";
 			return { content: [{ type: "text", text }], details: { count: results.length } };
-		},
-	};
-}
-
-export function createChatReplyTool(send: (text: string) => Promise<void>): ToolDefinition<typeof chatReplyParameters> {
-	return {
-		name: "chat_reply",
-		label: "Chat Reply",
-		description: "Send a short progress update to the current chat thread.",
-		promptSnippet: "Send a short progress update to the current chat thread.",
-		promptGuidelines: [
-			"Use chat_reply sparingly for meaningful progress updates during longer work.",
-			"Do not use chat_reply for final answers; final assistant text is sent automatically.",
-		],
-		parameters: chatReplyParameters,
-		async execute(_toolCallId, params, signal) {
-			signal?.throwIfAborted?.();
-			const input = params as ChatReplyParams;
-			await send(input.text);
-			return { content: [{ type: "text", text: "Sent." }], details: { sent: true } };
 		},
 	};
 }

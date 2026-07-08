@@ -2,7 +2,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChannel } from "../src/channel.js";
-import { createChatHistoryTool, createChatReplyTool } from "../src/chat-tools.js";
+import { createChatHistoryTool } from "../src/chat-tools.js";
 import type { ChatMessage } from "../src/types.js";
 
 function message(id: string, text: string): ChatMessage {
@@ -48,17 +48,5 @@ describe("chat tools", () => {
 
 		expect(result.content).toEqual([{ type: "text", text: "- [record:1] [uid:u1] Ronan: already discussed" }]);
 		expect(result.details).toEqual({ count: 1 });
-	});
-
-	it("sends sparse progress updates", async () => {
-		const sent: string[] = [];
-		const tool = createChatReplyTool(async (text) => {
-			sent.push(text);
-		});
-
-		const result = await tool.execute("call", { text: "Working on it" }, undefined, undefined, {} as never);
-
-		expect(sent).toEqual(["Working on it"]);
-		expect(result.details).toEqual({ sent: true });
 	});
 });

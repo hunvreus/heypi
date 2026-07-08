@@ -1,2 +1,11 @@
 packages:
   - packages/*
+  - examples/*
+allowBuilds:
+  '@google/genai': false
+  '@mongodb-js/zstd': false
+  cpu-features: false
+  esbuild: false
+  node-liblzma: false
+  protobufjs: false
+  ssh2: false

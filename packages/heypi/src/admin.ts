@@ -38,6 +38,15 @@ export function createAdmin(config: AdminConfig & { stateDir: string }): AdminSe
 			server = createServer(async (request, response) => {
 				if (request.method !== "GET" || !request.url) return sendJson(response, 404, { error: "not_found" });
 				const url = new URL(request.url, `http://${host}:${port}`);
+				if (url.pathname === path) {
+					return sendJson(response, 200, {
+						ok: true,
+						endpoints: {
+							health: joinUrl(path, "/health"),
+							channels: joinUrl(path, "/channels"),
+						},
+					});
+				}
 				if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
 				if (url.pathname === joinUrl(path, "/channels")) {
 					const channels = await listAuditChannels({ stateDir: config.stateDir });

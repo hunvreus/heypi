@@ -1,15 +1,15 @@
 import { join } from "node:path";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
-import { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
+import { createChatHistoryTool } from "./chat-tools.js";
 import { consoleLogger } from "./log.js";
 import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
-import { createPiHost, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
+import { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
 import { createTodoExtension, renderTodo } from "./todo.js";
-import type { Adapter, AgentConfig, ChatMessage, Logger } from "./types.js";
+import type { Adapter, AgentConfig, ApprovalPolicy, ChatMessage, Logger, ToolEntry } from "./types.js";
 
 export type HeypiApp = {
 	start(): Promise<void>;
@@ -18,6 +18,7 @@ export type HeypiApp = {
 
 export type CreateHeypiOptions = {
 	agent: AgentConfig | Promise<AgentConfig>;
+	adapters: Adapter[];
 	logger?: Logger;
 	piHost?: PiHostFactory;
 };
@@ -28,6 +29,10 @@ type RunningChannel = {
 	channel: Channel;
 	adapter: Adapter;
 	pi?: PiHost;
+	progressText?: string;
+	progressMessageId?: string;
+	progressUneditable?: boolean;
+	progressTasks: Promise<void>[];
 };
 
 function keyFor(message: ChatMessage): string {
@@ -51,15 +56,133 @@ function includes(values: string[] | undefined, value: string): boolean {
 	return !values || values.includes(value);
 }
 
-function allowed(agent: AgentConfig, message: ChatMessage): boolean {
-	const allow = agent.allow;
+function botAllowed(allow: Adapter["allow"], message: ChatMessage): boolean {
+	if (!message.user.isBot) return true;
+	if (message.user.isSelf) return false;
+	if (allow?.bots === true) return true;
+	return Array.isArray(allow?.bots) && allow.bots.includes(message.user.id);
+}
+
+function allowed(adapter: Adapter, message: ChatMessage): boolean {
+	const allow = adapter.allow;
+	if (!botAllowed(allow, message)) return false;
 	if (!allow) return true;
 	return (
 		includes(allow.adapters, message.adapter) &&
 		includes(allow.accounts, message.account) &&
 		includes(allow.conversations, message.conversation) &&
-		includes(allow.users, message.user.id)
+		(message.user.isBot || includes(allow.users, message.user.id))
 	);
+}
+
+type ToolSettings = {
+	tools?: string[];
+	excludeTools?: string[];
+	customTools: ToolDefinition[];
+	approvalPolicies: Record<string, ApprovalPolicy | false | undefined>;
+};
+
+function isToolImplementation(entry: ToolEntry): entry is ToolDefinition {
+	return (
+		typeof entry === "object" && entry !== null && "name" in entry && "description" in entry && "parameters" in entry
+	);
+}
+
+function toolSettings(agent: AgentConfig): ToolSettings {
+	const include = new Set<string>();
+	const exclude = new Set<string>();
+	const customTools: ToolDefinition[] = [];
+	const approvalPolicies: ToolSettings["approvalPolicies"] = {};
+	for (const [name, entry] of Object.entries(agent.tools ?? {})) {
+		if (entry === undefined) continue;
+		if (entry === false) {
+			exclude.add(name);
+			continue;
+		}
+		if (isToolImplementation(entry)) {
+			customTools.push(entry);
+			include.add(name);
+			continue;
+		}
+		const config = entry as Exclude<ToolEntry, false | ToolDefinition>;
+		if (config.approve) approvalPolicies[name] = config.approve;
+		include.add(name);
+	}
+	return {
+		tools: include.size ? [...include].sort() : undefined,
+		excludeTools: exclude.size ? [...exclude].sort() : undefined,
+		customTools,
+		approvalPolicies,
+	};
+}
+
+function progressEnabled(adapter: Adapter): boolean {
+	return adapter.progress !== false && Boolean(adapter.update);
+}
+
+function piProgressText(event: PiEvent): string | undefined {
+	if (event.type === "turn_start" || event.type === "message_start") return "Thinking...";
+	if (event.type === "tool_execution_start") return "Working...";
+	return undefined;
+}
+
+function piToolName(event: PiEvent): string | undefined {
+	if (event.type !== "tool_execution_start") return undefined;
+	if (!("toolName" in event)) return undefined;
+	return typeof event.toolName === "string" ? event.toolName : undefined;
+}
+
+function queueProgress(
+	running: RunningChannel,
+	message: ChatMessage,
+	replyThread: string | undefined,
+	text: string,
+): void {
+	const update = running.adapter.update?.bind(running.adapter);
+	if (!update || running.progressUneditable) return;
+	const previous = running.progressTasks.at(-1) ?? Promise.resolve();
+	const task = previous
+		.then(async () => {
+			if (running.progressUneditable) return;
+			const thread = running.channel.activeMessageId() ?? replyThread;
+			if (!running.progressMessageId) {
+				const sent = await running.adapter.send({ conversation: message.conversation, thread, text });
+				running.progressMessageId = sent?.id;
+				running.progressUneditable = !sent?.id;
+				return;
+			}
+			await update({
+				conversation: message.conversation,
+				thread,
+				id: running.progressMessageId,
+				text,
+			});
+		})
+		.then(
+			() => undefined,
+			() => undefined,
+		);
+	running.progressTasks.push(task);
+}
+
+async function replaceProgress(
+	running: RunningChannel,
+	message: ChatMessage,
+	replyThread: string | undefined,
+	text: string,
+): Promise<boolean> {
+	if (!running.progressMessageId || !running.adapter.update) return false;
+	try {
+		await running.adapter.update({
+			conversation: message.conversation,
+			thread: replyThread,
+			id: running.progressMessageId,
+			text,
+		});
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp> {
@@ -67,10 +190,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const logger = options.logger ?? consoleLogger;
 	const piHost = options.piHost ?? createPiHost;
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
+	const toolConfig = toolSettings(agent);
 	const staged = await stageAgent(agent, stateDir);
 	const channels = new Map<string, RunningChannel>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
-	const admin = agent.admin?.enabled ? createAdmin({ ...agent.admin, stateDir }) : undefined;
+	const admin = agent.admin ? createAdmin({ ...agent.admin, stateDir }) : undefined;
 	let stopping = false;
 
 	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
@@ -81,11 +205,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		if (loading) return loading;
 		const channel = createChannel({
 			logPath: join(stateDir, "channels", `${key}.jsonl`),
-			context: agent.context,
 		});
 		const loadingChannel = (async () => {
 			await channel.load();
-			const running = { adapter, channel };
+			const running = { adapter, channel, progressTasks: [] };
 			channels.set(key, running);
 			return running;
 		})();
@@ -103,10 +226,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		const channel = running.channel;
 		const key = keyFor(message);
 		const approvalExtension =
-			agent.approvals?.enabled === false
+			adapter.approvals === undefined || Object.keys(toolConfig.approvalPolicies).length === 0
 				? undefined
 				: createApprovalExtension({
-						config: agent.approvals,
+						config: adapter.approvals,
+						policies: toolConfig.approvalPolicies,
 						context: () => ({
 							adapter: message.adapter,
 							account: message.account,
@@ -122,24 +246,18 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							}) ??
 							Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
 					});
-		const todoExtension =
-			agent.todo?.enabled === false
-				? undefined
-				: createTodoExtension({
-						send: async (update) => {
-							await adapter.send({
-								conversation: message.conversation,
-								thread: channel.activeMessageId(),
-								text: renderTodo(update),
-							});
-						},
-					});
-		const memoryExtension =
-			agent.memory?.enabled === false
-				? undefined
-				: createMemoryExtension({
-						store: createFileMemoryStore(join(stateDir, "memory", `${key}.jsonl`)),
-					});
+		const todoExtension = createTodoExtension({
+			send: async (update) => {
+				await adapter.send({
+					conversation: message.conversation,
+					thread: channel.activeMessageId(),
+					text: renderTodo(update),
+				});
+			},
+		});
+		const memoryExtension = createMemoryExtension({
+			store: createFileMemoryStore(join(stateDir, "memory", `${key}.jsonl`)),
+		});
 		const extensions: ExtensionFactory[] = [];
 		if (approvalExtension) extensions.push(approvalExtension);
 		if (todoExtension) extensions.push(todoExtension);
@@ -150,12 +268,9 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			workspaceDir: staged.workspaceDir,
 			sessionDir: sessionDir(stateDir, key),
 			extensionPaths: staged.extensionPaths,
-			tools: [
-				createChatHistoryTool(channel),
-				createChatReplyTool(async (text) => {
-					await adapter.send({ conversation: message.conversation, thread: channel.activeMessageId(), text });
-				}),
-			],
+			tools: toolConfig.tools,
+			excludeTools: toolConfig.excludeTools,
+			customTools: [createChatHistoryTool(channel), ...toolConfig.customTools],
 			extensions,
 		});
 		await pi.start();
@@ -170,33 +285,82 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			await running.channel.fail("stopped");
 			return;
 		}
+		logger.info("turn.start", {
+			adapter: message.adapter,
+			conversation: message.conversation,
+			thread: turn.replyThread,
+		});
 		let finalText = "";
 		let unsubscribe: (() => void) | undefined;
 		try {
+			running.progressText = undefined;
+			running.progressMessageId = undefined;
+			running.progressUneditable = false;
+			running.progressTasks = [];
 			const pi = await startPi(running, message);
 			unsubscribe = pi.subscribe((event) => {
 				if (event.type === "message_end" && event.message.role === "assistant") {
 					finalText = assistantText(event.message);
 				}
+				const toolName = piToolName(event);
+				if (toolName) {
+					logger.info("pi.tool.start", {
+						adapter: message.adapter,
+						conversation: message.conversation,
+						thread: turn.replyThread,
+						tool: toolName,
+					});
+				}
+				const text = progressEnabled(running.adapter) ? piProgressText(event) : undefined;
+				if (stopping || !text || text === running.progressText) return;
+				running.progressText = text;
+				queueProgress(running, message, turn.replyThread, text);
 			});
 			await pi.send(turn.prompt);
+			await Promise.allSettled(running.progressTasks);
 			if (stopping) {
 				await running.channel.fail("stopped");
 				return;
 			}
-			if (finalText.trim()) {
-				await running.adapter.send({ conversation: message.conversation, thread: turn.messageId, text: finalText });
+			const final = finalText.trim();
+			if (final) {
+				const replaced = await replaceProgress(running, message, turn.replyThread, finalText);
+				if (!replaced) {
+					await running.adapter.send({
+						conversation: message.conversation,
+						thread: turn.replyThread,
+						text: finalText,
+					});
+				}
+			} else {
+				await replaceProgress(running, message, turn.replyThread, "Done.");
 			}
 			await running.channel.complete(finalText);
+			logger.info("turn.complete", {
+				adapter: message.adapter,
+				conversation: message.conversation,
+				thread: turn.replyThread,
+			});
 		} catch (error) {
 			const text = error instanceof Error ? error.message : String(error);
+			await Promise.allSettled(running.progressTasks);
 			await running.channel.fail(text);
-			if (stopping) return;
-			await running.adapter.send({
+			logger.error("turn.fail", {
+				adapter: message.adapter,
 				conversation: message.conversation,
-				thread: turn.messageId,
-				text: `The agent failed: ${text}`,
+				thread: turn.replyThread,
+				message: text,
 			});
+			if (stopping) return;
+			const failure = `The agent failed: ${text}`;
+			const replaced = await replaceProgress(running, message, turn.replyThread, failure);
+			if (!replaced) {
+				await running.adapter.send({
+					conversation: message.conversation,
+					thread: turn.replyThread,
+					text: failure,
+				});
+			}
 		} finally {
 			unsubscribe?.();
 		}
@@ -206,7 +370,16 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 
 	async function receive(adapter: Adapter, message: ChatMessage): Promise<void> {
 		if (stopping) return;
-		if (!allowed(agent, message)) {
+		if (message.user.isSelf) {
+			logger.debug("adapter.message_ignored", {
+				adapter: message.adapter,
+				conversation: message.conversation,
+				user: message.user.id,
+				reason: "self",
+			});
+			return;
+		}
+		if (!allowed(adapter, message)) {
 			logger.warn("adapter.message_denied", {
 				adapter: message.adapter,
 				account: message.account,
@@ -225,6 +398,13 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		}
 		const running = await channelFor(adapter, message);
 		const queued = await running.channel.ingest(message);
+		logger.info("adapter.message", {
+			adapter: message.adapter,
+			conversation: message.conversation,
+			thread: message.thread,
+			user: message.user.id,
+			queued,
+		});
 		if (queued) {
 			await dispatch(running, message);
 		}
@@ -234,23 +414,27 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		async start() {
 			stopping = false;
 			await admin?.start();
-			for (const adapter of agent.adapters ?? []) {
+			if (admin) logger.info("admin.start", { url: admin.url() });
+			const adapters = options.adapters;
+			for (const adapter of adapters) {
 				await adapter.start({ agentId: agent.id, logger, receive: (message) => receive(adapter, message) });
 			}
-			logger.info("app.start", { agent: agent.id, adapters: agent.adapters?.length ?? 0 });
+			const adapterNames = adapters.map((adapter) => adapter.name ?? adapter.kind);
+			logger.info("app.start", { agent: agent.id, adapters: adapterNames.length, admin: admin?.url() });
+			logger.ready?.({ agent: agent.id, adapters: adapterNames, admin: admin?.url() });
 		},
 		async stop() {
 			stopping = true;
 			for (const channel of channels.values()) await channel.pi?.stop();
-			for (const adapter of agent.adapters ?? []) await adapter.stop?.();
+			for (const adapter of options.adapters) await adapter.stop?.();
 			await admin?.stop();
 			logger.info("app.stop", { agent: agent.id });
 		},
 	};
 }
 
-export async function runHeypi(agent: AgentConfig | Promise<AgentConfig>): Promise<HeypiApp> {
-	const app = await createHeypi({ agent });
+export async function runHeypi(agent: AgentConfig | Promise<AgentConfig>, adapters: Adapter[]): Promise<HeypiApp> {
+	const app = await createHeypi({ agent, adapters });
 	await app.start();
 	return app;
 }

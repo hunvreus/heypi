@@ -8,10 +8,6 @@ export type TodoItem = {
 	status: TodoStatus;
 };
 
-export type TodoConfig = {
-	enabled?: boolean;
-};
-
 export type TodoUpdate = {
 	items: TodoItem[];
 	note?: string;

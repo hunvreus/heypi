@@ -1,5 +1,12 @@
 import { renderApprovalMessage } from "./approval.js";
-import type { Adapter, ApprovalDecision, ApprovalView, ChatMessage } from "./types.js";
+import type {
+	Adapter,
+	AdapterApprovalConfig,
+	AllowConfig,
+	ApprovalDecision,
+	ApprovalView,
+	ChatMessage,
+} from "./types.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
@@ -9,6 +16,14 @@ export type TelegramConfig = {
 	token: string;
 	botUsername?: string;
 	pollMs?: number;
+	allow?: AllowConfig;
+	approvals?: AdapterApprovalConfig;
+	progress?: boolean;
+};
+
+export type TelegramBotIdentity = {
+	id?: number;
+	username?: string;
 };
 
 export type TelegramUpdate = {
@@ -57,7 +72,7 @@ type PendingApproval = {
 
 export type TelegramApprovalPayload = {
 	chat_id: string;
-	reply_to_message_id?: number;
+	message_thread_id?: number;
 	text: string;
 	reply_markup: {
 		inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
@@ -69,9 +84,11 @@ export type TelegramTypingPayload = {
 	action: "typing";
 };
 
-export function telegramMessage(message: TelegramMessage, botUsername?: string): ChatMessage {
+export function telegramMessage(message: TelegramMessage, bot?: string | TelegramBotIdentity): ChatMessage {
 	const text = message.text ?? "";
-	const username = botUsername?.replace(/^@/, "");
+	const botIdentity = telegramBotIdentity(bot);
+	const username = botIdentity.username?.replace(/^@/, "");
+	const isSelf = Boolean(botIdentity.id !== undefined && message.from?.id === botIdentity.id);
 	return {
 		id: String(message.message_id),
 		adapter: "telegram",
@@ -82,6 +99,7 @@ export function telegramMessage(message: TelegramMessage, botUsername?: string):
 			id: String(message.from?.id ?? "unknown"),
 			name: message.from?.username ?? message.from?.first_name,
 			isBot: message.from?.is_bot === true,
+			...(isSelf ? { isSelf: true } : {}),
 		},
 		text,
 		mentioned: username ? new RegExp(`@${escapeRegExp(username)}\\b`, "i").test(text) : false,
@@ -111,7 +129,7 @@ export function telegramTypingPayload(message: ChatMessage): TelegramTypingPaylo
 export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPayload {
 	return {
 		chat_id: view.conversation ?? "",
-		reply_to_message_id: view.thread ? Number(view.thread) : undefined,
+		message_thread_id: view.thread ? Number(view.thread) : undefined,
 		text: renderApprovalMessage(view),
 		reply_markup: {
 			inline_keyboard: [
@@ -127,6 +145,7 @@ export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPay
 export function telegram(config: TelegramConfig): Adapter {
 	let running = false;
 	let offset = 0;
+	let self: TelegramBotIdentity = { username: config.botUsername };
 	const pending = new Map<string, PendingApproval>();
 	const pollMs = config.pollMs ?? 1500;
 	const api = `https://api.telegram.org/bot${config.token}`;
@@ -153,8 +172,8 @@ export function telegram(config: TelegramConfig): Adapter {
 					continue;
 				}
 				if (!update.message) continue;
-				const message = telegramMessage(update.message, config.botUsername);
-				if (message.user.isBot) continue;
+				const message = telegramMessage(update.message, self);
+				if (message.user.isSelf) continue;
 				if (!message.dm && !message.mentioned) continue;
 				await receive(message);
 			}
@@ -184,6 +203,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		approval.resolve({
 			approved,
 			resolvedBy,
+			resolvedById: String(callback.from.id),
 			reason: approved ? undefined : "Rejected in Telegram.",
 		});
 	}
@@ -191,7 +211,11 @@ export function telegram(config: TelegramConfig): Adapter {
 	return {
 		kind: "telegram",
 		name: config.name,
-		start(context) {
+		allow: config.allow,
+		approvals: config.approvals,
+		progress: config.progress ?? false,
+		async start(context) {
+			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;
 			void poll(context.receive).catch((error) => {
 				context.logger.error("adapter.telegram.error", {
@@ -209,10 +233,17 @@ export function telegram(config: TelegramConfig): Adapter {
 		async send(message) {
 			const result = await call<{ message_id: number }>("sendMessage", {
 				chat_id: message.conversation,
-				reply_to_message_id: message.thread ? Number(message.thread) : undefined,
+				message_thread_id: message.thread ? Number(message.thread) : undefined,
 				text: message.text,
 			});
 			return { id: String(result.message_id) };
+		},
+		async update(message) {
+			await call("editMessageText", {
+				chat_id: message.conversation,
+				message_id: Number(message.id),
+				text: message.text,
+			});
 		},
 		async requestApproval(view) {
 			if (!view.conversation) return { approved: false, reason: "Telegram approval has no target conversation." };
@@ -226,4 +257,23 @@ export function telegram(config: TelegramConfig): Adapter {
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function telegramBotIdentity(bot: string | TelegramBotIdentity | undefined): TelegramBotIdentity {
+	if (typeof bot === "string") return { username: bot };
+	return bot ?? {};
+}
+
+async function loadTelegramBotIdentity(
+	call: <T>(method: string, body: Record<string, unknown>) => Promise<T>,
+	logger: { warn(event: string, fields?: Record<string, unknown>): void },
+	configUsername: string | undefined,
+): Promise<TelegramBotIdentity> {
+	try {
+		const result = await call<{ id: number; username?: string }>("getMe", {});
+		return { id: result.id, username: configUsername ?? result.username };
+	} catch (error) {
+		logger.warn("telegram.get_me_failed", { message: error instanceof Error ? error.message : String(error) });
+		return { username: configUsername };
+	}
 }

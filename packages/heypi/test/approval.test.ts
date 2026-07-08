@@ -111,7 +111,7 @@ describe("approval policies", () => {
 });
 
 describe("createApprovalExtension", () => {
-	it("uses default approval policy when no config is supplied", async () => {
+	it("does not require approval when no policy is supplied", async () => {
 		type ToolCall = { toolName: string; input: unknown };
 		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
 		let handler: ToolHandler | undefined;
@@ -127,10 +127,61 @@ describe("createApprovalExtension", () => {
 			},
 		} as never);
 
+		expect(await handler?.({ toolName: "bash", input: { command: "git push" } })).toBeUndefined();
+		expect(await handler?.({ toolName: "bash", input: { command: "git status" } })).toBeUndefined();
+	});
+
+	it("uses per-tool approval declarations", async () => {
+		type ToolCall = { toolName: string; input: unknown };
+		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
+		let handler: ToolHandler | undefined;
+		const extension = createApprovalExtension({
+			policies: {
+				bash: approval.command(),
+			},
+			async request() {
+				return { approved: true, resolvedById: "u1" };
+			},
+		});
+
+		extension({
+			on(event: string, next: ToolHandler) {
+				if (event === "tool_call") handler = next;
+			},
+		} as never);
+
+		expect(await handler?.({ toolName: "bash", input: { command: "git push" } })).toBeUndefined();
+		expect(await handler?.({ toolName: "edit", input: { path: "x" } })).toBeUndefined();
+	});
+
+	it("blocks approval from non-approvers", async () => {
+		type ToolCall = { toolName: string; input: unknown };
+		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
+		let handler: ToolHandler | undefined;
+		const extension = createApprovalExtension({
+			config: {
+				approvers: { users: ["admin"] },
+			},
+			policies: {
+				bash: () => ({
+					type: "approve",
+					reason: "Run bash.",
+				}),
+			},
+			async request() {
+				return { approved: true, resolvedById: "other" };
+			},
+		});
+
+		extension({
+			on(event: string, next: ToolHandler) {
+				if (event === "tool_call") handler = next;
+			},
+		} as never);
+
 		expect(await handler?.({ toolName: "bash", input: { command: "git push" } })).toEqual({
 			block: true,
-			reason: "Tool call rejected.",
+			reason: "Approval actor is not allowed to approve this tool call.",
 		});
-		expect(await handler?.({ toolName: "bash", input: { command: "git status" } })).toBeUndefined();
 	});
 });

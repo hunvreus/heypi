@@ -18,6 +18,42 @@ function freePort(): number {
 }
 
 describe("createHeypi", () => {
+	it("emits a human-readable ready hook after startup", async () => {
+		const root = await makeDir("app-ready-agent");
+		const state = await makeDir("app-ready-state");
+		const adapter = local("local-dev");
+		const ready: unknown[] = [];
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+				admin: { port: freePort() },
+			}),
+			logger: {
+				debug() {},
+				info() {},
+				warn() {},
+				error() {},
+				ready(info) {
+					ready.push(info);
+				},
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		expect(ready).toEqual([
+			{
+				agent: "agent",
+				adapters: ["local-dev"],
+				admin: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/admin$/),
+			},
+		]);
+	});
+
 	it("routes triggered adapter messages through Pi and replies in the source thread", async () => {
 		const root = await makeDir("app-agent");
 		const state = await makeDir("app-state");
@@ -26,11 +62,10 @@ describe("createHeypi", () => {
 		const piOptions: PiHostOptions[] = [];
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost(options) {
 				piOptions.push(options);
@@ -68,33 +103,63 @@ describe("createHeypi", () => {
 		await app.stop();
 
 		expect(prompts).toEqual(["- [uid:u1] Ronan: hello"]);
-		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Done." }]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 		expect(piOptions).toHaveLength(1);
-		expect(piOptions[0]?.tools).toHaveLength(2);
+		expect(piOptions[0]?.customTools).toHaveLength(1);
 		expect(piOptions[0]?.extensions).toHaveLength(2);
 		expect(piOptions[0]?.agentDir).toBe(join(state, "agents", "agent", "agent"));
 	});
 
-	it("can disable the todo extension", async () => {
-		const root = await makeDir("app-no-todo-agent");
-		const state = await makeDir("app-no-todo-state");
+	it("sends adapter-owned progress from Pi runtime events", async () => {
+		const root = await makeDir("app-progress-agent");
+		const state = await makeDir("app-progress-state");
 		const adapter = local();
-		const piOptions: PiHostOptions[] = [];
+		const updates: string[] = [];
+		const logs: Array<{ event: string; data?: Record<string, unknown> }> = [];
+		const update = adapter.update?.bind(adapter);
+		adapter.update = async (message) => {
+			updates.push(message.text);
+			await update?.(message);
+		};
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
-				todo: { enabled: false },
 			}),
-			piHost(options) {
-				piOptions.push(options);
+			logger: {
+				debug(event, data) {
+					logs.push({ event, data });
+				},
+				info(event, data) {
+					logs.push({ event, data });
+				},
+				warn(event, data) {
+					logs.push({ event, data });
+				},
+				error(event, data) {
+					logs.push({ event, data });
+				},
+			},
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
 				return {
 					async start() {},
-					async send() {},
-					subscribe() {
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "turn_start" } as unknown as PiEvent);
+							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
+							listener({ type: "compaction_start" } as unknown as PiEvent);
+							listener({ type: "auto_retry_start", attempt: 1, maxAttempts: 3 } as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
 						return () => {};
 					},
 					async stop() {},
@@ -110,29 +175,45 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(piOptions[0]?.extensions).toHaveLength(1);
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "Done.", attachments: undefined },
+		]);
+		expect(updates).toEqual(["Working...", "Done."]);
+		expect(logs).toContainEqual({
+			event: "pi.tool.start",
+			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
+		});
 	});
 
-	it("can disable the memory extension", async () => {
-		const root = await makeDir("app-no-memory-agent");
-		const state = await makeDir("app-no-memory-state");
+	it("falls back to a new final reply when progress replacement fails", async () => {
+		const root = await makeDir("app-progress-final-fallback-agent");
+		const state = await makeDir("app-progress-final-fallback-state");
 		const adapter = local();
-		const piOptions: PiHostOptions[] = [];
+		adapter.update = async () => {
+			throw new Error("cannot edit");
+		};
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
-				memory: { enabled: false },
 			}),
-			piHost(options) {
-				piOptions.push(options);
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
 				return {
 					async start() {},
-					async send() {},
-					subscribe() {
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "turn_start" } as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
 						return () => {};
 					},
 					async stop() {},
@@ -148,7 +229,152 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(piOptions[0]?.extensions).toHaveLength(1);
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "Thinking..." },
+			{ conversation: "local", thread: undefined, text: "Done." },
+		]);
+	});
+
+	it("does not repeat progress messages when an editable adapter returns no message id", async () => {
+		const root = await makeDir("app-progress-no-id-agent");
+		const state = await makeDir("app-progress-no-id-state");
+		const adapter = local();
+		adapter.send = async (message) => {
+			adapter.sent.push(message);
+			return {};
+		};
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "turn_start" } as unknown as PiEvent);
+							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "Thinking..." },
+			{ conversation: "local", thread: undefined, text: "Done." },
+		]);
+	});
+
+	it("replaces progress with an error when Pi fails", async () => {
+		const root = await makeDir("app-progress-error-agent");
+		const state = await makeDir("app-progress-error-state");
+		const adapter = local();
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) listener({ type: "turn_start" } as unknown as PiEvent);
+						throw new Error("model unavailable");
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([
+			{
+				conversation: "local",
+				thread: undefined,
+				text: "The agent failed: model unavailable",
+				attachments: undefined,
+			},
+		]);
+	});
+
+	it("can disable adapter-owned progress", async () => {
+		const root = await makeDir("app-no-progress-agent");
+		const state = await makeDir("app-no-progress-state");
+		const adapter = local({ progress: false });
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "turn_start" } as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 	});
 
 	it("does not start Pi for non-triggering adapter messages", async () => {
@@ -158,11 +384,10 @@ describe("createHeypi", () => {
 		let piStarts = 0;
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost() {
 				piStarts++;
@@ -192,10 +417,145 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([]);
 	});
 
+	it("does not acknowledge or start Pi for self-authored adapter messages", async () => {
+		const root = await makeDir("app-bot-message-agent");
+		const state = await makeDir("app-bot-message-state");
+		const adapter = local();
+		let acks = 0;
+		let piStarts = 0;
+		adapter.ack = () => {
+			acks++;
+		};
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				piStarts++;
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "bot", name: "Bot", isBot: true, isSelf: true },
+			text: "self reply",
+		});
+		await app.stop();
+
+		expect(acks).toBe(0);
+		expect(piStarts).toBe(0);
+		expect(adapter.sent).toEqual([]);
+	});
+
+	it("does not acknowledge or start Pi for bot-authored messages unless bots are allowed", async () => {
+		const root = await makeDir("app-other-bot-denied-agent");
+		const state = await makeDir("app-other-bot-denied-state");
+		const adapter = local();
+		let acks = 0;
+		let piStarts = 0;
+		adapter.ack = () => {
+			acks++;
+		};
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				piStarts++;
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "bot-1", name: "Other bot", isBot: true },
+			text: "bot request",
+		});
+		await app.stop();
+
+		expect(acks).toBe(0);
+		expect(piStarts).toBe(0);
+		expect(adapter.sent).toEqual([]);
+	});
+
+	it("can allow bot-authored messages without including older bot history", async () => {
+		const root = await makeDir("app-other-bot-allowed-agent");
+		const state = await makeDir("app-other-bot-allowed-state");
+		const adapter = local({ allow: { bots: ["bot-1"] } });
+		const prompts: string[] = [];
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send(text) {
+						prompts.push(text);
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "bot-2", name: "Denied bot", isBot: true },
+			text: "previous bot request",
+		});
+		await adapter.receive({
+			id: "m2",
+			user: { id: "bot-1", name: "Allowed bot", isBot: true },
+			text: "allowed bot request",
+		});
+		await app.stop();
+
+		expect(prompts).toEqual(["- [uid:bot-1] Allowed bot: allowed bot request"]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
+	});
+
 	it("does not acknowledge or start Pi for messages outside the allowlist", async () => {
 		const root = await makeDir("app-denied-agent");
 		const state = await makeDir("app-denied-state");
-		const adapter = local();
+		const adapter = local({ allow: { users: ["u2"] } });
 		let acks = 0;
 		let piStarts = 0;
 		const warnings: string[] = [];
@@ -204,12 +564,10 @@ describe("createHeypi", () => {
 		};
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				allow: { users: ["u2"] },
-				approvals: { enabled: false },
 			}),
 			logger: {
 				debug() {},
@@ -252,11 +610,10 @@ describe("createHeypi", () => {
 		const adapter = local();
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost() {
 				const host: PiHost = {
@@ -288,11 +645,10 @@ describe("createHeypi", () => {
 		const adapter = local();
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost() {
 				return {
@@ -316,7 +672,9 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "The agent failed: Pi unavailable" }]);
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "The agent failed: Pi unavailable" },
+		]);
 	});
 
 	it("continues processing when adapter ack fails", async () => {
@@ -329,11 +687,10 @@ describe("createHeypi", () => {
 		const warnings: string[] = [];
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			logger: {
 				debug() {},
@@ -373,7 +730,7 @@ describe("createHeypi", () => {
 		await app.stop();
 
 		expect(warnings).toEqual(["adapter.ack_failed"]);
-		expect(adapter.sent).toEqual([{ conversation: "local", thread: "m1", text: "Still done." }]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Still done." }]);
 	});
 
 	it("does not send replies after stop begins", async () => {
@@ -388,11 +745,10 @@ describe("createHeypi", () => {
 		let stops = 0;
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost() {
 				const listeners: Array<(event: PiEvent) => void> = [];
@@ -443,12 +799,11 @@ describe("createHeypi", () => {
 		const port = freePort();
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				admin: { enabled: true, port },
-				approvals: { enabled: false },
+				admin: { port },
 			}),
 			piHost() {
 				return {
@@ -479,11 +834,10 @@ describe("createHeypi", () => {
 		let piStarts = 0;
 
 		const app = await createHeypi({
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
-				adapters: [adapter],
 				state: { dir: state },
-				approvals: { enabled: false },
 			}),
 			piHost() {
 				piStarts++;
@@ -524,7 +878,7 @@ describe("createHeypi", () => {
 
 		expect(piStarts).toBe(1);
 		expect(adapter.sent).toHaveLength(2);
-		expect(adapter.sent).toContainEqual({ conversation: "local", thread: "m1", text: "Done." });
-		expect(adapter.sent).toContainEqual({ conversation: "local", thread: "m2", text: "Done." });
+		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
+		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
 	});
 });

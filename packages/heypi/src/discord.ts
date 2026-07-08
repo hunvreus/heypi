@@ -1,6 +1,13 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
-import type { Adapter, ApprovalDecision, ApprovalView, ChatMessage } from "./types.js";
+import type {
+	Adapter,
+	AdapterApprovalConfig,
+	AllowConfig,
+	ApprovalDecision,
+	ApprovalView,
+	ChatMessage,
+} from "./types.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
@@ -9,6 +16,9 @@ export type DiscordConfig = {
 	name?: string;
 	token: string;
 	clientId?: string;
+	allow?: AllowConfig;
+	approvals?: AdapterApprovalConfig;
+	progress?: boolean;
 };
 
 export type DiscordMessageInput = {
@@ -52,6 +62,7 @@ export type DiscordApprovalPayload = {
 };
 
 export function discordMessage(message: DiscordMessageInput, botUserId?: string): ChatMessage {
+	const isSelf = Boolean(botUserId && message.author.id === botUserId);
 	return {
 		id: message.id,
 		adapter: "discord",
@@ -61,6 +72,7 @@ export function discordMessage(message: DiscordMessageInput, botUserId?: string)
 			id: message.author.id,
 			name: message.author.username,
 			isBot: message.author.bot === true,
+			...(isSelf ? { isSelf: true } : {}),
 		},
 		text: message.content,
 		mentioned: botUserId ? (message.mentions?.has(botUserId) ?? false) : false,
@@ -127,12 +139,26 @@ function approvalColor(state?: ApprovalView["state"]): number {
 	return 0xecb22e;
 }
 
+function memberRoles(member: unknown): string[] {
+	if (!member || typeof member !== "object" || !("roles" in member)) return [];
+	const roles = (member as { roles?: unknown }).roles;
+	if (!roles || typeof roles !== "object" || !("cache" in roles)) return [];
+	const cache = (roles as { cache?: unknown }).cache;
+	if (!cache || typeof cache !== "object" || !("keys" in cache)) return [];
+	const keys = (cache as { keys?: unknown }).keys;
+	if (typeof keys !== "function") return [];
+	return [...(keys.call(cache) as Iterable<string>)];
+}
+
 export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
 	const pending = new Map<string, PendingApproval>();
 	return {
 		kind: "discord",
 		name: config.name,
+		allow: config.allow,
+		approvals: config.approvals,
+		progress: config.progress ?? false,
 		async start(context) {
 			client = new Client({
 				intents: [
@@ -144,7 +170,6 @@ export function discord(config: DiscordConfig): Adapter {
 				partials: [Partials.Channel],
 			});
 			client.on("messageCreate", async (message) => {
-				if (message.author.bot) return;
 				const botUserId = client?.user?.id ?? config.clientId;
 				const normalized = discordMessage(
 					{
@@ -163,6 +188,7 @@ export function discord(config: DiscordConfig): Adapter {
 					},
 					botUserId,
 				);
+				if (normalized.user.isSelf) return;
 				if (!normalized.dm && !normalized.mentioned) return;
 				await context.receive(normalized);
 			});
@@ -184,6 +210,8 @@ export function discord(config: DiscordConfig): Adapter {
 				approval.resolve({
 					approved,
 					resolvedBy,
+					resolvedById: interaction.user.id,
+					roles: memberRoles(interaction.member),
 					reason: approved ? undefined : "Rejected in Discord.",
 				});
 			});
@@ -209,6 +237,24 @@ export function discord(config: DiscordConfig): Adapter {
 			}
 			const result = await channel.send({ content: message.text });
 			return { id: result.id };
+		},
+		async update(message) {
+			if (!client) throw new Error("Discord adapter is not started");
+			const channel = await client.channels.fetch(message.conversation);
+			if (!channel || !("messages" in channel)) return;
+			const messages = channel.messages;
+			if (
+				!messages ||
+				typeof messages !== "object" ||
+				!("fetch" in messages) ||
+				typeof messages.fetch !== "function"
+			) {
+				return;
+			}
+			const target = await messages.fetch(message.id);
+			if (target && "edit" in target && typeof target.edit === "function") {
+				await target.edit({ content: message.text });
+			}
 		},
 		async requestApproval(view) {
 			if (!client) return { approved: false, reason: "Discord adapter is not started." };

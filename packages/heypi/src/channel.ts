@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ChatMessage, ContextConfig } from "./types.js";
+import type { ChatMessage } from "./types.js";
 
 export type ChannelRecord =
 	| ({ type: "inbound"; record: number } & ChatMessage)
@@ -11,7 +11,7 @@ export type ChannelRecord =
 
 export type Turn = {
 	id: string;
-	messageId: string;
+	replyThread?: string;
 	prompt: string;
 };
 
@@ -22,7 +22,6 @@ type QueuedTurn = {
 
 export type ChannelOptions = {
 	logPath: string;
-	context?: ContextConfig;
 };
 
 export type Channel = {
@@ -48,14 +47,6 @@ export function createChannel(options: ChannelOptions): Channel {
 	const queued: QueuedTurn[] = [];
 	let active: QueuedTurn | undefined;
 	let nextRecord = 1;
-	const context: Required<ContextConfig> = {
-		mode: options.context?.mode ?? "current",
-		maxMessages: options.context?.maxMessages ?? 20,
-		maxChars: options.context?.maxChars ?? 12_000,
-		includeBotMessages: options.context?.includeBotMessages ?? false,
-		includeAttachments: options.context?.includeAttachments ?? true,
-	};
-
 	async function append(record: ChannelRecord): Promise<void> {
 		records.push(record);
 		await appendFile(options.logPath, `${JSON.stringify(record)}\n`, "utf8");
@@ -73,14 +64,6 @@ export function createChannel(options: ChannelOptions): Channel {
 		});
 	}
 
-	function lastCompletedTrigger(): number {
-		for (let index = records.length - 1; index >= 0; index--) {
-			const record = records[index];
-			if (record?.type === "turn_completed") return record.trigger;
-		}
-		return 0;
-	}
-
 	function restoreQueue(): void {
 		queued.splice(0, queued.length);
 		const finished = new Set<string>();
@@ -95,13 +78,18 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function shouldTrigger(message: ChatMessage): boolean {
-		if (message.user.isBot) return false;
+		if (message.user.isSelf) return false;
+		if (!hasContent(message)) return false;
 		return message.dm || message.mentioned;
+	}
+
+	function hasContent(message: ChatMessage): boolean {
+		return message.text.trim().length > 0 || Boolean(message.attachments?.length);
 	}
 
 	function formatMessage(message: ChannelRecord & { type: "inbound" }): string {
 		const lines = [`- [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text || "(no text)"}`];
-		if (context.includeAttachments && message.attachments?.length) {
+		if (message.attachments?.length) {
 			lines.push("  attachments:");
 			for (const attachment of message.attachments)
 				lines.push(`  - ${attachment.path ?? attachment.url ?? attachment.name}`);
@@ -110,15 +98,13 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function buildPrompt(trigger: number): string {
-		const boundary = context.mode === "current" ? trigger - 1 : lastCompletedTrigger();
+		const boundary = trigger - 1;
 		const prompt = records
 			.filter(isInbound)
 			.filter((record) => record.record > boundary && record.record <= trigger)
-			.filter((record) => context.includeBotMessages || !record.user.isBot)
-			.slice(-context.maxMessages)
 			.map(formatMessage)
 			.join("\n");
-		return prompt.length > context.maxChars ? prompt.slice(-context.maxChars) : prompt;
+		return prompt;
 	}
 
 	return {
@@ -155,7 +141,7 @@ export function createChannel(options: ChannelOptions): Channel {
 			const message = activeMessage();
 			return {
 				id: turn.id,
-				messageId: message?.thread ?? message?.id ?? turn.id,
+				replyThread: message?.thread,
 				prompt: buildPrompt(turn.trigger),
 			};
 		},
@@ -174,7 +160,7 @@ export function createChannel(options: ChannelOptions): Channel {
 
 		activeMessageId() {
 			const message = activeMessage();
-			return message?.thread ?? message?.id;
+			return message?.thread;
 		},
 
 		activeUser() {
@@ -193,7 +179,7 @@ export function createChannel(options: ChannelOptions): Channel {
 				.filter(isInbound)
 				.filter((record) => {
 					if (record.record === activeTrigger) return false;
-					if (record.user.isBot && !context.includeBotMessages) return false;
+					if (record.user.isBot) return false;
 					if (search && !record.text.toLowerCase().includes(search)) return false;
 					const time = record.time ? Date.parse(record.time) : undefined;
 					if (after !== undefined && time !== undefined && time < after) return false;

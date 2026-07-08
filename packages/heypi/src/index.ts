@@ -12,7 +12,7 @@ export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory
 export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
 export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export { type AuditChannel, type AuditOptions, listAuditChannels, readAuditChannel } from "./audit.js";
-export { createChatHistoryTool, createChatReplyTool } from "./chat-tools.js";
+export { createChatHistoryTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
 export { consoleLogger } from "./log.js";
 export {
@@ -22,7 +22,14 @@ export {
 	type MemoryRecord,
 	type MemoryStore,
 } from "./memory.js";
+export { modelFromEnv } from "./model.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
+export {
+	type DockerRuntimeOptions,
+	docker,
+	type HostRuntimeOptions,
+	host,
+} from "./runtime.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
 export {
 	type TelegramConfig,
@@ -34,13 +41,12 @@ export {
 export { createTodoExtension, renderTodo, type TodoExtensionOptions, type TodoItem, type TodoStatus } from "./todo.js";
 export type {
 	Adapter,
+	AdapterApprovalConfig,
 	AdapterContext,
 	AdapterKind,
 	AdminConfig,
 	AgentConfig,
-	AgentFileConfig,
 	AllowConfig,
-	ApprovalConfig,
 	ApprovalContext,
 	ApprovalDecision,
 	ApprovalLayout,
@@ -50,15 +56,15 @@ export type {
 	ApprovalView,
 	ChatAttachment,
 	ChatMessage,
-	ContextConfig,
-	ContextMode,
 	LoadAgentOptions,
 	Logger,
-	MemoryConfig,
 	ModelConfig,
 	RuntimeConfig,
 	RuntimeKind,
 	SendMessage,
 	StateConfig,
-	TodoConfig,
+	ToolConfig,
+	ToolConfigMap,
+	ToolEntry,
+	UpdateMessage,
 } from "./types.js";

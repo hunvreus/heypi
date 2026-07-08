@@ -10,4 +10,5 @@ mise.toml
 *.log
 *.tgz
 coverage/
-examples/
+examples/*/.heypi/
+examples/*/workspace/

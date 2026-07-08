@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type {
+	AdapterApprovalConfig,
 	AdapterKind,
-	ApprovalConfig,
 	ApprovalContext,
 	ApprovalDecision,
 	ApprovalLayout,
@@ -10,6 +10,7 @@ import type {
 	ApprovalPolicyResult,
 	ApprovalState,
 	ApprovalView,
+	ApproverSet,
 } from "./types.js";
 
 export type CommandPolicyConfig = {
@@ -47,7 +48,7 @@ const APPROVAL_COMMANDS: RegExp[] = [
 	/\brm\s+-rf\b/i,
 ];
 
-export function approvalLayout(config?: ApprovalConfig): ApprovalLayout {
+export function approvalLayout(config?: AdapterApprovalConfig): ApprovalLayout {
 	return config?.layout === "card" ? "card" : "message";
 }
 
@@ -88,7 +89,8 @@ function toolInputDetail(input: unknown): { detailLabel?: string; detail?: strin
 }
 
 export type ApprovalExtensionOptions = {
-	config?: ApprovalConfig;
+	config?: AdapterApprovalConfig;
+	policies?: Record<string, ApprovalPolicy | false | undefined>;
 	context?: () => Partial<Omit<ApprovalContext, "toolName" | "input" | "approvedTools">>;
 	request(view: ApprovalView): Promise<ApprovalDecision>;
 };
@@ -117,18 +119,6 @@ function inputCommand(input: unknown): string | undefined {
 	return typeof command === "string" ? command : undefined;
 }
 
-function policyFromConfig(config?: ApprovalConfig): ApprovalPolicy {
-	if (config?.policy) return config.policy;
-	if (config?.tools?.length) {
-		const tools = new Set(config.tools);
-		return approval.when(
-			({ toolName }) => tools.has(toolName),
-			({ toolName }) => `Run ${toolName} tool.`,
-		);
-	}
-	return approval.default();
-}
-
 function approvalView(
 	id: string,
 	context: ApprovalContext,
@@ -147,6 +137,30 @@ function approvalView(
 		detail: result.detail ?? toolInputDetail(context.input).detail,
 		command: result.command ?? toolInputDetail(context.input).command,
 	};
+}
+
+function matchesAny(values: string[] | undefined, candidates: Iterable<string | undefined>): boolean {
+	if (!values?.length) return false;
+	const allowed = new Set(values);
+	for (const candidate of candidates) {
+		if (candidate && allowed.has(candidate)) return true;
+	}
+	return false;
+}
+
+function isApprover(decision: ApprovalDecision, approvers?: ApproverSet, admins?: ApproverSet): boolean {
+	if (!approvers && !admins) return true;
+	const users = [decision.resolvedById, decision.resolvedBy];
+	const roles = decision.roles ?? [];
+	const groups = decision.groups ?? [];
+	if (matchesAny(admins?.users, users)) return true;
+	if (matchesAny(admins?.roles, roles)) return true;
+	if (matchesAny(admins?.groups, groups)) return true;
+	if (!approvers) return false;
+	if (matchesAny(approvers.users, users)) return true;
+	if (matchesAny(approvers.roles, roles)) return true;
+	if (matchesAny(approvers.groups, groups)) return true;
+	return false;
 }
 
 type ApprovalPredicate = (context: ApprovalContext) => boolean | Promise<boolean>;
@@ -189,25 +203,14 @@ export const approval = {
 			return { type: "approve", reason: "Run bash command.", command };
 		};
 	},
-
-	default(): ApprovalPolicy {
-		const command = approval.command();
-		const edit = approval.when(
-			({ toolName }) => toolName === "edit" || toolName === "write",
-			({ toolName }) => `Run ${toolName} tool.`,
-		);
-		return async (context) => {
-			if (context.toolName === "bash") return command(context);
-			return edit(context);
-		};
-	},
 };
 
 export function createApprovalExtension(options: ApprovalExtensionOptions): ExtensionFactory {
-	const policy = policyFromConfig(options.config);
 	const approvedTools = new Set<string>();
 	return (pi) => {
 		pi.on("tool_call", async (toolCall) => {
+			const policy = options.policies?.[toolCall.toolName];
+			if (!policy) return;
 			const extra = options.context?.() ?? {};
 			const context: ApprovalContext = {
 				toolName: toolCall.toolName,
@@ -232,6 +235,9 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 			);
 			const decision = await options.request(view);
 			if (!decision.approved) return { block: true, reason: decision.reason ?? "Tool call rejected." };
+			if (!isApprover(decision, options.config?.approvers, options.config?.admins)) {
+				return { block: true, reason: "Approval actor is not allowed to approve this tool call." };
+			}
 			approvedTools.add(context.toolName);
 		});
 	};

@@ -36,6 +36,13 @@ describe("admin", () => {
 		const admin = createAdmin({ stateDir: state, port: freePort() });
 		await admin.start();
 		try {
+			await expect(fetch(admin.url()).then((response) => response.json())).resolves.toEqual({
+				ok: true,
+				endpoints: {
+					health: "/admin/health",
+					channels: "/admin/channels",
+				},
+			});
 			await expect(fetch(`${admin.url()}/health`).then((response) => response.json())).resolves.toEqual({
 				ok: true,
 			});

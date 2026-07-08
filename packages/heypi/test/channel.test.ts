@@ -28,9 +28,42 @@ describe("channel", () => {
 		await expect(channel.ingest(message("b", "help me"))).resolves.toBe(true);
 
 		const turn = channel.next();
-		expect(turn?.messageId).toBe("b");
+		expect(turn?.replyThread).toBeUndefined();
 		expect(turn?.prompt).toContain("[uid:u1] Ronan: help me");
 		expect(turn?.prompt).not.toContain("not for you");
+	});
+
+	it("does not queue empty direct messages without attachments", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-empty-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await expect(
+			channel.ingest({
+				...message("empty", "", false),
+				dm: true,
+				mentioned: false,
+			}),
+		).resolves.toBe(false);
+
+		expect(channel.next()).toBeUndefined();
+	});
+
+	it("queues attachment-only direct messages", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-attachment-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await expect(
+			channel.ingest({
+				...message("attachment", "", false),
+				dm: true,
+				mentioned: false,
+				attachments: [{ id: "F1", name: "file.txt" }],
+			}),
+		).resolves.toBe(true);
+
+		expect(channel.next()?.prompt).toContain("attachments:");
 	});
 
 	it("uses normalized chat thread ids as reply targets", async () => {
@@ -41,13 +74,13 @@ describe("channel", () => {
 		await channel.ingest({ ...message("reply", "threaded"), thread: "root" });
 
 		const turn = channel.next();
-		expect(turn?.messageId).toBe("root");
+		expect(turn?.replyThread).toBe("root");
 		expect(channel.activeMessageId()).toBe("root");
 	});
 
-	it("can build delta prompts since the last completed trigger", async () => {
+	it("builds prompts from only the current trigger", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-delta-${Date.now()}-${Math.random()}.jsonl`);
-		const channel = createChannel({ logPath, context: { mode: "delta" } });
+		const channel = createChannel({ logPath });
 		await channel.load();
 
 		await channel.ingest(message("a", "first trigger"));
@@ -57,9 +90,9 @@ describe("channel", () => {
 		await expect(channel.ingest(message("c", "second trigger"))).resolves.toBe(true);
 
 		const turn = channel.next();
-		expect(turn?.messageId).toBe("c");
+		expect(turn?.replyThread).toBeUndefined();
 		expect(turn?.prompt).not.toContain("first trigger");
-		expect(turn?.prompt).toContain("ambient follow-up");
+		expect(turn?.prompt).not.toContain("ambient follow-up");
 		expect(turn?.prompt).toContain("second trigger");
 	});
 
@@ -88,7 +121,25 @@ describe("channel", () => {
 		await second.load();
 
 		const turn = second.next();
-		expect(turn?.messageId).toBe("a");
+		expect(turn?.replyThread).toBeUndefined();
 		expect(turn?.prompt).toContain("hello");
+	});
+
+	it("keeps only one active turn while later triggers wait in the queue", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-single-flight-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await channel.ingest(message("a", "first"));
+		await channel.ingest(message("b", "second"));
+
+		const first = channel.next();
+		const blocked = channel.next();
+		await channel.complete("done");
+		const second = channel.next();
+
+		expect(first?.replyThread).toBeUndefined();
+		expect(blocked).toBeUndefined();
+		expect(second?.replyThread).toBeUndefined();
 	});
 });

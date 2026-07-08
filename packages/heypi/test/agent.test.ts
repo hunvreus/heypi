@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadAgent, stageAgent } from "../src/agent.js";
+import { docker, host } from "../src/runtime.js";
 
 async function makeDir(name: string): Promise<string> {
 	const root = join(tmpdir(), `heypi-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -11,126 +12,33 @@ async function makeDir(name: string): Promise<string> {
 }
 
 describe("loadAgent", () => {
-	it("loads file config and lets options override it", async () => {
+	it("loads authored files and code config", async () => {
 		const root = await makeDir("load");
 		await writeFile(join(root, "instructions.md"), "Use Pi.");
 		await writeFile(join(root, "system.md"), "System note.");
-		await writeFile(
-			join(root, "config.json"),
-			JSON.stringify({
-				id: "file-id",
-				allow: { users: ["file-user"], conversations: ["file-channel"] },
-				context: { mode: "delta", maxMessages: 5 },
-				approvals: { layout: "card" },
-				runtime: { kind: "local", workspaceDir: "/tmp/file-workspace" },
-				admin: { enabled: true, port: 4321 },
-				todo: { enabled: false },
-				memory: { enabled: false },
-			}),
-		);
 
 		const agent = await loadAgent(root, {
-			id: "option-id",
-			allow: { users: ["option-user"] },
-			context: { maxMessages: 2 },
-			approvals: { showId: true },
-			runtime: { workspaceDir: "/tmp/option-workspace" },
+			id: "agent-id",
+			runtime: host({ workspace: "/tmp/option-workspace", env: { NODE_ENV: "test" } }),
 			admin: { port: 4322 },
-			todo: { enabled: true },
-			memory: { enabled: true },
+			tools: { edit: false },
 		});
 
-		expect(agent.id).toBe("option-id");
-		expect(agent.allow).toEqual({ users: ["option-user"], conversations: ["file-channel"] });
+		expect(agent.id).toBe("agent-id");
 		expect(agent.instructions).toBe("Use Pi.");
 		expect(agent.system).toBe("System note.");
-		expect(agent.context).toEqual({ mode: "delta", maxMessages: 2 });
-		expect(agent.approvals).toEqual({ layout: "card", showId: true });
-		expect(agent.runtime).toEqual({ kind: "local", workspaceDir: "/tmp/option-workspace" });
-		expect(agent.admin).toEqual({ enabled: true, port: 4322 });
-		expect(agent.todo).toEqual({ enabled: true });
-		expect(agent.memory).toEqual({ enabled: true });
+		expect(agent.runtime).toEqual({ kind: "host", workspace: "/tmp/option-workspace", env: { NODE_ENV: "test" } });
+		expect(agent.admin).toEqual({ port: 4322 });
+		expect(agent.tools).toEqual({ edit: false });
 	});
 
-	it("reports malformed config files with their path", async () => {
-		const root = await makeDir("bad-config");
-		const config = join(root, "config.json");
-		await writeFile(config, "{");
-
-		await expect(loadAgent(root)).rejects.toThrow(`Failed to read ${config}`);
-	});
-
-	it("rejects invalid config enum values", async () => {
-		const root = await makeDir("bad-enum");
-		const config = join(root, "config.json");
-
-		await writeFile(config, JSON.stringify({ context: { mode: "thread" } }));
-		await expect(loadAgent(root)).rejects.toThrow("context.mode must be");
-
-		await writeFile(config, JSON.stringify({ approvals: { layout: "panel" } }));
-		await expect(loadAgent(root)).rejects.toThrow("approvals.layout must be");
-	});
-
-	it("rejects invalid config primitive shapes", async () => {
-		const root = await makeDir("bad-shapes");
-		const config = join(root, "config.json");
-
-		await writeFile(config, JSON.stringify({ id: 123 }));
-		await expect(loadAgent(root)).rejects.toThrow("id must be a string");
-
-		await writeFile(config, JSON.stringify({ allow: { users: [123] } }));
-		await expect(loadAgent(root)).rejects.toThrow("allow.users must be an array of strings");
-
-		await writeFile(config, JSON.stringify({ allow: { conversations: [false] } }));
-		await expect(loadAgent(root)).rejects.toThrow("allow.conversations must be an array of strings");
-
-		await writeFile(config, JSON.stringify({ context: { maxMessages: 0 } }));
-		await expect(loadAgent(root)).rejects.toThrow("context.maxMessages must be a positive integer");
-
-		await writeFile(config, JSON.stringify({ context: { maxChars: 1.5 } }));
-		await expect(loadAgent(root)).rejects.toThrow("context.maxChars must be a positive integer");
-
-		await writeFile(config, JSON.stringify({ context: { includeBotMessages: "yes" } }));
-		await expect(loadAgent(root)).rejects.toThrow("context.includeBotMessages must be a boolean");
-
-		await writeFile(config, JSON.stringify({ approvals: { enabled: "yes" } }));
-		await expect(loadAgent(root)).rejects.toThrow("approvals.enabled must be a boolean");
-
-		await writeFile(config, JSON.stringify({ approvals: { tools: ["bash", 1] } }));
-		await expect(loadAgent(root)).rejects.toThrow("approvals.tools must be an array of strings");
-
-		await writeFile(config, JSON.stringify({ runtime: { kind: "docker" } }));
-		await expect(loadAgent(root)).rejects.toThrow('runtime.kind must be "local"');
-
-		await writeFile(config, JSON.stringify({ runtime: { workspaceDir: 123 } }));
-		await expect(loadAgent(root)).rejects.toThrow("runtime.workspaceDir must be a string");
-
-		await writeFile(config, JSON.stringify({ state: { dir: 123 } }));
-		await expect(loadAgent(root)).rejects.toThrow("state.dir must be a string");
-
-		await writeFile(config, JSON.stringify({ admin: { enabled: "yes" } }));
-		await expect(loadAgent(root)).rejects.toThrow("admin.enabled must be a boolean");
-
-		await writeFile(config, JSON.stringify({ admin: { host: 123 } }));
-		await expect(loadAgent(root)).rejects.toThrow("admin.host must be a string");
-
-		await writeFile(config, JSON.stringify({ admin: { port: 0 } }));
-		await expect(loadAgent(root)).rejects.toThrow("admin.port must be a positive integer");
-
-		await writeFile(config, JSON.stringify({ admin: { path: 123 } }));
-		await expect(loadAgent(root)).rejects.toThrow("admin.path must be a string");
-
-		await writeFile(config, JSON.stringify({ todo: { enabled: "yes" } }));
-		await expect(loadAgent(root)).rejects.toThrow("todo.enabled must be a boolean");
-
-		await writeFile(config, JSON.stringify({ memory: { enabled: "yes" } }));
-		await expect(loadAgent(root)).rejects.toThrow("memory.enabled must be a boolean");
-
-		await writeFile(config, JSON.stringify({ tools: ["bash", false] }));
-		await expect(loadAgent(root)).rejects.toThrow("tools must be an array of strings");
-
-		await writeFile(config, JSON.stringify({ excludeTools: [false] }));
-		await expect(loadAgent(root)).rejects.toThrow("excludeTools must be an array of strings");
+	it("declares core runtime providers without exposing secret semantics", () => {
+		expect(docker({ workspace: "/workspace", image: "node:22", env: { CI: "1" } })).toEqual({
+			kind: "docker",
+			workspace: "/workspace",
+			image: "node:22",
+			env: { CI: "1" },
+		});
 	});
 });
 
@@ -167,12 +75,12 @@ describe("stageAgent", () => {
 		expect(second.extensionPaths).toEqual([join(second.agentDir, "tools", "tool.ts")]);
 	});
 
-	it("uses an explicit local runtime workspace when configured", async () => {
+	it("uses an explicit host runtime workspace when configured", async () => {
 		const root = await makeDir("stage-runtime");
 		const state = await makeDir("state-runtime");
 		const workspace = await makeDir("workspace-runtime");
 
-		const agent = await loadAgent(root, { id: "agent", runtime: { kind: "local", workspaceDir: workspace } });
+		const agent = await loadAgent(root, { id: "agent", runtime: host({ workspace: workspace }) });
 		const staged = await stageAgent(agent, state);
 
 		expect(staged.workspaceDir).toBe(workspace);

@@ -21,6 +21,22 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/codex-tag:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: workspace:*
+        version: link:../../packages/heypi
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.4
+      tsx:
+        specifier: ^4.21.0
+        version: 4.22.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/heypi:
     dependencies:
       '@earendil-works/pi-coding-agent':
@@ -32,6 +48,9 @@ importers:
       '@slack/bolt':
         specifier: ^4.7.2
         version: 4.7.3(@types/express@5.0.6)
+      '@slack/types':
+        specifier: ^2.21.1
+        version: 2.21.1
       discord.js:
         specifier: ^14.26.4
         version: 14.26.4
@@ -2823,7 +2842,6 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.1
       '@esbuild/win32-ia32': 0.28.1
       '@esbuild/win32-x64': 0.28.1
-    optional: true
 
   escape-html@1.0.3: {}
 
@@ -3434,7 +3452,6 @@ snapshots:
       esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
-    optional: true
 
   type-is@2.1.0:
     dependencies:

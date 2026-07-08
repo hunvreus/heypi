@@ -38,6 +38,20 @@ describe("telegramMessage", () => {
 		).toBe(true);
 	});
 
+	it("detects Telegram self messages by bot id", () => {
+		expect(
+			telegramMessage(
+				{
+					message_id: 1,
+					text: "hello",
+					chat: { id: 10, type: "private" },
+					from: { id: 99, username: "codex", is_bot: true },
+				},
+				{ id: 99, username: "codex" },
+			).user,
+		).toMatchObject({ id: "99", name: "codex", isBot: true, isSelf: true });
+	});
+
 	it("preserves Telegram forum topic ids", () => {
 		expect(
 			telegramMessage({
@@ -61,7 +75,7 @@ describe("telegramMessage", () => {
 			}),
 		).toEqual({
 			chat_id: "10",
-			reply_to_message_id: 99,
+			message_thread_id: 99,
 			text: ["*Approval required*", "- Reason: Run bash tool.", "- Command:\n```\ngit push\n```"].join("\n"),
 			reply_markup: {
 				inline_keyboard: [

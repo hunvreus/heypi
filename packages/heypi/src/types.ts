@@ -1,4 +1,4 @@
-import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import type { CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 export type ModelConfig = CreateAgentSessionOptions["model"];
 
@@ -7,6 +7,13 @@ export type Logger = {
 	info(event: string, data?: Record<string, unknown>): void;
 	warn(event: string, data?: Record<string, unknown>): void;
 	error(event: string, data?: Record<string, unknown>): void;
+	ready?(info: ReadyInfo): void;
+};
+
+export type ReadyInfo = {
+	agent: string;
+	adapters: string[];
+	admin?: string;
 };
 
 export type AdapterKind = "slack" | "discord" | "telegram" | "webhook" | "local";
@@ -29,6 +36,7 @@ export type ChatMessage = {
 		id: string;
 		name?: string;
 		isBot?: boolean;
+		isSelf?: boolean;
 	};
 	text: string;
 	mentioned: boolean;
@@ -44,6 +52,14 @@ export type SendMessage = {
 	attachments?: ChatAttachment[];
 };
 
+export type UpdateMessage = {
+	conversation: string;
+	thread?: string;
+	id: string;
+	text: string;
+	attachments?: ChatAttachment[];
+};
+
 export type AdapterContext = {
 	agentId: string;
 	logger: Logger;
@@ -53,21 +69,15 @@ export type AdapterContext = {
 export type Adapter = {
 	kind: AdapterKind | string;
 	name?: string;
+	allow?: AllowConfig;
+	approvals?: AdapterApprovalConfig;
+	progress?: boolean;
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
+	update?(message: UpdateMessage): Promise<void>;
 	ack?(message: ChatMessage): Promise<void> | void;
 	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
-};
-
-export type ContextMode = "current" | "delta";
-
-export type ContextConfig = {
-	mode?: ContextMode;
-	maxMessages?: number;
-	maxChars?: number;
-	includeBotMessages?: boolean;
-	includeAttachments?: boolean;
 };
 
 export type AllowConfig = {
@@ -75,17 +85,31 @@ export type AllowConfig = {
 	accounts?: string[];
 	conversations?: string[];
 	users?: string[];
+	bots?: true | string[];
 };
 
 export type ApprovalLayout = "message" | "card";
 
-export type ApprovalConfig = {
-	enabled?: boolean;
+export type ApproverSet = {
+	users?: string[];
+	groups?: string[];
+	roles?: string[];
+};
+
+export type AdapterApprovalConfig = {
 	layout?: ApprovalLayout;
-	tools?: string[];
-	policy?: ApprovalPolicy;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	showId?: boolean;
 };
+
+export type ToolConfig = {
+	approve?: ApprovalPolicy | false;
+};
+
+export type ToolEntry = false | ToolDefinition | ToolConfig;
+
+export type ToolConfigMap = Record<string, ToolEntry | undefined>;
 
 export type ApprovalContext = {
 	toolName: string;
@@ -109,6 +133,7 @@ export type ApprovalPolicyResult =
 			detailLabel?: string;
 			detail?: string;
 			command?: string;
+			approvers?: ApproverSet;
 	  }
 	| {
 			type: "block";
@@ -136,7 +161,10 @@ export type ApprovalView = {
 
 export type ApprovalDecision = {
 	approved: boolean;
+	resolvedById?: string;
 	resolvedBy?: string;
+	roles?: string[];
+	groups?: string[];
 	reason?: string;
 };
 
@@ -144,46 +172,35 @@ export type StateConfig = {
 	dir?: string;
 };
 
-export type RuntimeKind = "local";
+export type RuntimeKind = "host" | "docker";
 
 export type RuntimeConfig = {
 	kind?: RuntimeKind;
-	workspaceDir?: string;
+	workspace?: string;
+	/**
+	 * Environment variables visible to code executed by the runtime.
+	 *
+	 * Values here are not secret-safe: a model-driven command can print them.
+	 * Keep credentials in trusted tools/connections or runtime-specific brokers
+	 * unless explicit runtime exposure is acceptable.
+	 */
+	env?: Record<string, string>;
 };
 
 export type AdminConfig = {
-	enabled?: boolean;
 	host?: string;
 	port?: number;
 	path?: string;
 };
 
-export type TodoConfig = {
-	enabled?: boolean;
-};
-
-export type MemoryConfig = {
-	enabled?: boolean;
-};
-
-export type AgentFileConfig = {
+export type LoadAgentOptions = {
 	id?: string;
-	allow?: AllowConfig;
-	context?: ContextConfig;
-	approvals?: ApprovalConfig;
-	runtime?: RuntimeConfig;
-	admin?: AdminConfig;
-	todo?: TodoConfig;
-	memory?: MemoryConfig;
-	state?: StateConfig;
-	tools?: string[];
-	excludeTools?: string[];
-	noTools?: CreateAgentSessionOptions["noTools"];
-};
-
-export type LoadAgentOptions = AgentFileConfig & {
 	model?: ModelConfig;
-	adapters?: Adapter[];
+	runtime?: RuntimeConfig;
+	admin?: false | AdminConfig;
+	state?: StateConfig;
+	tools?: ToolConfigMap;
+	noTools?: CreateAgentSessionOptions["noTools"];
 };
 
 export type AgentConfig = LoadAgentOptions & {

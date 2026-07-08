@@ -1,113 +1,11 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import type { AgentConfig, AgentFileConfig, LoadAgentOptions } from "./types.js";
+import type { AgentConfig, LoadAgentOptions } from "./types.js";
 
 async function readOptional(path: string): Promise<string | undefined> {
 	if (!existsSync(path)) return undefined;
 	return readFile(path, "utf8");
-}
-
-async function readJsonConfig(path: string): Promise<AgentFileConfig> {
-	const text = await readOptional(path);
-	if (!text) return {};
-	try {
-		return validateConfig(JSON.parse(text), path);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read ${path}: ${message}`);
-	}
-}
-
-function validateConfig(value: unknown, path: string): AgentFileConfig {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error("expected an object");
-	}
-	const config = value as AgentFileConfig;
-	if (config.id !== undefined && typeof config.id !== "string") {
-		throw new Error(`id must be a string in ${path}`);
-	}
-	if (config.allow?.adapters !== undefined && !isStringArray(config.allow.adapters)) {
-		throw new Error(`allow.adapters must be an array of strings in ${path}`);
-	}
-	if (config.allow?.accounts !== undefined && !isStringArray(config.allow.accounts)) {
-		throw new Error(`allow.accounts must be an array of strings in ${path}`);
-	}
-	if (config.allow?.conversations !== undefined && !isStringArray(config.allow.conversations)) {
-		throw new Error(`allow.conversations must be an array of strings in ${path}`);
-	}
-	if (config.allow?.users !== undefined && !isStringArray(config.allow.users)) {
-		throw new Error(`allow.users must be an array of strings in ${path}`);
-	}
-	if (config.context?.mode && config.context.mode !== "current" && config.context.mode !== "delta") {
-		throw new Error(`context.mode must be "current" or "delta" in ${path}`);
-	}
-	if (config.context?.maxMessages !== undefined && !isPositiveInteger(config.context.maxMessages)) {
-		throw new Error(`context.maxMessages must be a positive integer in ${path}`);
-	}
-	if (config.context?.maxChars !== undefined && !isPositiveInteger(config.context.maxChars)) {
-		throw new Error(`context.maxChars must be a positive integer in ${path}`);
-	}
-	if (config.context?.includeBotMessages !== undefined && typeof config.context.includeBotMessages !== "boolean") {
-		throw new Error(`context.includeBotMessages must be a boolean in ${path}`);
-	}
-	if (config.context?.includeAttachments !== undefined && typeof config.context.includeAttachments !== "boolean") {
-		throw new Error(`context.includeAttachments must be a boolean in ${path}`);
-	}
-	if (config.approvals?.enabled !== undefined && typeof config.approvals.enabled !== "boolean") {
-		throw new Error(`approvals.enabled must be a boolean in ${path}`);
-	}
-	if (config.approvals?.layout && config.approvals.layout !== "message" && config.approvals.layout !== "card") {
-		throw new Error(`approvals.layout must be "message" or "card" in ${path}`);
-	}
-	if (config.approvals?.tools !== undefined && !isStringArray(config.approvals.tools)) {
-		throw new Error(`approvals.tools must be an array of strings in ${path}`);
-	}
-	if (config.approvals?.showId !== undefined && typeof config.approvals.showId !== "boolean") {
-		throw new Error(`approvals.showId must be a boolean in ${path}`);
-	}
-	if (config.runtime?.kind && config.runtime.kind !== "local") {
-		throw new Error(`runtime.kind must be "local" in ${path}`);
-	}
-	if (config.runtime?.workspaceDir !== undefined && typeof config.runtime.workspaceDir !== "string") {
-		throw new Error(`runtime.workspaceDir must be a string in ${path}`);
-	}
-	if (config.state?.dir !== undefined && typeof config.state.dir !== "string") {
-		throw new Error(`state.dir must be a string in ${path}`);
-	}
-	if (config.admin?.enabled !== undefined && typeof config.admin.enabled !== "boolean") {
-		throw new Error(`admin.enabled must be a boolean in ${path}`);
-	}
-	if (config.admin?.host !== undefined && typeof config.admin.host !== "string") {
-		throw new Error(`admin.host must be a string in ${path}`);
-	}
-	if (config.admin?.port !== undefined && !isPositiveInteger(config.admin.port)) {
-		throw new Error(`admin.port must be a positive integer in ${path}`);
-	}
-	if (config.admin?.path !== undefined && typeof config.admin.path !== "string") {
-		throw new Error(`admin.path must be a string in ${path}`);
-	}
-	if (config.todo?.enabled !== undefined && typeof config.todo.enabled !== "boolean") {
-		throw new Error(`todo.enabled must be a boolean in ${path}`);
-	}
-	if (config.memory?.enabled !== undefined && typeof config.memory.enabled !== "boolean") {
-		throw new Error(`memory.enabled must be a boolean in ${path}`);
-	}
-	if (config.tools !== undefined && !isStringArray(config.tools)) {
-		throw new Error(`tools must be an array of strings in ${path}`);
-	}
-	if (config.excludeTools !== undefined && !isStringArray(config.excludeTools)) {
-		throw new Error(`excludeTools must be an array of strings in ${path}`);
-	}
-	return config;
-}
-
-function isPositiveInteger(value: unknown): value is number {
-	return typeof value === "number" && Number.isInteger(value) && value > 0;
-}
-
-function isStringArray(value: unknown): value is string[] {
-	return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 async function listFiles(root: string): Promise<string[]> {
@@ -119,28 +17,11 @@ async function listFiles(root: string): Promise<string[]> {
 		.sort((a, b) => a.localeCompare(b));
 }
 
-function mergeAgentConfig(fileConfig: AgentFileConfig, options: LoadAgentOptions): LoadAgentOptions {
-	return {
-		...fileConfig,
-		...options,
-		allow: { ...fileConfig.allow, ...options.allow },
-		context: { ...fileConfig.context, ...options.context },
-		approvals: { ...fileConfig.approvals, ...options.approvals },
-		runtime: { ...fileConfig.runtime, ...options.runtime },
-		admin: { ...fileConfig.admin, ...options.admin },
-		todo: { ...fileConfig.todo, ...options.todo },
-		memory: { ...fileConfig.memory, ...options.memory },
-		state: { ...fileConfig.state, ...options.state },
-	};
-}
-
 export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Promise<AgentConfig> {
 	const root = resolve(dir);
-	const fileConfig = await readJsonConfig(join(root, "config.json"));
-	const merged = mergeAgentConfig(fileConfig, options);
 	return {
-		...merged,
-		id: merged.id ?? (basename(root) || "agent"),
+		...options,
+		id: options.id ?? (basename(root) || "agent"),
 		root,
 		instructions: await readOptional(join(root, "instructions.md")),
 		system: await readOptional(join(root, "system.md")),
@@ -157,7 +38,7 @@ export type StagedAgent = {
 export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<StagedAgent> {
 	const root = join(stateDir, "agents", agent.id);
 	const agentDir = join(root, "agent");
-	const workspaceDir = agent.runtime?.workspaceDir ? resolve(agent.runtime.workspaceDir) : join(root, "workspace");
+	const workspaceDir = agent.runtime?.workspace ? resolve(agent.runtime.workspace) : join(root, "workspace");
 	await mkdir(root, { recursive: true });
 	await rm(agentDir, { recursive: true, force: true });
 	await mkdir(workspaceDir, { recursive: true });

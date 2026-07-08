@@ -4,13 +4,14 @@ import {
 	type AgentSessionEventListener,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
+	createAgentSession,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	type ExtensionFactory,
 	SessionManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { createRuntimeTools } from "./runtime-tools.js";
 import type { AgentConfig } from "./types.js";
 
 export type PiHostOptions = {
@@ -20,7 +21,9 @@ export type PiHostOptions = {
 	sessionDir: string;
 	extensionPaths?: string[];
 	extensions?: ExtensionFactory[];
-	tools?: ToolDefinition[];
+	tools?: string[];
+	excludeTools?: string[];
+	customTools?: ToolDefinition[];
 };
 
 export type PiHost = {
@@ -38,10 +41,16 @@ export function sessionDir(stateDir: string, key: string): string {
 
 export function createPiHost(options: PiHostOptions): PiHost {
 	let runtime: AgentSessionRuntime | undefined;
+	let cleanupRuntimeTools: (() => Promise<void>) | undefined;
 
 	return {
 		async start() {
 			const manager = SessionManager.create(options.workspaceDir, options.sessionDir);
+			const runtimeTools =
+				options.agent.noTools === "all"
+					? { tools: [], async cleanup() {} }
+					: await createRuntimeTools(options.agent.runtime, options.workspaceDir);
+			cleanupRuntimeTools = runtimeTools.cleanup;
 			const prompt = [
 				"Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
 				"Use staged agent skills, tools, and extensions when they apply.",
@@ -63,15 +72,20 @@ export function createPiHost(options: PiHostOptions): PiHost {
 						appendSystemPrompt: prompt ? [prompt] : undefined,
 					},
 				});
-				const result = await createAgentSessionFromServices({
-					services,
+				const result = await createAgentSession({
+					cwd: services.cwd,
+					agentDir: services.agentDir,
+					authStorage: services.authStorage,
+					settingsManager: services.settingsManager,
+					modelRegistry: services.modelRegistry,
+					resourceLoader: services.resourceLoader,
 					sessionManager,
 					sessionStartEvent,
 					model: options.agent.model,
-					tools: options.agent.tools,
-					excludeTools: options.agent.excludeTools,
-					noTools: options.agent.noTools,
-					customTools: options.tools,
+					tools: options.tools,
+					excludeTools: options.excludeTools,
+					noTools: options.agent.noTools ?? "builtin",
+					customTools: [...runtimeTools.tools, ...(options.customTools ?? [])],
 				});
 				return { ...result, services, diagnostics: services.diagnostics };
 			};
@@ -94,8 +108,13 @@ export function createPiHost(options: PiHostOptions): PiHost {
 		},
 
 		async stop() {
-			await runtime?.dispose();
-			runtime = undefined;
+			try {
+				await runtime?.dispose();
+			} finally {
+				await cleanupRuntimeTools?.();
+				runtime = undefined;
+				cleanupRuntimeTools = undefined;
+			}
 		},
 	};
 }

@@ -1,5 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Adapter, AdapterContext, ChatMessage, SendMessage } from "./types.js";
+import type { Adapter, AdapterApprovalConfig, AdapterContext, AllowConfig, ChatMessage, SendMessage } from "./types.js";
 
 export type LocalMessage = Omit<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned"> &
 	Partial<Pick<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned">>;
@@ -25,12 +26,23 @@ function localMessage(input: LocalMessage): ChatMessage {
 	};
 }
 
-export function local(name = "local"): LocalAdapter {
+export type LocalConfig = {
+	name?: string;
+	allow?: AllowConfig;
+	approvals?: AdapterApprovalConfig;
+	progress?: boolean;
+};
+
+export function local(config: string | LocalConfig = "local"): LocalAdapter {
 	let context: AdapterContext | undefined;
 	const sent: SendMessage[] = [];
+	const resolved = typeof config === "string" ? { name: config } : config;
 	return {
 		kind: "local",
-		name,
+		name: resolved.name,
+		allow: resolved.allow,
+		approvals: resolved.approvals,
+		progress: resolved.progress ?? true,
 		sent,
 		start(nextContext) {
 			context = nextContext;
@@ -38,6 +50,16 @@ export function local(name = "local"): LocalAdapter {
 		async send(message) {
 			sent.push(message);
 			return { id: `local-${sent.length}` };
+		},
+		async update(message) {
+			const index = Number(message.id.replace(/^local-/, "")) - 1;
+			if (index < 0 || index >= sent.length) return;
+			sent[index] = {
+				conversation: message.conversation,
+				thread: message.thread,
+				text: message.text,
+				attachments: message.attachments,
+			};
 		},
 		async receive(message) {
 			if (!context) throw new Error("Local adapter is not started");
@@ -51,6 +73,11 @@ export type WebhookConfig = {
 	port: number;
 	path?: string;
 	name?: string;
+	secret?: string;
+	signatureToleranceMs?: number;
+	allow?: AllowConfig;
+	approvals?: AdapterApprovalConfig;
+	progress?: boolean;
 };
 
 export type WebhookAdapter = Adapter & {
@@ -58,11 +85,16 @@ export type WebhookAdapter = Adapter & {
 	url(): string;
 };
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+type RequestBody = {
+	raw: string;
+	json: unknown;
+};
+
+async function readBody(request: IncomingMessage): Promise<RequestBody> {
 	const chunks: Uint8Array[] = [];
 	for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
 	const text = Buffer.concat(chunks).toString("utf8");
-	return text ? JSON.parse(text) : {};
+	return { raw: text, json: text ? JSON.parse(text) : {} };
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
@@ -73,6 +105,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 function webhookMessage(input: unknown): ChatMessage {
 	const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 	const user = record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>) : {};
+	const isSelf = user.isSelf === true;
 	return {
 		id: typeof record.id === "string" ? record.id : `webhook-${Date.now()}`,
 		adapter: "webhook",
@@ -83,6 +116,7 @@ function webhookMessage(input: unknown): ChatMessage {
 			id: typeof user.id === "string" ? user.id : "webhook",
 			name: typeof user.name === "string" ? user.name : undefined,
 			isBot: user.isBot === true,
+			...(isSelf ? { isSelf: true } : {}),
 		},
 		text: typeof record.text === "string" ? record.text : "",
 		mentioned: record.mentioned !== false,
@@ -92,28 +126,62 @@ function webhookMessage(input: unknown): ChatMessage {
 	};
 }
 
+function secureCompare(left: string, right: string): boolean {
+	const leftBuffer = Buffer.from(left);
+	const rightBuffer = Buffer.from(right);
+	return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function sign(secret: string, timestamp: string, rawBody: string): string {
+	return createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+}
+
+function verifyWebhook(request: IncomingMessage, rawBody: string, secret: string, toleranceMs: number): void {
+	const timestamp = request.headers["x-heypi-timestamp"];
+	const signature = request.headers["x-heypi-signature"];
+	if (typeof timestamp !== "string" || typeof signature !== "string") throw new Error("Missing webhook signature");
+	const seconds = Number(timestamp);
+	if (!Number.isFinite(seconds)) throw new Error("Invalid webhook timestamp");
+	const ageMs = Math.abs(Date.now() - seconds * 1000);
+	if (ageMs > toleranceMs) throw new Error("Expired webhook signature");
+	const expected = `sha256=${sign(secret, timestamp, rawBody)}`;
+	if (!secureCompare(signature, expected)) throw new Error("Invalid webhook signature");
+}
+
+function isLoopback(host: string): boolean {
+	return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
 export function webhook(config: WebhookConfig): WebhookAdapter {
 	let context: AdapterContext | undefined;
 	let server: Server | undefined;
 	const host = config.host ?? "127.0.0.1";
 	const path = config.path ?? "/webhook";
+	const secret = config.secret?.trim();
+	const toleranceMs = config.signatureToleranceMs ?? 5 * 60 * 1000;
 	const sent: SendMessage[] = [];
 	return {
 		kind: "webhook",
 		name: config.name,
+		allow: config.allow,
+		approvals: config.approvals,
+		progress: config.progress ?? false,
 		sent,
 		url: () => `http://${host}:${config.port}${path}`,
 		async start(nextContext) {
+			if (!isLoopback(host) && !secret) throw new Error("Webhook secret is required for non-loopback hosts");
 			context = nextContext;
 			server = createServer(async (request, response) => {
 				if (request.method !== "POST" || request.url !== path) return json(response, 404, { error: "not_found" });
 				try {
-					const message = webhookMessage(await readJson(request));
+					const body = await readBody(request);
+					if (secret) verifyWebhook(request, body.raw, secret, toleranceMs);
+					const message = webhookMessage(body.json);
 					await context?.receive(message);
 					json(response, 202, { ok: true });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					json(response, 400, { error: message });
+					json(response, message.includes("signature") ? 401 : 400, { error: message });
 				}
 			});
 			await new Promise<void>((resolve, reject) => {
