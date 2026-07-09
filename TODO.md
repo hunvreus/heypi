@@ -44,10 +44,6 @@
 	- just-bash: prefer trusted-side tools; do not promise network-level secret brokering.
 - Keep raw runtime secret exposure as an explicit opt-in only after the provider API can label it honestly.
 
-## Chat jobs and adapter events
-
-- Wire `ChatJob` into the admin UI once the JSON admin surface grows beyond diagnostics.
-
 ## Connections and credentials
 
 - Add trusted-side connection/tool helpers for common external systems before exposing runtime secrets.

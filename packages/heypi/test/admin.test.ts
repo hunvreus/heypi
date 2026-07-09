@@ -89,4 +89,50 @@ describe("admin", () => {
 			await admin.stop();
 		}
 	});
+
+	it("serves an HTML dashboard to browsers", async () => {
+		const state = await makeDir("admin-html");
+		await mkdir(join(state, "channels"), { recursive: true });
+		await writeFile(
+			join(state, "channels", "local:local:room.jsonl"),
+			`${JSON.stringify({
+				type: "inbound",
+				record: 1,
+				id: "m1",
+				adapter: "local",
+				account: "local",
+				conversation: "room",
+				user: { id: "u1", name: "Ronan" },
+				text: "hello",
+				mentioned: true,
+				dm: true,
+			})}\n`,
+		);
+		const admin = createAdmin({
+			stateDir: state,
+			port: freePort(),
+			jobs: () => [
+				{
+					id: "j1",
+					state: "running",
+					adapter: "local",
+					account: "local",
+					conversation: "room",
+					actor: { id: "u1", name: "Ronan" },
+				},
+			],
+		});
+		await admin.start();
+		try {
+			const response = await fetch(admin.url(), { headers: { accept: "text/html" } });
+			const html = await response.text();
+			expect(response.headers.get("content-type")).toContain("text/html");
+			expect(html).toContain("<h1>heypi admin</h1>");
+			expect(html).toContain("Cancel active");
+			expect(html).toContain("Ronan");
+			expect(html).toContain("local:local:room");
+		} finally {
+			await admin.stop();
+		}
+	});
 });

@@ -20,6 +20,11 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 	response.end(JSON.stringify(body));
 }
 
+function sendHtml(response: ServerResponse, status: number, body: string): void {
+	response.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+	response.end(body);
+}
+
 function joinUrl(base: string, suffix: string): string {
 	const left = base.endsWith("/") ? base.slice(0, -1) : base;
 	const right = suffix.startsWith("/") ? suffix : `/${suffix}`;
@@ -47,6 +52,88 @@ function cancelScope(value: unknown): "active" | "queued" | "all" {
 	return "all";
 }
 
+function wantsHtml(request: IncomingMessage): boolean {
+	const accept = request.headers.accept;
+	return typeof accept === "string" && accept.includes("text/html");
+}
+
+function escapeHtml(value: string): string {
+	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function adminHtml(path: string, jobs: ChatJob[], channels: string[]): string {
+	const jobRows =
+		jobs
+			.map(
+				(job) => `<tr>
+					<td>${escapeHtml(job.state)}</td>
+					<td>${escapeHtml(job.adapter)}</td>
+					<td>${escapeHtml(job.conversation)}</td>
+					<td>${escapeHtml(job.thread ?? "")}</td>
+					<td>${escapeHtml(job.actor.name ?? job.actor.id)}</td>
+				</tr>`,
+			)
+			.join("") || `<tr><td colspan="5">No active jobs</td></tr>`;
+	const channelRows =
+		channels
+			.map((channel) => {
+				const href = joinUrl(path, `/channels/${encodeURIComponent(channel)}`);
+				return `<li><a href="${href}">${escapeHtml(channel)}</a></li>`;
+			})
+			.join("") || "<li>No channels</li>";
+	return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>heypi admin</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:32px;line-height:1.4;color:#111;background:#fafafa}
+main{max-width:960px}
+table{border-collapse:collapse;width:100%;background:white}
+th,td{border:1px solid #ddd;padding:8px;text-align:left}
+th{background:#f0f0f0}
+button{margin-right:8px;padding:6px 10px}
+code{background:#eee;padding:2px 4px}
+</style>
+</head>
+<body>
+<main>
+<h1>heypi admin</h1>
+<section>
+<h2>Jobs</h2>
+<p>
+<button data-scope="active">Cancel active</button>
+<button data-scope="queued">Cancel queued</button>
+<button data-scope="all">Cancel all</button>
+</p>
+<table>
+<thead><tr><th>State</th><th>Adapter</th><th>Conversation</th><th>Thread</th><th>Actor</th></tr></thead>
+<tbody>${jobRows}</tbody>
+</table>
+</section>
+<section>
+<h2>Channels</h2>
+<ul>${channelRows}</ul>
+</section>
+<p><a href="${joinUrl(path, "/jobs")}">Jobs JSON</a> · <a href="${joinUrl(path, "/channels")}">Channels JSON</a></p>
+</main>
+<script>
+for (const button of document.querySelectorAll("button[data-scope]")) {
+	button.addEventListener("click", async () => {
+		await fetch(${JSON.stringify(joinUrl(path, "/jobs/cancel"))}, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ scope: button.dataset.scope, reason: "admin canceled" }),
+		});
+		location.reload();
+	});
+}
+</script>
+</body>
+</html>`;
+}
+
 export function createAdmin(
 	config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[]; cancel?: CancelJobs },
 ): AdminServer {
@@ -69,6 +156,18 @@ export function createAdmin(
 				}
 				if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
 				if (url.pathname === path) {
+					if (wantsHtml(request)) {
+						const channels = await listAuditChannels({ stateDir: config.stateDir });
+						return sendHtml(
+							response,
+							200,
+							adminHtml(
+								path,
+								config.jobs?.() ?? [],
+								channels.map(({ key }) => key),
+							),
+						);
+					}
 					return sendJson(response, 200, {
 						ok: true,
 						endpoints: {

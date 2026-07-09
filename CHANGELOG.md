@@ -71,3 +71,4 @@
 - Added adapter event hooks for turn/tool/todo/final/error progress, live job inspection, queued and
   active job cancellation, `/admin/jobs`, and adapter-scoped admins/approvers with approval timeouts.
 - Added long-running native typing refresh for Discord and Telegram while a Pi turn is active.
+- Added a minimal local admin dashboard with live jobs, cancellation controls, and audit channel links.
