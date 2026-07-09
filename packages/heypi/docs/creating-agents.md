@@ -71,3 +71,21 @@ is the security boundary for filesystem, command, and network effects.
 
 Adapter config controls approval rendering and who can approve. Tool config controls whether a tool
 call needs approval.
+
+```ts
+const adapter = slack({
+  token,
+  appToken,
+  admins: { users: envList("SLACK_ADMINS") },
+  approvers: { users: envList("SLACK_APPROVERS") },
+  approvals: { layout: "message", timeoutMs: 60_000 },
+});
+
+const agent = loadAgent("./agent", {
+  tools: {
+    bash: {
+      approve: approval.command(),
+    },
+  },
+});
+```

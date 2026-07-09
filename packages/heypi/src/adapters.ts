@@ -1,6 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Adapter, AdapterApprovalConfig, AdapterContext, AllowConfig, ChatMessage, SendMessage } from "./types.js";
+import type { AdapterEvents } from "./events.js";
+import type {
+	Adapter,
+	AdapterApprovalConfig,
+	AdapterContext,
+	AllowConfig,
+	ApproverSet,
+	ChatMessage,
+	SendMessage,
+} from "./types.js";
 
 export type LocalMessage = Omit<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned"> &
 	Partial<Pick<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned">>;
@@ -29,8 +38,11 @@ function localMessage(input: LocalMessage): ChatMessage {
 export type LocalConfig = {
 	name?: string;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 };
 
 export function local(config: string | LocalConfig = "local"): LocalAdapter {
@@ -41,8 +53,11 @@ export function local(config: string | LocalConfig = "local"): LocalAdapter {
 		kind: "local",
 		name: resolved.name,
 		allow: resolved.allow,
+		admins: resolved.admins,
+		approvers: resolved.approvers,
 		approvals: resolved.approvals,
 		progress: resolved.progress ?? true,
+		events: resolved.events,
 		sent,
 		start(nextContext) {
 			context = nextContext;
@@ -76,8 +91,11 @@ export type WebhookConfig = {
 	secret?: string;
 	signatureToleranceMs?: number;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 };
 
 export type WebhookAdapter = Adapter & {
@@ -164,8 +182,11 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 		kind: "webhook",
 		name: config.name,
 		allow: config.allow,
+		admins: config.admins,
+		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
+		events: config.events,
 		sent,
 		url: () => `http://${host}:${config.port}${path}`,
 		async start(nextContext) {

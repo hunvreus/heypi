@@ -1,11 +1,13 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import type { AdapterEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
 	AllowConfig,
 	ApprovalDecision,
 	ApprovalView,
+	ApproverSet,
 	ChatMessage,
 } from "./types.js";
 
@@ -17,8 +19,11 @@ export type DiscordConfig = {
 	token: string;
 	clientId?: string;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 };
 
 export type DiscordMessageInput = {
@@ -39,6 +44,8 @@ export type DiscordMessageInput = {
 
 type PendingApproval = {
 	view: ApprovalView;
+	message?: { edit(payload: unknown): Promise<unknown> };
+	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
 };
 
@@ -157,8 +164,11 @@ export function discord(config: DiscordConfig): Adapter {
 		kind: "discord",
 		name: config.name,
 		allow: config.allow,
+		admins: config.admins,
+		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
+		events: config.events,
 		async start(context) {
 			client = new Client({
 				intents: [
@@ -198,6 +208,7 @@ export function discord(config: DiscordConfig): Adapter {
 				const approval = id ? pending.get(id) : undefined;
 				if (!approval || (action !== APPROVE && action !== REJECT)) return;
 				pending.delete(id);
+				if (approval.timer) clearTimeout(approval.timer);
 				const resolvedBy = `<@${interaction.user.id}>`;
 				const approved = action === APPROVE;
 				await interaction.update(
@@ -263,9 +274,22 @@ export function discord(config: DiscordConfig): Adapter {
 			if (!channel || !("send" in channel) || typeof channel.send !== "function") {
 				return { approved: false, reason: `Discord channel cannot receive approvals: ${view.conversation}` };
 			}
-			await channel.send(discordApprovalPayload(view));
+			const sent = (await channel.send(discordApprovalPayload(view))) as {
+				edit(payload: unknown): Promise<unknown>;
+			};
 			return new Promise<ApprovalDecision>((resolve) => {
-				pending.set(view.id, { view, resolve });
+				const pendingApproval: PendingApproval = { view, message: sent, resolve };
+				const timeoutMs = config.approvals?.timeoutMs;
+				if (timeoutMs && timeoutMs > 0) {
+					pendingApproval.timer = setTimeout(() => {
+						if (!pending.delete(view.id)) return;
+						void sent
+							.edit(discordApprovalPayload({ ...view, state: "rejected", resolvedBy: "timeout" }))
+							.catch(() => undefined);
+						resolve({ approved: false, reason: "Approval expired." });
+					}, timeoutMs);
+				}
+				pending.set(view.id, pendingApproval);
 			});
 		},
 	};

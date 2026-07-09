@@ -1,6 +1,7 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { listAuditChannels, readAuditChannel } from "./audit.js";
+import type { ChatJob } from "./events.js";
 import type { AdminConfig } from "./types.js";
 
 export type AdminServer = {
@@ -27,7 +28,7 @@ function channelKey(pathname: string, base: string): string | undefined {
 	return /^[a-zA-Z0-9_.:-]+$/.test(key) ? key : undefined;
 }
 
-export function createAdmin(config: AdminConfig & { stateDir: string }): AdminServer {
+export function createAdmin(config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[] }): AdminServer {
 	const host = config.host ?? "127.0.0.1";
 	const port = config.port ?? 4321;
 	const path = config.path ?? "/admin";
@@ -43,11 +44,14 @@ export function createAdmin(config: AdminConfig & { stateDir: string }): AdminSe
 						ok: true,
 						endpoints: {
 							health: joinUrl(path, "/health"),
+							jobs: joinUrl(path, "/jobs"),
 							channels: joinUrl(path, "/channels"),
 						},
 					});
 				}
 				if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
+				if (url.pathname === joinUrl(path, "/jobs"))
+					return sendJson(response, 200, { jobs: config.jobs?.() ?? [] });
 				if (url.pathname === joinUrl(path, "/channels")) {
 					const channels = await listAuditChannels({ stateDir: config.stateDir });
 					return sendJson(response, 200, { channels: channels.map(({ key }) => key) });

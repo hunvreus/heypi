@@ -48,7 +48,10 @@
 - Removed heypi-owned `context.maxMessages` and `context.maxChars`; `delta` history now sends the raw
   message delta and leaves compaction to Pi.
 - Removed the model-callable `chat_reply` progress tool.
-- Changed adapter-owned progress to use one editable status message with coarse/detailed resolution.
+- Changed adapter-owned progress to use one editable coarse status message driven by adapter events.
+- Reworked the built-in `todo` extension to own task state, action updates, active timestamps, and
+  turn lifecycle cleanup instead of replacing a model-supplied list verbatim; agents can disable it
+  with `todo: false`.
 - Captured the Pi-native todo and memory extension direction with references to the reviewed Pi
   extension examples.
 - Hardened adapter normalization so Slack system/edit events and empty messages cannot trigger Pi
@@ -65,3 +68,5 @@
 - Documented runtime `env` as model-visible configuration rather than secret isolation.
 - Documented the Codex Tag GitHub PR demo path for host runtime with `gh`/`GITHUB_TOKEN`, including
   the secret-leakage caveat.
+- Added adapter event hooks for turn/tool/todo/final/error progress, live job inspection, queued and
+  active job cancellation, `/admin/jobs`, and adapter-scoped admins/approvers with approval timeouts.

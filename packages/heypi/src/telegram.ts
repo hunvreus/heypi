@@ -1,10 +1,12 @@
 import { renderApprovalMessage } from "./approval.js";
+import type { AdapterEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
 	AllowConfig,
 	ApprovalDecision,
 	ApprovalView,
+	ApproverSet,
 	ChatMessage,
 } from "./types.js";
 
@@ -17,8 +19,11 @@ export type TelegramConfig = {
 	botUsername?: string;
 	pollMs?: number;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 };
 
 export type TelegramBotIdentity = {
@@ -67,6 +72,9 @@ export type TelegramCallbackQuery = {
 
 type PendingApproval = {
 	view: ApprovalView;
+	conversation?: string;
+	message?: number;
+	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
 };
 
@@ -186,6 +194,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		const approval = id ? pending.get(id) : undefined;
 		if (!approval || (action !== APPROVE && action !== REJECT)) return;
 		pending.delete(id);
+		if (approval.timer) clearTimeout(approval.timer);
 		const approved = action === APPROVE;
 		const resolvedBy = callback.from.username ? `@${callback.from.username}` : String(callback.from.id);
 		await call("answerCallbackQuery", { callback_query_id: callback.id });
@@ -212,8 +221,11 @@ export function telegram(config: TelegramConfig): Adapter {
 		kind: "telegram",
 		name: config.name,
 		allow: config.allow,
+		admins: config.admins,
+		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
+		events: config.events,
 		async start(context) {
 			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;
@@ -247,9 +259,27 @@ export function telegram(config: TelegramConfig): Adapter {
 		},
 		async requestApproval(view) {
 			if (!view.conversation) return { approved: false, reason: "Telegram approval has no target conversation." };
-			await call<{ message_id: number }>("sendMessage", telegramApprovalPayload(view));
+			const sent = await call<{ message_id: number }>("sendMessage", telegramApprovalPayload(view));
 			return new Promise<ApprovalDecision>((resolve) => {
-				pending.set(view.id, { view, resolve });
+				const pendingApproval: PendingApproval = {
+					view,
+					conversation: view.conversation,
+					message: sent.message_id,
+					resolve,
+				};
+				const timeoutMs = config.approvals?.timeoutMs;
+				if (timeoutMs && timeoutMs > 0) {
+					pendingApproval.timer = setTimeout(() => {
+						if (!pending.delete(view.id)) return;
+						void call("editMessageText", {
+							chat_id: view.conversation,
+							message_id: sent.message_id,
+							text: renderApprovalMessage({ ...view, state: "rejected", resolvedBy: "timeout" }),
+						}).catch(() => undefined);
+						resolve({ approved: false, reason: "Approval expired." });
+					}, timeoutMs);
+				}
+				pending.set(view.id, pendingApproval);
 			});
 		},
 	};

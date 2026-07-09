@@ -142,4 +142,23 @@ describe("channel", () => {
 		expect(blocked).toBeUndefined();
 		expect(second?.replyThread).toBeUndefined();
 	});
+
+	it("records active turn cancellation", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-cancel-active-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await channel.ingest(message("a", "first"));
+		channel.next();
+
+		await expect(channel.cancelActive("user canceled")).resolves.toBe(true);
+		expect(channel.jobs()).toEqual([]);
+
+		const records = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { type: string; reason?: string });
+		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_canceled"]);
+		expect(records.at(-1)?.reason).toBe("user canceled");
+	});
 });

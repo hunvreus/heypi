@@ -90,6 +90,8 @@ function toolInputDetail(input: unknown): { detailLabel?: string; detail?: strin
 
 export type ApprovalExtensionOptions = {
 	config?: AdapterApprovalConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	policies?: Record<string, ApprovalPolicy | false | undefined>;
 	context?: () => Partial<Omit<ApprovalContext, "toolName" | "input" | "approvedTools">>;
 	request(view: ApprovalView): Promise<ApprovalDecision>;
@@ -235,7 +237,7 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 			);
 			const decision = await options.request(view);
 			if (!decision.approved) return { block: true, reason: decision.reason ?? "Tool call rejected." };
-			if (!isApprover(decision, options.config?.approvers, options.config?.admins)) {
+			if (!isApprover(decision, options.approvers, options.admins)) {
 				return { block: true, reason: "Approval actor is not allowed to approve this tool call." };
 			}
 			approvedTools.add(context.toolName);

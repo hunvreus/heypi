@@ -138,9 +138,9 @@ const adapter = slack({
 
 ## Todo
 
-heypi registers a `todo_update` Pi tool by default. Pi can use it for substantial multi-step work,
-and heypi renders the current task list into the active chat thread. This is currently a built-in
-heypi-provided Pi extension; the TODO tracks moving it to a cleaner standalone extension package.
+heypi registers a built-in `todo` Pi extension by default. Pi can use it for substantial multi-step
+work, while heypi owns task state, status transitions, active timestamps, final cleanup, and adapter
+rendering in the active chat thread. Set `todo: false` in `loadAgent()` to disable it.
 
 ## Memory
 
@@ -165,6 +165,7 @@ Enable the read-only admin HTTP surface with `admin: {}` on `loadAgent()`. It ex
 endpoints under `/admin` by default:
 
 - `GET /admin/health`
+- `GET /admin/jobs`
 - `GET /admin/channels`
 - `GET /admin/channels/:key`
 
@@ -196,7 +197,9 @@ Slack uses Socket Mode:
 const adapter = slack({
 	token: process.env.SLACK_BOT_TOKEN!,
 	appToken: process.env.SLACK_APP_TOKEN!,
-	approvals: { layout: "message" },
+	admins: { users: ["U_ADMIN"] },
+	approvers: { users: ["U_DEPLOYER"] },
+	approvals: { layout: "message", timeoutMs: 60_000 },
 });
 ```
 
@@ -230,6 +233,8 @@ then the Pi tool call either continues, is rejected by a person, or is blocked b
 Approvals are opt-in per tool.
 `layout: "message"` renders a compact text list with buttons. `layout: "card"` uses Slack
 attachments and Discord embeds; Telegram keeps text plus inline buttons.
+Adapter-level `admins` and `approvers` decide who can approve. Admins are always accepted as
+approvers. If both are omitted, any actor who can reach the approval UI can approve.
 
 Policies are programmable:
 
@@ -280,10 +285,10 @@ Included:
 - programmable approval policies with command classification
 - `chat_history` Pi tool for explicit older-context lookup
 - adapter-owned progress updates from Pi events, configurable with `progress`
-- `todo_update` Pi extension for visible task progress
+- `todo` Pi extension for visible task progress
 - `memory_store` and `memory_search` Pi tools for durable explicit memory
 - audit helpers for heypi-owned adapter coordination logs
-- read-only admin HTTP audit endpoints
+- read-only admin HTTP audit and live job endpoints
 
 ## Progress
 
@@ -299,12 +304,28 @@ slack({
 });
 ```
 
-Set adapter `progress: false` to disable adapter-owned progress. This is useful when a todo/planning
-extension owns visible status. Slack defaults to editable text progress; Discord and Telegram use
-native typing acknowledgement by default and do not post text progress unless configured later.
+Set adapter `progress: false` to disable adapter-owned progress. Slack defaults to editable text
+progress; Discord and Telegram use native typing acknowledgement by default and do not post text
+progress unless configured later.
 
 The current built-in text progress is intentionally coarse: `Thinking...` before tool work and
 `Working...` once Pi starts using tools.
+
+Adapters can override individual event handlers:
+
+```ts
+slack({
+	token,
+	appToken,
+	events: {
+		"tool.started": false,
+		"turn.started": (_event, { status }) => status?.replace("Checking..."),
+	},
+});
+```
+
+Stable events are `message.accepted`, `turn.started`, `tool.started`, `todo.changed`,
+`message.completed`, and `turn.failed`. Pi-derived events are normalized before adapters see them.
 
 Not included yet:
 

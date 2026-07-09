@@ -2,14 +2,10 @@
 
 ## Todo and memory extensions
 
-- Rebuild todo as a richer Pi extension before expanding `todo_update`.
-  - Keep task state inside the extension, replayable from Pi/session events where possible.
-  - Let heypi render chat-facing updates from extension events/results; do not make heypi own todo state.
-  - Preserve the chat todo rendering expectations:
-    - stable status characters for pending, active, done, failed, and canceled items;
-    - `Last updated HH:MM (relative)` while work is active;
-    - remove the last-updated row on completion;
-    - render unresolved items neutrally instead of marking untouched work as failed.
+- Continue hardening the built-in todo Pi extension.
+  - Current implementation owns task state, valid actions, stable status characters, active timestamps,
+    and turn lifecycle settlement.
+  - Future work: make state replayable from Pi/session events if Pi exposes a cleaner event source.
   - References:
     - `/Users/hunvreus/Workspace/_sandbox/rpiv-mono/packages/rpiv-todo`
     - `/Users/hunvreus/Workspace/_sandbox/pi-tasks`
@@ -47,6 +43,14 @@
 	- Docker: investigate egress proxy support for HTTP APIs and a Git credential-helper adapter for Git over HTTPS.
 	- just-bash: prefer trusted-side tools; do not promise network-level secret brokering.
 - Keep raw runtime secret exposure as an explicit opt-in only after the provider API can label it honestly.
+
+## Chat jobs and adapter events
+
+- Wire `ChatJob` into the admin UI once the JSON admin surface grows beyond diagnostics.
+- Add adapter/admin controls that call the active and queued cancellation primitives.
+- Add long-running typing loops for adapters with native typing indicators.
+  - Slack uses editable status messages today.
+  - Discord and Telegram can refresh native typing while a job is running.
 
 ## Connections and credentials
 

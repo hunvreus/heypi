@@ -159,9 +159,7 @@ describe("createApprovalExtension", () => {
 		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
 		let handler: ToolHandler | undefined;
 		const extension = createApprovalExtension({
-			config: {
-				approvers: { users: ["admin"] },
-			},
+			approvers: { users: ["admin"] },
 			policies: {
 				bash: () => ({
 					type: "approve",

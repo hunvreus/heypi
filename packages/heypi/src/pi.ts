@@ -29,6 +29,7 @@ export type PiHostOptions = {
 export type PiHost = {
 	start(): Promise<void>;
 	send(text: string): Promise<void>;
+	abort?(): Promise<void>;
 	subscribe(listener: AgentSessionEventListener): () => void;
 	stop(): Promise<void>;
 };
@@ -100,6 +101,11 @@ export function createPiHost(options: PiHostOptions): PiHost {
 		async send(text) {
 			if (!runtime) throw new Error("Pi session is not started");
 			await runtime.session.sendUserMessage(text);
+		},
+
+		async abort() {
+			if (!runtime) return;
+			await runtime.session.abort();
 		},
 
 		subscribe(listener) {

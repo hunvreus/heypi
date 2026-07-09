@@ -336,7 +336,7 @@ describe("createHeypi", () => {
 	it("can disable adapter-owned progress", async () => {
 		const root = await makeDir("app-no-progress-agent");
 		const state = await makeDir("app-no-progress-state");
-		const adapter = local({ progress: false });
+		const adapter = local();
 
 		const app = await createHeypi({
 			adapters: [adapter],
@@ -375,6 +375,330 @@ describe("createHeypi", () => {
 		await app.stop();
 
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
+	});
+
+	it("lets adapters override default event progress handlers", async () => {
+		const root = await makeDir("app-event-override-agent");
+		const state = await makeDir("app-event-override-state");
+		const adapter = local({
+			events: {
+				"turn.started": (_event, context) => {
+					context.status.replace("Starting custom handler...");
+				},
+				"tool.started": false,
+			},
+		});
+		const updates: string[] = [];
+		const update = adapter.update?.bind(adapter);
+		adapter.update = async (message) => {
+			updates.push(message.text);
+			await update?.(message);
+		};
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(updates).toEqual(["Done."]);
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "Done.", attachments: undefined },
+		]);
+	});
+
+	it("emits accepted-message adapter events before dispatch", async () => {
+		const root = await makeDir("app-event-accepted-agent");
+		const state = await makeDir("app-event-accepted-state");
+		const accepted: string[] = [];
+		const adapter = local({
+			events: {
+				"message.accepted": (event) => {
+					accepted.push(event.message.text);
+				},
+			},
+			progress: false,
+		});
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(accepted).toEqual(["hello"]);
+	});
+
+	it("exposes running and queued jobs and can cancel queued jobs", async () => {
+		const root = await makeDir("app-jobs-agent");
+		const state = await makeDir("app-jobs-state");
+		const adapter = local();
+		let releaseSend: (() => void) | undefined;
+		let resolveSendStarted: (() => void) | undefined;
+		const sendStarted = new Promise<void>((resolve) => {
+			resolveSendStarted = resolve;
+		});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						resolveSendStarted?.();
+						await new Promise<void>((release) => {
+							releaseSend = release;
+						});
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		const first = adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "first",
+		});
+		await sendStarted;
+		await adapter.receive({
+			id: "m2",
+			user: { id: "u1", name: "Ronan" },
+			text: "second",
+		});
+
+		expect(app.jobs().map((job) => job.state)).toEqual(["running", "queued"]);
+		await expect(app.cancelQueued("user canceled")).resolves.toBe(1);
+		expect(app.jobs().map((job) => job.state)).toEqual(["running"]);
+
+		releaseSend?.();
+		await first;
+		await app.stop();
+	});
+
+	it("can abort the active Pi turn", async () => {
+		const root = await makeDir("app-cancel-active-agent");
+		const state = await makeDir("app-cancel-active-state");
+		const adapter = local();
+		let rejectSend: ((error: Error) => void) | undefined;
+		let resolveSendStarted: (() => void) | undefined;
+		let aborts = 0;
+		const sendStarted = new Promise<void>((resolve) => {
+			resolveSendStarted = resolve;
+		});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				return {
+					async start() {},
+					async send() {
+						resolveSendStarted?.();
+						await new Promise<void>((_resolve, reject) => {
+							rejectSend = reject;
+						});
+					},
+					async abort() {
+						aborts += 1;
+						rejectSend?.(new Error("aborted"));
+					},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		const turn = adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "first",
+		});
+		await sendStarted;
+
+		await expect(app.cancelActive("user canceled")).resolves.toBe(1);
+		await turn;
+
+		expect(aborts).toBe(1);
+		expect(app.jobs()).toEqual([]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Canceled: user canceled" }]);
+		await app.stop();
+	});
+
+	it("settles todo updates when the turn completes", async () => {
+		const root = await makeDir("app-todo-agent");
+		const state = await makeDir("app-todo-state");
+		const adapter = local();
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost(options) {
+				type Tool = {
+					name: string;
+					execute(toolCallId: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
+				};
+				let todo: Tool | undefined;
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {
+						for (const extension of options.extensions ?? []) {
+							extension({
+								registerTool(tool: Tool) {
+									if (tool.name === "todo") todo = tool;
+								},
+							} as never);
+						}
+					},
+					async send() {
+						await todo?.execute("call", { action: "plan", items: ["Inspect repo", "Patch bug"], start: 1 });
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Done." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: ["✓ Inspect repo", "○ Patch bug"].join("\n") },
+			{ conversation: "local", thread: undefined, text: "Done." },
+		]);
+	});
+
+	it("can disable the built-in todo tool", async () => {
+		const root = await makeDir("app-todo-disabled-agent");
+		const state = await makeDir("app-todo-disabled-state");
+		const adapter = local();
+		const piOptions: PiHostOptions[] = [];
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+				todo: false,
+			}),
+			piHost(options) {
+				piOptions.push(options);
+				return {
+					async start() {},
+					async send() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(piOptions[0]?.extensions).toHaveLength(1);
 	});
 
 	it("does not start Pi for non-triggering adapter messages", async () => {
@@ -636,7 +960,9 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(adapter.sent).toEqual([]);
+		expect(adapter.sent).toEqual([
+			{ conversation: "local", thread: undefined, text: "Done.", attachments: undefined },
+		]);
 	});
 
 	it("reports Pi startup failures to the source thread", async () => {
@@ -789,7 +1115,7 @@ describe("createHeypi", () => {
 		await receive;
 
 		expect(stops).toBe(1);
-		expect(adapter.sent).toEqual([]);
+		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Thinking..." }]);
 	});
 
 	it("starts and stops the optional admin server", async () => {

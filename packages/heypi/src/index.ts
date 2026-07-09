@@ -14,6 +14,15 @@ export { approval, classifyCommand, createApprovalExtension, renderApprovalMessa
 export { type AuditChannel, type AuditOptions, listAuditChannels, readAuditChannel } from "./audit.js";
 export { createChatHistoryTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
+export type {
+	AdapterEvent,
+	AdapterEventContext,
+	AdapterEventHandler,
+	AdapterEvents,
+	AdapterEventType,
+	ChatJob,
+	ChatJobState,
+} from "./events.js";
 export { consoleLogger } from "./log.js";
 export {
 	createFileMemoryStore,
@@ -31,6 +40,7 @@ export {
 	host,
 } from "./runtime.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
+export type { StatusSlot } from "./status.js";
 export {
 	type TelegramConfig,
 	telegram,
@@ -38,7 +48,15 @@ export {
 	telegramMessage,
 	telegramTypingPayload,
 } from "./telegram.js";
-export { createTodoExtension, renderTodo, type TodoExtensionOptions, type TodoItem, type TodoStatus } from "./todo.js";
+export {
+	createTodoController,
+	createTodoExtension,
+	renderTodo,
+	type TodoController,
+	type TodoExtensionOptions,
+	type TodoItem,
+	type TodoStatus,
+} from "./todo.js";
 export type {
 	Adapter,
 	AdapterApprovalConfig,

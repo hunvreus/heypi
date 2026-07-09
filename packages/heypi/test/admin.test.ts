@@ -40,6 +40,7 @@ describe("admin", () => {
 				ok: true,
 				endpoints: {
 					health: "/admin/health",
+					jobs: "/admin/jobs",
 					channels: "/admin/channels",
 				},
 			});
@@ -48,6 +49,9 @@ describe("admin", () => {
 			});
 			await expect(fetch(`${admin.url()}/channels`).then((response) => response.json())).resolves.toEqual({
 				channels: ["local:local:local"],
+			});
+			await expect(fetch(`${admin.url()}/jobs`).then((response) => response.json())).resolves.toEqual({
+				jobs: [],
 			});
 			await expect(
 				fetch(`${admin.url()}/channels/local%3Alocal%3Alocal`).then((response) => response.json()),

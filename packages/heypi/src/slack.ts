@@ -1,6 +1,7 @@
 import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import type { AdapterEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -8,6 +9,7 @@ import type {
 	AllowConfig,
 	ApprovalDecision,
 	ApprovalView,
+	ApproverSet,
 	ChatMessage,
 } from "./types.js";
 
@@ -20,8 +22,11 @@ export type SlackConfig = {
 	appToken: string;
 	reaction?: string | false;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 };
 
 type SlackEvent = {
@@ -42,6 +47,7 @@ type PendingApproval = {
 	channel: string;
 	message: string;
 	view: ApprovalView;
+	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
 };
 
@@ -98,8 +104,11 @@ export function slack(config: SlackConfig): Adapter {
 		kind: "slack",
 		name: config.name,
 		allow: config.allow,
+		admins: config.admins,
+		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? true,
+		events: config.events,
 		async start(nextContext) {
 			context = nextContext;
 			app = new App({ appToken: config.appToken, socketMode: true, token: config.token });
@@ -124,6 +133,7 @@ export function slack(config: SlackConfig): Adapter {
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
 				pending.delete(id);
+				if (approval.timer) clearTimeout(approval.timer);
 				const resolvedBy = bodyUser(body);
 				await app?.client.chat.update({
 					channel: approval.channel,
@@ -138,6 +148,7 @@ export function slack(config: SlackConfig): Adapter {
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
 				pending.delete(id);
+				if (approval.timer) clearTimeout(approval.timer);
 				const resolvedBy = bodyUser(body);
 				await app?.client.chat.update({
 					channel: approval.channel,
@@ -192,7 +203,27 @@ export function slack(config: SlackConfig): Adapter {
 				...slackApprovalPayload(view),
 			});
 			return new Promise<ApprovalDecision>((resolve) => {
-				pending.set(view.id, { channel: view.conversation ?? "", message: result.ts ?? "", view, resolve });
+				const pendingApproval: PendingApproval = {
+					channel: view.conversation ?? "",
+					message: result.ts ?? "",
+					view,
+					resolve,
+				};
+				const timeoutMs = config.approvals?.timeoutMs;
+				if (timeoutMs && timeoutMs > 0) {
+					pendingApproval.timer = setTimeout(() => {
+						if (!pending.delete(view.id)) return;
+						void app?.client.chat
+							.update({
+								channel: pendingApproval.channel,
+								ts: pendingApproval.message,
+								...slackApprovalPayload({ ...view, state: "rejected", resolvedBy: "timeout" }),
+							})
+							.catch(() => undefined);
+						resolve({ approved: false, reason: "Approval expired." });
+					}, timeoutMs);
+				}
+				pending.set(view.id, pendingApproval);
 			});
 		},
 	};

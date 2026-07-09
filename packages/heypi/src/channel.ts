@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { ChatJob } from "./events.js";
 import type { ChatMessage } from "./types.js";
 
 export type ChannelRecord =
 	| ({ type: "inbound"; record: number } & ChatMessage)
 	| { type: "turn_queued"; record: number; id: string; trigger: number }
 	| { type: "turn_completed"; record: number; id: string; trigger: number; reply?: string }
-	| { type: "turn_failed"; record: number; id: string; trigger: number; error: string };
+	| { type: "turn_failed"; record: number; id: string; trigger: number; error: string }
+	| { type: "turn_canceled"; record: number; id: string; trigger: number; reason?: string };
 
 export type Turn = {
 	id: string;
@@ -28,6 +30,9 @@ export type Channel = {
 	load(): Promise<void>;
 	ingest(message: ChatMessage): Promise<boolean>;
 	next(): Turn | undefined;
+	jobs(): ChatJob[];
+	cancelQueued(reason?: string): Promise<number>;
+	cancelActive(reason?: string): Promise<boolean>;
 	complete(reply?: string): Promise<void>;
 	fail(error: string): Promise<void>;
 	activeMessageId(): string | undefined;
@@ -68,7 +73,9 @@ export function createChannel(options: ChannelOptions): Channel {
 		queued.splice(0, queued.length);
 		const finished = new Set<string>();
 		for (const record of records) {
-			if (record.type === "turn_completed" || record.type === "turn_failed") finished.add(record.id);
+			if (record.type === "turn_completed" || record.type === "turn_failed" || record.type === "turn_canceled") {
+				finished.add(record.id);
+			}
 		}
 		for (const record of records) {
 			if (record.type === "turn_queued" && !finished.has(record.id)) {
@@ -105,6 +112,22 @@ export function createChannel(options: ChannelOptions): Channel {
 			.map(formatMessage)
 			.join("\n");
 		return prompt;
+	}
+
+	function jobFor(turn: QueuedTurn, state: ChatJob["state"]): ChatJob | undefined {
+		const trigger = records.find((record): record is ChannelRecord & { type: "inbound" } => {
+			return isInbound(record) && record.record === turn.trigger;
+		});
+		if (!trigger) return undefined;
+		return {
+			id: turn.id,
+			state,
+			adapter: trigger.adapter,
+			account: trigger.account,
+			conversation: trigger.conversation,
+			thread: trigger.thread,
+			actor: { id: trigger.user.id, name: trigger.user.name },
+		};
 	}
 
 	return {
@@ -144,6 +167,40 @@ export function createChannel(options: ChannelOptions): Channel {
 				replyThread: message?.thread,
 				prompt: buildPrompt(turn.trigger),
 			};
+		},
+
+		jobs() {
+			return [
+				...(active ? [jobFor(active, "running")].filter((job): job is ChatJob => Boolean(job)) : []),
+				...queued.map((turn) => jobFor(turn, "queued")).filter((job): job is ChatJob => Boolean(job)),
+			];
+		},
+
+		async cancelQueued(reason) {
+			const turns = queued.splice(0, queued.length);
+			for (const turn of turns) {
+				await append({
+					type: "turn_canceled",
+					record: nextRecord++,
+					id: turn.id,
+					trigger: turn.trigger,
+					reason,
+				});
+			}
+			return turns.length;
+		},
+
+		async cancelActive(reason) {
+			if (!active) return false;
+			await append({
+				type: "turn_canceled",
+				record: nextRecord++,
+				id: active.id,
+				trigger: active.trigger,
+				reason,
+			});
+			active = undefined;
+			return true;
 		},
 
 		async complete(reply) {

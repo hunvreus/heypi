@@ -1,4 +1,5 @@
 import type { CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AdapterEvents } from "./events.js";
 
 export type ModelConfig = CreateAgentSessionOptions["model"];
 
@@ -70,8 +71,11 @@ export type Adapter = {
 	kind: AdapterKind | string;
 	name?: string;
 	allow?: AllowConfig;
+	admins?: ApproverSet;
+	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	events?: AdapterEvents;
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
@@ -98,9 +102,8 @@ export type ApproverSet = {
 
 export type AdapterApprovalConfig = {
 	layout?: ApprovalLayout;
-	admins?: ApproverSet;
-	approvers?: ApproverSet;
 	showId?: boolean;
+	timeoutMs?: number;
 };
 
 export type ToolConfig = {
@@ -200,6 +203,7 @@ export type LoadAgentOptions = {
 	admin?: false | AdminConfig;
 	state?: StateConfig;
 	tools?: ToolConfigMap;
+	todo?: boolean;
 	noTools?: CreateAgentSessionOptions["noTools"];
 };
 
