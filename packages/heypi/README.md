@@ -161,11 +161,12 @@ const channels = await listAuditChannels({ stateDir: ".heypi" });
 const records = await readAuditChannel(channels[0].path);
 ```
 
-Enable the read-only admin HTTP surface with `admin: {}` on `loadAgent()`. It exposes JSON audit
+Enable the admin HTTP surface with `admin: {}` on `loadAgent()`. It exposes JSON audit and job
 endpoints under `/admin` by default:
 
 - `GET /admin/health`
 - `GET /admin/jobs`
+- `POST /admin/jobs/cancel` with `{ "scope": "active" | "queued" | "all", "reason": "..." }`
 - `GET /admin/channels`
 - `GET /admin/channels/:key`
 

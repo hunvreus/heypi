@@ -41,6 +41,7 @@ describe("admin", () => {
 				endpoints: {
 					health: "/admin/health",
 					jobs: "/admin/jobs",
+					cancelJobs: "/admin/jobs/cancel",
 					channels: "/admin/channels",
 				},
 			});
@@ -59,6 +60,31 @@ describe("admin", () => {
 				key: "local:local:local",
 				records: [{ type: "inbound", text: "hello" }],
 			});
+		} finally {
+			await admin.stop();
+		}
+	});
+
+	it("can cancel jobs through the admin endpoint", async () => {
+		const state = await makeDir("admin-cancel");
+		const calls: Array<{ scope: string; reason?: string }> = [];
+		const admin = createAdmin({
+			stateDir: state,
+			port: freePort(),
+			cancel: async (scope, reason) => {
+				calls.push({ scope, reason });
+				return { active: scope === "queued" ? 0 : 1, queued: scope === "active" ? 0 : 2 };
+			},
+		});
+		await admin.start();
+		try {
+			await expect(
+				fetch(`${admin.url()}/jobs/cancel`, {
+					method: "POST",
+					body: JSON.stringify({ scope: "queued", reason: "user canceled" }),
+				}).then((response) => response.json()),
+			).resolves.toEqual({ canceled: { active: 0, queued: 2 } });
+			expect(calls).toEqual([{ scope: "queued", reason: "user canceled" }]);
 		} finally {
 			await admin.stop();
 		}

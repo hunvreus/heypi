@@ -47,7 +47,6 @@
 ## Chat jobs and adapter events
 
 - Wire `ChatJob` into the admin UI once the JSON admin surface grows beyond diagnostics.
-- Add adapter/admin controls that call the active and queued cancellation primitives.
 - Add long-running typing loops for adapters with native typing indicators.
   - Slack uses editable status messages today.
   - Discord and Telegram can refresh native typing while a job is running.

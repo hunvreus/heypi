@@ -1,4 +1,4 @@
-import { createServer, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { listAuditChannels, readAuditChannel } from "./audit.js";
 import type { ChatJob } from "./events.js";
@@ -9,6 +9,11 @@ export type AdminServer = {
 	stop(): Promise<void>;
 	url(): string;
 };
+
+export type CancelJobs = (
+	scope: "active" | "queued" | "all",
+	reason?: string,
+) => Promise<{ active: number; queued: number }>;
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
 	response.writeHead(status, { "content-type": "application/json" });
@@ -28,7 +33,23 @@ function channelKey(pathname: string, base: string): string | undefined {
 	return /^[a-zA-Z0-9_.:-]+$/.test(key) ? key : undefined;
 }
 
-export function createAdmin(config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[] }): AdminServer {
+async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+	const chunks: Uint8Array[] = [];
+	for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+	const text = Buffer.concat(chunks).toString("utf8");
+	if (!text) return {};
+	const value = JSON.parse(text) as unknown;
+	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function cancelScope(value: unknown): "active" | "queued" | "all" {
+	if (value === "active" || value === "queued" || value === "all") return value;
+	return "all";
+}
+
+export function createAdmin(
+	config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[]; cancel?: CancelJobs },
+): AdminServer {
 	const host = config.host ?? "127.0.0.1";
 	const port = config.port ?? 4321;
 	const path = config.path ?? "/admin";
@@ -37,14 +58,23 @@ export function createAdmin(config: AdminConfig & { stateDir: string; jobs?: () 
 	return {
 		async start() {
 			server = createServer(async (request, response) => {
-				if (request.method !== "GET" || !request.url) return sendJson(response, 404, { error: "not_found" });
+				if (!request.url) return sendJson(response, 404, { error: "not_found" });
 				const url = new URL(request.url, `http://${host}:${port}`);
+				if (request.method === "POST" && url.pathname === joinUrl(path, "/jobs/cancel")) {
+					if (!config.cancel) return sendJson(response, 404, { error: "not_found" });
+					const body = await readJson(request);
+					const reason = typeof body.reason === "string" ? body.reason : undefined;
+					const canceled = await config.cancel(cancelScope(body.scope), reason);
+					return sendJson(response, 200, { canceled });
+				}
+				if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
 				if (url.pathname === path) {
 					return sendJson(response, 200, {
 						ok: true,
 						endpoints: {
 							health: joinUrl(path, "/health"),
 							jobs: joinUrl(path, "/jobs"),
+							cancelJobs: joinUrl(path, "/jobs/cancel"),
 							channels: joinUrl(path, "/channels"),
 						},
 					});

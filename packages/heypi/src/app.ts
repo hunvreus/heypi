@@ -147,11 +147,32 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const staged = await stageAgent(agent, stateDir);
 	const channels = new Map<string, RunningChannel>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
-	const admin = agent.admin ? createAdmin({ ...agent.admin, stateDir, jobs: () => appJobs() }) : undefined;
+	const admin = agent.admin
+		? createAdmin({ ...agent.admin, stateDir, jobs: () => appJobs(), cancel: cancelJobs })
+		: undefined;
 	let stopping = false;
 
 	function appJobs(): ChatJob[] {
 		return [...channels.values()].flatMap((running) => running.channel.jobs());
+	}
+
+	async function cancelJobs(
+		scope: "active" | "queued" | "all",
+		reason?: string,
+	): Promise<{ active: number; queued: number }> {
+		const active =
+			scope === "active" || scope === "all"
+				? await Promise.all([...channels.values()].map((running) => cancelActive(running, reason))).then((counts) =>
+						counts.reduce((sum, count) => sum + count, 0),
+					)
+				: 0;
+		const queued =
+			scope === "queued" || scope === "all"
+				? await Promise.all([...channels.values()].map((running) => running.channel.cancelQueued(reason))).then(
+						(counts) => counts.reduce((sum, count) => sum + count, 0),
+					)
+				: 0;
+		return { active, queued };
 	}
 
 	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
@@ -247,6 +268,14 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 
 	function currentJob(running: RunningChannel): ChatJob | undefined {
 		return running.channel.jobs().find((job) => job.state === "running");
+	}
+
+	async function cancelActive(running: RunningChannel, reason = "canceled"): Promise<number> {
+		const job = currentJob(running);
+		if (!job || !running.pi?.abort) return 0;
+		running.canceling = reason;
+		await running.pi.abort();
+		return 1;
 	}
 
 	async function emit(running: RunningChannel, event: AdapterEvent): Promise<void> {
@@ -464,21 +493,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			return appJobs();
 		},
 		async cancelQueued(reason) {
-			const counts = await Promise.all(
-				[...channels.values()].map((running) => running.channel.cancelQueued(reason)),
-			);
-			return counts.reduce((sum, count) => sum + count, 0);
+			return (await cancelJobs("queued", reason)).queued;
 		},
 		async cancelActive(reason = "canceled") {
-			let count = 0;
-			for (const running of channels.values()) {
-				const job = currentJob(running);
-				if (!job || !running.pi?.abort) continue;
-				running.canceling = reason;
-				count += 1;
-				await running.pi.abort();
-			}
-			return count;
+			return (await cancelJobs("active", reason)).active;
 		},
 	};
 }
