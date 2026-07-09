@@ -27,6 +27,7 @@ export type AdapterEvent =
 	| { type: "tool.started"; origin: "pi"; job: ChatJob; tool: string }
 	| { type: "todo.changed"; origin: "heypi"; job: ChatJob; text: string }
 	| { type: "message.completed"; origin: "pi"; job: ChatJob; text: string }
+	| { type: "turn.canceled"; origin: "heypi"; job: ChatJob; reason: string }
 	| { type: "turn.failed"; origin: "heypi" | "pi"; job: ChatJob; error: string };
 
 export type AdapterEventType = AdapterEvent["type"];

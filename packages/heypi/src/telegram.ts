@@ -1,5 +1,5 @@
 import { renderApprovalMessage } from "./approval.js";
-import type { AdapterEvents } from "./events.js";
+import type { AdapterEvent, AdapterEventHandler, AdapterEvents, AdapterEventType } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -78,6 +78,12 @@ type PendingApproval = {
 	resolve(decision: ApprovalDecision): void;
 };
 
+type TypingControls = {
+	start(message: ChatMessage): void;
+	stop(message: ChatMessage): void;
+	stopAll(): void;
+};
+
 export type TelegramApprovalPayload = {
 	chat_id: string;
 	message_thread_id?: number;
@@ -150,6 +156,60 @@ export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPay
 	};
 }
 
+function typingKey(message: ChatMessage): string {
+	return `${message.conversation}:${message.thread ?? ""}`;
+}
+
+function createTypingControls(sendTyping: (message: ChatMessage) => Promise<void>): TypingControls {
+	const timers = new Map<string, ReturnType<typeof setInterval>>();
+	return {
+		start(message) {
+			const key = typingKey(message);
+			if (timers.has(key)) return;
+			void sendTyping(message);
+			timers.set(
+				key,
+				setInterval(() => {
+					void sendTyping(message);
+				}, 4000),
+			);
+		},
+		stop(message) {
+			const key = typingKey(message);
+			const timer = timers.get(key);
+			if (!timer) return;
+			clearInterval(timer);
+			timers.delete(key);
+		},
+		stopAll() {
+			for (const timer of timers.values()) clearInterval(timer);
+			timers.clear();
+		},
+	};
+}
+
+function withTypingEvents(events: AdapterEvents | undefined, typing: TypingControls): AdapterEvents {
+	function wrap<T extends AdapterEventType>(
+		type: T,
+		native: AdapterEventHandler<Extract<AdapterEvent, { type: T }>>,
+	): AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false {
+		const user = events?.[type] as AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false | undefined;
+		if (user === false) return false;
+		return async (event, context) => {
+			await native(event, context);
+			await user?.(event, context);
+		};
+	}
+
+	return {
+		...events,
+		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
+		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
+		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
+		"turn.canceled": wrap("turn.canceled", (_event, context) => typing.stop(context.message)),
+	};
+}
+
 export function telegram(config: TelegramConfig): Adapter {
 	let running = false;
 	let offset = 0;
@@ -169,6 +229,8 @@ export function telegram(config: TelegramConfig): Adapter {
 		if (!payload.ok) throw new Error(payload.description ?? `Telegram ${method} failed`);
 		return payload.result;
 	}
+
+	const typing = createTypingControls((message) => call("sendChatAction", telegramTypingPayload(message)));
 
 	async function poll(receive: (message: ChatMessage) => Promise<void>): Promise<void> {
 		while (running) {
@@ -225,7 +287,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
-		events: config.events,
+		events: withTypingEvents(config.events, typing),
 		async start(context) {
 			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;
@@ -237,6 +299,7 @@ export function telegram(config: TelegramConfig): Adapter {
 			context.logger.info("adapter.telegram.start");
 		},
 		stop() {
+			typing.stopAll();
 			running = false;
 		},
 		async ack(message) {

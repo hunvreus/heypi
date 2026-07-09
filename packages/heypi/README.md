@@ -326,7 +326,8 @@ slack({
 ```
 
 Stable events are `message.accepted`, `turn.started`, `tool.started`, `todo.changed`,
-`message.completed`, and `turn.failed`. Pi-derived events are normalized before adapters see them.
+`message.completed`, `turn.canceled`, and `turn.failed`. Pi-derived events are normalized before
+adapters see them.
 
 Not included yet:
 

@@ -380,6 +380,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			const canceled = running.canceling;
 			const job = currentJob(running);
 			if (canceled) {
+				if (job) await emit(running, { type: "turn.canceled", origin: "heypi", job, reason: canceled });
 				await running.channel.cancelActive(canceled);
 				logger.info("turn.cancel", {
 					adapter: message.adapter,
