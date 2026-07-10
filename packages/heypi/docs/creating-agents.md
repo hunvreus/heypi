@@ -16,9 +16,9 @@ agent/
 
 - `instructions.md` is the stable behavior contract.
 - `system.md` is optional low-level system context.
-- `skills/` holds on-demand procedures loaded by Pi.
-- `tools/` is an ergonomic alias for extension files that register tools.
-- `extensions/` holds Pi extensions.
+- `skills/` holds on-demand procedures available to Pi.
+- `tools/` holds authored Pi extension files that register local tools.
+- `extensions/` holds Pi extensions discovered from the staged bundle.
 
 heypi stages this folder into `.heypi` before Pi sees it. Do not rely on host source paths.
 

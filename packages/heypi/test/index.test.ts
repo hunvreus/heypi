@@ -16,6 +16,7 @@ import type {
 	ToolConfig,
 	ToolConfigMap,
 } from "../src/index.js";
+import { statusEvents } from "../src/index.js";
 
 describe("public entrypoint", () => {
 	it("exports config and approval integration types", () => {
@@ -35,5 +36,6 @@ describe("public entrypoint", () => {
 		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();
+		expectTypeOf(statusEvents()).toMatchTypeOf<{ "turn.started": unknown }>();
 	});
 });

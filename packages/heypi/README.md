@@ -55,8 +55,9 @@ The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loa
 from that bundle; heypi does not expose host source paths to the model. Staging excludes `.git`,
 `.heypi`, and `node_modules`.
 
-`skills/` and `extensions/` use Pi's native resource discovery. `tools/` is kept as an ergonomic
-alias for authored extension files that register tools.
+`skills/` and `extensions/` are copied into the staged Pi bundle for Pi-native discovery. Files in
+`tools/` are loaded as authored Pi extension files; use that folder for local tool modules that need
+to be registered explicitly.
 
 ## Runtime
 
@@ -286,7 +287,8 @@ Included:
 - approval message rendering and Pi tool-call approval extension
 - programmable approval policies with command classification
 - `chat_history` Pi tool for explicit older-context lookup
-- adapter-owned progress updates from Pi events, configurable with `progress`
+- adapter-owned progress updates from normalized Pi/heypi events, configurable with `progress` or
+  adapter `events`
 - `todo` Pi extension for visible task progress
 - `memory_store` and `memory_search` Pi tools for durable explicit memory
 - audit helpers for heypi-owned adapter coordination logs

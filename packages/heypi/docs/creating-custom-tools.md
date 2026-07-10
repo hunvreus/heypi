@@ -5,7 +5,8 @@ must make side effects explicit.
 
 ## Register tools through Pi extensions
 
-Put authored tool extensions in `agent/tools/` or `agent/extensions/`.
+Put local tool modules in `agent/tools/`. heypi stages those files and passes them to Pi as
+extension paths.
 
 ```text
 agent/tools/example.ts
