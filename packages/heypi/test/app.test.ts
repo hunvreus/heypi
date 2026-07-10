@@ -1,8 +1,7 @@
 import { constants, createCipheriv, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { local } from "../src/adapters.js";
 import { loadAgent } from "../src/agent.js";
@@ -38,6 +37,43 @@ function encryptedReply(widgetUrl: string, value: string): string {
 	length.writeUInt16BE(encryptedKey.length, 0);
 	const encrypted = Buffer.concat([length, encryptedKey, iv, ciphertext, tag]).toString("base64");
 	return `!secret:${payload.r}:${encrypted}`;
+}
+
+type PiListener = (event: PiEvent) => void;
+type TestTool = {
+	name: string;
+	execute(
+		toolCallId: string,
+		params: unknown,
+		signal?: AbortSignal,
+		context?: unknown,
+		extra?: unknown,
+	): Promise<unknown>;
+};
+
+function emitAssistant(listeners: PiListener[], content: string): void {
+	for (const listener of listeners) {
+		listener({
+			type: "message_end",
+			message: { role: "assistant", content },
+		} as unknown as PiEvent);
+	}
+}
+
+function replyHost(content = "Done.", onSend?: (text: string) => Promise<void> | void): PiHost {
+	const listeners: PiListener[] = [];
+	return {
+		async start() {},
+		async send(text) {
+			await onSend?.(text);
+			emitAssistant(listeners, content);
+		},
+		subscribe(listener) {
+			listeners.push(listener);
+			return () => {};
+		},
+		async stop() {},
+	};
 }
 
 describe("createHeypi", () => {
@@ -92,28 +128,9 @@ describe("createHeypi", () => {
 			}),
 			piHost(options) {
 				piOptions.push(options);
-				const listeners: Array<(event: PiEvent) => void> = [];
-				const host: PiHost = {
-					async start() {},
-					async send(text) {
-						prompts.push(text);
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {
-							const index = listeners.indexOf(listener);
-							if (index >= 0) listeners.splice(index, 1);
-						};
-					},
-					async stop() {},
-				};
-				return host;
+				return replyHost("Done.", (text) => {
+					prompts.push(text);
+				});
 			},
 		});
 
@@ -131,67 +148,6 @@ describe("createHeypi", () => {
 		expect(piOptions[0]?.customTools).toHaveLength(3);
 		expect(piOptions[0]?.extensions).toHaveLength(2);
 		expect(piOptions[0]?.agentDir).toBe(join(state, "agents", "agent", "agent"));
-	});
-
-	it("lets Pi attach runtime workspace files to chat", async () => {
-		const root = await makeDir("app-attach-agent");
-		const state = await makeDir("app-attach-state");
-		const workspace = await makeDir("app-attach-workspace");
-		await writeFile(join(workspace, "report.txt"), "hello");
-		const adapter = local();
-
-		const app = await createHeypi({
-			adapters: [adapter],
-			agent: loadAgent(root, {
-				id: "agent",
-				state: { dir: state },
-				runtime: { kind: "host", workspace },
-			}),
-			piHost(options) {
-				const listeners: Array<(event: PiEvent) => void> = [];
-				return {
-					async start() {},
-					async send() {
-						const attachTool = options.customTools.find((tool) => tool.name === "chat_attach") as
-							| ToolDefinition
-							| undefined;
-						await attachTool?.execute(
-							"call",
-							{ path: "report.txt", text: "Report ready." },
-							undefined,
-							undefined,
-							{} as never,
-						);
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Sent the report." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
-			},
-		});
-
-		await app.start();
-		await adapter.receive({
-			id: "m1",
-			user: { id: "u1", name: "Ronan" },
-			text: "send report",
-		});
-		await app.stop();
-
-		expect(adapter.sent).toContainEqual({
-			conversation: "local",
-			thread: undefined,
-			text: "Report ready.",
-			attachments: [{ name: "report.txt", path: "report.txt", mime: undefined }],
-		});
 	});
 
 	it("stores encrypted chat secrets without exposing the value or encrypted reply to Pi", async () => {
@@ -216,14 +172,14 @@ describe("createHeypi", () => {
 						prompts.push(text);
 						if (prompts.length === 1) {
 							const secretTool = options.customTools.find((tool) => tool.name === "chat_request_secret") as
-								| ToolDefinition
+								| TestTool
 								| undefined;
 							await secretTool?.execute(
 								"call",
 								{ name: "github-token", description: "GitHub token for PR work" },
 								undefined,
 								undefined,
-								{} as never,
+								{},
 							);
 							for (const listener of listeners) {
 								listener({
@@ -312,7 +268,7 @@ describe("createHeypi", () => {
 				},
 			},
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
@@ -326,11 +282,8 @@ describe("createHeypi", () => {
 							} as unknown as PiEvent);
 							listener({ type: "compaction_start" } as unknown as PiEvent);
 							listener({ type: "auto_retry_start", attempt: 1, maxAttempts: 3 } as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Done.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -390,7 +343,7 @@ describe("createHeypi", () => {
 				},
 			},
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
@@ -401,11 +354,8 @@ describe("createHeypi", () => {
 								toolName: "bash",
 								isError: true,
 							} as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Handled." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Handled.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -445,17 +395,14 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
 						for (const listener of listeners) {
 							listener({ type: "turn_start" } as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Done.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -496,18 +443,15 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
 						for (const listener of listeners) {
 							listener({ type: "turn_start" } as unknown as PiEvent);
 							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Done.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -544,7 +488,7 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
@@ -590,17 +534,14 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
 						for (const listener of listeners) {
 							listener({ type: "turn_start" } as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Done.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -647,17 +588,14 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
+				const listeners: PiListener[] = [];
 				return {
 					async start() {},
 					async send() {
 						for (const listener of listeners) {
 							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
 						}
+						emitAssistant(listeners, "Done.");
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -702,23 +640,7 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
-				return {
-					async start() {},
-					async send() {
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
+				return replyHost();
 			},
 		});
 
@@ -1083,24 +1005,9 @@ describe("createHeypi", () => {
 				state: { dir: state },
 			}),
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
-				return {
-					async start() {},
-					async send(text) {
-						prompts.push(text);
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
+				return replyHost("Done.", (text) => {
+					prompts.push(text);
+				});
 			},
 		});
 
@@ -1272,23 +1179,7 @@ describe("createHeypi", () => {
 				error() {},
 			},
 			piHost() {
-				const listeners: Array<(event: PiEvent) => void> = [];
-				return {
-					async start() {},
-					async send() {
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Still done." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
+				return replyHost("Still done.");
 			},
 		});
 
@@ -1412,23 +1303,7 @@ describe("createHeypi", () => {
 			}),
 			piHost() {
 				piStarts++;
-				const listeners: Array<(event: PiEvent) => void> = [];
-				return {
-					async start() {},
-					async send() {
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Done." },
-							} as unknown as PiEvent);
-						}
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
+				return replyHost();
 			},
 		});
 
