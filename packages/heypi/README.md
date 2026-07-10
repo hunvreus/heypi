@@ -165,6 +165,18 @@ reply back into chat. heypi decrypts that reply before audit ingestion, stores t
 This is a handoff mechanism, not secret isolation. Runtime commands can read files under
 `.secrets/`. Use trusted tools, connections, or runtime credential brokers for stronger isolation.
 
+## Attachments
+
+heypi registers a `chat_attach` Pi tool. The model can send a file reference from the runtime
+workspace back to the active chat:
+
+```text
+chat_attach({ path: "reports/summary.pdf", text: "Report ready." })
+```
+
+The path must stay inside the runtime workspace. Current adapters render attachments as links or
+paths in the outgoing message. Native file upload is a later runtime/adapter bridge.
+
 ## Audit
 
 heypi stores adapter coordination logs under `.heypi/channels/*.jsonl`. These records are for

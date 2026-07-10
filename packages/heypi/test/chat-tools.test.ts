@@ -1,8 +1,9 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChannel } from "../src/channel.js";
-import { createChatHistoryTool, createChatRequestSecretTool } from "../src/chat-tools.js";
+import { createChatAttachTool, createChatHistoryTool, createChatRequestSecretTool } from "../src/chat-tools.js";
 import { createSecretExchange } from "../src/secrets.js";
 import type { ChatMessage } from "../src/types.js";
 
@@ -84,5 +85,50 @@ describe("chat tools", () => {
 				text: "Secret request sent. Wait for the user to paste the encrypted reply. It will be stored at .secrets/github-token.",
 			},
 		]);
+	});
+
+	it("sends workspace files as attachment references", async () => {
+		const workspaceDir = join(tmpdir(), `heypi-attach-${Date.now()}-${Math.random()}`);
+		await mkdir(workspaceDir, { recursive: true });
+		await writeFile(join(workspaceDir, "report.txt"), "hello");
+		const sent: unknown[] = [];
+		const tool = createChatAttachTool({
+			workspaceDir,
+			target: () => ({ conversation: "room" }),
+			async send(message) {
+				sent.push(message);
+			},
+		});
+
+		const result = await tool.execute(
+			"call",
+			{ path: "report.txt", text: "Here is the report." },
+			undefined,
+			undefined,
+			{} as never,
+		);
+
+		expect(sent).toEqual([
+			{
+				conversation: "room",
+				text: "Here is the report.",
+				attachments: [{ name: "report.txt", path: "report.txt", mime: undefined }],
+			},
+		]);
+		expect(result.content).toEqual([{ type: "text", text: "Attachment sent: report.txt (report.txt)" }]);
+	});
+
+	it("rejects attachments outside the workspace", async () => {
+		const workspaceDir = join(tmpdir(), `heypi-attach-escape-${Date.now()}-${Math.random()}`);
+		await mkdir(workspaceDir, { recursive: true });
+		const tool = createChatAttachTool({
+			workspaceDir,
+			target: () => ({ conversation: "room" }),
+			async send() {},
+		});
+
+		await expect(tool.execute("call", { path: "../secret.txt" }, undefined, undefined, {} as never)).rejects.toThrow(
+			"path escapes runtime workspace",
+		);
 	});
 });

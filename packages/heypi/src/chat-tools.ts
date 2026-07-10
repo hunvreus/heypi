@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import type { Channel } from "./channel.js";
@@ -23,11 +25,39 @@ const chatRequestSecretParameters = Type.Object({
 
 type ChatRequestSecretParams = Static<typeof chatRequestSecretParameters>;
 
+const chatAttachParameters = Type.Object({
+	path: Type.String({ description: "Runtime workspace file path to attach" }),
+	name: Type.Optional(Type.String({ description: "Optional display name" })),
+	mime: Type.Optional(Type.String({ description: "Optional MIME type" })),
+	text: Type.Optional(Type.String({ description: "Optional message text" })),
+});
+
+type ChatAttachParams = Static<typeof chatAttachParameters>;
+
 export type ChatSecretToolOptions = {
 	exchange: SecretExchange;
 	target(): { conversation: string; thread?: string } | undefined;
 	send(message: SendMessage): Promise<unknown>;
 };
+
+export type ChatAttachToolOptions = {
+	workspaceDir: string;
+	target(): { conversation: string; thread?: string } | undefined;
+	send(message: SendMessage): Promise<unknown>;
+};
+
+function attachPath(workspaceDir: string, path: string): { host: string; display: string } {
+	const host =
+		path === "/workspace" || path.startsWith("/workspace/")
+			? resolve(workspaceDir, posix.relative("/workspace", posix.normalize(path)))
+			: isAbsolute(path)
+				? resolve(path)
+				: resolve(workspaceDir, path);
+	const rel = relative(workspaceDir, host);
+	if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
+		throw new Error(`path escapes runtime workspace: ${path}`);
+	return { host, display: rel.split(sep).join("/") };
+}
 
 export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof chatHistoryParameters> {
 	return {
@@ -53,6 +83,35 @@ export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof c
 							.join("\n")
 					: "No matching chat history found.";
 			return { content: [{ type: "text", text }], details: { count: results.length } };
+		},
+	};
+}
+
+export function createChatAttachTool(options: ChatAttachToolOptions): ToolDefinition<typeof chatAttachParameters> {
+	return {
+		name: "chat_attach",
+		label: "Chat Attach",
+		description: "Send a runtime workspace file back to the active chat as an attachment reference.",
+		promptSnippet: "Attach a generated runtime workspace file to the active chat.",
+		promptGuidelines: ["Only attach files under the runtime workspace."],
+		parameters: chatAttachParameters,
+		async execute(_toolCallId, params, signal) {
+			signal?.throwIfAborted?.();
+			const { path, name, mime, text } = params as ChatAttachParams;
+			const target = options.target();
+			if (!target) throw new Error("chat_attach requires an active chat turn");
+			const file = attachPath(options.workspaceDir, path);
+			if (!(await stat(file.host)).isFile()) throw new Error(`chat_attach can only attach files: ${path}`);
+			const label = name ?? basename(file.display);
+			await options.send({
+				...target,
+				text: text ?? `Attached ${label}.`,
+				attachments: [{ name: label, path: file.display, mime }],
+			});
+			return {
+				content: [{ type: "text", text: `Attachment sent: ${label} (${file.display})` }],
+				details: { path: file.display, name: label },
+			};
 		},
 	};
 }

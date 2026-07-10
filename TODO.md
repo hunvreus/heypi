@@ -60,6 +60,7 @@
 
 ## Chat attachments
 
-- Add a real `chat_attach` tool only after runtime files can be safely bridged back to adapter uploads.
+- `chat_attach` now sends runtime-workspace file references back through the active adapter.
+  - Paths are validated against the runtime workspace.
   - Current outgoing attachments render as text links/paths in Slack, Discord, and Telegram.
-  - Do not claim arbitrary `/workspace` runtime paths are uploadable until each runtime exposes a read/export boundary.
+  - Native upload still needs a runtime export boundary plus adapter-specific upload support.

@@ -5,7 +5,7 @@ import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
-import { createChatHistoryTool, createChatRequestSecretTool } from "./chat-tools.js";
+import { createChatAttachTool, createChatHistoryTool, createChatRequestSecretTool } from "./chat-tools.js";
 import type { AdapterEvent, ChatJob } from "./events.js";
 import { consoleLogger } from "./log.js";
 import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
@@ -268,6 +268,15 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			excludeTools: toolConfig.excludeTools,
 			customTools: [
 				createChatHistoryTool(channel),
+				createChatAttachTool({
+					workspaceDir: staged.workspaceDir,
+					target: () => {
+						const active = running.activeMessage;
+						if (!active) return undefined;
+						return { conversation: active.conversation, thread: channel.activeMessageId() };
+					},
+					send: (message) => adapter.send(message),
+				}),
 				createChatRequestSecretTool({
 					exchange: secrets,
 					target: () => {

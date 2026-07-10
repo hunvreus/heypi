@@ -1,5 +1,5 @@
 import { constants, createCipheriv, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -128,9 +128,70 @@ describe("createHeypi", () => {
 		expect(prompts).toEqual(["- [uid:u1] Ronan: hello"]);
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 		expect(piOptions).toHaveLength(1);
-		expect(piOptions[0]?.customTools).toHaveLength(2);
+		expect(piOptions[0]?.customTools).toHaveLength(3);
 		expect(piOptions[0]?.extensions).toHaveLength(2);
 		expect(piOptions[0]?.agentDir).toBe(join(state, "agents", "agent", "agent"));
+	});
+
+	it("lets Pi attach runtime workspace files to chat", async () => {
+		const root = await makeDir("app-attach-agent");
+		const state = await makeDir("app-attach-state");
+		const workspace = await makeDir("app-attach-workspace");
+		await writeFile(join(workspace, "report.txt"), "hello");
+		const adapter = local();
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+				runtime: { kind: "host", workspace },
+			}),
+			piHost(options) {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						const attachTool = options.customTools.find((tool) => tool.name === "chat_attach") as
+							| ToolDefinition
+							| undefined;
+						await attachTool?.execute(
+							"call",
+							{ path: "report.txt", text: "Report ready." },
+							undefined,
+							undefined,
+							{} as never,
+						);
+						for (const listener of listeners) {
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Sent the report." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "send report",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toContainEqual({
+			conversation: "local",
+			thread: undefined,
+			text: "Report ready.",
+			attachments: [{ name: "report.txt", path: "report.txt", mime: undefined }],
+		});
 	});
 
 	it("stores encrypted chat secrets without exposing the value or encrypted reply to Pi", async () => {
