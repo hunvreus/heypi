@@ -51,8 +51,10 @@
   - Generic OpenAPI/MCP: connection definitions with trusted-side token/header resolution.
 - Do not add a generic top-level secret DSL until there is a concrete consumer boundary.
 - Add encrypted user-submitted secret storage later if chat/admin secret submission returns.
-  - `createSecretExchange()` now provides the encrypted request/decrypt primitive.
-  - Still missing: adapter interception, trusted storage, runtime handoff, and admin UX.
+  - `chat_request_secret` now asks the active chat user for an encrypted `pi.dev/secret` reply.
+  - Encrypted replies are intercepted before audit ingestion.
+  - Values are stored as `.secrets/<name>` in the runtime workspace, and Pi receives only a redacted storage notice.
+  - Still missing: trusted encrypted storage, runtime credential brokering, and admin UX.
   - Store encrypted at rest with a key outside SQLite.
   - Redact values in audit logs, tool results, and adapter output.
 

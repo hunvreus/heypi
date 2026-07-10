@@ -18,6 +18,8 @@ type PendingSecret = {
 	privateKey: string;
 };
 
+export type SecretExchange = ReturnType<typeof createSecretExchange>;
+
 /**
  * Creates encrypted secret requests and decrypts matching user replies.
  *

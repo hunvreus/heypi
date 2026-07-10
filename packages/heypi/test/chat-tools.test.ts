@@ -2,7 +2,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChannel } from "../src/channel.js";
-import { createChatHistoryTool } from "../src/chat-tools.js";
+import { createChatHistoryTool, createChatRequestSecretTool } from "../src/chat-tools.js";
+import { createSecretExchange } from "../src/secrets.js";
 import type { ChatMessage } from "../src/types.js";
 
 function message(id: string, text: string): ChatMessage {
@@ -48,5 +49,40 @@ describe("chat tools", () => {
 
 		expect(result.content).toEqual([{ type: "text", text: "- [record:1] [uid:u1] Ronan: already discussed" }]);
 		expect(result.details).toEqual({ count: 1 });
+	});
+
+	it("requests encrypted secrets in the active chat target", async () => {
+		const sent: unknown[] = [];
+		const exchange = createSecretExchange();
+		const tool = createChatRequestSecretTool({
+			exchange,
+			target: () => ({ conversation: "room", thread: "thread-1" }),
+			async send(message) {
+				sent.push(message);
+			},
+		});
+
+		const result = await tool.execute(
+			"call",
+			{ name: "github-token", description: "GitHub token for creating pull requests" },
+			undefined,
+			undefined,
+			{} as never,
+		);
+
+		expect(sent).toEqual([
+			{
+				conversation: "room",
+				thread: "thread-1",
+				text: expect.stringContaining("Secret requested: GitHub token for creating pull requests"),
+			},
+		]);
+		expect((sent[0] as { text: string }).text).toContain("https://pi.dev/secret#");
+		expect(result.content).toEqual([
+			{
+				type: "text",
+				text: "Secret request sent. Wait for the user to paste the encrypted reply. It will be stored at .secrets/github-token.",
+			},
+		]);
 	});
 });

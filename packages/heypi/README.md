@@ -150,6 +150,21 @@ conversation under `.heypi/memory/*.jsonl`. It is not injected into every prompt
 searches it explicitly through tools. This is currently a built-in heypi-provided Pi extension; the
 TODO tracks moving it to a cleaner standalone extension package.
 
+## Secrets
+
+heypi registers a `chat_request_secret` Pi tool. The model can ask the active chat user for a
+credential without the user pasting the raw value into Slack, Discord, Telegram, or webhook text.
+The user opens the generated `pi.dev/secret` link, enters the value locally, and pastes the encrypted
+reply back into chat. heypi decrypts that reply before audit ingestion, stores the value in
+`.secrets/<name>` inside the runtime workspace, and sends Pi only a redacted notice:
+
+```text
+[secret stored: github-token at .secrets/github-token]
+```
+
+This is a handoff mechanism, not secret isolation. Runtime commands can read files under
+`.secrets/`. Use trusted tools, connections, or runtime credential brokers for stronger isolation.
+
 ## Audit
 
 heypi stores adapter coordination logs under `.heypi/channels/*.jsonl`. These records are for

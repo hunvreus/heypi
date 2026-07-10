@@ -1,14 +1,16 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
-import { createChatHistoryTool } from "./chat-tools.js";
+import { createChatHistoryTool, createChatRequestSecretTool } from "./chat-tools.js";
 import type { AdapterEvent, ChatJob } from "./events.js";
 import { consoleLogger } from "./log.js";
 import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
 import { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
+import { createSecretExchange, type DecryptedSecret } from "./secrets.js";
 import { createStatusSlot, type StatusSlot } from "./status.js";
 import { createTodoController, renderTodo, type TodoController } from "./todo.js";
 import type { Adapter, AgentConfig, ApprovalPolicy, ChatMessage, Logger, ToolEntry } from "./types.js";
@@ -150,6 +152,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
 	const toolConfig = toolSettings(agent);
 	const staged = await stageAgent(agent, stateDir);
+	const secrets = createSecretExchange();
 	const channels = new Map<string, RunningChannel>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
 	const admin = agent.admin
@@ -263,7 +266,19 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			extensionPaths: staged.extensionPaths,
 			tools: toolConfig.tools,
 			excludeTools: toolConfig.excludeTools,
-			customTools: [createChatHistoryTool(channel), ...toolConfig.customTools],
+			customTools: [
+				createChatHistoryTool(channel),
+				createChatRequestSecretTool({
+					exchange: secrets,
+					target: () => {
+						const active = running.activeMessage;
+						if (!active) return undefined;
+						return { conversation: active.conversation, thread: channel.activeMessageId() };
+					},
+					send: (message) => adapter.send(message),
+				}),
+				...toolConfig.customTools,
+			],
 			extensions,
 		});
 		await pi.start();
@@ -461,6 +476,24 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			});
 			return;
 		}
+		const secret = secrets.decrypt(message.text);
+		if (secret) {
+			await storeSecret(staged.workspaceDir, secret);
+			const notice: ChatMessage = {
+				...message,
+				id: `${message.id}:secret`,
+				text: `[secret stored: ${secret.name} at .secrets/${secret.name}]`,
+				mentioned: true,
+				attachments: undefined,
+			};
+			await adapter.send({
+				conversation: message.conversation,
+				thread: message.thread,
+				text: `Secret received and stored as .secrets/${secret.name}.`,
+			});
+			await receive(adapter, notice);
+			return;
+		}
 		await emitAccepted(adapter, message);
 		try {
 			await adapter.ack?.(message);
@@ -514,6 +547,13 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			return (await cancelJobs("active", reason)).active;
 		},
 	};
+}
+
+async function storeSecret(workspaceDir: string, secret: DecryptedSecret): Promise<void> {
+	if (!/^[a-zA-Z0-9_.-]+$/.test(secret.name)) throw new Error(`Invalid secret name: ${secret.name}`);
+	const dir = join(workspaceDir, ".secrets");
+	await mkdir(dir, { recursive: true, mode: 0o700 });
+	await writeFile(join(dir, secret.name), secret.value, { mode: 0o600 });
 }
 
 export async function runHeypi(agent: AgentConfig | Promise<AgentConfig>, adapters: Adapter[]): Promise<HeypiApp> {

@@ -12,7 +12,7 @@ export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory
 export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
 export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export { type AuditChannel, type AuditOptions, listAuditChannels, readAuditChannel } from "./audit.js";
-export { createChatHistoryTool } from "./chat-tools.js";
+export { type ChatSecretToolOptions, createChatHistoryTool, createChatRequestSecretTool } from "./chat-tools.js";
 export { type DiscordConfig, discord, discordApprovalPayload, discordMessage } from "./discord.js";
 export type {
 	AdapterEvent,
