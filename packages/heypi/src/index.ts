@@ -23,6 +23,7 @@ export type {
 	ChatJob,
 	ChatJobState,
 } from "./events.js";
+export { statusEvents } from "./events.js";
 export { consoleLogger } from "./log.js";
 export {
 	createFileMemoryStore,

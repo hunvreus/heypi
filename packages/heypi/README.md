@@ -316,10 +316,13 @@ The current built-in text progress is intentionally coarse: `Thinking...` before
 Adapters can override individual event handlers:
 
 ```ts
+import { slack, statusEvents } from "@hunvreus/heypi";
+
 slack({
 	token,
 	appToken,
 	events: {
+		...statusEvents(),
 		"tool.started": false,
 		"turn.started": (_event, { status }) => status?.replace("Checking..."),
 	},
