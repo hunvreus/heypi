@@ -150,6 +150,11 @@ describe("createHeypi", () => {
 						for (const listener of listeners) {
 							listener({ type: "turn_start" } as unknown as PiEvent);
 							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
+							listener({
+								type: "tool_execution_end",
+								toolName: "bash",
+								isError: false,
+							} as unknown as PiEvent);
 							listener({ type: "compaction_start" } as unknown as PiEvent);
 							listener({ type: "auto_retry_start", attempt: 1, maxAttempts: 3 } as unknown as PiEvent);
 							listener({
@@ -181,6 +186,77 @@ describe("createHeypi", () => {
 		expect(updates).toEqual(["Working...", "Done."]);
 		expect(logs).toContainEqual({
 			event: "pi.tool.start",
+			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
+		});
+		expect(logs).toContainEqual({
+			event: "pi.tool.end",
+			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
+		});
+	});
+
+	it("logs failed Pi tool executions", async () => {
+		const root = await makeDir("app-tool-error-agent");
+		const state = await makeDir("app-tool-error-state");
+		const adapter = local();
+		const logs: Array<{ event: string; data?: Record<string, unknown> }> = [];
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			logger: {
+				debug(event, data) {
+					logs.push({ event, data });
+				},
+				info(event, data) {
+					logs.push({ event, data });
+				},
+				warn(event, data) {
+					logs.push({ event, data });
+				},
+				error(event, data) {
+					logs.push({ event, data });
+				},
+			},
+			piHost() {
+				const listeners: Array<(event: PiEvent) => void> = [];
+				return {
+					async start() {},
+					async send() {
+						for (const listener of listeners) {
+							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
+							listener({
+								type: "tool_execution_end",
+								toolName: "bash",
+								isError: true,
+							} as unknown as PiEvent);
+							listener({
+								type: "message_end",
+								message: { role: "assistant", content: "Handled." },
+							} as unknown as PiEvent);
+						}
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan" },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(logs).toContainEqual({
+			event: "pi.tool.error",
 			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
 		});
 	});

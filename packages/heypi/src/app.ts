@@ -129,6 +129,12 @@ function piToolName(event: PiEvent): string | undefined {
 	return typeof event.toolName === "string" ? event.toolName : undefined;
 }
 
+function piToolEnd(event: PiEvent): { tool: string; error: boolean } | undefined {
+	if (event.type !== "tool_execution_end") return undefined;
+	if (!("toolName" in event) || typeof event.toolName !== "string") return undefined;
+	return { tool: event.toolName, error: "isError" in event && event.isError === true };
+}
+
 function todoEnabled(agent: AgentConfig): boolean {
 	return agent.todo !== false;
 }
@@ -337,6 +343,15 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					});
 					const job = currentJob(running);
 					if (job) void emit(running, { type: "tool.started", origin: "pi", job, tool: toolName });
+				}
+				const toolEnd = piToolEnd(event);
+				if (toolEnd) {
+					logger[toolEnd.error ? "warn" : "info"](toolEnd.error ? "pi.tool.error" : "pi.tool.end", {
+						adapter: message.adapter,
+						conversation: message.conversation,
+						thread: turn.replyThread,
+						tool: toolEnd.tool,
+					});
 				}
 			});
 			await pi.send(turn.prompt);
