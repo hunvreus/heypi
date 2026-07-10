@@ -90,6 +90,32 @@ describe("admin", () => {
 		}
 	});
 
+	it("requires the configured admin token", async () => {
+		const state = await makeDir("admin-token");
+		const admin = createAdmin({ stateDir: state, port: freePort(), token: "secret" });
+		await admin.start();
+		try {
+			await expect(fetch(admin.url()).then((response) => response.json())).resolves.toEqual({
+				error: "unauthorized",
+			});
+			await expect(
+				fetch(admin.url(), { headers: { authorization: "Bearer secret" } }).then((response) => response.json()),
+			).resolves.toMatchObject({ ok: true });
+			await expect(
+				fetch(admin.url(), { headers: { "x-heypi-admin-token": "secret" } }).then((response) => response.json()),
+			).resolves.toMatchObject({ ok: true });
+		} finally {
+			await admin.stop();
+		}
+	});
+
+	it("requires an admin token for non-loopback hosts", async () => {
+		const state = await makeDir("admin-non-loopback");
+		const admin = createAdmin({ stateDir: state, host: "0.0.0.0", port: freePort() });
+
+		await expect(admin.start()).rejects.toThrow("Admin token is required");
+	});
+
 	it("serves an HTML dashboard to browsers", async () => {
 		const state = await makeDir("admin-html");
 		await mkdir(join(state, "channels"), { recursive: true });

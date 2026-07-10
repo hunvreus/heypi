@@ -41,7 +41,7 @@ const agent = loadAgent(new URL("./agent", import.meta.url).pathname, {
 	state: {
 		dir: env("HEYPI_STATE") ?? new URL("./.heypi", import.meta.url).pathname,
 	},
-	admin: { port: Number(env("HEYPI_ADMIN_PORT") ?? 4321) },
+	admin: { port: Number(env("HEYPI_ADMIN_PORT") ?? 4321), token: env("HEYPI_ADMIN_TOKEN") },
 });
 
 const app = await createHeypi({

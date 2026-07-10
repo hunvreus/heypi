@@ -29,7 +29,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<Adapter>().toMatchTypeOf<{ events?: { "turn.started"?: unknown } }>();
 		expectTypeOf<AdapterApprovalConfig>().toMatchTypeOf<{ layout?: ApprovalLayout; timeoutMs?: number }>();
 		expectTypeOf<ChatJob>().toMatchTypeOf<{ id: string; state: "queued" | "running" }>();
-		expectTypeOf<AdminConfig>().toMatchTypeOf<{ port?: number }>();
+		expectTypeOf<AdminConfig>().toMatchTypeOf<{ port?: number; token?: string }>();
 		expectTypeOf<ToolConfig>().toMatchTypeOf<{ approve?: unknown }>();
 		expectTypeOf<ToolConfigMap>().toMatchTypeOf<Record<string, unknown>>();
 		expectTypeOf<LoadAgentOptions>().toMatchTypeOf<{ todo?: boolean }>();

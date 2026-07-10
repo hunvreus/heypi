@@ -52,9 +52,21 @@ function cancelScope(value: unknown): "active" | "queued" | "all" {
 	return "all";
 }
 
+function isLoopback(host: string): boolean {
+	return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
 function wantsHtml(request: IncomingMessage): boolean {
 	const accept = request.headers.accept;
 	return typeof accept === "string" && accept.includes("text/html");
+}
+
+function authorized(request: IncomingMessage, token: string | undefined): boolean {
+	if (!token) return true;
+	const auth = request.headers.authorization;
+	if (auth === `Bearer ${token}`) return true;
+	const header = request.headers["x-heypi-admin-token"];
+	return header === token;
 }
 
 function escapeHtml(value: string): string {
@@ -140,13 +152,16 @@ export function createAdmin(
 	const host = config.host ?? "127.0.0.1";
 	const port = config.port ?? 4321;
 	const path = config.path ?? "/admin";
+	const token = config.token?.trim();
 	let server: Server | undefined;
 
 	return {
 		async start() {
+			if (!isLoopback(host) && !token) throw new Error("Admin token is required for non-loopback hosts");
 			server = createServer(async (request, response) => {
 				if (!request.url) return sendJson(response, 404, { error: "not_found" });
 				const url = new URL(request.url, `http://${host}:${port}`);
+				if (!authorized(request, token)) return sendJson(response, 401, { error: "unauthorized" });
 				if (request.method === "POST" && url.pathname === joinUrl(path, "/jobs/cancel")) {
 					if (!config.cancel) return sendJson(response, 404, { error: "not_found" });
 					const body = await readJson(request);

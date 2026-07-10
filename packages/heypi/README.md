@@ -172,6 +172,10 @@ the endpoints directly:
 - `GET /admin/channels`
 - `GET /admin/channels/:key`
 
+Loopback admin servers are unauthenticated by default for local development. If admin is bound to a
+non-loopback host, configure `admin.token`; requests must include `Authorization: Bearer <token>` or
+`X-Heypi-Admin-Token: <token>`.
+
 ## Adapters
 
 Local is for tests and embedding:

@@ -194,6 +194,7 @@ export type AdminConfig = {
 	host?: string;
 	port?: number;
 	path?: string;
+	token?: string;
 };
 
 export type LoadAgentOptions = {
