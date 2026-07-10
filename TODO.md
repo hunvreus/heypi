@@ -53,3 +53,9 @@
 - Add encrypted user-submitted secret storage later if chat/admin secret submission returns.
   - Store encrypted at rest with a key outside SQLite.
   - Redact values in audit logs, tool results, and adapter output.
+
+## Chat attachments
+
+- Add a real `chat_attach` tool only after runtime files can be safely bridged back to adapter uploads.
+  - Current outgoing attachments render as text links/paths in Slack, Discord, and Telegram.
+  - Do not claim arbitrary `/workspace` runtime paths are uploadable until each runtime exposes a read/export boundary.

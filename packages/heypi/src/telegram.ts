@@ -1,5 +1,6 @@
 import { renderApprovalMessage } from "./approval.js";
 import type { AdapterEvent, AdapterEventHandler, AdapterEvents, AdapterEventType } from "./events.js";
+import { formatOutgoingText } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -309,7 +310,7 @@ export function telegram(config: TelegramConfig): Adapter {
 			const result = await call<{ message_id: number }>("sendMessage", {
 				chat_id: message.conversation,
 				message_thread_id: message.thread ? Number(message.thread) : undefined,
-				text: message.text,
+				text: formatOutgoingText(message.text, message.attachments),
 			});
 			return { id: String(result.message_id) };
 		},
@@ -317,7 +318,7 @@ export function telegram(config: TelegramConfig): Adapter {
 			await call("editMessageText", {
 				chat_id: message.conversation,
 				message_id: Number(message.id),
-				text: message.text,
+				text: formatOutgoingText(message.text, message.attachments),
 			});
 		},
 		async requestApproval(view) {

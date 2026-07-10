@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import type { AdapterEvent, AdapterEventHandler, AdapterEvents, AdapterEventType } from "./events.js";
+import { formatOutgoingText } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -318,7 +319,7 @@ export function discord(config: DiscordConfig): Adapter {
 			if (!channel || !("send" in channel) || typeof channel.send !== "function") {
 				throw new Error(`Discord channel cannot receive messages: ${message.conversation}`);
 			}
-			const result = await channel.send({ content: message.text });
+			const result = await channel.send({ content: formatOutgoingText(message.text, message.attachments) });
 			return { id: result.id };
 		},
 		async update(message) {
@@ -336,7 +337,7 @@ export function discord(config: DiscordConfig): Adapter {
 			}
 			const target = await messages.fetch(message.id);
 			if (target && "edit" in target && typeof target.edit === "function") {
-				await target.edit({ content: message.text });
+				await target.edit({ content: formatOutgoingText(message.text, message.attachments) });
 			}
 		},
 		async requestApproval(view) {

@@ -2,6 +2,7 @@ import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import type { AdapterEvents } from "./events.js";
+import { formatOutgoingText } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -182,7 +183,7 @@ export function slack(config: SlackConfig): Adapter {
 			const result = await app.client.chat.postMessage({
 				channel: message.conversation,
 				thread_ts: message.thread,
-				text: message.text,
+				text: formatOutgoingText(message.text, message.attachments),
 			});
 			return { id: result.ts };
 		},
@@ -191,7 +192,7 @@ export function slack(config: SlackConfig): Adapter {
 			await app.client.chat.update({
 				channel: message.conversation,
 				ts: message.id,
-				text: message.text,
+				text: formatOutgoingText(message.text, message.attachments),
 			});
 		},
 		async requestApproval(view) {
