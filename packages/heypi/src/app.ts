@@ -5,7 +5,7 @@ import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
 import { type Channel, createChannel } from "./channel.js";
 import { createChatHistoryTool } from "./chat-tools.js";
-import { type AdapterEvent, type ChatJob, defaultAdapterEvents } from "./events.js";
+import type { AdapterEvent, ChatJob } from "./events.js";
 import { consoleLogger } from "./log.js";
 import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
 import { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
@@ -140,8 +140,7 @@ function todoEnabled(agent: AgentConfig): boolean {
 }
 
 function eventHandlers(adapter: Adapter) {
-	const defaults = adapter.progress === false ? {} : defaultAdapterEvents();
-	return { ...defaults, ...(adapter.events ?? {}) };
+	return adapter.events ?? {};
 }
 
 export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp> {

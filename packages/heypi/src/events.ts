@@ -41,9 +41,7 @@ export type AdapterEvents = {
 	[K in AdapterEventType]?: AdapterEventHandler<Extract<AdapterEvent, { type: K }>> | false;
 };
 
-export function defaultAdapterEvents(): Required<
-	Pick<AdapterEvents, "turn.started" | "tool.started" | "todo.changed">
-> {
+export function statusEvents(): Required<Pick<AdapterEvents, "turn.started" | "tool.started" | "todo.changed">> {
 	return {
 		"turn.started": (_event, context) => {
 			context.status?.replace("Thinking...");

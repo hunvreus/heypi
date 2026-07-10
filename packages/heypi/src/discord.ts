@@ -228,6 +228,11 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	};
 }
 
+function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
+	if (progress === false) return events;
+	return withTypingEvents(events, typing);
+}
+
 export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
 	const pending = new Map<string, PendingApproval>();
@@ -240,7 +245,7 @@ export function discord(config: DiscordConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
-		events: withTypingEvents(config.events, typing),
+		events: progressEvents(config.progress, config.events, typing),
 		async start(context) {
 			client = new Client({
 				intents: [

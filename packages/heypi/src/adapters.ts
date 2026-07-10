@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AdapterEvents } from "./events.js";
+import { type AdapterEvents, statusEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -35,6 +35,11 @@ function localMessage(input: LocalMessage): ChatMessage {
 	};
 }
 
+function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
+	if (progress === false) return events;
+	return { ...statusEvents(), ...(events ?? {}) };
+}
+
 export type LocalConfig = {
 	name?: string;
 	allow?: AllowConfig;
@@ -57,7 +62,7 @@ export function local(config: string | LocalConfig = "local"): LocalAdapter {
 		approvers: resolved.approvers,
 		approvals: resolved.approvals,
 		progress: resolved.progress ?? true,
-		events: resolved.events,
+		events: progressEvents(resolved.progress, resolved.events),
 		sent,
 		start(nextContext) {
 			context = nextContext;

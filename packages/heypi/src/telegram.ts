@@ -211,6 +211,11 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	};
 }
 
+function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
+	if (progress === false) return events;
+	return withTypingEvents(events, typing);
+}
+
 export function telegram(config: TelegramConfig): Adapter {
 	let running = false;
 	let offset = 0;
@@ -288,7 +293,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
-		events: withTypingEvents(config.events, typing),
+		events: progressEvents(config.progress, config.events, typing),
 		async start(context) {
 			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;

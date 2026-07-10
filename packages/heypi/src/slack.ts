@@ -1,7 +1,7 @@
 import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
 import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
-import type { AdapterEvents } from "./events.js";
+import { type AdapterEvents, statusEvents } from "./events.js";
 import { formatOutgoingText } from "./message.js";
 import type {
 	Adapter,
@@ -109,7 +109,7 @@ export function slack(config: SlackConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? true,
-		events: config.events,
+		events: progressEvents(config.progress, config.events),
 		async start(nextContext) {
 			context = nextContext;
 			app = new App({ appToken: config.appToken, socketMode: true, token: config.token });
@@ -228,6 +228,11 @@ export function slack(config: SlackConfig): Adapter {
 			});
 		},
 	};
+}
+
+function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
+	if (progress === false) return events;
+	return { ...statusEvents(), ...(events ?? {}) };
 }
 
 async function slackBotIdentity(app: App, logger: AdapterContext["logger"]): Promise<SlackBotIdentity> {
