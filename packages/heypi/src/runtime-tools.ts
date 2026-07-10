@@ -57,6 +57,25 @@ function asTools(tools: ToolDefinition<any, any, any>[]): ToolDefinition<any, an
 	return tools;
 }
 
+function guardPathInput(
+	tool: ToolDefinition<any, any, any>,
+	guard: (path: string) => void,
+	fields: string[],
+): ToolDefinition<any, any, any> {
+	return {
+		...tool,
+		async execute(toolCallId, input, signal, onUpdate, ctx) {
+			if (input && typeof input === "object") {
+				for (const field of fields) {
+					const value = (input as Record<string, unknown>)[field];
+					if (typeof value === "string") guard(value);
+				}
+			}
+			return tool.execute(toolCallId, input, signal, onUpdate, ctx);
+		},
+	};
+}
+
 function globPattern(pattern: string): RegExp {
 	let source = "^";
 	for (let index = 0; index < pattern.length; index++) {
@@ -165,9 +184,9 @@ function hostFileTools(workspace: string, env?: Record<string, string>): ToolDef
 		}),
 		createEditToolDefinition(workspace, { operations: editOps }),
 		createWriteToolDefinition(workspace, { operations: writeOps }),
-		createGrepToolDefinition(workspace, { operations: grepOps }),
+		guardPathInput(createGrepToolDefinition(workspace, { operations: grepOps }), guard, ["path"]),
 		createFindToolDefinition(workspace, { operations: findOps }),
-		createLsToolDefinition(workspace, { operations: lsOps }),
+		guardPathInput(createLsToolDefinition(workspace, { operations: lsOps }), guard, ["path"]),
 	]);
 }
 
@@ -325,9 +344,21 @@ function dockerFileTools(containerId: string, workspace: string): ToolDefinition
 		createReadToolDefinition(GUEST_WORKSPACE, { operations: readOps }),
 		createEditToolDefinition(GUEST_WORKSPACE, { operations: { ...readOps, ...writeOps } }),
 		createWriteToolDefinition(GUEST_WORKSPACE, { operations: writeOps }),
-		createGrepToolDefinition(GUEST_WORKSPACE, { operations: grepOps }),
+		guardPathInput(
+			createGrepToolDefinition(GUEST_WORKSPACE, { operations: grepOps }),
+			(path) => {
+				assertGuestPath(dockerPath(workspace, path));
+			},
+			["path"],
+		),
 		createFindToolDefinition(GUEST_WORKSPACE, { operations: findOps }),
-		createLsToolDefinition(GUEST_WORKSPACE, { operations: lsOps }),
+		guardPathInput(
+			createLsToolDefinition(GUEST_WORKSPACE, { operations: lsOps }),
+			(path) => {
+				assertGuestPath(dockerPath(workspace, path));
+			},
+			["path"],
+		),
 	]);
 }
 
