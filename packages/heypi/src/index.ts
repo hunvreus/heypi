@@ -40,6 +40,7 @@ export {
 	type HostRuntimeOptions,
 	host,
 } from "./runtime.js";
+export { createSecretExchange, type DecryptedSecret, type SecretRequest } from "./secrets.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
 export type { StatusSlot } from "./status.js";
 export {
