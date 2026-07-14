@@ -59,7 +59,22 @@
   - `/admin/secret` serves the static encrypt page and accepts encrypted replies.
   - Pasted `!secret:<id>:<payload>` replies are intercepted before Pi sees them.
   - Secrets are stored encrypted at rest under heypi state, not under `/workspace`.
-- Still missing: runtime credential brokering, trusted GitHub/OpenAPI consumers, rotation/expiry UI, and hosted `heypi.dev/secret` deployment.
+- Still missing:
+  - A trusted tool/helper API to read a named secret for custom tools without exposing it to Pi.
+  - Runtime credential brokering for one command/session without writing secrets into `/workspace`.
+  - Git credential-helper support backed by stored secrets.
+  - Missing-secret flow: request secret, wait for submission, then resume or retry the blocked work.
+  - Rotation/expiry UI and hosted `heypi.dev/secret` deployment.
+
+## Agent-created skills
+
+- Investigate a Hermes-style skill creation workflow as an optional capability, likely starting in an
+  example rather than core.
+  - Reference: `/Users/hunvreus/Workspace/_sandbox/hermes-agent/tools/skill_manager_tool.py`
+  - Hermes supports agent-managed `create`, `edit`, `patch`, `delete`, supporting files, and security
+    scanning for skills written under `~/.hermes/skills/`.
+  - Decide whether heypi should provide this as a bundled example skill/tool, an optional package, or
+    core product surface after the regular skill loading path is stable.
 
 ## Chat attachments
 
