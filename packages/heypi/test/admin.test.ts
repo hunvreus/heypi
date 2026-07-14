@@ -17,9 +17,10 @@ async function makeDir(name: string): Promise<string> {
 describe("admin", () => {
 	it("serves health and read-only channel audit records", async () => {
 		const state = await makeDir("admin");
-		await mkdir(join(state, "channels"), { recursive: true });
+		const logDir = join(state, "accounts", "local", "channels", "local", "sessions", "local-session");
+		await mkdir(logDir, { recursive: true });
 		await writeFile(
-			join(state, "channels", "local:local:local.jsonl"),
+			join(logDir, "log.jsonl"),
 			`${JSON.stringify({
 				type: "inbound",
 				record: 1,
@@ -49,15 +50,17 @@ describe("admin", () => {
 				ok: true,
 			});
 			await expect(fetch(`${admin.url()}/channels`).then((response) => response.json())).resolves.toEqual({
-				channels: ["local:local:local"],
+				channels: ["local/local/local-session"],
 			});
 			await expect(fetch(`${admin.url()}/jobs`).then((response) => response.json())).resolves.toEqual({
 				jobs: [],
 			});
 			await expect(
-				fetch(`${admin.url()}/channels/local%3Alocal%3Alocal`).then((response) => response.json()),
+				fetch(`${admin.url()}/channels/${encodeURIComponent("local/local/local-session")}`).then((response) =>
+					response.json(),
+				),
 			).resolves.toMatchObject({
-				key: "local:local:local",
+				key: "local/local/local-session",
 				records: [{ type: "inbound", text: "hello" }],
 			});
 		} finally {
@@ -85,6 +88,29 @@ describe("admin", () => {
 				}).then((response) => response.json()),
 			).resolves.toEqual({ canceled: { active: 0, queued: 2 } });
 			expect(calls).toEqual([{ scope: "queued", reason: "user canceled" }]);
+		} finally {
+			await admin.stop();
+		}
+	});
+
+	it("rejects malformed request bodies without crashing", async () => {
+		const state = await makeDir("admin-bad-json");
+		const admin = createAdmin({
+			stateDir: state,
+			port: freePort(),
+			cancel: async () => ({ active: 0, queued: 0 }),
+		});
+		await admin.start();
+		try {
+			await expect(
+				fetch(`${admin.url()}/jobs/cancel`, {
+					method: "POST",
+					body: "{",
+				}).then((response) => response.json()),
+			).resolves.toEqual({ error: "bad_request" });
+			await expect(fetch(`${admin.url()}/health`).then((response) => response.json())).resolves.toEqual({
+				ok: true,
+			});
 		} finally {
 			await admin.stop();
 		}
@@ -118,9 +144,10 @@ describe("admin", () => {
 
 	it("serves an HTML dashboard to browsers", async () => {
 		const state = await makeDir("admin-html");
-		await mkdir(join(state, "channels"), { recursive: true });
+		const logDir = join(state, "accounts", "local", "channels", "room", "sessions", "room-session");
+		await mkdir(logDir, { recursive: true });
 		await writeFile(
-			join(state, "channels", "local:local:room.jsonl"),
+			join(logDir, "log.jsonl"),
 			`${JSON.stringify({
 				type: "inbound",
 				record: 1,
@@ -156,7 +183,39 @@ describe("admin", () => {
 			expect(html).toContain("<h1>heypi admin</h1>");
 			expect(html).toContain("Cancel active");
 			expect(html).toContain("Ronan");
-			expect(html).toContain("local:local:room");
+			expect(html).toContain("local/room/room-session");
+		} finally {
+			await admin.stop();
+		}
+	});
+
+	it("serves the secret page and accepts encrypted secret replies without an admin token", async () => {
+		const state = await makeDir("admin-secret");
+		const accepted: string[] = [];
+		const admin = createAdmin({
+			stateDir: state,
+			port: freePort(),
+			token: "admin-token",
+			secret: {
+				pageHtml: () => "<!doctype html><title>secret</title>",
+				accept: async (reply) => {
+					accepted.push(reply);
+					return { name: "github-token" };
+				},
+			},
+		});
+		await admin.start();
+		try {
+			const html = await fetch(`${admin.url()}/secret`).then((response) => response.text());
+			expect(html).toContain("<title>secret</title>");
+			await expect(
+				fetch(`${admin.url()}/secret`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ reply: "!secret:id:payload" }),
+				}).then((response) => response.json()),
+			).resolves.toEqual({ ok: true, name: "github-token" });
+			expect(accepted).toEqual(["!secret:id:payload"]);
 		} finally {
 			await admin.stop();
 		}

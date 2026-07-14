@@ -12,3 +12,4 @@ mise.toml
 coverage/
 examples/*/.heypi/
 examples/*/workspace/
+examples/*/slack/

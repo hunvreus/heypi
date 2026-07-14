@@ -1,46 +1,72 @@
-import { constants, createCipheriv, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
+import { constants, createCipheriv, publicEncrypt, randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSecretExchange } from "../src/secrets.js";
+import { createSecretManager, secretPageHtml } from "../src/secrets.js";
 
-function encryptedReply(widgetUrl: string, value: string): string {
-	const payload = JSON.parse(Buffer.from(widgetUrl.split("#")[1] ?? "", "base64").toString("utf8")) as {
-		k: string;
-		r: string;
-	};
+function state(name: string): string {
+	return join(tmpdir(), `heypi-secret-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+}
+
+function decodeRequest(url: string): { r: string; k: string } {
+	const hash = new URL(url).hash.slice(1);
+	const json = Buffer.from(hash, "base64url").toString("utf8");
+	return JSON.parse(json) as { r: string; k: string };
+}
+
+function encryptedReply(url: string, secret: string): string {
+	const request = decodeRequest(url);
 	const key = randomBytes(32);
 	const iv = randomBytes(12);
 	const cipher = createCipheriv("aes-256-gcm", key, iv);
-	const ciphertext = Buffer.concat([cipher.update(value), cipher.final()]);
-	const tag = cipher.getAuthTag();
-	const publicKey = createPublicKey({ key: Buffer.from(payload.k, "base64"), type: "spki", format: "der" });
+	const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final(), cipher.getAuthTag()]);
 	const encryptedKey = publicEncrypt(
-		{ key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+		{
+			key: Buffer.from(request.k, "base64"),
+			format: "der",
+			type: "spki",
+			padding: constants.RSA_PKCS1_OAEP_PADDING,
+			oaepHash: "sha256",
+		},
 		key,
 	);
-	const length = Buffer.alloc(2);
-	length.writeUInt16BE(encryptedKey.length, 0);
-	const encrypted = Buffer.concat([length, encryptedKey, iv, ciphertext, tag]).toString("base64");
-	return `!secret:${payload.r}:${encrypted}`;
+	const body = Buffer.alloc(2 + encryptedKey.length + iv.length + ciphertext.length);
+	body.writeUInt16BE(encryptedKey.length, 0);
+	encryptedKey.copy(body, 2);
+	iv.copy(body, 2 + encryptedKey.length);
+	ciphertext.copy(body, 2 + encryptedKey.length + iv.length);
+	return `!secret:${request.r}:${body.toString("base64")}`;
 }
 
-describe("secret exchange", () => {
-	it("decrypts encrypted replies for pending requests", () => {
-		const exchange = createSecretExchange();
-		const request = exchange.create("github-token", "GitHub token");
-		const reply = encryptedReply(request.widgetUrl, "ghp_secret");
+describe("secrets", () => {
+	it("accepts encrypted replies and stores encrypted-at-rest", async () => {
+		const root = state("roundtrip");
+		const manager = createSecretManager({ keyPath: join(root, "secrets.key"), pageUrl: "https://heypi.dev/secret" });
+		const dir = join(root, "accounts", "a", "channels", "c", "secrets");
+		const request = await manager.request({ name: "github-token", description: "GitHub token", dir });
 
-		expect(exchange.decrypt(reply)).toEqual({
-			id: request.id,
-			name: "github-token",
-			value: "ghp_secret",
-		});
-		expect(exchange.decrypt(reply)).toBeUndefined();
+		const stored = await manager.accept(encryptedReply(request.url, "ghp_test"));
+
+		expect(stored).toMatchObject({ name: "github-token" });
+		await expect(manager.get(dir, "github-token")).resolves.toBe("ghp_test");
+		await expect(readFile(join(dir, "github-token.json"), "utf8")).resolves.not.toContain("ghp_test");
 	});
 
-	it("ignores unrelated secret replies", () => {
-		const exchange = createSecretExchange();
+	it("does not accept a secret reply twice", async () => {
+		const root = state("single-use");
+		const manager = createSecretManager({ keyPath: join(root, "secrets.key") });
+		const dir = join(root, "secrets");
+		const request = await manager.request({ name: "token", description: "Token", dir });
+		const reply = encryptedReply(request.url, "secret");
 
-		expect(exchange.decrypt("hello")).toBeUndefined();
-		expect(exchange.decrypt("!secret:missing:aaaa")).toBeUndefined();
+		expect(await manager.accept(reply)).toMatchObject({ name: "token" });
+		await expect(manager.accept(reply)).resolves.toBeUndefined();
+	});
+
+	it("serves a static browser encryption page", () => {
+		expect(secretPageHtml()).toContain("Send a secret to heypi");
+		expect(secretPageHtml()).toContain("crypto.subtle");
+		expect(secretPageHtml()).toContain("!secret:");
 	});
 });

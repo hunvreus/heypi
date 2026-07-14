@@ -10,5 +10,6 @@ RUN apt-get update \
 		> /etc/apt/sources.list.d/github-cli.list \
 	&& apt-get update \
 	&& apt-get install -y --no-install-recommends gh \
+	&& git config --system credential.helper '!gh auth git-credential' \
 	&& corepack enable \
 	&& rm -rf /var/lib/apt/lists/*

@@ -1,20 +1,7 @@
-import { approval, createHeypi, docker, host, loadAgent, local, modelFromEnv, slack } from "@hunvreus/heypi";
+import { approval, type Adapter, createHeypi, docker, host, loadAgent, local, modelFromEnv, slack } from "@hunvreus/heypi";
 
 function env(name: string): string | undefined {
 	return process.env[name]?.trim() || undefined;
-}
-
-function optionalSlack() {
-	const token = env("SLACK_BOT_TOKEN");
-	const appToken = env("SLACK_APP_TOKEN");
-	if (!token || !appToken) return [];
-	return [
-		slack({
-			token,
-			appToken,
-			approvals: { layout: "message" },
-		}),
-	];
 }
 
 function runtime() {
@@ -44,9 +31,23 @@ const agent = loadAgent(new URL("./agent", import.meta.url).pathname, {
 	admin: { port: Number(env("HEYPI_ADMIN_PORT") ?? 4321), token: env("HEYPI_ADMIN_TOKEN") },
 });
 
+const adapters: Adapter[] = [local("codex-tag-local")];
+const slackToken = env("SLACK_BOT_TOKEN");
+const slackAppToken = env("SLACK_APP_TOKEN");
+if (slackToken && slackAppToken) {
+	adapters.push(
+			slack({
+				token: slackToken,
+				appToken: slackAppToken,
+				busy: "queue",
+				approvals: { layout: "message" },
+		}),
+	);
+}
+
 const app = await createHeypi({
 	agent,
-	adapters: [local("codex-tag-local"), ...optionalSlack()],
+	adapters,
 });
 await app.start();
 

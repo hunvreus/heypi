@@ -41,6 +41,34 @@ describe("discordMessage", () => {
 		).toBe(true);
 	});
 
+	it("distinguishes Discord self messages from other bot messages", () => {
+		expect(
+			discordMessage(
+				{
+					id: "m1",
+					channelId: "d1",
+					content: "hello",
+					author: { id: "bot", username: "Codex", bot: true },
+					guildId: null,
+				},
+				"bot",
+			).user,
+		).toMatchObject({ id: "bot", name: "Codex", isBot: true, isSelf: true });
+
+		expect(
+			discordMessage(
+				{
+					id: "m2",
+					channelId: "d1",
+					content: "hello",
+					author: { id: "other-bot", username: "Other", bot: true },
+					guildId: null,
+				},
+				"bot",
+			).user,
+		).toMatchObject({ id: "other-bot", name: "Other", isBot: true });
+	});
+
 	it("renders approval buttons", () => {
 		expect(
 			discordApprovalPayload({

@@ -28,6 +28,7 @@ See also:
 
 - [Creating agents](docs/creating-agents.md)
 - [Creating custom tools](docs/creating-custom-tools.md)
+- [Scheduling plan](docs/scheduling.md)
 
 `createHeypi()` accepts an optional `piHost` factory for tests and future runtime providers. The
 factory must return the Pi host contract; heypi still sends chat deltas to Pi instead of running its
@@ -146,24 +147,25 @@ rendering in the active chat thread. Set `todo: false` in `loadAgent()` to disab
 ## Memory
 
 heypi registers `memory_store` and `memory_search` Pi tools by default. Memory is stored per
-conversation under `.heypi/memory/*.jsonl`. It is not injected into every prompt; Pi stores and
-searches it explicitly through tools. This is currently a built-in heypi-provided Pi extension; the
-TODO tracks moving it to a cleaner standalone extension package.
+conversation surface under `.heypi/accounts/*/channels/*/memory.jsonl`. It is not injected into
+every prompt; Pi stores and searches it explicitly through tools.
 
 ## Secrets
 
 heypi registers a `chat_request_secret` Pi tool. The model can ask the active chat user for a
-credential without the user pasting the raw value into Slack, Discord, Telegram, or webhook text.
-The user opens the generated `pi.dev/secret` link, enters the value locally, and pastes the encrypted
-reply back into chat. heypi decrypts that reply before audit ingestion, stores the value in
-`.secrets/<name>` inside the runtime workspace, and sends Pi only a redacted notice:
+credential without receiving the raw value:
 
-```text
-[secret stored: github-token at .secrets/github-token]
-```
+1. heypi creates a pending request with a public key.
+2. The user opens `/admin/secret#...` or the hosted static page, enters the secret, and encrypts it
+   in the browser.
+3. The encrypted reply is submitted to `/admin/secret` or pasted back into chat as
+   `!secret:<id>:<payload>`.
+4. heypi decrypts in the trusted process and stores the value encrypted at rest under `.heypi`.
 
-This is a handoff mechanism, not secret isolation. Runtime commands can read files under
-`.secrets/`. Use trusted tools, connections, or runtime credential brokers for stronger isolation.
+Secret replies are intercepted before Pi sees them. The secret is not written into `/workspace` and
+is not returned in the tool result. Runtime `env` values are still visible to model-driven commands,
+so use them only for trusted local demos. Production credentials should move through trusted-side
+tools, connections, or runtime credential brokers.
 
 ## Attachments
 
@@ -171,16 +173,21 @@ heypi registers a `chat_attach` Pi tool. The model can send a file reference fro
 workspace back to the active chat:
 
 ```text
-chat_attach({ path: "reports/summary.pdf", text: "Report ready." })
+chat_attach({ paths: ["reports/summary.pdf"], text: "Report ready." })
 ```
 
-The path must stay inside the runtime workspace. Current adapters render attachments as links or
-paths in the outgoing message. Native file upload is a later runtime/adapter bridge.
+Paths must stay inside `/workspace` or `/shared`. Slack, Discord, and Telegram upload local
+attachments when their adapter APIs support it; otherwise heypi includes path/link references in the
+message text.
+
+Inbound Slack, Discord, and Telegram attachments are copied into the active conversation workspace
+under `attachments/{messageId}/...` before the model sees the message. The model receives the
+runtime-visible path, not the adapter's transient download URL.
 
 ## Audit
 
-heypi stores adapter coordination logs under `.heypi/channels/*.jsonl`. These records are for
-admin/audit surfaces; they are not Pi's model transcript.
+heypi stores adapter coordination logs under `.heypi/accounts/*/channels/*/sessions/*/log.jsonl`.
+These records are for admin/audit surfaces; they are not Pi's model transcript.
 
 ```ts
 import { listAuditChannels, readAuditChannel } from "@hunvreus/heypi";
@@ -198,6 +205,8 @@ the endpoints directly:
 - `POST /admin/jobs/cancel` with `{ "scope": "active" | "queued" | "all", "reason": "..." }`
 - `GET /admin/channels`
 - `GET /admin/channels/:key`
+- `GET /admin/secret`
+- `POST /admin/secret` with `{ "reply": "!secret:<id>:<payload>" }`
 
 Loopback admin servers are unauthenticated by default for local development. If admin is bound to a
 non-loopback host, configure `admin.token`; requests must include `Authorization: Bearer <token>` or
@@ -327,9 +336,13 @@ Included:
 
 ## Progress
 
-heypi can render one adapter-owned progress message from Pi runtime events. Chat adapters that
-support edits update that message in place and replace it with the final reply. heypi does not expose
-a model-callable send-message tool for progress.
+heypi renders transient activity from Pi runtime events. Slack posts an editable `Thinking...`
+message immediately when a turn starts, changes it to `Working...` when Pi uses a tool, and removes
+it when the turn ends. Discord and Telegram use refreshed native typing indicators. The final answer
+is always a separate message.
+
+The built-in todo extension owns a second editable message. Activity and todo updates never compete
+for the same message: activity is transient, while the settled todo list remains visible.
 
 ```ts
 slack({
@@ -339,9 +352,8 @@ slack({
 });
 ```
 
-Set adapter `progress: false` to disable adapter-owned progress. Slack defaults to editable text
-progress; Discord and Telegram use native typing acknowledgement by default and do not post text
-progress unless configured later.
+Set adapter `progress: false` to disable activity and visible todo rendering. The Pi todo tool remains
+available unless the agent sets `todo: false`.
 
 The current built-in text progress is intentionally coarse: `Thinking...` before tool work and
 `Working...` once Pi starts using tools.
@@ -363,8 +375,44 @@ slack({
 ```
 
 Stable events are `message.accepted`, `turn.started`, `tool.started`, `todo.changed`,
-`message.completed`, `turn.canceled`, and `turn.failed`. Pi-derived events are normalized before
-adapters see them.
+`message.completed`, `turn.canceled`, `turn.failed`, `message.queued`, `message.steered`, and
+`message.rejected`. Pi-derived events are normalized before adapters see them.
+
+Slack reactions are available through the same event context instead of a separate reaction setting:
+
+```ts
+slack({
+	token,
+	appToken,
+	events: {
+		...statusEvents(),
+		"message.accepted": async (event, context) => {
+			context.status?.replace("Thinking...");
+			if (event.message.mentioned) await context.react?.("eyes");
+		},
+	},
+});
+```
+
+## Busy conversations
+
+Adapters default to durable FIFO queueing when a conversation already has an active Pi turn. Select
+another policy with `busy`:
+
+```ts
+slack({
+	token,
+	appToken,
+	busy: "queue", // "queue" | "steer" | "reject"
+});
+```
+
+- `queue` stores the new turn and runs it after the active turn.
+- `steer` sends the message to Pi's active session through `session.steer()`.
+- `reject` declines the message without creating a turn.
+
+The default responses are adapter events. Override or disable `message.queued`, `message.steered`,
+or `message.rejected` to customize their user-facing behavior.
 
 Not included yet:
 

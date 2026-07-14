@@ -1,8 +1,9 @@
 import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
-import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
-import { type AdapterEvents, statusEvents } from "./events.js";
-import { formatOutgoingText } from "./message.js";
+import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import { materializeAttachments } from "./attachments.js";
+import { type AdapterEvents, busyEvents, statusEvents } from "./events.js";
+import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -11,6 +12,7 @@ import type {
 	ApprovalDecision,
 	ApprovalView,
 	ApproverSet,
+	BusyMode,
 	ChatMessage,
 } from "./types.js";
 
@@ -18,14 +20,14 @@ const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
 
 export type SlackConfig = {
-	name?: string;
+	id?: string;
 	token: string;
 	appToken: string;
-	reaction?: string | false;
 	allow?: AllowConfig;
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
+	busy?: BusyMode;
 	progress?: boolean;
 	events?: AdapterEvents;
 };
@@ -59,6 +61,7 @@ type SlackApprovalPayload = {
 };
 
 const HUMAN_MESSAGE_SUBTYPES = new Set(["file_share", "me_message", "thread_broadcast"]);
+const SLACK_TEXT_LIMIT = 39_000;
 
 export type SlackBotIdentity = {
 	botId?: string;
@@ -66,16 +69,22 @@ export type SlackBotIdentity = {
 	userId?: string;
 };
 
-export function slackMessage(event: SlackEvent, mentioned: boolean, self: SlackBotIdentity = {}): ChatMessage {
+export function slackMessage(
+	event: SlackEvent,
+	mentioned: boolean,
+	self: SlackBotIdentity = {},
+	account = "slack",
+): ChatMessage {
 	const conversation = event.channel ?? "unknown";
 	const bot = slackBotSender(event, self);
 	const isSelf = botIdentityMatches(bot, self);
 	return {
 		id: event.ts ?? `slack-${Date.now()}`,
 		adapter: "slack",
-		account: "slack",
+		account,
 		conversation,
 		thread: event.channel_type === "im" ? undefined : (event.thread_ts ?? event.ts),
+		...(event.thread_ts ? { reply: true } : {}),
 		user: {
 			id: event.user ?? event.bot_id ?? event.app_id ?? "unknown",
 			name: event.username,
@@ -99,15 +108,16 @@ export function slack(config: SlackConfig): Adapter {
 	let context: AdapterContext | undefined;
 	let self: SlackBotIdentity = {};
 	const pending = new Map<string, PendingApproval>();
-	const reaction = config.reaction ?? false;
+	const id = config.id ?? "slack";
 
 	return {
 		kind: "slack",
-		name: config.name,
+		id,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,
 		approvals: config.approvals,
+		busy: config.busy ?? "queue",
 		progress: config.progress ?? true,
 		events: progressEvents(config.progress, config.events),
 		async start(nextContext) {
@@ -116,15 +126,15 @@ export function slack(config: SlackConfig): Adapter {
 			self = await slackBotIdentity(app, context.logger);
 			app.event("app_mention", async ({ event }) => {
 				if (!slackMessageEventAllowed(event as SlackEvent)) return;
-				const normalized = slackMessage(event as SlackEvent, true, self);
+				const normalized = slackMessage(event as SlackEvent, true, self, id);
 				if (normalized.user.isSelf) return;
 				await context?.receive(normalized);
 			});
 			app.message(async ({ message }) => {
 				const event = message as SlackEvent;
-				if (event.channel_type !== "im") return;
 				if (!slackMessageEventAllowed(event)) return;
-				const normalized = slackMessage(event, false, self);
+				if (event.channel_type !== "im" && !event.thread_ts) return;
+				const normalized = slackMessage(event, false, self, id);
 				if (normalized.user.isSelf) return;
 				await context?.receive(normalized);
 			});
@@ -133,24 +143,30 @@ export function slack(config: SlackConfig): Adapter {
 				const id = actionValue(body);
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
+				const resolvedBy = bodyUser(body);
+				const resolvedById = bodyUserId(body);
+				if (!approvalActorAllowed({ approved: true, resolvedBy, resolvedById }, config.approvers, config.admins))
+					return;
 				pending.delete(id);
 				if (approval.timer) clearTimeout(approval.timer);
-				const resolvedBy = bodyUser(body);
 				await app?.client.chat.update({
 					channel: approval.channel,
 					ts: approval.message,
 					...slackApprovalPayload({ ...approval.view, state: "approved", resolvedBy }),
 				});
-				approval.resolve({ approved: true, resolvedBy, resolvedById: bodyUserId(body) });
+				approval.resolve({ approved: true, resolvedBy, resolvedById });
 			});
 			app.action(REJECT, async ({ ack, body }) => {
 				await ack();
 				const id = actionValue(body);
 				const approval = id ? pending.get(id) : undefined;
 				if (!id || !approval) return;
+				const resolvedBy = bodyUser(body);
+				const resolvedById = bodyUserId(body);
+				if (!approvalActorAllowed({ approved: false, resolvedBy, resolvedById }, config.approvers, config.admins))
+					return;
 				pending.delete(id);
 				if (approval.timer) clearTimeout(approval.timer);
-				const resolvedBy = bodyUser(body);
 				await app?.client.chat.update({
 					channel: approval.channel,
 					ts: approval.message,
@@ -159,7 +175,7 @@ export function slack(config: SlackConfig): Adapter {
 				approval.resolve({
 					approved: false,
 					resolvedBy,
-					resolvedById: bodyUserId(body),
+					resolvedById,
 					reason: "Rejected in Slack.",
 				});
 			});
@@ -170,22 +186,59 @@ export function slack(config: SlackConfig): Adapter {
 			await app?.stop();
 			app = undefined;
 		},
-		async ack(message) {
-			if (!app || !reaction) return;
+		async react(message, emoji) {
+			if (!app) throw new Error("Slack adapter is not started");
 			await app.client.reactions.add({
 				channel: message.conversation,
-				name: reaction,
+				name: emoji,
 				timestamp: message.id,
 			});
 		},
+		async materializeAttachments(message, target) {
+			return {
+				...message,
+				attachments: await materializeAttachments(message.attachments, {
+					dir: target.dir,
+					displayDir: target.displayDir,
+					headers: { authorization: `Bearer ${config.token}` },
+				}),
+			};
+		},
 		async send(message) {
 			if (!app) throw new Error("Slack adapter is not started");
-			const result = await app.client.chat.postMessage({
-				channel: message.conversation,
-				thread_ts: message.thread,
-				text: formatOutgoingText(message.text, message.attachments),
-			});
-			return { id: result.ts };
+			const { local, references } = splitLocalAttachments(message.attachments);
+			if (local.length > 0) {
+				const comment = formatOutgoingText(message.text, references);
+				const chunks = chunkText(comment, SLACK_TEXT_LIMIT);
+				for (const chunk of chunks.slice(0, -1)) {
+					await app.client.chat.postMessage({
+						channel: message.conversation,
+						thread_ts: message.thread,
+						text: chunk,
+					});
+				}
+				await app.client.filesUploadV2({
+					channel_id: message.conversation,
+					thread_ts: message.thread,
+					initial_comment: chunks.at(-1) ?? "",
+					file_uploads: local.map((attachment) => ({
+						file: attachment.localPath ?? "",
+						filename: attachment.name,
+						title: attachment.name,
+					})),
+				});
+				return undefined;
+			}
+			let firstId: string | undefined;
+			for (const text of chunkText(formatOutgoingText(message.text, message.attachments), SLACK_TEXT_LIMIT)) {
+				const result = await app.client.chat.postMessage({
+					channel: message.conversation,
+					thread_ts: message.thread,
+					text,
+				});
+				firstId ??= result.ts;
+			}
+			return { id: firstId };
 		},
 		async update(message) {
 			if (!app) throw new Error("Slack adapter is not started");
@@ -194,6 +247,10 @@ export function slack(config: SlackConfig): Adapter {
 				ts: message.id,
 				text: formatOutgoingText(message.text, message.attachments),
 			});
+		},
+		async remove(message) {
+			if (!app) throw new Error("Slack adapter is not started");
+			await app.client.chat.delete({ channel: message.conversation, ts: message.id });
 		},
 		async requestApproval(view) {
 			if (!app) return { approved: false, reason: "Slack adapter is not started." };
@@ -231,7 +288,7 @@ export function slack(config: SlackConfig): Adapter {
 }
 
 function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
-	if (progress === false) return events;
+	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
 	return { ...statusEvents(), ...(events ?? {}) };
 }
 

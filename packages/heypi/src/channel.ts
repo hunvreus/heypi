@@ -1,18 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ChatJob } from "./events.js";
-import type { ChatMessage } from "./types.js";
+import type { BusyMode, ChatMessage, SendMessage } from "./types.js";
 
 export type ChannelRecord =
 	| ({ type: "inbound"; record: number } & ChatMessage)
+	| ({ type: "outbound"; record: number; message?: string; time: string } & SendMessage)
 	| { type: "turn_queued"; record: number; id: string; trigger: number }
+	| { type: "turn_steered"; record: number; id: string; trigger: number }
+	| { type: "turn_rejected"; record: number; trigger: number }
 	| { type: "turn_completed"; record: number; id: string; trigger: number; reply?: string }
 	| { type: "turn_failed"; record: number; id: string; trigger: number; error: string }
 	| { type: "turn_canceled"; record: number; id: string; trigger: number; reason?: string };
 
 export type Turn = {
 	id: string;
+	message: ChatMessage;
 	replyThread?: string;
 	prompt: string;
 };
@@ -24,21 +29,31 @@ type QueuedTurn = {
 
 export type ChannelOptions = {
 	logPath: string;
+	lockPath?: string;
 };
 
 export type Channel = {
 	load(): Promise<void>;
-	ingest(message: ChatMessage): Promise<boolean>;
+	close(): Promise<void>;
+	ingest(message: ChatMessage, busy?: BusyMode): Promise<IngestResult>;
 	next(): Turn | undefined;
 	jobs(): ChatJob[];
 	cancelQueued(reason?: string): Promise<number>;
 	cancelActive(reason?: string): Promise<boolean>;
+	outbound(message: SendMessage, remoteId?: string): Promise<void>;
 	complete(reply?: string): Promise<void>;
 	fail(error: string): Promise<void>;
 	activeMessageId(): string | undefined;
 	activeUser(): { id: string; name?: string } | undefined;
-	findHistory(query?: ChatHistoryQuery): Array<ChannelRecord & { type: "inbound" }>;
+	findHistory(query?: ChatHistoryQuery): Array<ChannelRecord & ({ type: "inbound" } | { type: "outbound" })>;
 };
+
+export type IngestResult =
+	| { action: "ignored" }
+	| { action: "started"; id: string }
+	| { action: "queued"; id: string }
+	| { action: "steer"; id: string; prompt: string }
+	| { action: "rejected" };
 
 export type ChatHistoryQuery = {
 	query?: string;
@@ -52,6 +67,50 @@ export function createChannel(options: ChannelOptions): Channel {
 	const queued: QueuedTurn[] = [];
 	let active: QueuedTurn | undefined;
 	let nextRecord = 1;
+	let lock: FileHandle | undefined;
+
+	async function lockChannel(): Promise<void> {
+		if (!options.lockPath || lock) return;
+		await mkdir(dirname(options.lockPath), { recursive: true });
+		try {
+			lock = await open(options.lockPath, "wx");
+			await lock.writeFile(JSON.stringify({ pid: process.pid, time: new Date().toISOString() }), "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			const text = await readFile(options.lockPath, "utf8").catch(() => "");
+			const pid = lockPid(text);
+			if (Number.isFinite(pid) && processAlive(pid)) {
+				throw new Error(`channel is already active in process ${pid}`);
+			}
+			await rm(options.lockPath, { force: true });
+			lock = await open(options.lockPath, "wx");
+			await lock.writeFile(JSON.stringify({ pid: process.pid, time: new Date().toISOString() }), "utf8");
+		}
+	}
+
+	function processAlive(pid: number): boolean {
+		try {
+			process.kill(pid, 0);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	function lockPid(text: string): number {
+		try {
+			return Number(JSON.parse(text || "{}").pid);
+		} catch {
+			return NaN;
+		}
+	}
+
+	async function releaseLock(): Promise<void> {
+		if (!lock) return;
+		await lock.close();
+		lock = undefined;
+		if (options.lockPath) await rm(options.lockPath, { force: true });
+	}
 	async function append(record: ChannelRecord): Promise<void> {
 		records.push(record);
 		await appendFile(options.logPath, `${JSON.stringify(record)}\n`, "utf8");
@@ -59,6 +118,12 @@ export function createChannel(options: ChannelOptions): Channel {
 
 	function isInbound(record: ChannelRecord): record is ChannelRecord & { type: "inbound" } {
 		return record.type === "inbound";
+	}
+
+	function isMessageRecord(
+		record: ChannelRecord,
+	): record is ChannelRecord & ({ type: "inbound" } | { type: "outbound" }) {
+		return record.type === "inbound" || record.type === "outbound";
 	}
 
 	function activeMessage(): (ChannelRecord & { type: "inbound" }) | undefined {
@@ -69,7 +134,7 @@ export function createChannel(options: ChannelOptions): Channel {
 		});
 	}
 
-	function restoreQueue(): void {
+	async function failInterruptedTurns(): Promise<void> {
 		queued.splice(0, queued.length);
 		const finished = new Set<string>();
 		for (const record of records) {
@@ -79,7 +144,13 @@ export function createChannel(options: ChannelOptions): Channel {
 		}
 		for (const record of records) {
 			if (record.type === "turn_queued" && !finished.has(record.id)) {
-				queued.push({ id: record.id, trigger: record.trigger });
+				await append({
+					type: "turn_failed",
+					record: nextRecord++,
+					id: record.id,
+					trigger: record.trigger,
+					error: "interrupted by restart",
+				});
 			}
 		}
 	}
@@ -87,11 +158,20 @@ export function createChannel(options: ChannelOptions): Channel {
 	function shouldTrigger(message: ChatMessage): boolean {
 		if (message.user.isSelf) return false;
 		if (!hasContent(message)) return false;
-		return message.dm || message.mentioned;
+		return message.dm || message.mentioned || followsTriggeredThread(message);
 	}
 
 	function hasContent(message: ChatMessage): boolean {
 		return message.text.trim().length > 0 || Boolean(message.attachments?.length);
+	}
+
+	function followsTriggeredThread(message: ChatMessage): boolean {
+		if (!message.thread || message.dm) return false;
+		return records.some((record) => {
+			if (!isInbound(record)) return false;
+			if (record.conversation !== message.conversation || record.thread !== message.thread) return false;
+			return record.dm || record.mentioned;
+		});
 	}
 
 	function formatMessage(message: ChannelRecord & { type: "inbound" }): string {
@@ -127,12 +207,14 @@ export function createChannel(options: ChannelOptions): Channel {
 			conversation: trigger.conversation,
 			thread: trigger.thread,
 			actor: { id: trigger.user.id, name: trigger.user.name },
+			startedAt: trigger.time,
 		};
 	}
 
 	return {
 		async load() {
 			await mkdir(dirname(options.logPath), { recursive: true });
+			await lockChannel();
 			try {
 				const text = await readFile(options.logPath, "utf8");
 				records = text
@@ -140,20 +222,37 @@ export function createChannel(options: ChannelOptions): Channel {
 					.filter(Boolean)
 					.map((line) => JSON.parse(line) as ChannelRecord);
 				nextRecord = records.reduce((max, record) => Math.max(max, record.record), 0) + 1;
-				restoreQueue();
+				await failInterruptedTurns();
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 		},
 
-		async ingest(message) {
-			const record: ChannelRecord = { type: "inbound", record: nextRecord++, ...message };
+		async close() {
+			await releaseLock();
+		},
+
+		async ingest(message, busy = "queue") {
+			const record: ChannelRecord = {
+				type: "inbound",
+				record: nextRecord++,
+				...message,
+				time: message.time ?? new Date().toISOString(),
+			};
 			await append(record);
-			if (!shouldTrigger(message)) return false;
+			if (!shouldTrigger(message)) return { action: "ignored" };
+			if (active && busy === "reject") {
+				await append({ type: "turn_rejected", record: nextRecord++, trigger: record.record });
+				return { action: "rejected" };
+			}
+			if (active && busy === "steer") {
+				await append({ type: "turn_steered", record: nextRecord++, id: active.id, trigger: record.record });
+				return { action: "steer", id: active.id, prompt: buildPrompt(record.record) };
+			}
 			const turn = { id: randomUUID(), trigger: record.record };
 			queued.push(turn);
 			await append({ type: "turn_queued", record: nextRecord++, id: turn.id, trigger: turn.trigger });
-			return true;
+			return { action: active ? "queued" : "started", id: turn.id };
 		},
 
 		next() {
@@ -162,8 +261,10 @@ export function createChannel(options: ChannelOptions): Channel {
 			if (!turn) return undefined;
 			active = turn;
 			const message = activeMessage();
+			if (!message) return undefined;
 			return {
 				id: turn.id,
+				message,
 				replyThread: message?.thread,
 				prompt: buildPrompt(turn.trigger),
 			};
@@ -203,6 +304,16 @@ export function createChannel(options: ChannelOptions): Channel {
 			return true;
 		},
 
+		async outbound(message, remoteId) {
+			await append({
+				type: "outbound",
+				record: nextRecord++,
+				message: remoteId,
+				time: new Date().toISOString(),
+				...message,
+			});
+		},
+
 		async complete(reply) {
 			if (!active) return;
 			await append({ type: "turn_completed", record: nextRecord++, id: active.id, trigger: active.trigger, reply });
@@ -233,10 +344,10 @@ export function createChannel(options: ChannelOptions): Channel {
 			const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
 			const activeTrigger = active?.trigger;
 			return records
-				.filter(isInbound)
+				.filter(isMessageRecord)
 				.filter((record) => {
 					if (record.record === activeTrigger) return false;
-					if (record.user.isBot) return false;
+					if (record.type === "inbound" && record.user.isBot) return false;
 					if (search && !record.text.toLowerCase().includes(search)) return false;
 					const time = record.time ? Date.parse(record.time) : undefined;
 					if (after !== undefined && time !== undefined && time < after) return false;

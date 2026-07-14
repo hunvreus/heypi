@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import {
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
@@ -18,10 +17,10 @@ export type PiHostOptions = {
 	agent: AgentConfig;
 	agentDir: string;
 	workspaceDir: string;
+	sharedDir?: string;
 	sessionDir: string;
 	extensionPaths?: string[];
 	extensions?: ExtensionFactory[];
-	tools?: string[];
 	excludeTools?: string[];
 	customTools?: ToolDefinition[];
 };
@@ -29,16 +28,13 @@ export type PiHostOptions = {
 export type PiHost = {
 	start(): Promise<void>;
 	send(text: string): Promise<void>;
+	steer?(text: string): Promise<void>;
 	abort?(): Promise<void>;
 	subscribe(listener: AgentSessionEventListener): () => void;
 	stop(): Promise<void>;
 };
 
 export type PiEvent = AgentSessionEvent;
-
-export function sessionDir(stateDir: string, key: string): string {
-	return join(stateDir, "sessions", key);
-}
 
 export function createPiHost(options: PiHostOptions): PiHost {
 	let runtime: AgentSessionRuntime | undefined;
@@ -50,10 +46,13 @@ export function createPiHost(options: PiHostOptions): PiHost {
 			const runtimeTools =
 				options.agent.noTools === "all"
 					? { tools: [], async cleanup() {} }
-					: await createRuntimeTools(options.agent.runtime, options.workspaceDir);
+					: await createRuntimeTools(options.agent.runtime, options.workspaceDir, options.sharedDir);
 			cleanupRuntimeTools = runtimeTools.cleanup;
 			const prompt = [
 				"Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
+				options.sharedDir
+					? "Use /workspace for this channel or DM. Use /shared only for reusable account-level files. Do not put secrets or private channel-specific content in /shared."
+					: undefined,
 				"Use staged agent skills, tools, and extensions when they apply.",
 			]
 				.filter(Boolean)
@@ -83,7 +82,6 @@ export function createPiHost(options: PiHostOptions): PiHost {
 					sessionManager,
 					sessionStartEvent,
 					model: options.agent.model,
-					tools: options.tools,
 					excludeTools: options.excludeTools,
 					noTools: options.agent.noTools ?? "builtin",
 					customTools: [...runtimeTools.tools, ...(options.customTools ?? [])],
@@ -101,6 +99,11 @@ export function createPiHost(options: PiHostOptions): PiHost {
 		async send(text) {
 			if (!runtime) throw new Error("Pi session is not started");
 			await runtime.session.sendUserMessage(text);
+		},
+
+		async steer(text) {
+			if (!runtime) throw new Error("Pi session is not started");
+			await runtime.session.steer(text);
 		},
 
 		async abort() {

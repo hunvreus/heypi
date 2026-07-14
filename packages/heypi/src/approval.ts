@@ -128,16 +128,17 @@ function approvalView(
 	showId: boolean,
 	layout: ApprovalLayout,
 ): ApprovalView {
+	const detail = toolInputDetail(context.input);
 	return {
 		id,
 		layout,
 		reason: result.reason,
 		requestedBy: context.actor?.name ?? context.actor?.id,
 		showId,
-		...toolInputDetail(context.input),
-		detailLabel: result.detailLabel ?? toolInputDetail(context.input).detailLabel,
-		detail: result.detail ?? toolInputDetail(context.input).detail,
-		command: result.command ?? toolInputDetail(context.input).command,
+		...detail,
+		detailLabel: result.detailLabel ?? detail.detailLabel,
+		detail: result.detail ?? detail.detail,
+		command: result.command ?? detail.command,
 	};
 }
 
@@ -150,7 +151,11 @@ function matchesAny(values: string[] | undefined, candidates: Iterable<string | 
 	return false;
 }
 
-function isApprover(decision: ApprovalDecision, approvers?: ApproverSet, admins?: ApproverSet): boolean {
+export function approvalActorAllowed(
+	decision: ApprovalDecision,
+	approvers?: ApproverSet,
+	admins?: ApproverSet,
+): boolean {
 	if (!approvers && !admins) return true;
 	const users = [decision.resolvedById, decision.resolvedBy];
 	const roles = decision.roles ?? [];
@@ -237,7 +242,7 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 			);
 			const decision = await options.request(view);
 			if (!decision.approved) return { block: true, reason: decision.reason ?? "Tool call rejected." };
-			if (!isApprover(decision, options.approvers, options.admins)) {
+			if (!approvalActorAllowed(decision, options.approvers, options.admins)) {
 				return { block: true, reason: "Approval actor is not allowed to approve this tool call." };
 			}
 			approvedTools.add(context.toolName);

@@ -17,6 +17,15 @@ Set `HEYPI_MODEL` to a Pi model id in `provider/model` form, for example `openai
 For OpenAI models, set `OPENAI_API_KEY`; Pi also supports `/login` and other provider env vars.
 The admin audit endpoint starts when `admin` is configured and is printed in the startup logs.
 
+## Web tools
+
+The example includes two custom Pi tools:
+
+- `web_search`: searches the public web. Set `TAVILY_API_KEY` for Tavily search; otherwise it falls
+  back to DuckDuckGo HTML.
+- `fetch_page`: fetches public HTTP(S) pages and returns cleaned text. It blocks localhost/private
+  IP targets unless `HEYPI_ALLOW_PRIVATE_WEB=1` is set.
+
 ## GitHub PR demo
 
 The example uses Docker by default with:
@@ -37,6 +46,9 @@ issues, push branches, and open PRs:
 `GITHUB_TOKEN` is visible to runtime commands. This is acceptable for a trusted local demo, but it is
 not secret isolation. Production GitHub access should move to trusted-side GitHub tools or a
 runtime-specific credential broker.
+
+The bundled image configures Git's HTTPS credential helper through `gh`, so both `git push` and
+GitHub CLI commands use `GITHUB_TOKEN` without embedding it in repository remotes.
 
 ## Useful tests
 

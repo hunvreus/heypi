@@ -1,7 +1,14 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import { approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
-import type { AdapterEvent, AdapterEventHandler, AdapterEvents, AdapterEventType } from "./events.js";
-import { formatOutgoingText } from "./message.js";
+import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
+import {
+	type AdapterEvent,
+	type AdapterEventHandler,
+	type AdapterEvents,
+	type AdapterEventType,
+	busyEvents,
+} from "./events.js";
+import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -9,20 +16,23 @@ import type {
 	ApprovalDecision,
 	ApprovalView,
 	ApproverSet,
+	BusyMode,
 	ChatMessage,
 } from "./types.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
+const DISCORD_TEXT_LIMIT = 2_000;
 
 export type DiscordConfig = {
-	name?: string;
+	id?: string;
 	token: string;
 	clientId?: string;
 	allow?: AllowConfig;
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
+	busy?: BusyMode;
 	progress?: boolean;
 	events?: AdapterEvents;
 };
@@ -75,12 +85,12 @@ export type DiscordApprovalPayload = {
 	}>;
 };
 
-export function discordMessage(message: DiscordMessageInput, botUserId?: string): ChatMessage {
+export function discordMessage(message: DiscordMessageInput, botUserId?: string, account = "discord"): ChatMessage {
 	const isSelf = Boolean(botUserId && message.author.id === botUserId);
 	return {
 		id: message.id,
 		adapter: "discord",
-		account: "discord",
+		account,
 		conversation: message.channelId,
 		user: {
 			id: message.author.id,
@@ -220,7 +230,9 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	}
 
 	return {
+		...busyEvents(),
 		...events,
+		"message.accepted": wrap("message.accepted", (_event, context) => typing.start(context.message)),
 		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
 		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
 		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
@@ -229,7 +241,7 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 }
 
 function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (progress === false) return events;
+	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
 	return withTypingEvents(events, typing);
 }
 
@@ -237,13 +249,15 @@ export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
 	const pending = new Map<string, PendingApproval>();
 	const typing = createTypingControls(() => client);
+	const account = config.id ?? "discord";
 	return {
 		kind: "discord",
-		name: config.name,
+		id: account,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,
 		approvals: config.approvals,
+		busy: config.busy ?? "queue",
 		progress: config.progress ?? false,
 		events: progressEvents(config.progress, config.events, typing),
 		async start(context) {
@@ -274,6 +288,7 @@ export function discord(config: DiscordConfig): Adapter {
 						})),
 					},
 					botUserId,
+					account,
 				);
 				if (normalized.user.isSelf) return;
 				if (!normalized.dm && !normalized.mentioned) return;
@@ -284,10 +299,19 @@ export function discord(config: DiscordConfig): Adapter {
 				const [action, id] = interaction.customId.split(":");
 				const approval = id ? pending.get(id) : undefined;
 				if (!approval || (action !== APPROVE && action !== REJECT)) return;
-				pending.delete(id);
-				if (approval.timer) clearTimeout(approval.timer);
 				const resolvedBy = `<@${interaction.user.id}>`;
 				const approved = action === APPROVE;
+				const roles = memberRoles(interaction.member);
+				if (
+					!approvalActorAllowed(
+						{ approved, resolvedBy, resolvedById: interaction.user.id, roles },
+						config.approvers,
+						config.admins,
+					)
+				)
+					return;
+				pending.delete(id);
+				if (approval.timer) clearTimeout(approval.timer);
 				await interaction.update(
 					discordApprovalPayload({
 						...approval.view,
@@ -299,7 +323,7 @@ export function discord(config: DiscordConfig): Adapter {
 					approved,
 					resolvedBy,
 					resolvedById: interaction.user.id,
-					roles: memberRoles(interaction.member),
+					roles,
 					reason: approved ? undefined : "Rejected in Discord.",
 				});
 			});
@@ -311,12 +335,14 @@ export function discord(config: DiscordConfig): Adapter {
 			await client?.destroy();
 			client = undefined;
 		},
-		async ack(message) {
-			if (!client) return;
-			const channel = await client.channels.fetch(message.conversation);
-			if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") {
-				await channel.sendTyping();
-			}
+		async materializeAttachments(message, target) {
+			return {
+				...message,
+				attachments: await materializeAdapterAttachments(message.attachments, {
+					dir: target.dir,
+					displayDir: target.displayDir,
+				}),
+			};
 		},
 		async send(message) {
 			if (!client) throw new Error("Discord adapter is not started");
@@ -324,8 +350,23 @@ export function discord(config: DiscordConfig): Adapter {
 			if (!channel || !("send" in channel) || typeof channel.send !== "function") {
 				throw new Error(`Discord channel cannot receive messages: ${message.conversation}`);
 			}
-			const result = await channel.send({ content: formatOutgoingText(message.text, message.attachments) });
-			return { id: result.id };
+			const { local, references } = splitLocalAttachments(message.attachments);
+			const chunks = chunkText(formatOutgoingText(message.text, references), DISCORD_TEXT_LIMIT);
+			let firstId: string | undefined;
+			for (const [index, content] of chunks.entries()) {
+				const result = await channel.send({
+					content,
+					files:
+						index === chunks.length - 1
+							? local.map((attachment) => ({
+									attachment: attachment.localPath ?? "",
+									name: attachment.name,
+								}))
+							: undefined,
+				});
+				firstId ??= result.id;
+			}
+			return { id: firstId };
 		},
 		async update(message) {
 			if (!client) throw new Error("Discord adapter is not started");
@@ -344,6 +385,13 @@ export function discord(config: DiscordConfig): Adapter {
 			if (target && "edit" in target && typeof target.edit === "function") {
 				await target.edit({ content: formatOutgoingText(message.text, message.attachments) });
 			}
+		},
+		async remove(message) {
+			if (!client) throw new Error("Discord adapter is not started");
+			const channel = await client.channels.fetch(message.conversation);
+			if (!channel || !("messages" in channel)) return;
+			const target = await channel.messages.fetch(message.id);
+			await target.delete();
 		},
 		async requestApproval(view) {
 			if (!client) return { approved: false, reason: "Discord adapter is not started." };

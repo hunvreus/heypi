@@ -1,8 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { join } from "node:path";
-import { listAuditChannels, readAuditChannel } from "./audit.js";
+import { listAuditChannels, readAuditChannelKey } from "./audit.js";
 import type { ChatJob } from "./events.js";
 import type { AdminConfig } from "./types.js";
+
+const MAX_BODY_BYTES = 1_000_000;
 
 export type AdminServer = {
 	start(): Promise<void>;
@@ -15,8 +17,30 @@ export type CancelJobs = (
 	reason?: string,
 ) => Promise<{ active: number; queued: number }>;
 
+export type SecretAdmin = {
+	pageHtml(): string;
+	accept(reply: string): Promise<{ name: string } | undefined>;
+};
+
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
 	response.writeHead(status, { "content-type": "application/json" });
+	response.end(JSON.stringify(body));
+}
+
+function sendCors(response: ServerResponse): void {
+	response.writeHead(204, {
+		"access-control-allow-origin": "*",
+		"access-control-allow-methods": "POST, OPTIONS",
+		"access-control-allow-headers": "content-type",
+	});
+	response.end();
+}
+
+function sendCorsJson(response: ServerResponse, status: number, body: unknown): void {
+	response.writeHead(status, {
+		"content-type": "application/json",
+		"access-control-allow-origin": "*",
+	});
 	response.end(JSON.stringify(body));
 }
 
@@ -34,13 +58,24 @@ function joinUrl(base: string, suffix: string): string {
 function channelKey(pathname: string, base: string): string | undefined {
 	const prefix = joinUrl(base, "/channels/");
 	if (!pathname.startsWith(prefix)) return undefined;
-	const key = decodeURIComponent(pathname.slice(prefix.length));
-	return /^[a-zA-Z0-9_.:-]+$/.test(key) ? key : undefined;
+	let key: string;
+	try {
+		key = decodeURIComponent(pathname.slice(prefix.length));
+	} catch {
+		return undefined;
+	}
+	return /^[a-zA-Z0-9_.:/-]+$/.test(key) ? key : undefined;
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
 	const chunks: Uint8Array[] = [];
-	for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+	let bytes = 0;
+	for await (const chunk of request) {
+		const data = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+		bytes += data.byteLength;
+		if (bytes > MAX_BODY_BYTES) throw new Error("request body too large");
+		chunks.push(data);
+	}
 	const text = Buffer.concat(chunks).toString("utf8");
 	if (!text) return {};
 	const value = JSON.parse(text) as unknown;
@@ -61,19 +96,43 @@ function wantsHtml(request: IncomingMessage): boolean {
 	return typeof accept === "string" && accept.includes("text/html");
 }
 
+function secureCompare(left: string, right: string): boolean {
+	const leftBuffer = Buffer.from(left);
+	const rightBuffer = Buffer.from(right);
+	return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function hostAllowed(request: IncomingMessage, host: string, port: number): boolean {
+	if (!hostHeaderAllowed(request, host, port)) return false;
+	const allowed = new Set([`${host}:${port}`, host]);
+	const origin = request.headers.origin;
+	if (typeof origin !== "string") return true;
+	try {
+		return allowed.has(new URL(origin).host);
+	} catch {
+		return false;
+	}
+}
+
+function hostHeaderAllowed(request: IncomingMessage, host: string, port: number): boolean {
+	const allowed = new Set([`${host}:${port}`, host]);
+	const header = request.headers.host;
+	return typeof header !== "string" || allowed.has(header);
+}
+
 function authorized(request: IncomingMessage, token: string | undefined): boolean {
 	if (!token) return true;
 	const auth = request.headers.authorization;
-	if (auth === `Bearer ${token}`) return true;
+	if (typeof auth === "string" && secureCompare(auth, `Bearer ${token}`)) return true;
 	const header = request.headers["x-heypi-admin-token"];
-	return header === token;
+	return typeof header === "string" && secureCompare(header, token);
 }
 
 function escapeHtml(value: string): string {
 	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function adminHtml(path: string, jobs: ChatJob[], channels: string[]): string {
+function adminHtml(path: string, jobs: ChatJob[], channels: string[], token?: string): string {
 	const jobRows =
 		jobs
 			.map(
@@ -135,7 +194,7 @@ for (const button of document.querySelectorAll("button[data-scope]")) {
 	button.addEventListener("click", async () => {
 		await fetch(${JSON.stringify(joinUrl(path, "/jobs/cancel"))}, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
+			headers: { "content-type": "application/json"${token ? `, "x-heypi-admin-token": ${JSON.stringify(token)}` : ""} },
 			body: JSON.stringify({ scope: button.dataset.scope, reason: "admin canceled" }),
 		});
 		location.reload();
@@ -147,7 +206,7 @@ for (const button of document.querySelectorAll("button[data-scope]")) {
 }
 
 export function createAdmin(
-	config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[]; cancel?: CancelJobs },
+	config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[]; cancel?: CancelJobs; secret?: SecretAdmin },
 ): AdminServer {
 	const host = config.host ?? "127.0.0.1";
 	const port = config.port ?? 4321;
@@ -159,53 +218,75 @@ export function createAdmin(
 		async start() {
 			if (!isLoopback(host) && !token) throw new Error("Admin token is required for non-loopback hosts");
 			server = createServer(async (request, response) => {
-				if (!request.url) return sendJson(response, 404, { error: "not_found" });
-				const url = new URL(request.url, `http://${host}:${port}`);
-				if (!authorized(request, token)) return sendJson(response, 401, { error: "unauthorized" });
-				if (request.method === "POST" && url.pathname === joinUrl(path, "/jobs/cancel")) {
-					if (!config.cancel) return sendJson(response, 404, { error: "not_found" });
-					const body = await readJson(request);
-					const reason = typeof body.reason === "string" ? body.reason : undefined;
-					const canceled = await config.cancel(cancelScope(body.scope), reason);
-					return sendJson(response, 200, { canceled });
-				}
-				if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
-				if (url.pathname === path) {
-					if (wantsHtml(request)) {
-						const channels = await listAuditChannels({ stateDir: config.stateDir });
-						return sendHtml(
-							response,
-							200,
-							adminHtml(
-								path,
-								config.jobs?.() ?? [],
-								channels.map(({ key }) => key),
-							),
-						);
+				try {
+					if (!request.url) return sendJson(response, 404, { error: "not_found" });
+					const url = new URL(request.url, `http://${host}:${port}`);
+					if (config.secret && url.pathname === joinUrl(path, "/secret")) {
+						if (!hostHeaderAllowed(request, host, port)) return sendJson(response, 403, { error: "forbidden" });
+						if (request.method === "OPTIONS") return sendCors(response);
+						if (request.method === "GET") return sendHtml(response, 200, config.secret.pageHtml());
+						if (request.method === "POST") {
+							const body = await readJson(request);
+							if (typeof body.reply !== "string") return sendCorsJson(response, 400, { error: "missing_reply" });
+							const stored = await config.secret.accept(body.reply);
+							if (!stored) return sendCorsJson(response, 404, { error: "secret_request_not_found" });
+							return sendCorsJson(response, 200, { ok: true, name: stored.name });
+						}
 					}
-					return sendJson(response, 200, {
-						ok: true,
-						endpoints: {
-							health: joinUrl(path, "/health"),
-							jobs: joinUrl(path, "/jobs"),
-							cancelJobs: joinUrl(path, "/jobs/cancel"),
-							channels: joinUrl(path, "/channels"),
-						},
-					});
+					if (!hostAllowed(request, host, port)) return sendJson(response, 403, { error: "forbidden" });
+					if (!authorized(request, token)) return sendJson(response, 401, { error: "unauthorized" });
+					if (request.method === "POST" && url.pathname === joinUrl(path, "/jobs/cancel")) {
+						if (!config.cancel) return sendJson(response, 404, { error: "not_found" });
+						const body = await readJson(request);
+						const reason = typeof body.reason === "string" ? body.reason : undefined;
+						const canceled = await config.cancel(cancelScope(body.scope), reason);
+						return sendJson(response, 200, { canceled });
+					}
+					if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
+					if (url.pathname === path) {
+						if (wantsHtml(request)) {
+							const channels = await listAuditChannels({ stateDir: config.stateDir });
+							return sendHtml(
+								response,
+								200,
+								adminHtml(
+									path,
+									config.jobs?.() ?? [],
+									channels.map(({ key }) => key),
+									token,
+								),
+							);
+						}
+						return sendJson(response, 200, {
+							ok: true,
+							endpoints: {
+								health: joinUrl(path, "/health"),
+								jobs: joinUrl(path, "/jobs"),
+								cancelJobs: joinUrl(path, "/jobs/cancel"),
+								channels: joinUrl(path, "/channels"),
+								secret: config.secret ? joinUrl(path, "/secret") : undefined,
+							},
+						});
+					}
+					if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
+					if (url.pathname === joinUrl(path, "/jobs"))
+						return sendJson(response, 200, { jobs: config.jobs?.() ?? [] });
+					if (url.pathname === joinUrl(path, "/channels")) {
+						const channels = await listAuditChannels({ stateDir: config.stateDir });
+						return sendJson(response, 200, { channels: channels.map(({ key }) => key) });
+					}
+					const key = channelKey(url.pathname, path);
+					if (key) {
+						const records = await readAuditChannelKey({ stateDir: config.stateDir }, key);
+						if (!records) return sendJson(response, 404, { error: "not_found" });
+						return sendJson(response, 200, { key, records });
+					}
+					return sendJson(response, 404, { error: "not_found" });
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					const status = message.includes("JSON") || message.includes("too large") ? 400 : 500;
+					return sendJson(response, status, { error: status === 400 ? "bad_request" : "server_error" });
 				}
-				if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
-				if (url.pathname === joinUrl(path, "/jobs"))
-					return sendJson(response, 200, { jobs: config.jobs?.() ?? [] });
-				if (url.pathname === joinUrl(path, "/channels")) {
-					const channels = await listAuditChannels({ stateDir: config.stateDir });
-					return sendJson(response, 200, { channels: channels.map(({ key }) => key) });
-				}
-				const key = channelKey(url.pathname, path);
-				if (key) {
-					const records = await readAuditChannel(join(config.stateDir, "channels", `${key}.jsonl`));
-					return sendJson(response, 200, { key, records });
-				}
-				return sendJson(response, 404, { error: "not_found" });
 			});
 			await new Promise<void>((resolve, reject) => {
 				server?.once("error", reject);

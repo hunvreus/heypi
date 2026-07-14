@@ -1,12 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { type AdapterEvents, statusEvents } from "./events.js";
+import { type AdapterEvents, busyEvents, statusEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
 	AdapterContext,
 	AllowConfig,
 	ApproverSet,
+	BusyMode,
 	ChatMessage,
 	SendMessage,
 } from "./types.js";
@@ -19,11 +20,11 @@ export type LocalAdapter = Adapter & {
 	sent: SendMessage[];
 };
 
-function localMessage(input: LocalMessage): ChatMessage {
+function localMessage(input: LocalMessage, account: string): ChatMessage {
 	return {
 		id: input.id,
 		adapter: "local",
-		account: "local",
+		account,
 		conversation: "local",
 		thread: input.thread,
 		user: input.user,
@@ -36,32 +37,37 @@ function localMessage(input: LocalMessage): ChatMessage {
 }
 
 function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
-	if (progress === false) return events;
+	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
 	return { ...statusEvents(), ...(events ?? {}) };
 }
 
 export type LocalConfig = {
-	name?: string;
+	id?: string;
 	allow?: AllowConfig;
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	busy?: BusyMode;
 	events?: AdapterEvents;
 };
 
 export function local(config: string | LocalConfig = "local"): LocalAdapter {
 	let context: AdapterContext | undefined;
 	const sent: SendMessage[] = [];
-	const resolved = typeof config === "string" ? { name: config } : config;
+	const messages = new Map<string, SendMessage>();
+	let nextMessage = 1;
+	const resolved = typeof config === "string" ? { id: config } : config;
+	const id = resolved.id ?? "local";
 	return {
 		kind: "local",
-		name: resolved.name,
+		id,
 		allow: resolved.allow,
 		admins: resolved.admins,
 		approvers: resolved.approvers,
 		approvals: resolved.approvals,
 		progress: resolved.progress ?? true,
+		busy: resolved.busy ?? "queue",
 		events: progressEvents(resolved.progress, resolved.events),
 		sent,
 		start(nextContext) {
@@ -69,30 +75,43 @@ export function local(config: string | LocalConfig = "local"): LocalAdapter {
 		},
 		async send(message) {
 			sent.push(message);
-			return { id: `local-${sent.length}` };
+			const messageId = `local-${nextMessage++}`;
+			messages.set(messageId, message);
+			return { id: messageId };
 		},
 		async update(message) {
-			const index = Number(message.id.replace(/^local-/, "")) - 1;
-			if (index < 0 || index >= sent.length) return;
-			sent[index] = {
+			const previous = messages.get(message.id);
+			if (!previous) return;
+			const index = sent.indexOf(previous);
+			if (index < 0) return;
+			const updated = {
 				conversation: message.conversation,
 				thread: message.thread,
 				text: message.text,
 				attachments: message.attachments,
 			};
+			sent[index] = updated;
+			messages.set(message.id, updated);
+		},
+		async remove(message) {
+			const previous = messages.get(message.id);
+			if (!previous) return;
+			const index = sent.indexOf(previous);
+			if (index >= 0) sent.splice(index, 1);
+			messages.delete(message.id);
 		},
 		async receive(message) {
 			if (!context) throw new Error("Local adapter is not started");
-			await context.receive(localMessage(message));
+			await context.receive(localMessage(message, id));
 		},
 	};
 }
 
 export type WebhookConfig = {
+	id?: string;
 	host?: string;
 	port: number;
 	path?: string;
-	name?: string;
 	secret?: string;
 	signatureToleranceMs?: number;
 	allow?: AllowConfig;
@@ -100,6 +119,7 @@ export type WebhookConfig = {
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	progress?: boolean;
+	busy?: BusyMode;
 	events?: AdapterEvents;
 };
 
@@ -113,9 +133,17 @@ type RequestBody = {
 	json: unknown;
 };
 
+const MAX_WEBHOOK_BODY_BYTES = 1_000_000;
+
 async function readBody(request: IncomingMessage): Promise<RequestBody> {
 	const chunks: Uint8Array[] = [];
-	for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+	let bytes = 0;
+	for await (const chunk of request) {
+		const data = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+		bytes += data.byteLength;
+		if (bytes > MAX_WEBHOOK_BODY_BYTES) throw new Error("request body too large");
+		chunks.push(data);
+	}
 	const text = Buffer.concat(chunks).toString("utf8");
 	return { raw: text, json: text ? JSON.parse(text) : {} };
 }
@@ -125,14 +153,14 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 	response.end(JSON.stringify(body));
 }
 
-function webhookMessage(input: unknown): ChatMessage {
+function webhookMessage(input: unknown, account: string): ChatMessage {
 	const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 	const user = record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>) : {};
 	const isSelf = user.isSelf === true;
 	return {
 		id: typeof record.id === "string" ? record.id : `webhook-${Date.now()}`,
 		adapter: "webhook",
-		account: typeof record.account === "string" ? record.account : "webhook",
+		account: typeof record.account === "string" ? record.account : account,
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
 		thread: typeof record.thread === "string" ? record.thread : undefined,
 		user: {
@@ -183,14 +211,16 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 	const secret = config.secret?.trim();
 	const toleranceMs = config.signatureToleranceMs ?? 5 * 60 * 1000;
 	const sent: SendMessage[] = [];
+	const id = config.id ?? "webhook";
 	return {
 		kind: "webhook",
-		name: config.name,
+		id,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,
 		approvals: config.approvals,
 		progress: config.progress ?? false,
+		busy: config.busy ?? "queue",
 		events: config.events,
 		sent,
 		url: () => `http://${host}:${config.port}${path}`,
@@ -202,7 +232,7 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 				try {
 					const body = await readBody(request);
 					if (secret) verifyWebhook(request, body.raw, secret, toleranceMs);
-					const message = webhookMessage(body.json);
+					const message = webhookMessage(body.json, id);
 					await context?.receive(message);
 					json(response, 202, { ok: true });
 				} catch (error) {

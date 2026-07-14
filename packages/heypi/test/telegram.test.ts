@@ -52,6 +52,20 @@ describe("telegramMessage", () => {
 		).toMatchObject({ id: "99", name: "codex", isBot: true, isSelf: true });
 	});
 
+	it("distinguishes Telegram self messages from other bot messages", () => {
+		expect(
+			telegramMessage(
+				{
+					message_id: 1,
+					text: "hello",
+					chat: { id: 10, type: "private" },
+					from: { id: 42, username: "other", is_bot: true },
+				},
+				{ id: 99, username: "codex" },
+			).user,
+		).toMatchObject({ id: "42", name: "other", isBot: true });
+	});
+
 	it("preserves Telegram forum topic ids", () => {
 		expect(
 			telegramMessage({

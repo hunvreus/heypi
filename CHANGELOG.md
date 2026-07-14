@@ -4,6 +4,13 @@
 
 ### Changed
 
+- Configured the Codex Tag Docker image to authenticate Git HTTPS operations through GitHub CLI.
+- Added configurable per-adapter busy handling with durable queueing, native Pi steering, rejection,
+  and adapter event hooks for each outcome.
+- Separated transient `Thinking...` / `Working...` activity from persistent todo rendering and final
+  replies.
+- Moved Slack reactions to adapter event context so handlers can react conditionally from normalized
+  message metadata.
 - Restarted heypi as a clean Pi-native package.
 - Added the first clean vertical slice: agent folder loading, resource staging, Pi session wrapper,
   local adapter, channel turn coordination, and approval rendering/extension boundary.
@@ -35,7 +42,6 @@
   authored context.
 - Removed `config.json` support; agent configuration now lives only in code via `loadAgent()`.
 - Report Pi startup failures back to the source chat thread and mark the queued turn failed.
-- Treat adapter acknowledgement failures as non-fatal so reaction/typing errors do not drop turns.
 - Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.
 - Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
 - Export public config and approval integration types from the package entrypoint.
@@ -49,9 +55,9 @@
   message delta and leaves compaction to Pi.
 - Removed the model-callable `chat_reply` progress tool.
 - Changed adapter-owned progress to use one editable coarse status message driven by adapter events.
-- Reworked the built-in `todo` extension to own task state, action updates, active timestamps, and
-  turn lifecycle cleanup instead of replacing a model-supplied list verbatim; agents can disable it
-  with `todo: false`.
+- Reworked the built-in `todo` extension around full-list updates, strict task transitions,
+  automatic task advancement, Pi-session replay, final reconciliation, active timestamps, and
+  honest terminal states; agents can disable it with `todo: false`.
 - Captured the Pi-native todo and memory extension direction with references to the reviewed Pi
   extension examples.
 - Hardened adapter normalization so Slack system/edit events and empty messages cannot trigger Pi
@@ -72,3 +78,5 @@
   active job cancellation, `/admin/jobs`, and adapter-scoped admins/approvers with approval timeouts.
 - Added long-running native typing refresh for Discord and Telegram while a Pi turn is active.
 - Added a minimal local admin dashboard with live jobs, cancellation controls, and audit channel links.
+- Added encrypted secret ingress through `chat_request_secret`, `/admin/secret`, browser-side
+  encryption, chat paste interception, and trusted encrypted-at-rest storage.

@@ -2,10 +2,7 @@ import type { Adapter, ChatMessage } from "./types.js";
 
 export type StatusSlot = {
 	replace(text: string): void;
-	setTodo(text: string): void;
-	clearTodo(): void;
-	final(text: string): Promise<boolean>;
-	error(text: string): Promise<boolean>;
+	clear(): Promise<void>;
 	wait(): Promise<void>;
 };
 
@@ -20,7 +17,6 @@ export function createStatusSlot(options: StatusSlotOptions): StatusSlot {
 	let messageId: string | undefined;
 	let uneditable = false;
 	let text: string | undefined;
-	let todoActive = false;
 	const tasks: Promise<void>[] = [];
 
 	function canEdit(): boolean {
@@ -58,49 +54,21 @@ export function createStatusSlot(options: StatusSlotOptions): StatusSlot {
 		tasks.push(task);
 	}
 
-	async function replace(nextText: string): Promise<boolean> {
+	async function clear(): Promise<void> {
 		await Promise.allSettled(tasks);
-		if (!messageId || !adapter.update) return false;
+		if (!messageId) return;
 		try {
-			await adapter.update({
-				conversation: message.conversation,
-				thread,
-				id: messageId,
-				text: nextText,
-			});
-			text = nextText;
-			return true;
-		} catch {
-			return false;
-		}
+			await adapter.remove?.({ conversation: message.conversation, thread, id: messageId });
+		} catch {}
+		messageId = undefined;
+		text = undefined;
 	}
 
 	return {
 		replace(nextText) {
-			if (todoActive) return;
 			enqueue(nextText);
 		},
-		setTodo(nextText) {
-			todoActive = true;
-			enqueue(nextText);
-		},
-		clearTodo() {
-			todoActive = false;
-		},
-		async final(finalText) {
-			if (todoActive) {
-				await Promise.allSettled(tasks);
-				return false;
-			}
-			return replace(finalText);
-		},
-		async error(errorText) {
-			if (todoActive) {
-				await Promise.allSettled(tasks);
-				return false;
-			}
-			return replace(errorText);
-		},
+		clear,
 		async wait() {
 			await Promise.allSettled(tasks);
 		},

@@ -3,9 +3,10 @@
 ## Todo and memory extensions
 
 - Continue hardening the built-in todo Pi extension.
-  - Current implementation owns task state, valid actions, stable status characters, active timestamps,
-    and turn lifecycle settlement.
-  - Future work: make state replayable from Pi/session events if Pi exposes a cleaner event source.
+  - Current implementation owns full-list state, strict transitions, automatic advancement, stable
+    status characters, active timestamps, final reconciliation, and Pi-session replay.
+  - Add a stale-update reminder only if real usage still shows several meaningful tool calls without
+    a todo update after the stricter tool contract.
   - References:
     - `/Users/hunvreus/Workspace/_sandbox/rpiv-mono/packages/rpiv-todo`
     - `/Users/hunvreus/Workspace/_sandbox/pi-tasks`
@@ -50,17 +51,29 @@
   - GitHub: issue/PR/check operations with token kept in the heypi process.
   - Generic OpenAPI/MCP: connection definitions with trusted-side token/header resolution.
 - Do not add a generic top-level secret DSL until there is a concrete consumer boundary.
-- Add encrypted user-submitted secret storage later if chat/admin secret submission returns.
-  - `chat_request_secret` now asks the active chat user for an encrypted `pi.dev/secret` reply.
-  - Encrypted replies are intercepted before audit ingestion.
-  - Values are stored as `.secrets/<name>` in the runtime workspace, and Pi receives only a redacted storage notice.
-  - Still missing: trusted encrypted storage, runtime credential brokering, and admin UX.
-  - Store encrypted at rest with a key outside SQLite.
-  - Redact values in audit logs, tool results, and adapter output.
+- Current encrypted secret ingress is trusted-side only.
+  - `chat_request_secret` sends a browser encryption link.
+  - `/admin/secret` serves the static encrypt page and accepts encrypted replies.
+  - Pasted `!secret:<id>:<payload>` replies are intercepted before Pi sees them.
+  - Secrets are stored encrypted at rest under heypi state, not under `/workspace`.
+- Still missing: runtime credential brokering, trusted GitHub/OpenAPI consumers, rotation/expiry UI, and hosted `heypi.dev/secret` deployment.
 
 ## Chat attachments
 
 - `chat_attach` now sends runtime-workspace file references back through the active adapter.
-  - Paths are validated against the runtime workspace.
-  - Current outgoing attachments render as text links/paths in Slack, Discord, and Telegram.
-  - Native upload still needs a runtime export boundary plus adapter-specific upload support.
+  - Paths are validated against `/workspace` or `/shared`.
+  - Slack, Discord, and Telegram upload local files when possible.
+- Inbound Slack, Discord, and Telegram attachments are materialized into the conversation workspace
+  before the turn is queued.
+  - Still missing: richer previews and adapter-specific retry/rate-limit handling.
+
+## Scheduling
+
+- Plan: [`packages/heypi/docs/scheduling.md`](packages/heypi/docs/scheduling.md)
+- Add agent heartbeats only after durable scheduled jobs exist and the execution scope is explicit.
+  - Reuse the scheduled-job runner rather than building a second scheduler.
+  - Decide whether a heartbeat is agent-scoped, account-scoped, or opt-in per conversation; do not
+    fan out across every channel and DM by default.
+  - Define the shared state a non-conversation heartbeat may inspect and the trusted destinations it
+    may notify.
+  - Support conditional no-op completion with no outbound delivery while retaining run audit logs.

@@ -24,8 +24,8 @@ describe("channel", () => {
 		const channel = createChannel({ logPath });
 		await channel.load();
 
-		await expect(channel.ingest(message("a", "not for you", false))).resolves.toBe(false);
-		await expect(channel.ingest(message("b", "help me"))).resolves.toBe(true);
+		await expect(channel.ingest(message("a", "not for you", false))).resolves.toEqual({ action: "ignored" });
+		await expect(channel.ingest(message("b", "help me"))).resolves.toMatchObject({ action: "started" });
 
 		const turn = channel.next();
 		expect(turn?.replyThread).toBeUndefined();
@@ -44,9 +44,39 @@ describe("channel", () => {
 				dm: true,
 				mentioned: false,
 			}),
-		).resolves.toBe(false);
+		).resolves.toEqual({ action: "ignored" });
 
 		expect(channel.next()).toBeUndefined();
+	});
+
+	it("records outbound messages with attachments", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-outbound-${Date.now()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+		await channel.outbound(
+			{
+				conversation: "room",
+				text: "Report attached.",
+				attachments: [{ name: "report.txt", path: "report.txt", mime: "text/plain" }],
+			},
+			"remote-1",
+		);
+
+		const records = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(records).toEqual([
+			{
+				type: "outbound",
+				record: 1,
+				message: "remote-1",
+				time: expect.any(String),
+				conversation: "room",
+				text: "Report attached.",
+				attachments: [{ name: "report.txt", path: "report.txt", mime: "text/plain" }],
+			},
+		]);
 	});
 
 	it("queues attachment-only direct messages", async () => {
@@ -61,7 +91,7 @@ describe("channel", () => {
 				mentioned: false,
 				attachments: [{ id: "F1", name: "file.txt" }],
 			}),
-		).resolves.toBe(true);
+		).resolves.toMatchObject({ action: "started" });
 
 		expect(channel.next()?.prompt).toContain("attachments:");
 	});
@@ -78,6 +108,38 @@ describe("channel", () => {
 		expect(channel.activeMessageId()).toBe("root");
 	});
 
+	it("queues unmentioned follow-ups in a previously triggered thread", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-followup-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await expect(channel.ingest({ ...message("root", "first"), thread: "root" })).resolves.toMatchObject({
+			action: "started",
+		});
+		channel.next();
+		await channel.complete("done");
+		await expect(channel.ingest({ ...message("reply", "continue", false), thread: "root" })).resolves.toMatchObject({
+			action: "started",
+		});
+
+		const turn = channel.next();
+		expect(turn?.replyThread).toBe("root");
+		expect(turn?.prompt).toContain("continue");
+		expect(turn?.prompt).not.toContain("first");
+	});
+
+	it("ignores unmentioned messages in unrelated threads", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-unrelated-followup-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await expect(channel.ingest({ ...message("reply", "not for bot", false), thread: "other" })).resolves.toEqual({
+			action: "ignored",
+		});
+
+		expect(channel.next()).toBeUndefined();
+	});
+
 	it("builds prompts from only the current trigger", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-delta-${Date.now()}-${Math.random()}.jsonl`);
 		const channel = createChannel({ logPath });
@@ -86,8 +148,8 @@ describe("channel", () => {
 		await channel.ingest(message("a", "first trigger"));
 		channel.next();
 		await channel.complete("done");
-		await expect(channel.ingest(message("b", "ambient follow-up", false))).resolves.toBe(false);
-		await expect(channel.ingest(message("c", "second trigger"))).resolves.toBe(true);
+		await expect(channel.ingest(message("b", "ambient follow-up", false))).resolves.toEqual({ action: "ignored" });
+		await expect(channel.ingest(message("c", "second trigger"))).resolves.toMatchObject({ action: "started" });
 
 		const turn = channel.next();
 		expect(turn?.replyThread).toBeUndefined();
@@ -111,7 +173,7 @@ describe("channel", () => {
 		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_completed"]);
 	});
 
-	it("restores queued turns after reload", async () => {
+	it("marks queued turns interrupted after reload", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-restore-${Date.now()}-${Math.random()}.jsonl`);
 		const first = createChannel({ logPath });
 		await first.load();
@@ -120,9 +182,29 @@ describe("channel", () => {
 		const second = createChannel({ logPath });
 		await second.load();
 
-		const turn = second.next();
-		expect(turn?.replyThread).toBeUndefined();
-		expect(turn?.prompt).toContain("hello");
+		expect(second.next()).toBeUndefined();
+
+		const records = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { type: string; error?: string });
+		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_failed"]);
+		expect(records.at(-1)?.error).toBe("interrupted by restart");
+	});
+
+	it("prevents two channel handles from owning the same lock", async () => {
+		const root = join(tmpdir(), `heypi-channel-lock-${Date.now()}-${Math.random()}`);
+		const logPath = join(root, "log.jsonl");
+		const lockPath = join(root, "run.lock");
+		const first = createChannel({ logPath, lockPath });
+		await first.load();
+
+		const second = createChannel({ logPath, lockPath });
+		await expect(second.load()).rejects.toThrow("channel is already active");
+
+		await first.close();
+		await expect(second.load()).resolves.toBeUndefined();
+		await second.close();
 	});
 
 	it("keeps only one active turn while later triggers wait in the queue", async () => {
@@ -141,6 +223,28 @@ describe("channel", () => {
 		expect(first?.replyThread).toBeUndefined();
 		expect(blocked).toBeUndefined();
 		expect(second?.replyThread).toBeUndefined();
+	});
+
+	it("returns deterministic queue, steer, and reject outcomes while busy", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-busy-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		await channel.ingest(message("first", "first task"));
+		channel.next();
+
+		await expect(channel.ingest(message("queued", "queue this"), "queue")).resolves.toMatchObject({
+			action: "queued",
+		});
+		await expect(channel.ingest(message("steer", "change direction"), "steer")).resolves.toMatchObject({
+			action: "steer",
+			prompt: expect.stringContaining("change direction"),
+		});
+		await expect(channel.ingest(message("reject", "do not queue"), "reject")).resolves.toEqual({
+			action: "rejected",
+		});
+
+		expect(channel.jobs().map((job) => job.state)).toEqual(["running", "queued"]);
 	});
 
 	it("records active turn cancellation", async () => {

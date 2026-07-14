@@ -3,7 +3,7 @@ import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import type { Channel } from "./channel.js";
-import type { SecretExchange } from "./secrets.js";
+import type { SecretManager } from "./secrets.js";
 import type { SendMessage } from "./types.js";
 
 const chatHistoryParameters = Type.Object({
@@ -15,18 +15,11 @@ const chatHistoryParameters = Type.Object({
 
 type ChatHistoryParams = Static<typeof chatHistoryParameters>;
 
-const chatRequestSecretParameters = Type.Object({
-	name: Type.String({
-		description: "Secret file name under .secrets, using letters, numbers, dot, underscore, and dash only",
-		pattern: "^[a-zA-Z0-9_.-]+$",
-	}),
-	description: Type.String({ description: "Human-readable explanation of what secret is needed and why" }),
-});
-
-type ChatRequestSecretParams = Static<typeof chatRequestSecretParameters>;
-
 const chatAttachParameters = Type.Object({
-	path: Type.String({ description: "Runtime workspace file path to attach" }),
+	paths: Type.Array(Type.String({ description: "Runtime workspace or shared file path to attach" }), {
+		minItems: 1,
+		maxItems: 10,
+	}),
 	name: Type.Optional(Type.String({ description: "Optional display name" })),
 	mime: Type.Optional(Type.String({ description: "Optional MIME type" })),
 	text: Type.Optional(Type.String({ description: "Optional message text" })),
@@ -34,29 +27,78 @@ const chatAttachParameters = Type.Object({
 
 type ChatAttachParams = Static<typeof chatAttachParameters>;
 
-export type ChatSecretToolOptions = {
-	exchange: SecretExchange;
-	target(): { conversation: string; thread?: string } | undefined;
-	send(message: SendMessage): Promise<unknown>;
-};
+const chatRequestSecretParameters = Type.Object({
+	name: Type.String({ description: "Short identifier for the secret, e.g. github-token" }),
+	description: Type.String({ description: "What secret is needed and why" }),
+});
+
+type ChatRequestSecretParams = Static<typeof chatRequestSecretParameters>;
 
 export type ChatAttachToolOptions = {
 	workspaceDir: string;
+	sharedDir?: string;
 	target(): { conversation: string; thread?: string } | undefined;
 	send(message: SendMessage): Promise<unknown>;
 };
 
-function attachPath(workspaceDir: string, path: string): { host: string; display: string } {
+export type ChatRequestSecretToolOptions = {
+	secretDir: string;
+	manager: SecretManager;
+	target(): { conversation: string; thread?: string } | undefined;
+	send(message: SendMessage): Promise<unknown>;
+};
+
+function resolveUnder(root: string, path: string, label: string): string {
+	const rel = relative(root, path);
+	if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`path escapes runtime ${label}: ${path}`);
+	return rel;
+}
+
+function attachPath(
+	options: Pick<ChatAttachToolOptions, "workspaceDir" | "sharedDir">,
+	path: string,
+): { host: string; display: string } {
+	if (path === "/shared" || path.startsWith("/shared/")) {
+		if (!options.sharedDir) throw new Error(`path escapes runtime workspace: ${path}`);
+		const host = resolve(options.sharedDir, posix.relative("/shared", posix.normalize(path)));
+		const rel = resolveUnder(options.sharedDir, host, "shared");
+		return { host, display: `/shared/${rel.split(sep).join("/")}` };
+	}
 	const host =
 		path === "/workspace" || path.startsWith("/workspace/")
-			? resolve(workspaceDir, posix.relative("/workspace", posix.normalize(path)))
+			? resolve(options.workspaceDir, posix.relative("/workspace", posix.normalize(path)))
 			: isAbsolute(path)
 				? resolve(path)
-				: resolve(workspaceDir, path);
-	const rel = relative(workspaceDir, host);
-	if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
-		throw new Error(`path escapes runtime workspace: ${path}`);
+				: resolve(options.workspaceDir, path);
+	const rel = resolveUnder(options.workspaceDir, host, "workspace");
 	return { host, display: rel.split(sep).join("/") };
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+	".css": "text/css",
+	".csv": "text/csv",
+	".gif": "image/gif",
+	".htm": "text/html",
+	".html": "text/html",
+	".jpeg": "image/jpeg",
+	".jpg": "image/jpeg",
+	".js": "text/javascript",
+	".json": "application/json",
+	".log": "text/plain",
+	".md": "text/markdown",
+	".pdf": "application/pdf",
+	".png": "image/png",
+	".svg": "image/svg+xml",
+	".txt": "text/plain",
+	".webp": "image/webp",
+	".xml": "application/xml",
+	".zip": "application/zip",
+};
+
+function guessMime(path: string): string | undefined {
+	const dot = path.lastIndexOf(".");
+	if (dot === -1) return undefined;
+	return MIME_BY_EXTENSION[path.slice(dot).toLowerCase()];
 }
 
 export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof chatHistoryParameters> {
@@ -78,6 +120,7 @@ export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof c
 					? results
 							.map((message) => {
 								const time = message.time ?? `record:${message.record}`;
+								if (message.type === "outbound") return `- [${time}] assistant: ${message.text}`;
 								return `- [${time}] [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text}`;
 							})
 							.join("\n")
@@ -91,63 +134,82 @@ export function createChatAttachTool(options: ChatAttachToolOptions): ToolDefini
 	return {
 		name: "chat_attach",
 		label: "Chat Attach",
-		description: "Send a runtime workspace file back to the active chat as an attachment reference.",
-		promptSnippet: "Attach a generated runtime workspace file to the active chat.",
-		promptGuidelines: ["Only attach files under the runtime workspace."],
+		description: "Send one or more runtime workspace or shared files back to the active chat.",
+		promptSnippet: "Attach generated runtime files to the active chat.",
+		promptGuidelines: ["Only attach files under /workspace or /shared."],
 		parameters: chatAttachParameters,
 		async execute(_toolCallId, params, signal) {
 			signal?.throwIfAborted?.();
-			const { path, name, mime, text } = params as ChatAttachParams;
+			const { name, mime, text } = params as ChatAttachParams;
 			const target = options.target();
 			if (!target) throw new Error("chat_attach requires an active chat turn");
-			const file = attachPath(options.workspaceDir, path);
-			if (!(await stat(file.host)).isFile()) throw new Error(`chat_attach can only attach files: ${path}`);
-			const label = name ?? basename(file.display);
+			const files = await Promise.all(
+				(params as ChatAttachParams).paths.map(async (path) => {
+					const file = attachPath(options, path);
+					if (!(await stat(file.host)).isFile()) throw new Error(`chat_attach can only attach files: ${path}`);
+					return file;
+				}),
+			);
+			const attachments = files.map((file, index) => {
+				const label = files.length === 1 ? (name ?? basename(file.display)) : basename(file.display);
+				return {
+					name: label,
+					path: file.display,
+					localPath: file.host,
+					mime: index === 0 && mime ? mime : guessMime(file.display),
+				};
+			});
+			const label = attachments.length === 1 ? attachments[0]?.name : `${attachments.length} files`;
 			await options.send({
 				...target,
 				text: text ?? `Attached ${label}.`,
-				attachments: [{ name: label, path: file.display, mime }],
+				attachments,
 			});
 			return {
-				content: [{ type: "text", text: `Attachment sent: ${label} (${file.display})` }],
-				details: { path: file.display, name: label },
+				content: [
+					{
+						type: "text",
+						text: `Attachment sent: ${attachments.map((attachment) => `${attachment.name} (${attachment.path})`).join(", ")}`,
+					},
+				],
+				details: { attachments: attachments.map(({ localPath: _localPath, ...attachment }) => attachment) },
 			};
 		},
 	};
 }
 
 export function createChatRequestSecretTool(
-	options: ChatSecretToolOptions,
+	options: ChatRequestSecretToolOptions,
 ): ToolDefinition<typeof chatRequestSecretParameters> {
 	return {
 		name: "chat_request_secret",
-		label: "Request Secret",
-		description: "Request a secret value from the user via encrypted browser handoff.",
-		promptSnippet: "Request a secret from the remote chat user via encrypted input.",
+		label: "Chat Request Secret",
+		description: "Ask the active chat user to submit a secret through browser-side encryption.",
+		promptSnippet: "Request a secret from the active chat user through encrypted browser-side input.",
 		promptGuidelines: [
-			"Use chat_request_secret when credentials or API keys are needed and no trusted connection exists.",
-			"The user will paste an encrypted secret reply back into chat.",
-			"The secret is stored under .secrets/<name> in the runtime workspace.",
+			"Use chat_request_secret when a task needs credentials, API keys, tokens, or other sensitive values.",
+			"The secret is stored by trusted heypi code. The raw value is not returned to you and is not written into /workspace.",
+			"After requesting a secret, wait for the user to provide it before continuing work that needs it.",
 		],
 		parameters: chatRequestSecretParameters,
 		async execute(_toolCallId, params, signal) {
 			signal?.throwIfAborted?.();
-			const { name, description } = params as ChatRequestSecretParams;
 			const target = options.target();
 			if (!target) throw new Error("chat_request_secret requires an active chat turn");
-			const request = options.exchange.create(name, description);
+			const { name, description } = params as ChatRequestSecretParams;
+			const request = await options.manager.request({ name, description, dir: options.secretDir });
 			await options.send({
 				...target,
-				text: `Secret requested: ${description}\n\nOpen this link, paste the secret, then copy the encrypted result back into this chat:\n${request.widgetUrl}`,
+				text: `Secret requested: ${description}\n\nOpen this link, paste the secret, then submit it or paste the encrypted reply back here:\n${request.url}`,
 			});
 			return {
 				content: [
 					{
 						type: "text",
-						text: `Secret request sent. Wait for the user to paste the encrypted reply. It will be stored at .secrets/${name}.`,
+						text: `Secret request sent for ${request.name}. The encrypted reply will be stored by trusted heypi when the user submits it.`,
 					},
 				],
-				details: { id: request.id, name },
+				details: { id: request.id, name: request.name, expiresAt: request.expiresAt },
 			};
 		},
 	};

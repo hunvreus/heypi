@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "../src/approval.js";
+import {
+	approval,
+	approvalActorAllowed,
+	classifyCommand,
+	createApprovalExtension,
+	renderApprovalMessage,
+} from "../src/approval.js";
 import type { ApprovalContext } from "../src/types.js";
 
 function context(input: Partial<ApprovalContext> = {}): ApprovalContext {
@@ -108,6 +114,23 @@ describe("approval policies", () => {
 		approvedTools.add("bash");
 		expect(await policy(context({ approvedTools }))).toBe(false);
 	});
+
+	it("matches admins and approvers before an adapter consumes a click", () => {
+		expect(approvalActorAllowed({ approved: true, resolvedById: "anyone" })).toBe(true);
+		expect(approvalActorAllowed({ approved: true, resolvedById: "admin" }, undefined, { users: ["admin"] })).toBe(
+			true,
+		);
+		expect(
+			approvalActorAllowed(
+				{ approved: true, resolvedById: "user", roles: ["maintainer"] },
+				{ roles: ["maintainer"] },
+				undefined,
+			),
+		).toBe(true);
+		expect(approvalActorAllowed({ approved: true, resolvedById: "user" }, { users: ["admin"] }, undefined)).toBe(
+			false,
+		);
+	});
 });
 
 describe("createApprovalExtension", () => {
@@ -136,6 +159,7 @@ describe("createApprovalExtension", () => {
 		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
 		let handler: ToolHandler | undefined;
 		const extension = createApprovalExtension({
+			approvers: { users: ["u1"] },
 			policies: {
 				bash: approval.command(),
 			},

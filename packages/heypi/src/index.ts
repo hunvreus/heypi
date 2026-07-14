@@ -11,10 +11,16 @@ export { loadAgent, type StagedAgent, stageAgent } from "./agent.js";
 export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory, runHeypi } from "./app.js";
 export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
 export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
-export { type AuditChannel, type AuditOptions, listAuditChannels, readAuditChannel } from "./audit.js";
+export {
+	type AuditChannel,
+	type AuditOptions,
+	listAuditChannels,
+	readAuditChannel,
+	readAuditChannelKey,
+} from "./audit.js";
 export {
 	type ChatAttachToolOptions,
-	type ChatSecretToolOptions,
+	type ChatRequestSecretToolOptions,
 	createChatAttachTool,
 	createChatHistoryTool,
 	createChatRequestSecretTool,
@@ -29,7 +35,7 @@ export type {
 	ChatJob,
 	ChatJobState,
 } from "./events.js";
-export { statusEvents } from "./events.js";
+export { busyEvents, statusEvents } from "./events.js";
 export { consoleLogger } from "./log.js";
 export {
 	createFileMemoryStore,
@@ -39,14 +45,20 @@ export {
 	type MemoryStore,
 } from "./memory.js";
 export { modelFromEnv } from "./model.js";
-export { createPiHost, type PiEvent, type PiHost, type PiHostOptions, sessionDir } from "./pi.js";
+export { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";
 export {
 	type DockerRuntimeOptions,
 	docker,
 	type HostRuntimeOptions,
 	host,
 } from "./runtime.js";
-export { createSecretExchange, type DecryptedSecret, type SecretRequest } from "./secrets.js";
+export {
+	createSecretManager,
+	type SecretManager,
+	type SecretRequest,
+	type StoredSecret,
+	secretPageHtml,
+} from "./secrets.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
 export type { StatusSlot } from "./status.js";
 export {
@@ -80,11 +92,13 @@ export type {
 	ApprovalPolicyResult,
 	ApprovalState,
 	ApprovalView,
+	BusyMode,
 	ChatAttachment,
 	ChatMessage,
 	LoadAgentOptions,
 	Logger,
 	ModelConfig,
+	RemoveMessage,
 	RuntimeConfig,
 	RuntimeKind,
 	SendMessage,

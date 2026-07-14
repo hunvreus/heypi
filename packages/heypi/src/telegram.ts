@@ -1,21 +1,32 @@
-import { renderApprovalMessage } from "./approval.js";
-import type { AdapterEvent, AdapterEventHandler, AdapterEvents, AdapterEventType } from "./events.js";
-import { formatOutgoingText } from "./message.js";
+import { readFile } from "node:fs/promises";
+import { approvalActorAllowed, renderApprovalMessage } from "./approval.js";
+import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
+import {
+	type AdapterEvent,
+	type AdapterEventHandler,
+	type AdapterEvents,
+	type AdapterEventType,
+	busyEvents,
+} from "./events.js";
+import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
+	AdapterContext,
 	AllowConfig,
 	ApprovalDecision,
 	ApprovalView,
 	ApproverSet,
+	BusyMode,
 	ChatMessage,
 } from "./types.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
+const TELEGRAM_TEXT_LIMIT = 4_096;
 
 export type TelegramConfig = {
-	name?: string;
+	id?: string;
 	token: string;
 	botUsername?: string;
 	pollMs?: number;
@@ -23,6 +34,7 @@ export type TelegramConfig = {
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
+	busy?: BusyMode;
 	progress?: boolean;
 	events?: AdapterEvents;
 };
@@ -99,7 +111,11 @@ export type TelegramTypingPayload = {
 	action: "typing";
 };
 
-export function telegramMessage(message: TelegramMessage, bot?: string | TelegramBotIdentity): ChatMessage {
+export function telegramMessage(
+	message: TelegramMessage,
+	bot?: string | TelegramBotIdentity,
+	account = "telegram",
+): ChatMessage {
 	const text = message.text ?? "";
 	const botIdentity = telegramBotIdentity(bot);
 	const username = botIdentity.username?.replace(/^@/, "");
@@ -107,7 +123,7 @@ export function telegramMessage(message: TelegramMessage, bot?: string | Telegra
 	return {
 		id: String(message.message_id),
 		adapter: "telegram",
-		account: "telegram",
+		account,
 		conversation: String(message.chat.id),
 		thread: message.message_thread_id ? String(message.message_thread_id) : undefined,
 		user: {
@@ -139,6 +155,42 @@ export function telegramTypingPayload(message: ChatMessage): TelegramTypingPaylo
 		chat_id: message.conversation,
 		action: "typing",
 	};
+}
+
+function telegramAttachmentKind(attachment: { name?: string; mime?: string }): "image" | "document" {
+	if (attachment.mime?.startsWith("image/")) return "image";
+	const name = attachment.name?.toLowerCase() ?? "";
+	if (
+		name.endsWith(".gif") ||
+		name.endsWith(".jpeg") ||
+		name.endsWith(".jpg") ||
+		name.endsWith(".png") ||
+		name.endsWith(".webp")
+	)
+		return "image";
+	return "document";
+}
+
+async function uploadTelegramAttachment(
+	token: string,
+	message: { conversation: string; thread?: string },
+	attachment: { localPath?: string; name?: string; mime?: string },
+	caption?: string,
+): Promise<number> {
+	if (!attachment.localPath) throw new Error("Telegram attachment has no local path");
+	const data = await readFile(attachment.localPath);
+	const kind = telegramAttachmentKind(attachment);
+	const method = kind === "image" ? "sendPhoto" : "sendDocument";
+	const field = kind === "image" ? "photo" : "document";
+	const form = new FormData();
+	form.set("chat_id", message.conversation);
+	if (message.thread) form.set("message_thread_id", message.thread);
+	if (caption) form.set("caption", caption);
+	form.set(field, new Blob([data], { type: attachment.mime ?? "application/octet-stream" }), attachment.name);
+	const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form });
+	const payload = (await response.json()) as { ok?: boolean; result?: { message_id: number }; description?: string };
+	if (!response.ok || !payload.ok || !payload.result) throw new Error(payload.description ?? `${method} failed`);
+	return payload.result.message_id;
 }
 
 export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPayload {
@@ -203,7 +255,9 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	}
 
 	return {
+		...busyEvents(),
 		...events,
+		"message.accepted": wrap("message.accepted", (_event, context) => typing.start(context.message)),
 		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
 		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
 		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
@@ -212,7 +266,7 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 }
 
 function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (progress === false) return events;
+	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
 	return withTypingEvents(events, typing);
 }
 
@@ -223,6 +277,8 @@ export function telegram(config: TelegramConfig): Adapter {
 	const pending = new Map<string, PendingApproval>();
 	const pollMs = config.pollMs ?? 1500;
 	const api = `https://api.telegram.org/bot${config.token}`;
+	const fileApi = `https://api.telegram.org/file/bot${config.token}`;
+	const account = config.id ?? "telegram";
 
 	async function call<T>(method: string, body: Record<string, unknown>): Promise<T> {
 		const response = await fetch(`${api}/${method}`, {
@@ -238,20 +294,29 @@ export function telegram(config: TelegramConfig): Adapter {
 
 	const typing = createTypingControls((message) => call("sendChatAction", telegramTypingPayload(message)));
 
-	async function poll(receive: (message: ChatMessage) => Promise<void>): Promise<void> {
+	async function poll(
+		receive: (message: ChatMessage) => Promise<void>,
+		logger: AdapterContext["logger"],
+	): Promise<void> {
 		while (running) {
-			const updates = await call<TelegramUpdate[]>("getUpdates", { timeout: 20, offset });
-			for (const update of updates) {
-				offset = Math.max(offset, update.update_id + 1);
-				if (update.callback_query) {
-					await handleCallback(update.callback_query);
-					continue;
+			try {
+				const updates = await call<TelegramUpdate[]>("getUpdates", { timeout: 20, offset });
+				for (const update of updates) {
+					offset = Math.max(offset, update.update_id + 1);
+					if (update.callback_query) {
+						await handleCallback(update.callback_query);
+						continue;
+					}
+					if (!update.message) continue;
+					const message = telegramMessage(update.message, self, account);
+					if (message.user.isSelf) continue;
+					if (!message.dm && !message.mentioned) continue;
+					await receive(message);
 				}
-				if (!update.message) continue;
-				const message = telegramMessage(update.message, self);
-				if (message.user.isSelf) continue;
-				if (!message.dm && !message.mentioned) continue;
-				await receive(message);
+			} catch (error) {
+				logger.warn("adapter.telegram.poll_error", {
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 			await new Promise((resolve) => setTimeout(resolve, pollMs));
 		}
@@ -261,10 +326,15 @@ export function telegram(config: TelegramConfig): Adapter {
 		const [action, id] = callback.data?.split(":") ?? [];
 		const approval = id ? pending.get(id) : undefined;
 		if (!approval || (action !== APPROVE && action !== REJECT)) return;
-		pending.delete(id);
-		if (approval.timer) clearTimeout(approval.timer);
 		const approved = action === APPROVE;
 		const resolvedBy = callback.from.username ? `@${callback.from.username}` : String(callback.from.id);
+		const resolvedById = String(callback.from.id);
+		if (!approvalActorAllowed({ approved, resolvedBy, resolvedById }, config.approvers, config.admins)) {
+			await call("answerCallbackQuery", { callback_query_id: callback.id });
+			return;
+		}
+		pending.delete(id);
+		if (approval.timer) clearTimeout(approval.timer);
 		await call("answerCallbackQuery", { callback_query_id: callback.id });
 		if (callback.message) {
 			await call("editMessageText", {
@@ -280,24 +350,25 @@ export function telegram(config: TelegramConfig): Adapter {
 		approval.resolve({
 			approved,
 			resolvedBy,
-			resolvedById: String(callback.from.id),
+			resolvedById,
 			reason: approved ? undefined : "Rejected in Telegram.",
 		});
 	}
 
 	return {
 		kind: "telegram",
-		name: config.name,
+		id: account,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,
 		approvals: config.approvals,
+		busy: config.busy ?? "queue",
 		progress: config.progress ?? false,
 		events: progressEvents(config.progress, config.events, typing),
 		async start(context) {
 			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;
-			void poll(context.receive).catch((error) => {
+			void poll(context.receive, context.logger).catch((error) => {
 				context.logger.error("adapter.telegram.error", {
 					error: error instanceof Error ? error.message : String(error),
 				});
@@ -308,22 +379,67 @@ export function telegram(config: TelegramConfig): Adapter {
 			typing.stopAll();
 			running = false;
 		},
-		async ack(message) {
-			await call("sendChatAction", telegramTypingPayload(message));
+		async materializeAttachments(message, target) {
+			return {
+				...message,
+				attachments: await materializeAdapterAttachments(message.attachments, {
+					dir: target.dir,
+					displayDir: target.displayDir,
+					resolveUrl: async (attachment) => {
+						if (attachment.url) return attachment.url;
+						if (!attachment.id) return undefined;
+						const file = await call<{ file_path?: string }>("getFile", { file_id: attachment.id });
+						return file.file_path ? `${fileApi}/${file.file_path}` : undefined;
+					},
+				}),
+			};
 		},
 		async send(message) {
-			const result = await call<{ message_id: number }>("sendMessage", {
-				chat_id: message.conversation,
-				message_thread_id: message.thread ? Number(message.thread) : undefined,
-				text: formatOutgoingText(message.text, message.attachments),
-			});
-			return { id: String(result.message_id) };
+			const { local, references } = splitLocalAttachments(message.attachments);
+			if (local.length > 0) {
+				const chunks = chunkText(formatOutgoingText(message.text, references), TELEGRAM_TEXT_LIMIT);
+				for (const chunk of chunks.slice(0, -1)) {
+					await call<{ message_id: number }>("sendMessage", {
+						chat_id: message.conversation,
+						message_thread_id: message.thread ? Number(message.thread) : undefined,
+						text: chunk,
+					});
+				}
+				const caption = chunks.at(-1);
+				let firstId: number | undefined;
+				for (const [index, attachment] of local.entries()) {
+					const messageId = await uploadTelegramAttachment(
+						config.token,
+						message,
+						attachment,
+						index === 0 ? caption : undefined,
+					);
+					firstId ??= messageId;
+				}
+				return { id: firstId === undefined ? undefined : String(firstId) };
+			}
+			let firstId: number | undefined;
+			for (const text of chunkText(formatOutgoingText(message.text, message.attachments), TELEGRAM_TEXT_LIMIT)) {
+				const result = await call<{ message_id: number }>("sendMessage", {
+					chat_id: message.conversation,
+					message_thread_id: message.thread ? Number(message.thread) : undefined,
+					text,
+				});
+				firstId ??= result.message_id;
+			}
+			return { id: firstId === undefined ? undefined : String(firstId) };
 		},
 		async update(message) {
 			await call("editMessageText", {
 				chat_id: message.conversation,
 				message_id: Number(message.id),
 				text: formatOutgoingText(message.text, message.attachments),
+			});
+		},
+		async remove(message) {
+			await call("deleteMessage", {
+				chat_id: message.conversation,
+				message_id: Number(message.id),
 			});
 		},
 		async requestApproval(view) {

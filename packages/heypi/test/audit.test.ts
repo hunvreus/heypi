@@ -19,14 +19,16 @@ describe("audit", () => {
 
 	it("lists channel logs and reads coordination records", async () => {
 		const state = await makeDir("audit");
-		const channels = join(state, "channels");
-		await mkdir(channels, { recursive: true });
+		const first = join(state, "accounts", "local", "channels", "a", "sessions", "session-a");
+		const second = join(state, "accounts", "local", "channels", "b", "sessions", "session-b");
+		await mkdir(first, { recursive: true });
+		await mkdir(second, { recursive: true });
 		await writeFile(
-			join(channels, "b.jsonl"),
+			join(second, "log.jsonl"),
 			`${JSON.stringify({ type: "turn_completed", record: 2, id: "t1", trigger: 1 })}\n`,
 		);
 		await writeFile(
-			join(channels, "a.jsonl"),
+			join(first, "log.jsonl"),
 			`${JSON.stringify({
 				type: "inbound",
 				record: 1,
@@ -40,12 +42,11 @@ describe("audit", () => {
 				dm: true,
 			})}\n`,
 		);
-		await writeFile(join(channels, "ignore.txt"), "nope");
 
 		const listed = await listAuditChannels({ stateDir: state });
 		expect(listed).toEqual([
-			{ key: "a", path: join(channels, "a.jsonl") },
-			{ key: "b", path: join(channels, "b.jsonl") },
+			{ key: "local/a/session-a", path: join(first, "log.jsonl") },
+			{ key: "local/b/session-b", path: join(second, "log.jsonl") },
 		]);
 
 		await expect(readAuditChannel(listed[0]?.path ?? "")).resolves.toMatchObject([

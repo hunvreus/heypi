@@ -18,11 +18,16 @@ export type AdapterEventContext = {
 	message: ChatMessage;
 	job?: ChatJob;
 	status?: StatusSlot;
+	todo?: StatusSlot;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
+	react?(emoji: string): Promise<void>;
 };
 
 export type AdapterEvent =
 	| { type: "message.accepted"; origin: "heypi"; message: ChatMessage }
+	| { type: "message.queued"; origin: "heypi"; message: ChatMessage }
+	| { type: "message.steered"; origin: "heypi"; message: ChatMessage }
+	| { type: "message.rejected"; origin: "heypi"; message: ChatMessage }
 	| { type: "turn.started"; origin: "pi"; job: ChatJob }
 	| { type: "tool.started"; origin: "pi"; job: ChatJob; tool: string }
 	| { type: "todo.changed"; origin: "heypi"; job: ChatJob; text: string }
@@ -41,8 +46,38 @@ export type AdapterEvents = {
 	[K in AdapterEventType]?: AdapterEventHandler<Extract<AdapterEvent, { type: K }>> | false;
 };
 
-export function statusEvents(): Required<Pick<AdapterEvents, "turn.started" | "tool.started" | "todo.changed">> {
+export function busyEvents(): AdapterEvents {
 	return {
+		"message.queued": async (_event, context) => {
+			await context.send({
+				conversation: context.message.conversation,
+				thread: context.message.thread,
+				text: "Queued. I’ll start it when the current task finishes.",
+			});
+		},
+		"message.steered": async (_event, context) => {
+			await context.send({
+				conversation: context.message.conversation,
+				thread: context.message.thread,
+				text: "Updated the active task.",
+			});
+		},
+		"message.rejected": async (_event, context) => {
+			await context.send({
+				conversation: context.message.conversation,
+				thread: context.message.thread,
+				text: "I’m already working on another request in this conversation.",
+			});
+		},
+	};
+}
+
+export function statusEvents(): AdapterEvents {
+	return {
+		...busyEvents(),
+		"message.accepted": (_event, context) => {
+			context.status?.replace("Thinking...");
+		},
 		"turn.started": (_event, context) => {
 			context.status?.replace("Thinking...");
 		},
@@ -50,7 +85,7 @@ export function statusEvents(): Required<Pick<AdapterEvents, "turn.started" | "t
 			context.status?.replace("Working...");
 		},
 		"todo.changed": (event, context) => {
-			context.status?.setTodo(event.text);
+			context.todo?.replace(event.text);
 		},
 	};
 }
