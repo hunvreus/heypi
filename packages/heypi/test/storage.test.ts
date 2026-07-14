@@ -8,7 +8,7 @@ import type { AgentConfig, ChatMessage } from "../src/types.js";
 const message: ChatMessage = {
 	id: "m1",
 	adapter: "slack",
-	account: "workspace",
+	adapterId: "workspace",
 	conversation: "C123",
 	thread: "1710000000.000100",
 	user: { id: "U1" },
@@ -33,18 +33,19 @@ describe("chat storage", () => {
 		expect(storageSegment("")).toMatch(/^id-[a-f0-9]{10}$/);
 	});
 
-	it("derives account, surface, and thread session paths", () => {
+	it("derives adapterId, surface, and thread session paths", () => {
 		const state = makeState();
 		const storage = storageFor(agent, state, message);
 
-		expect(storage.accountDir).toBe(join(state, "accounts", "workspace"));
-		expect(storage.sharedDir).toBe(join(state, "accounts", "workspace", "shared"));
-		expect(storage.surfaceDir).toBe(join(state, "accounts", "workspace", "channels", "C123"));
-		expect(storage.workspaceDir).toBe(join(storage.surfaceDir, "workspace"));
-		expect(storage.sessionDir).toBe(join(storage.surfaceDir, "sessions", executionKey(message)));
+		expect(storage.adapterDir).toBe(join(state, "adapters", "workspace"));
+		expect(storage.sharedDir).toBe(join(state, "adapters", "workspace", "shared"));
+		expect(storage.conversationDir).toBe(join(state, "adapters", "workspace", "conversations", "C123"));
+		expect(storage.workspaceDir).toBe(join(storage.conversationDir, "workspace"));
+		expect(storage.sessionDir).toBe(join(storage.conversationDir, "sessions", executionKey(message)));
 		expect(storage.logPath).toBe(join(storage.sessionDir, "log.jsonl"));
-		expect(storage.memoryPath).toBe(join(storage.surfaceDir, "memory.jsonl"));
-		expect(storage.secretDir).toBe(join(storage.surfaceDir, "secrets"));
+		expect(storage.memoryDir).toBe(join(storage.conversationDir, "memory"));
+		expect(storage.adapterMemoryDir).toBe(join(storage.adapterDir, "memory"));
+		expect(storage.secretDir).toBe(join(storage.conversationDir, "secrets"));
 	});
 
 	it("uses configured runtime workspace as the workspace root", () => {
@@ -52,7 +53,7 @@ describe("chat storage", () => {
 		const workspace = join(state, "workspaces");
 		const storage = storageFor({ ...agent, runtime: { workspace } }, state, message);
 
-		expect(storage.workspaceDir).toBe(join(workspace, "workspace", "channels", "C123"));
+		expect(storage.workspaceDir).toBe(join(workspace, "workspace", "conversations", "C123"));
 	});
 
 	it("shares workspace by surface but isolates logs by execution key", () => {
@@ -70,7 +71,7 @@ describe("chat storage", () => {
 
 		await ensureChatStorage(storage);
 
-		expect((await stat(storage.accountDir)).isDirectory()).toBe(true);
+		expect((await stat(storage.adapterDir)).isDirectory()).toBe(true);
 		expect((await stat(storage.sharedDir)).isDirectory()).toBe(true);
 		expect((await stat(storage.workspaceDir)).isDirectory()).toBe(true);
 		expect((await stat(storage.sessionDir)).isDirectory()).toBe(true);

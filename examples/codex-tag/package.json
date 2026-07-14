@@ -4,12 +4,12 @@
 	"type": "module",
 	"scripts": {
 		"docker:build": "docker build -t heypi-codex-tag:local .",
-		"predev": "pnpm --dir ../.. --filter @hunvreus/heypi run build && (docker image inspect heypi-codex-tag:local >/dev/null 2>&1 || pnpm run docker:build)",
+		"predev": "docker image inspect heypi-codex-tag:local >/dev/null 2>&1 || npm run docker:build",
 		"dev": "node --env-file-if-exists=.env --import tsx index.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "workspace:*"
+		"@hunvreus/heypi": "^0.1.0"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.1",

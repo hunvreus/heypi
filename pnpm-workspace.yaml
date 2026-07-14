@@ -1,6 +1,8 @@
 packages:
   - packages/*
   - examples/*
+linkWorkspacePackages: true
+preferWorkspacePackages: true
 allowBuilds:
   '@google/genai': false
   '@mongodb-js/zstd': false

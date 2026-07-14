@@ -224,7 +224,7 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
 				input: toolCall.input,
 				approvedTools,
 				adapter: extra.adapter as AdapterKind | string | undefined,
-				account: extra.account,
+				adapterId: extra.adapterId,
 				conversation: extra.conversation,
 				thread: extra.thread,
 				actor: extra.actor,

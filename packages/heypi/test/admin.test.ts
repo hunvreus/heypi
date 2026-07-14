@@ -15,9 +15,9 @@ async function makeDir(name: string): Promise<string> {
 }
 
 describe("admin", () => {
-	it("serves health and read-only channel audit records", async () => {
+	it("serves health and read-only conversation audit records", async () => {
 		const state = await makeDir("admin");
-		const logDir = join(state, "accounts", "local", "channels", "local", "sessions", "local-session");
+		const logDir = join(state, "adapters", "local", "conversations", "local", "sessions", "local-session");
 		await mkdir(logDir, { recursive: true });
 		await writeFile(
 			join(logDir, "log.jsonl"),
@@ -26,7 +26,7 @@ describe("admin", () => {
 				record: 1,
 				id: "m1",
 				adapter: "local",
-				account: "local",
+				adapterId: "local",
 				conversation: "local",
 				user: { id: "u1" },
 				text: "hello",
@@ -43,20 +43,20 @@ describe("admin", () => {
 					health: "/admin/health",
 					jobs: "/admin/jobs",
 					cancelJobs: "/admin/jobs/cancel",
-					channels: "/admin/channels",
+					conversations: "/admin/conversations",
 				},
 			});
 			await expect(fetch(`${admin.url()}/health`).then((response) => response.json())).resolves.toEqual({
 				ok: true,
 			});
-			await expect(fetch(`${admin.url()}/channels`).then((response) => response.json())).resolves.toEqual({
-				channels: ["local/local/local-session"],
+			await expect(fetch(`${admin.url()}/conversations`).then((response) => response.json())).resolves.toEqual({
+				conversations: ["local/local/local-session"],
 			});
 			await expect(fetch(`${admin.url()}/jobs`).then((response) => response.json())).resolves.toEqual({
 				jobs: [],
 			});
 			await expect(
-				fetch(`${admin.url()}/channels/${encodeURIComponent("local/local/local-session")}`).then((response) =>
+				fetch(`${admin.url()}/conversations/${encodeURIComponent("local/local/local-session")}`).then((response) =>
 					response.json(),
 				),
 			).resolves.toMatchObject({
@@ -144,7 +144,7 @@ describe("admin", () => {
 
 	it("serves an HTML dashboard to browsers", async () => {
 		const state = await makeDir("admin-html");
-		const logDir = join(state, "accounts", "local", "channels", "room", "sessions", "room-session");
+		const logDir = join(state, "adapters", "local", "conversations", "room", "sessions", "room-session");
 		await mkdir(logDir, { recursive: true });
 		await writeFile(
 			join(logDir, "log.jsonl"),
@@ -153,7 +153,7 @@ describe("admin", () => {
 				record: 1,
 				id: "m1",
 				adapter: "local",
-				account: "local",
+				adapterId: "local",
 				conversation: "room",
 				user: { id: "u1", name: "Ronan" },
 				text: "hello",
@@ -169,7 +169,7 @@ describe("admin", () => {
 					id: "j1",
 					state: "running",
 					adapter: "local",
-					account: "local",
+					adapterId: "local",
 					conversation: "room",
 					actor: { id: "u1", name: "Ronan" },
 				},

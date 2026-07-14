@@ -24,6 +24,26 @@ const app = await createHeypi({
 await app.start();
 ```
 
+## Create from a template
+
+Every project under the repository's `examples/` directory is also a standalone template. Create
+Codex Tag and install its dependencies with:
+
+```sh
+npx @hunvreus/heypi create codex-tag
+```
+
+Use a different destination or skip installation when needed:
+
+```sh
+npx @hunvreus/heypi create codex-tag my-agent --no-install
+```
+
+Run `heypi templates` to list bundled templates after installing the package. Templates declare the
+published heypi version they support. Inside this monorepo, pnpm links that same dependency to the
+local workspace package when the semver range matches, so the checked-in files are also the files
+users receive.
+
 See also:
 
 - [Creating agents](docs/creating-agents.md)
@@ -131,9 +151,10 @@ const adapter = slack({
 	token,
 	appToken,
 	allow: {
-		accounts: ["T0123456789"],
 		conversations: ["C0123456789"],
 		users: ["U0123456789"],
+		groups: ["S0123456789"],
+		bots: true,
 	},
 });
 ```
@@ -146,9 +167,16 @@ rendering in the active chat thread. Set `todo: false` in `loadAgent()` to disab
 
 ## Memory
 
-heypi registers `memory_store` and `memory_search` Pi tools by default. Memory is stored per
-conversation surface under `.heypi/accounts/*/channels/*/memory.jsonl`. It is not injected into
-every prompt; Pi stores and searches it explicitly through tools.
+heypi registers a built-in memory Pi extension by default. The `memory` tool adds, replaces, and
+removes curated records; `memory_search` performs explicit recall. Records can target general
+memory or the user profile and use one of two scopes:
+
+- conversation: local to the active chat surface
+- adapter: shared across conversations for the adapter
+
+The extension adds a small, relevant memory snapshot through Pi's context event without modifying
+the session transcript. Recalled content is fenced as untrusted reference context. Set
+`memory: false` in `loadAgent()` to disable the extension.
 
 ## Secrets
 
@@ -186,25 +214,25 @@ runtime-visible path, not the adapter's transient download URL.
 
 ## Audit
 
-heypi stores adapter coordination logs under `.heypi/accounts/*/channels/*/sessions/*/log.jsonl`.
+heypi stores adapter coordination logs under `.heypi/adapters/*/conversations/*/sessions/*/log.jsonl`.
 These records are for admin/audit surfaces; they are not Pi's model transcript.
 
 ```ts
-import { listAuditChannels, readAuditChannel } from "@hunvreus/heypi";
+import { listAuditConversations, readAuditConversation } from "@hunvreus/heypi";
 
-const channels = await listAuditChannels({ stateDir: ".heypi" });
-const records = await readAuditChannel(channels[0].path);
+const conversations = await listAuditConversations({ stateDir: ".heypi" });
+const records = await readAuditConversation(conversations[0].path);
 ```
 
 Enable the admin HTTP surface with `admin: {}` on `loadAgent()`. Browser requests to `/admin` render
-a small local dashboard with live jobs, cancel controls, and audit channel links. JSON clients can use
+a small local dashboard with live jobs, cancel controls, and audit conversation links. JSON clients can use
 the endpoints directly:
 
 - `GET /admin/health`
 - `GET /admin/jobs`
 - `POST /admin/jobs/cancel` with `{ "scope": "active" | "queued" | "all", "reason": "..." }`
-- `GET /admin/channels`
-- `GET /admin/channels/:key`
+- `GET /admin/conversations`
+- `GET /admin/conversations/:key`
 - `GET /admin/secret`
 - `POST /admin/secret` with `{ "reply": "!secret:<id>:<payload>" }`
 
@@ -302,7 +330,7 @@ Built-in helpers:
 - `approval.command(config)` classifies bash commands with `allow`, `approve`, and `block` regexes.
 
 Policy predicates receive the attempted tool call and request metadata: `toolName`, `input`,
-`adapter`, `account`, `conversation`, `thread`, `actor`, and `approvedTools`. They do not receive the
+`adapter`, `adapterId`, `conversation`, `thread`, `actor`, and `approvedTools`. They do not receive the
 full Pi transcript or chat history. Use approval decisions for side-effect safety, not model
 reasoning.
 
@@ -314,7 +342,7 @@ Included:
 - clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
   into Pi-native resource names and folders
 - local runtime workspace selection
-- exact-match adapter/account/conversation/user allowlists before Pi work is queued
+- exact-match conversation/user/group/bot allowlists before Pi work is queued
 - thread-aware session keys and reply targets for thread-capable adapters
 - Pi session creation through `@earendil-works/pi-coding-agent`
 - local adapter for tests and embedding
@@ -330,7 +358,7 @@ Included:
 - adapter-owned progress updates from normalized Pi/heypi events, configurable with `progress` or
   adapter `events`
 - `todo` Pi extension for visible task progress
-- `memory_store` and `memory_search` Pi tools for durable explicit memory
+- built-in `memory` and `memory_search` Pi extension with bounded relevant recall
 - audit helpers for heypi-owned adapter coordination logs
 - read-only admin HTTP audit and live job endpoints
 

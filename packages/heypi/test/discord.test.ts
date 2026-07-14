@@ -19,7 +19,7 @@ describe("discordMessage", () => {
 		).toEqual({
 			id: "m1",
 			adapter: "discord",
-			account: "discord",
+			adapterId: "discord",
 			conversation: "c1",
 			user: { id: "u1", name: "Ronan", isBot: false },
 			text: "hey <@bot>",

@@ -78,15 +78,20 @@ function botAllowed(allow: Adapter["allow"], message: ChatMessage): boolean {
 	return Array.isArray(allow?.bots) && allow.bots.includes(message.user.id);
 }
 
+function actorAllowed(allow: Adapter["allow"], message: ChatMessage): boolean {
+	if (message.user.isBot) return true;
+	if (!allow?.users && !allow?.groups) return true;
+	if (allow.users?.includes(message.user.id)) return true;
+	return Boolean(message.user.groups?.some((group) => allow.groups?.includes(group)));
+}
+
 function allowed(adapter: Adapter, message: ChatMessage): boolean {
 	const allow = adapter.allow;
 	if (!botAllowed(allow, message)) return false;
 	if (!allow) return true;
 	return (
-		includes(allow.adapters, message.adapter) &&
-		includes(allow.accounts, message.account) &&
 		includes(allow.conversations, message.conversation) &&
-		(message.user.isBot || includes(allow.users, message.user.id))
+		actorAllowed(allow, message)
 	);
 }
 
@@ -238,7 +243,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							policies: toolConfig.approvalPolicies,
 							context: () => ({
 								adapter: message.adapter,
-								account: message.account,
+								adapterId: message.adapterId,
 								conversation: message.conversation,
 								thread: channel.activeMessageId(),
 								actor: channel.activeUser(),
@@ -272,9 +277,25 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					})
 				: undefined;
 			running.todo = todo;
-			const memoryExtension = createMemoryExtension({
-				store: createFileMemoryStore(running.storage.memoryPath),
-			});
+			const memoryExtension =
+				agent.memory === false
+					? undefined
+					: createMemoryExtension({
+							stores: {
+								adapter: createFileMemoryStore(running.storage.adapterMemoryDir),
+								conversation: createFileMemoryStore(running.storage.memoryDir),
+							},
+							source: () => {
+								const active = running.activeMessage;
+								if (!active) return undefined;
+								return {
+									adapter: active.adapter,
+									adapterId: active.adapterId,
+									conversation: active.conversation,
+									user: active.user.id,
+								};
+							},
+						});
 			const extensions: ExtensionFactory[] = [];
 			if (approvalExtension) extensions.push(approvalExtension);
 			if (todo) extensions.push(todo.extension);
@@ -542,7 +563,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		if (!allowed(adapter, message)) {
 			logger.warn("adapter.message_denied", {
 				adapter: message.adapter,
-				account: message.account,
+				adapterId: message.adapterId,
 				conversation: message.conversation,
 				user: message.user.id,
 			});

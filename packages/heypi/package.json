@@ -15,6 +15,9 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"bin": {
+		"heypi": "./dist/cli.js"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -36,7 +39,7 @@
 		"node": ">=22"
 	},
 	"scripts": {
-		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-examples.mjs",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "corepack pnpm run build && tsc --noEmit",

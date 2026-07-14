@@ -11,7 +11,7 @@ function message(id: string, text: string): ChatMessage {
 	return {
 		id,
 		adapter: "local",
-		account: "test",
+		adapterId: "test",
 		conversation: "room",
 		user: { id: "u1", name: "Ronan" },
 		text,

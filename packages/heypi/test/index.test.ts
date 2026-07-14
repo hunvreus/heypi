@@ -9,7 +9,7 @@ import type {
 	ApprovalLayout,
 	ApprovalRow,
 	ApprovalState,
-	AuditChannel,
+	AuditConversation,
 	ChatJob,
 	LoadAgentOptions,
 	RuntimeKind,
@@ -32,8 +32,8 @@ describe("public entrypoint", () => {
 		expectTypeOf<AdminConfig>().toMatchTypeOf<{ port?: number; token?: string }>();
 		expectTypeOf<ToolConfig>().toMatchTypeOf<{ approve?: unknown }>();
 		expectTypeOf<ToolConfigMap>().toMatchTypeOf<Record<string, unknown>>();
-		expectTypeOf<LoadAgentOptions>().toMatchTypeOf<{ todo?: boolean }>();
-		expectTypeOf<AuditChannel>().toMatchTypeOf<{ key: string; path: string }>();
+		expectTypeOf<LoadAgentOptions>().toMatchTypeOf<{ memory?: boolean; todo?: boolean }>();
+		expectTypeOf<AuditConversation>().toMatchTypeOf<{ key: string; path: string }>();
 		expectTypeOf<ApprovalRow>().toMatchTypeOf<{ label: string; value: string }>();
 		expectTypeOf<ApprovalExtensionOptions>().toMatchTypeOf<{ request: unknown }>();
 		expectTypeOf(statusEvents()).toMatchTypeOf<{ "turn.started": unknown }>();

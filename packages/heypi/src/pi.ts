@@ -51,7 +51,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 			const prompt = [
 				"Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
 				options.sharedDir
-					? "Use /workspace for this channel or DM. Use /shared only for reusable account-level files. Do not put secrets or private channel-specific content in /shared."
+					? "Use /workspace for this channel or DM. Use /shared only for reusable adapter-level files. Do not put secrets or private channel-specific content in /shared."
 					: undefined,
 				"Use staged agent skills, tools, and extensions when they apply.",
 			]

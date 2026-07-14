@@ -18,7 +18,7 @@ describe("slackMessage", () => {
 		).toEqual({
 			id: "123.456",
 			adapter: "slack",
-			account: "slack",
+			adapterId: "slack",
 			conversation: "C1",
 			thread: "123.456",
 			user: { id: "U1", name: "Ronan", isBot: false },

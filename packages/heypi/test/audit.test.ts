@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { listAuditChannels, readAuditChannel } from "../src/audit.js";
+import { listAuditConversations, readAuditConversation } from "../src/audit.js";
 
 async function makeDir(name: string): Promise<string> {
 	const root = join(tmpdir(), `heypi-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -11,16 +11,16 @@ async function makeDir(name: string): Promise<string> {
 }
 
 describe("audit", () => {
-	it("returns no channels for an empty state directory", async () => {
+	it("returns no conversations for an empty state directory", async () => {
 		const state = await makeDir("audit-empty");
 
-		await expect(listAuditChannels({ stateDir: state })).resolves.toEqual([]);
+		await expect(listAuditConversations({ stateDir: state })).resolves.toEqual([]);
 	});
 
-	it("lists channel logs and reads coordination records", async () => {
+	it("lists conversation logs and reads coordination records", async () => {
 		const state = await makeDir("audit");
-		const first = join(state, "accounts", "local", "channels", "a", "sessions", "session-a");
-		const second = join(state, "accounts", "local", "channels", "b", "sessions", "session-b");
+		const first = join(state, "adapters", "local", "conversations", "a", "sessions", "session-a");
+		const second = join(state, "adapters", "local", "conversations", "b", "sessions", "session-b");
 		await mkdir(first, { recursive: true });
 		await mkdir(second, { recursive: true });
 		await writeFile(
@@ -34,7 +34,7 @@ describe("audit", () => {
 				record: 1,
 				id: "m1",
 				adapter: "local",
-				account: "local",
+				adapterId: "local",
 				conversation: "local",
 				user: { id: "u1" },
 				text: "hello",
@@ -43,13 +43,13 @@ describe("audit", () => {
 			})}\n`,
 		);
 
-		const listed = await listAuditChannels({ stateDir: state });
+		const listed = await listAuditConversations({ stateDir: state });
 		expect(listed).toEqual([
 			{ key: "local/a/session-a", path: join(first, "log.jsonl") },
 			{ key: "local/b/session-b", path: join(second, "log.jsonl") },
 		]);
 
-		await expect(readAuditChannel(listed[0]?.path ?? "")).resolves.toMatchObject([
+		await expect(readAuditConversation(listed[0]?.path ?? "")).resolves.toMatchObject([
 			{ type: "inbound", record: 1, id: "m1", text: "hello" },
 		]);
 	});

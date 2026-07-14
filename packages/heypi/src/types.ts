@@ -31,13 +31,14 @@ export type ChatAttachment = {
 export type ChatMessage = {
 	id: string;
 	adapter: AdapterKind | string;
-	account: string;
+	adapterId: string;
 	conversation: string;
 	thread?: string;
 	reply?: boolean;
 	user: {
 		id: string;
 		name?: string;
+		groups?: string[];
 		isBot?: boolean;
 		isSelf?: boolean;
 	};
@@ -103,10 +104,9 @@ export type Adapter = {
 };
 
 export type AllowConfig = {
-	adapters?: string[];
-	accounts?: string[];
 	conversations?: string[];
 	users?: string[];
+	groups?: string[];
 	bots?: true | string[];
 };
 
@@ -136,7 +136,7 @@ export type ApprovalContext = {
 	toolName: string;
 	input: unknown;
 	adapter?: AdapterKind | string;
-	account?: string;
+	adapterId?: string;
 	conversation?: string;
 	thread?: string;
 	actor?: {
@@ -222,6 +222,7 @@ export type LoadAgentOptions = {
 	state?: StateConfig;
 	tools?: ToolConfigMap;
 	todo?: boolean;
+	memory?: boolean;
 	noTools?: CreateAgentSessionOptions["noTools"];
 };
 

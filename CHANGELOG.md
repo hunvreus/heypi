@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `heypi create` with bundled, standalone examples as first-party project templates.
+
 ### Changed
 
+- Removed the redundant adapter-account allowlist and renamed persisted chat audit storage from
+  channels to conversations.
+- Rebuilt memory as a curated Pi extension with adapter and conversation scopes, explicit
+  add/replace/remove/search tools, bounded relevant context recall, source metadata, and optional
+  disablement through `memory: false`.
 - Configured the Codex Tag Docker image to authenticate Git HTTPS operations through GitHub CLI.
 - Added configurable per-adapter busy handling with durable queueing, native Pi steering, rejection,
   and adapter event hooks for each outcome.
@@ -45,9 +54,8 @@
 - Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.
 - Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
 - Export public config and approval integration types from the package entrypoint.
-- Added explicit `memory_store` and `memory_search` Pi tools backed by per-conversation JSONL
-  storage.
-- Added exact-match adapter/account/conversation/user allowlists before Pi work is queued.
+- Added explicit memory tools backed by bounded Markdown storage.
+- Added exact-match conversation/user/group/bot allowlists before Pi work is queued.
 - Added Discord and Telegram typing acknowledgements for accepted messages.
 - Added normalized inbound thread ids so thread-capable adapters keep separate Pi sessions and reply
   targets.

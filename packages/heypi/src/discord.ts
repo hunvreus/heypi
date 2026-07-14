@@ -85,12 +85,12 @@ export type DiscordApprovalPayload = {
 	}>;
 };
 
-export function discordMessage(message: DiscordMessageInput, botUserId?: string, account = "discord"): ChatMessage {
+export function discordMessage(message: DiscordMessageInput, botUserId?: string, adapterId = "discord"): ChatMessage {
 	const isSelf = Boolean(botUserId && message.author.id === botUserId);
 	return {
 		id: message.id,
 		adapter: "discord",
-		account,
+		adapterId,
 		conversation: message.channelId,
 		user: {
 			id: message.author.id,
@@ -249,10 +249,10 @@ export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
 	const pending = new Map<string, PendingApproval>();
 	const typing = createTypingControls(() => client);
-	const account = config.id ?? "discord";
+	const adapterId = config.id ?? "discord";
 	return {
 		kind: "discord",
-		id: account,
+		id: adapterId,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,
@@ -288,7 +288,7 @@ export function discord(config: DiscordConfig): Adapter {
 						})),
 					},
 					botUserId,
-					account,
+					adapterId,
 				);
 				if (normalized.user.isSelf) return;
 				if (!normalized.dm && !normalized.mentioned) return;

@@ -43,7 +43,7 @@ describe("secrets", () => {
 	it("accepts encrypted replies and stores encrypted-at-rest", async () => {
 		const root = state("roundtrip");
 		const manager = createSecretManager({ keyPath: join(root, "secrets.key"), pageUrl: "https://heypi.dev/secret" });
-		const dir = join(root, "accounts", "a", "channels", "c", "secrets");
+		const dir = join(root, "adapters", "a", "conversations", "c", "secrets");
 		const request = await manager.request({ name: "github-token", description: "GitHub token", dir });
 
 		const stored = await manager.accept(encryptedReply(request.url, "ghp_test"));

@@ -638,6 +638,33 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 	});
 
+	it("allows human messages by group membership", async () => {
+		const root = await makeDir("app-group-allowed-agent");
+		const state = await makeDir("app-group-allowed-state");
+		const adapter = local({ allow: { groups: ["team-leads"] } });
+
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+			}),
+			piHost() {
+				return replyHost("Done.");
+			},
+		});
+
+		await app.start();
+		await adapter.receive({
+			id: "m1",
+			user: { id: "u1", name: "Ronan", groups: ["team-leads"] },
+			text: "hello",
+		});
+		await app.stop();
+
+		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
+	});
+
 	it("reports Pi startup failures to the source thread", async () => {
 		const root = await makeDir("app-start-fail-agent");
 		const state = await makeDir("app-start-fail-state");

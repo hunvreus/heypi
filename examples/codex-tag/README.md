@@ -1,6 +1,7 @@
-# codex-tag
+# Codex Tag
 
-Minimal Pi-native coding-agent example for testing heypi's current feature set.
+Pi-native coding agent for testing heypi's current feature set. This directory is both a runnable
+workspace example and the source copied by `heypi create codex-tag`.
 
 ## Run
 

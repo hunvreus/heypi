@@ -203,7 +203,7 @@ export function createChannel(options: ChannelOptions): Channel {
 			id: turn.id,
 			state,
 			adapter: trigger.adapter,
-			account: trigger.account,
+			adapterId: trigger.adapterId,
 			conversation: trigger.conversation,
 			thread: trigger.thread,
 			actor: { id: trigger.user.id, name: trigger.user.name },

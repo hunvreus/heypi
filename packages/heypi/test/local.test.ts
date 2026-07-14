@@ -24,7 +24,7 @@ describe("local", () => {
 			{
 				id: "m1",
 				adapter: "local",
-				account: "local",
+				adapterId: "local",
 				conversation: "local",
 				thread: undefined,
 				user: { id: "u1" },

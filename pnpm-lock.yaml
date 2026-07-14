@@ -24,7 +24,7 @@ importers:
   examples/codex-tag:
     dependencies:
       '@hunvreus/heypi':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../../packages/heypi
     devDependencies:
       '@types/node':

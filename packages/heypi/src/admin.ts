@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { listAuditChannels, readAuditChannelKey } from "./audit.js";
+import { listAuditConversations, readAuditConversationKey } from "./audit.js";
 import type { ChatJob } from "./events.js";
 import type { AdminConfig } from "./types.js";
 
@@ -55,8 +55,8 @@ function joinUrl(base: string, suffix: string): string {
 	return `${left}${right}`;
 }
 
-function channelKey(pathname: string, base: string): string | undefined {
-	const prefix = joinUrl(base, "/channels/");
+function conversationKey(pathname: string, base: string): string | undefined {
+	const prefix = joinUrl(base, "/conversations/");
 	if (!pathname.startsWith(prefix)) return undefined;
 	let key: string;
 	try {
@@ -132,7 +132,7 @@ function escapeHtml(value: string): string {
 	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function adminHtml(path: string, jobs: ChatJob[], channels: string[], token?: string): string {
+function adminHtml(path: string, jobs: ChatJob[], conversations: string[], token?: string): string {
 	const jobRows =
 		jobs
 			.map(
@@ -146,12 +146,12 @@ function adminHtml(path: string, jobs: ChatJob[], channels: string[], token?: st
 			)
 			.join("") || `<tr><td colspan="5">No active jobs</td></tr>`;
 	const channelRows =
-		channels
-			.map((channel) => {
-				const href = joinUrl(path, `/channels/${encodeURIComponent(channel)}`);
-				return `<li><a href="${href}">${escapeHtml(channel)}</a></li>`;
+		conversations
+			.map((conversation) => {
+				const href = joinUrl(path, `/conversations/${encodeURIComponent(conversation)}`);
+				return `<li><a href="${href}">${escapeHtml(conversation)}</a></li>`;
 			})
-			.join("") || "<li>No channels</li>";
+			.join("") || "<li>No conversations</li>";
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -184,10 +184,10 @@ code{background:#eee;padding:2px 4px}
 </table>
 </section>
 <section>
-<h2>Channels</h2>
+<h2>Conversations</h2>
 <ul>${channelRows}</ul>
 </section>
-<p><a href="${joinUrl(path, "/jobs")}">Jobs JSON</a> · <a href="${joinUrl(path, "/channels")}">Channels JSON</a></p>
+<p><a href="${joinUrl(path, "/jobs")}">Jobs JSON</a> · <a href="${joinUrl(path, "/conversations")}">Conversations JSON</a></p>
 </main>
 <script>
 for (const button of document.querySelectorAll("button[data-scope]")) {
@@ -245,14 +245,14 @@ export function createAdmin(
 					if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
 					if (url.pathname === path) {
 						if (wantsHtml(request)) {
-							const channels = await listAuditChannels({ stateDir: config.stateDir });
+							const conversations = await listAuditConversations({ stateDir: config.stateDir });
 							return sendHtml(
 								response,
 								200,
 								adminHtml(
 									path,
 									config.jobs?.() ?? [],
-									channels.map(({ key }) => key),
+									conversations.map(({ key }) => key),
 									token,
 								),
 							);
@@ -263,7 +263,7 @@ export function createAdmin(
 								health: joinUrl(path, "/health"),
 								jobs: joinUrl(path, "/jobs"),
 								cancelJobs: joinUrl(path, "/jobs/cancel"),
-								channels: joinUrl(path, "/channels"),
+								conversations: joinUrl(path, "/conversations"),
 								secret: config.secret ? joinUrl(path, "/secret") : undefined,
 							},
 						});
@@ -271,13 +271,13 @@ export function createAdmin(
 					if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
 					if (url.pathname === joinUrl(path, "/jobs"))
 						return sendJson(response, 200, { jobs: config.jobs?.() ?? [] });
-					if (url.pathname === joinUrl(path, "/channels")) {
-						const channels = await listAuditChannels({ stateDir: config.stateDir });
-						return sendJson(response, 200, { channels: channels.map(({ key }) => key) });
+					if (url.pathname === joinUrl(path, "/conversations")) {
+						const conversations = await listAuditConversations({ stateDir: config.stateDir });
+						return sendJson(response, 200, { conversations: conversations.map(({ key }) => key) });
 					}
-					const key = channelKey(url.pathname, path);
+					const key = conversationKey(url.pathname, path);
 					if (key) {
-						const records = await readAuditChannelKey({ stateDir: config.stateDir }, key);
+						const records = await readAuditConversationKey({ stateDir: config.stateDir }, key);
 						if (!records) return sendJson(response, 404, { error: "not_found" });
 						return sendJson(response, 200, { key, records });
 					}

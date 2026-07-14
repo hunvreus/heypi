@@ -73,7 +73,7 @@ export function slackMessage(
 	event: SlackEvent,
 	mentioned: boolean,
 	self: SlackBotIdentity = {},
-	account = "slack",
+	adapterId = "slack",
 ): ChatMessage {
 	const conversation = event.channel ?? "unknown";
 	const bot = slackBotSender(event, self);
@@ -81,7 +81,7 @@ export function slackMessage(
 	return {
 		id: event.ts ?? `slack-${Date.now()}`,
 		adapter: "slack",
-		account,
+		adapterId,
 		conversation,
 		thread: event.channel_type === "im" ? undefined : (event.thread_ts ?? event.ts),
 		...(event.thread_ts ? { reply: true } : {}),

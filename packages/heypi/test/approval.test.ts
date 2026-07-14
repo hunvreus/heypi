@@ -95,7 +95,7 @@ describe("approval policies", () => {
 				context({
 					input: { command: "git push" },
 					adapter: "slack",
-					account: "workspace",
+					adapterId: "workspace",
 					conversation: "c1",
 					thread: "t1",
 					actor: { id: "u1", name: "Ronan" },

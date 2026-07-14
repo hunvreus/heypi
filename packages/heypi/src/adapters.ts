@@ -12,19 +12,19 @@ import type {
 	SendMessage,
 } from "./types.js";
 
-export type LocalMessage = Omit<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned"> &
-	Partial<Pick<ChatMessage, "account" | "adapter" | "conversation" | "dm" | "mentioned">>;
+export type LocalMessage = Omit<ChatMessage, "adapterId" | "adapter" | "conversation" | "dm" | "mentioned"> &
+	Partial<Pick<ChatMessage, "adapterId" | "adapter" | "conversation" | "dm" | "mentioned">>;
 
 export type LocalAdapter = Adapter & {
 	receive(message: LocalMessage): Promise<void>;
 	sent: SendMessage[];
 };
 
-function localMessage(input: LocalMessage, account: string): ChatMessage {
+function localMessage(input: LocalMessage, adapterId: string): ChatMessage {
 	return {
 		id: input.id,
 		adapter: "local",
-		account,
+		adapterId,
 		conversation: "local",
 		thread: input.thread,
 		user: input.user,
@@ -153,14 +153,14 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 	response.end(JSON.stringify(body));
 }
 
-function webhookMessage(input: unknown, account: string): ChatMessage {
+function webhookMessage(input: unknown, adapterId: string): ChatMessage {
 	const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 	const user = record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>) : {};
 	const isSelf = user.isSelf === true;
 	return {
 		id: typeof record.id === "string" ? record.id : `webhook-${Date.now()}`,
 		adapter: "webhook",
-		account: typeof record.account === "string" ? record.account : account,
+		adapterId: typeof record.adapterId === "string" ? record.adapterId : adapterId,
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
 		thread: typeof record.thread === "string" ? record.thread : undefined,
 		user: {

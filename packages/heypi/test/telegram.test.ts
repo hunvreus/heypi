@@ -13,7 +13,7 @@ describe("telegramMessage", () => {
 		).toEqual({
 			id: "1",
 			adapter: "telegram",
-			account: "telegram",
+			adapterId: "telegram",
 			conversation: "10",
 			thread: undefined,
 			user: { id: "20", name: "ronan", isBot: false },
@@ -107,7 +107,7 @@ describe("telegramMessage", () => {
 			telegramTypingPayload({
 				id: "1",
 				adapter: "telegram",
-				account: "telegram",
+				adapterId: "telegram",
 				conversation: "10",
 				user: { id: "20" },
 				text: "hello",

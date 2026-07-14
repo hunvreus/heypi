@@ -5,7 +5,7 @@ import type { Adapter, ChatMessage, SendMessage } from "../src/types.js";
 const message: ChatMessage = {
 	id: "m1",
 	adapter: "test",
-	account: "test",
+	adapterId: "test",
 	conversation: "room",
 	user: { id: "u1" },
 	text: "work",

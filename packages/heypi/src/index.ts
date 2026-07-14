@@ -12,11 +12,11 @@ export { type CreateHeypiOptions, createHeypi, type HeypiApp, type PiHostFactory
 export type { ApprovalExtensionOptions, ApprovalRow, CommandPolicyConfig, CommandRisk } from "./approval.js";
 export { approval, classifyCommand, createApprovalExtension, renderApprovalMessage } from "./approval.js";
 export {
-	type AuditChannel,
+	type AuditConversation,
 	type AuditOptions,
-	listAuditChannels,
-	readAuditChannel,
-	readAuditChannelKey,
+	listAuditConversations,
+	readAuditConversation,
+	readAuditConversationKey,
 } from "./audit.js";
 export {
 	type ChatAttachToolOptions,
@@ -42,7 +42,11 @@ export {
 	createMemoryExtension,
 	type MemoryExtensionOptions,
 	type MemoryRecord,
+	type MemoryScope,
+	type MemorySearch,
+	type MemorySource,
 	type MemoryStore,
+	type MemoryTarget,
 } from "./memory.js";
 export { modelFromEnv } from "./model.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";

@@ -10,10 +10,13 @@
   - References:
     - `/Users/hunvreus/Workspace/_sandbox/rpiv-mono/packages/rpiv-todo`
     - `/Users/hunvreus/Workspace/_sandbox/pi-tasks`
-- Rebuild memory as a Pi extension before adding learning/consolidation behavior.
-  - Keep explicit tools for store/search.
-  - Add Pi hooks only where they are Pi-native: context recall, observe turn/message events, session shutdown flush, and compaction coordination.
-  - Fence recalled memory as reference context, not instructions.
+- Continue hardening the built-in memory Pi extension only where real usage requires it.
+  - Current implementation owns curated add/replace/remove/search, adapter and conversation scopes,
+    user-profile records, source metadata, bounded context recall, and credential rejection.
+  - Writes are immediately durable, so there is no buffered state to flush during compaction or
+    shutdown.
+  - Consider semantic retrieval or background extraction only after lexical recall and explicit
+    writes prove insufficient.
   - References:
     - `/Users/hunvreus/Workspace/_sandbox/pi-hermes-memory`
     - `/Users/hunvreus/Workspace/_sandbox/remnic/packages/plugin-pi`
@@ -72,7 +75,7 @@
 - Plan: [`packages/heypi/docs/scheduling.md`](packages/heypi/docs/scheduling.md)
 - Add agent heartbeats only after durable scheduled jobs exist and the execution scope is explicit.
   - Reuse the scheduled-job runner rather than building a second scheduler.
-  - Decide whether a heartbeat is agent-scoped, account-scoped, or opt-in per conversation; do not
+  - Decide whether a heartbeat is agent-scoped, adapter-scoped, or opt-in per conversation; do not
     fan out across every channel and DM by default.
   - Define the shared state a non-conversation heartbeat may inspect and the trusted destinations it
     may notify.

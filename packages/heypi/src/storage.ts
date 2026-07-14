@@ -4,14 +4,15 @@ import { join, resolve } from "node:path";
 import type { AgentConfig, ChatMessage } from "./types.js";
 
 export type ChatStorage = {
-	accountDir: string;
+	adapterDir: string;
 	sharedDir: string;
-	surfaceDir: string;
+	conversationDir: string;
 	workspaceDir: string;
 	logPath: string;
 	lockPath: string;
 	sessionDir: string;
-	memoryPath: string;
+	adapterMemoryDir: string;
+	memoryDir: string;
 	secretDir: string;
 };
 
@@ -27,37 +28,38 @@ export function storageSegment(value: string): string {
 
 export function executionKey(message: ChatMessage): string {
 	const stream = message.thread ? `${message.conversation}:${message.thread}` : message.conversation;
-	return storageSegment(`${message.adapter}:${message.account}:${stream}`);
+	return storageSegment(`${message.adapter}:${message.adapterId}:${stream}`);
 }
 
 export function storageFor(agent: AgentConfig, stateDir: string, message: ChatMessage): ChatStorage {
-	const account = storageSegment(message.account);
-	const surface = storageSegment(message.conversation);
-	const accountDir = join(stateDir, "accounts", account);
-	const sharedDir = join(accountDir, "shared");
-	const surfaceDir = join(accountDir, "channels", surface);
+	const adapterId = storageSegment(message.adapterId);
+	const conversation = storageSegment(message.conversation);
+	const adapterDir = join(stateDir, "adapters", adapterId);
+	const sharedDir = join(adapterDir, "shared");
+	const conversationDir = join(adapterDir, "conversations", conversation);
 	const workspaceRoot = agent.runtime?.workspace ? resolve(agent.runtime.workspace) : undefined;
 	const workspaceDir = workspaceRoot
-		? join(workspaceRoot, account, "channels", surface)
-		: join(surfaceDir, "workspace");
-	const sessionDir = join(surfaceDir, "sessions", executionKey(message));
+		? join(workspaceRoot, adapterId, "conversations", conversation)
+		: join(conversationDir, "workspace");
+	const sessionDir = join(conversationDir, "sessions", executionKey(message));
 	return {
-		accountDir,
+		adapterDir,
 		sharedDir,
-		surfaceDir,
+		conversationDir,
 		workspaceDir,
 		logPath: join(sessionDir, "log.jsonl"),
 		lockPath: join(sessionDir, "run.lock"),
 		sessionDir,
-		memoryPath: join(surfaceDir, "memory.jsonl"),
-		secretDir: join(surfaceDir, "secrets"),
+		adapterMemoryDir: join(adapterDir, "memory"),
+		memoryDir: join(conversationDir, "memory"),
+		secretDir: join(conversationDir, "secrets"),
 	};
 }
 
 export async function ensureChatStorage(storage: ChatStorage): Promise<void> {
-	await mkdir(storage.accountDir, { recursive: true });
+	await mkdir(storage.adapterDir, { recursive: true });
 	await mkdir(storage.sharedDir, { recursive: true });
-	await mkdir(storage.surfaceDir, { recursive: true });
+	await mkdir(storage.conversationDir, { recursive: true });
 	await mkdir(storage.workspaceDir, { recursive: true });
 	await mkdir(storage.sessionDir, { recursive: true });
 	await mkdir(storage.secretDir, { recursive: true });

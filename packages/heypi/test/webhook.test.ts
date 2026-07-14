@@ -22,7 +22,7 @@ describe("webhook", () => {
 				method: "POST",
 				body: JSON.stringify({
 					id: "m1",
-					account: "acct",
+					adapterId: "acct",
 					conversation: "room",
 					user: { id: "u1", name: "Ronan" },
 					text: "hello",
@@ -35,7 +35,7 @@ describe("webhook", () => {
 				{
 					id: "m1",
 					adapter: "webhook",
-					account: "acct",
+					adapterId: "acct",
 					conversation: "room",
 					thread: undefined,
 					user: { id: "u1", name: "Ronan", isBot: false },

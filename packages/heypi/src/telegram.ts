@@ -114,7 +114,7 @@ export type TelegramTypingPayload = {
 export function telegramMessage(
 	message: TelegramMessage,
 	bot?: string | TelegramBotIdentity,
-	account = "telegram",
+	adapterId = "telegram",
 ): ChatMessage {
 	const text = message.text ?? "";
 	const botIdentity = telegramBotIdentity(bot);
@@ -123,7 +123,7 @@ export function telegramMessage(
 	return {
 		id: String(message.message_id),
 		adapter: "telegram",
-		account,
+		adapterId,
 		conversation: String(message.chat.id),
 		thread: message.message_thread_id ? String(message.message_thread_id) : undefined,
 		user: {
@@ -278,7 +278,7 @@ export function telegram(config: TelegramConfig): Adapter {
 	const pollMs = config.pollMs ?? 1500;
 	const api = `https://api.telegram.org/bot${config.token}`;
 	const fileApi = `https://api.telegram.org/file/bot${config.token}`;
-	const account = config.id ?? "telegram";
+	const adapterId = config.id ?? "telegram";
 
 	async function call<T>(method: string, body: Record<string, unknown>): Promise<T> {
 		const response = await fetch(`${api}/${method}`, {
@@ -308,7 +308,7 @@ export function telegram(config: TelegramConfig): Adapter {
 						continue;
 					}
 					if (!update.message) continue;
-					const message = telegramMessage(update.message, self, account);
+					const message = telegramMessage(update.message, self, adapterId);
 					if (message.user.isSelf) continue;
 					if (!message.dm && !message.mentioned) continue;
 					await receive(message);
@@ -357,7 +357,7 @@ export function telegram(config: TelegramConfig): Adapter {
 
 	return {
 		kind: "telegram",
-		id: account,
+		id: adapterId,
 		allow: config.allow,
 		admins: config.admins,
 		approvers: config.approvers,

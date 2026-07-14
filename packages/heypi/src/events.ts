@@ -9,7 +9,7 @@ export type ChatJob = {
 	conversation: string;
 	thread?: string;
 	adapter: string;
-	account: string;
+	adapterId: string;
 	actor: { id: string; name?: string };
 	startedAt?: string;
 };
