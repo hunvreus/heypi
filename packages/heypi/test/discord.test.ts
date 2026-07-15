@@ -21,6 +21,7 @@ describe("discordMessage", () => {
 			adapter: "discord",
 			adapterId: "discord",
 			conversation: "c1",
+			channel: "c1",
 			user: { id: "u1", name: "Ronan", isBot: false },
 			text: "hey <@bot>",
 			mentioned: true,
@@ -39,6 +40,20 @@ describe("discordMessage", () => {
 				guildId: null,
 			}).dm,
 		).toBe(true);
+	});
+
+	it("inherits access from a native thread parent and preserves replies", () => {
+		expect(
+			discordMessage({
+				id: "m2",
+				channelId: "thread-1",
+				parentChannelId: "channel-1",
+				replyTo: "bot-1",
+				content: "continue",
+				author: { id: "u1" },
+				guildId: "g1",
+			}),
+		).toMatchObject({ conversation: "thread-1", channel: "channel-1", replyTo: "bot-1", dm: false });
 	});
 
 	it("distinguishes Discord self messages from other bot messages", () => {

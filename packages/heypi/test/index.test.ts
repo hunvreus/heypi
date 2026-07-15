@@ -29,7 +29,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<RuntimeKind>().toEqualTypeOf<"host" | "docker">();
 		expectTypeOf<ApprovalLayout>().toEqualTypeOf<"message" | "card">();
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
-		expectTypeOf<AllowConfig>().toMatchTypeOf<{ users?: string[]; conversations?: string[] }>();
+		expectTypeOf<AllowConfig>().toMatchTypeOf<{ dms?: boolean; channels?: string[]; users?: string[] }>();
 		expectTypeOf<Adapter>().toMatchTypeOf<{ admins?: { users?: string[] }; approvers?: { users?: string[] } }>();
 		expectTypeOf<Adapter>().toMatchTypeOf<{ events?: { "turn.started"?: unknown } }>();
 		expectTypeOf<AdapterApprovalConfig>().toMatchTypeOf<{ layout?: ApprovalLayout; timeoutMs?: number }>();

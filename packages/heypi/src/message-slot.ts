@@ -1,4 +1,4 @@
-import type { Adapter } from "./types.js";
+import type { Adapter, SendMessage, SentMessage } from "./types.js";
 
 export type MessageSlot = {
 	replace(text: string): Promise<void>;
@@ -6,7 +6,8 @@ export type MessageSlot = {
 
 export type MessageSlotOptions = {
 	adapter: Adapter;
-	target: { conversation: string; thread?: string };
+	target: Pick<SendMessage, "conversation" | "thread" | "replyTo">;
+	onSent?(message: SentMessage | undefined): Promise<void>;
 };
 
 /** Maintain one editable adapter message. No-ops when message updates are unsupported. */
@@ -39,6 +40,7 @@ export function createMessageSlot(options: MessageSlotOptions): MessageSlot {
 					const sent = await adapter.send({ ...target, text: nextText });
 					messageId = sent?.id;
 					disabled = !messageId;
+					await options.onSent?.(sent);
 					return;
 				}
 				await adapter.update?.({ ...target, id: messageId, text: nextText });

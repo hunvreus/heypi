@@ -47,6 +47,8 @@ export type DiscordMessageInput = {
 		bot?: boolean;
 	};
 	guildId?: string | null;
+	parentChannelId?: string | null;
+	replyTo?: string;
 	mentions?: {
 		has(userId: string): boolean;
 	};
@@ -55,7 +57,7 @@ export type DiscordMessageInput = {
 
 type PendingApproval = {
 	view: ApprovalView;
-	message?: { edit(payload: unknown): Promise<unknown> };
+	message?: { id: string; edit(payload: unknown): Promise<unknown> };
 	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
 };
@@ -92,6 +94,8 @@ export function discordMessage(message: DiscordMessageInput, botUserId?: string,
 		adapter: "discord",
 		adapterId,
 		conversation: message.channelId,
+		...(!message.guildId ? {} : { channel: message.parentChannelId ?? message.channelId }),
+		...(message.replyTo ? { replyTo: message.replyTo } : {}),
 		user: {
 			id: message.author.id,
 			name: message.author.username,
@@ -278,6 +282,8 @@ export function discord(config: DiscordConfig): Adapter {
 						content: message.content,
 						author: { id: message.author.id, username: message.author.username, bot: message.author.bot },
 						guildId: message.guildId,
+						parentChannelId: message.channel.isThread() ? message.channel.parentId : undefined,
+						replyTo: message.reference?.messageId,
 						mentions: { has: (userId) => message.mentions.users.has(userId) },
 						attachments: [...message.attachments.values()].map((attachment) => ({
 							id: attachment.id,
@@ -290,7 +296,7 @@ export function discord(config: DiscordConfig): Adapter {
 					adapterId,
 				);
 				if (normalized.user.isSelf) return;
-				if (!normalized.dm && !normalized.mentioned) return;
+				if (!normalized.dm && !normalized.mentioned && !normalized.replyTo) return;
 				await context.receive(normalized);
 			});
 			client.on("interactionCreate", async (interaction) => {
@@ -320,6 +326,7 @@ export function discord(config: DiscordConfig): Adapter {
 				);
 				approval.resolve({
 					approved,
+					messageIds: approval.message ? [approval.message.id] : undefined,
 					resolvedBy,
 					resolvedById: interaction.user.id,
 					roles,
@@ -351,10 +358,15 @@ export function discord(config: DiscordConfig): Adapter {
 			}
 			const { local, references } = splitLocalAttachments(message.attachments);
 			const chunks = chunkText(formatOutgoingText(message.text, references), DISCORD_TEXT_LIMIT);
-			let firstId: string | undefined;
+			const ids: string[] = [];
 			for (const [index, content] of chunks.entries()) {
 				const result = await channel.send({
 					content,
+					reply:
+						index === 0 && message.replyTo
+							? { messageReference: message.replyTo, failIfNotExists: false }
+							: undefined,
+					allowedMentions: { repliedUser: false },
 					files:
 						index === chunks.length - 1
 							? local.map((attachment) => ({
@@ -363,9 +375,9 @@ export function discord(config: DiscordConfig): Adapter {
 								}))
 							: undefined,
 				});
-				firstId ??= result.id;
+				ids.push(result.id);
 			}
-			return { id: firstId };
+			return { id: ids[0], ids };
 		},
 		async update(message) {
 			if (!client) throw new Error("Discord adapter is not started");
@@ -392,7 +404,12 @@ export function discord(config: DiscordConfig): Adapter {
 			if (!channel || !("send" in channel) || typeof channel.send !== "function") {
 				return { approved: false, reason: `Discord channel cannot receive approvals: ${view.conversation}` };
 			}
-			const sent = (await channel.send(discordApprovalPayload(view))) as {
+			const sent = (await channel.send({
+				...discordApprovalPayload(view),
+				reply: view.replyTo ? { messageReference: view.replyTo, failIfNotExists: false } : undefined,
+				allowedMentions: { repliedUser: false },
+			})) as {
+				id: string;
 				edit(payload: unknown): Promise<unknown>;
 			};
 			return new Promise<ApprovalDecision>((resolve) => {
@@ -404,7 +421,7 @@ export function discord(config: DiscordConfig): Adapter {
 						void sent
 							.edit(discordApprovalPayload({ ...view, state: "rejected", resolvedBy: "timeout" }))
 							.catch(() => undefined);
-						resolve({ approved: false, reason: "Approval expired." });
+						resolve({ approved: false, messageIds: [sent.id], reason: "Approval expired." });
 					}, timeoutMs);
 				}
 				pending.set(view.id, pendingApproval);

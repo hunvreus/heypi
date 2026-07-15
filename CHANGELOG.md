@@ -12,6 +12,14 @@
 
 ### Changed
 
+- Made DMs persistent conversations while isolating each public root mention into its own Pi
+  session. Slack threads continue natively; Discord and Telegram bot replies now form persisted
+  reply-chain conversations that cover chunked outputs, survive restarts, and allow cross-user
+  continuation. Native containers share their parent-channel workspace and memory, while independent
+  sessions using that workspace remain serialized for safe execution.
+- Replaced the ambiguous adapter `allow.conversations` option with `allow.dms` and
+  `allow.channels`; Discord threads and Telegram forum topics inherit access from their parent
+  channel or group.
 - Aligned the Codex Tag template with current heypi defaults for state, workspaces, adapters, admin,
   approvals, and lifecycle handling.
 - Removed the redundant adapter-account allowlist and renamed persisted chat audit storage from
@@ -66,10 +74,9 @@
 - Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
 - Export public config and approval integration types from the package entrypoint.
 - Added explicit memory tools backed by bounded Markdown storage.
-- Added exact-match conversation/user/group/bot allowlists before Pi work is queued.
+- Added exact-match DM/channel/user/group/bot access rules before Pi work is queued.
 - Added Discord and Telegram typing acknowledgements for accepted messages.
-- Added normalized inbound thread ids so thread-capable adapters keep separate Pi sessions and reply
-  targets.
+- Added normalized native thread and topic ids for adapter delivery targets.
 - Removed heypi-owned `context.maxMessages` and `context.maxChars`; `delta` history now sends the raw
   message delta and leaves compaction to Pi.
 - Removed the model-callable `chat_reply` progress tool.

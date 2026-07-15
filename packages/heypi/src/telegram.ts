@@ -67,6 +67,7 @@ export type TelegramMessage = {
 	};
 	document?: { file_id: string; file_name?: string; mime_type?: string };
 	photo?: Array<{ file_id: string }>;
+	reply_to_message?: { message_id: number };
 };
 
 export type TelegramCallbackQuery = {
@@ -100,6 +101,7 @@ type TypingControls = {
 export type TelegramApprovalPayload = {
 	chat_id: string;
 	message_thread_id?: number;
+	reply_parameters?: { message_id: number };
 	text: string;
 	reply_markup: {
 		inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
@@ -126,6 +128,7 @@ export function telegramMessage(
 		adapterId,
 		conversation: String(message.chat.id),
 		thread: message.message_thread_id ? String(message.message_thread_id) : undefined,
+		...(message.reply_to_message ? { replyTo: String(message.reply_to_message.message_id) } : {}),
 		user: {
 			id: String(message.from?.id ?? "unknown"),
 			name: message.from?.username ?? message.from?.first_name,
@@ -173,7 +176,7 @@ function telegramAttachmentKind(attachment: { name?: string; mime?: string }): "
 
 async function uploadTelegramAttachment(
 	token: string,
-	message: { conversation: string; thread?: string },
+	message: { conversation: string; thread?: string; replyTo?: string },
 	attachment: { localPath?: string; name?: string; mime?: string },
 	caption?: string,
 ): Promise<number> {
@@ -185,6 +188,7 @@ async function uploadTelegramAttachment(
 	const form = new FormData();
 	form.set("chat_id", message.conversation);
 	if (message.thread) form.set("message_thread_id", message.thread);
+	if (message.replyTo) form.set("reply_parameters", JSON.stringify({ message_id: Number(message.replyTo) }));
 	if (caption) form.set("caption", caption);
 	form.set(field, new Blob([data], { type: attachment.mime ?? "application/octet-stream" }), attachment.name);
 	const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form });
@@ -197,6 +201,7 @@ export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPay
 	return {
 		chat_id: view.conversation ?? "",
 		message_thread_id: view.thread ? Number(view.thread) : undefined,
+		...(view.replyTo ? { reply_parameters: { message_id: Number(view.replyTo) } } : {}),
 		text: renderApprovalMessage(view),
 		reply_markup: {
 			inline_keyboard: [
@@ -310,7 +315,7 @@ export function telegram(config: TelegramConfig): Adapter {
 					if (!update.message) continue;
 					const message = telegramMessage(update.message, self, adapterId);
 					if (message.user.isSelf) continue;
-					if (!message.dm && !message.mentioned) continue;
+					if (!message.dm && !message.mentioned && !message.replyTo) continue;
 					await receive(message);
 				}
 			} catch (error) {
@@ -349,6 +354,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		}
 		approval.resolve({
 			approved,
+			messageIds: approval.message === undefined ? undefined : [String(approval.message)],
 			resolvedBy,
 			resolvedById,
 			reason: approved ? undefined : "Rejected in Telegram.",
@@ -395,38 +401,45 @@ export function telegram(config: TelegramConfig): Adapter {
 		},
 		async send(message) {
 			const { local, references } = splitLocalAttachments(message.attachments);
+			const ids: string[] = [];
 			if (local.length > 0) {
 				const chunks = chunkText(formatOutgoingText(message.text, references), TELEGRAM_TEXT_LIMIT);
-				for (const chunk of chunks.slice(0, -1)) {
-					await call<{ message_id: number }>("sendMessage", {
+				const prefixes = chunks.slice(0, -1);
+				for (const [index, chunk] of prefixes.entries()) {
+					const result = await call<{ message_id: number }>("sendMessage", {
 						chat_id: message.conversation,
 						message_thread_id: message.thread ? Number(message.thread) : undefined,
+						reply_parameters:
+							index === 0 && message.replyTo ? { message_id: Number(message.replyTo) } : undefined,
 						text: chunk,
 					});
+					ids.push(String(result.message_id));
 				}
 				const caption = chunks.at(-1);
-				let firstId: number | undefined;
 				for (const [index, attachment] of local.entries()) {
 					const messageId = await uploadTelegramAttachment(
 						config.token,
-						message,
+						index === 0 && prefixes.length === 0 ? message : { ...message, replyTo: undefined },
 						attachment,
 						index === 0 ? caption : undefined,
 					);
-					firstId ??= messageId;
+					ids.push(String(messageId));
 				}
-				return { id: firstId === undefined ? undefined : String(firstId) };
+				return { id: ids[0], ids };
 			}
-			let firstId: number | undefined;
-			for (const text of chunkText(formatOutgoingText(message.text, message.attachments), TELEGRAM_TEXT_LIMIT)) {
+			for (const [index, text] of chunkText(
+				formatOutgoingText(message.text, message.attachments),
+				TELEGRAM_TEXT_LIMIT,
+			).entries()) {
 				const result = await call<{ message_id: number }>("sendMessage", {
 					chat_id: message.conversation,
 					message_thread_id: message.thread ? Number(message.thread) : undefined,
+					reply_parameters: index === 0 && message.replyTo ? { message_id: Number(message.replyTo) } : undefined,
 					text,
 				});
-				firstId ??= result.message_id;
+				ids.push(String(result.message_id));
 			}
-			return { id: firstId === undefined ? undefined : String(firstId) };
+			return { id: ids[0], ids };
 		},
 		async update(message) {
 			await call("editMessageText", {
@@ -454,7 +467,7 @@ export function telegram(config: TelegramConfig): Adapter {
 							message_id: sent.message_id,
 							text: renderApprovalMessage({ ...view, state: "rejected", resolvedBy: "timeout" }),
 						}).catch(() => undefined);
-						resolve({ approved: false, reason: "Approval expired." });
+						resolve({ approved: false, messageIds: [String(sent.message_id)], reason: "Approval expired." });
 					}, timeoutMs);
 				}
 				pending.set(view.id, pendingApproval);

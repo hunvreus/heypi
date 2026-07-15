@@ -34,6 +34,7 @@ export type Turn = {
 	adapterId: string;
 	conversation: string;
 	replyThread?: string;
+	replyTo?: string;
 	prompt: string;
 	actor: { id: string; name?: string };
 	cause: TurnCause;
@@ -195,18 +196,18 @@ export function createChannel(options: ChannelOptions): Channel {
 	function shouldTrigger(message: ChatMessage): boolean {
 		if (message.user.isSelf) return false;
 		if (!hasContent(message)) return false;
-		return message.dm || message.mentioned || followsTriggeredThread(message);
+		return message.dm || message.mentioned || followsTriggeredConversation(message);
 	}
 
 	function hasContent(message: ChatMessage): boolean {
 		return message.text.trim().length > 0 || Boolean(message.attachments?.length);
 	}
 
-	function followsTriggeredThread(message: ChatMessage): boolean {
-		if (!message.thread || message.dm) return false;
+	function followsTriggeredConversation(message: ChatMessage): boolean {
+		if (!message.session || message.session === message.id || message.dm) return false;
+		if (message.replyTo) return true;
 		return records.some((record) => {
 			if (!isInbound(record)) return false;
-			if (record.conversation !== message.conversation || record.thread !== message.thread) return false;
 			return record.dm || record.mentioned;
 		});
 	}
@@ -333,6 +334,7 @@ export function createChannel(options: ChannelOptions): Channel {
 				adapterId: trigger.adapterId,
 				conversation: trigger.conversation,
 				replyThread: trigger.thread,
+				replyTo: message?.dm ? undefined : message?.id,
 				prompt: buildPrompt(turn.trigger),
 				actor: { id: actor.id, name: actor.name },
 				cause,

@@ -41,4 +41,27 @@ describe("message slots", () => {
 
 		expect(sent).toEqual([]);
 	});
+
+	it("reports created message ids without replacing adapter delivery", async () => {
+		const observed: unknown[] = [];
+		const adapter: Adapter = {
+			kind: "test",
+			start() {},
+			async send() {
+				return { id: "1", ids: ["1", "2"] };
+			},
+			async update() {},
+		};
+		const slot = createMessageSlot({
+			adapter,
+			target: { conversation: "room" },
+			async onSent(sent) {
+				observed.push(sent);
+			},
+		});
+
+		await slot.replace("○ Inspect");
+
+		expect(observed).toEqual([{ id: "1", ids: ["1", "2"] }]);
+	});
 });

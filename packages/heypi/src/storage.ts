@@ -7,6 +7,7 @@ export type ChatStorage = {
 	adapterDir: string;
 	sharedDir: string;
 	conversationDir: string;
+	repliesPath: string;
 	workspaceDir: string;
 	logPath: string;
 	lockPath: string;
@@ -20,6 +21,8 @@ export type ChatAddress = {
 	adapter: string;
 	adapterId: string;
 	conversation: string;
+	channel?: string;
+	session?: string;
 	thread?: string;
 };
 
@@ -34,7 +37,8 @@ export function storageSegment(value: string): string {
 }
 
 export function executionKey(message: ChatAddress): string {
-	const stream = message.thread ? `${message.conversation}:${message.thread}` : message.conversation;
+	const stream =
+		message.session ?? (message.thread ? `${message.conversation}:${message.thread}` : message.conversation);
 	return storageSegment(`${message.adapter}:${message.adapterId}:${stream}`);
 }
 
@@ -45,25 +49,28 @@ export function storageFor(agent: AgentConfig, stateDir: string, message: ChatMe
 export function storageForAddress(agent: AgentConfig, stateDir: string, message: ChatAddress): ChatStorage {
 	const adapterId = storageSegment(message.adapterId);
 	const conversation = storageSegment(message.conversation);
+	const surface = storageSegment(message.channel ?? message.conversation);
 	const adapterDir = join(stateDir, "adapters", adapterId);
 	const sharedDir = join(adapterDir, "shared");
 	const conversationDir = join(adapterDir, "conversations", conversation);
+	const surfaceDir = join(adapterDir, "conversations", surface);
 	const workspaceRoot = agent.runtime?.workspace ? resolve(agent.runtime.workspace) : undefined;
 	const workspaceDir = workspaceRoot
-		? join(workspaceRoot, adapterId, "conversations", conversation)
-		: join(conversationDir, "workspace");
+		? join(workspaceRoot, adapterId, "conversations", surface)
+		: join(surfaceDir, "workspace");
 	const sessionDir = join(conversationDir, "sessions", executionKey(message));
 	return {
 		adapterDir,
 		sharedDir,
 		conversationDir,
+		repliesPath: join(conversationDir, "replies.jsonl"),
 		workspaceDir,
 		logPath: join(sessionDir, "log.jsonl"),
 		lockPath: join(sessionDir, "run.lock"),
 		sessionDir,
 		sharedMemoryDir: join(sharedDir, "memory"),
-		memoryDir: join(conversationDir, "memory"),
-		secretDir: join(conversationDir, "secrets"),
+		memoryDir: join(surfaceDir, "memory"),
+		secretDir: join(surfaceDir, "secrets"),
 	};
 }
 

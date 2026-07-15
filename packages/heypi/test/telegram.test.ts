@@ -78,6 +78,18 @@ describe("telegramMessage", () => {
 		).toBe("42");
 	});
 
+	it("preserves reply targets for logical conversation routing", () => {
+		expect(
+			telegramMessage({
+				message_id: 2,
+				text: "continue",
+				chat: { id: 10, type: "supergroup" },
+				from: { id: 20 },
+				reply_to_message: { message_id: 1 },
+			}).replyTo,
+		).toBe("1");
+	});
+
 	it("renders approval inline keyboard", () => {
 		expect(
 			telegramApprovalPayload({

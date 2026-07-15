@@ -1,5 +1,5 @@
 import type { MessageSlot } from "./message-slot.js";
-import type { ChatMessage, SendMessage } from "./types.js";
+import type { ChatMessage, SendMessage, SentMessage } from "./types.js";
 
 export type ChatJobState = "queued" | "running" | "completed" | "failed" | "canceled";
 
@@ -24,7 +24,7 @@ export type AdapterEventContext = {
 	message: ChatMessage;
 	job?: ChatJob;
 	todo?: MessageSlot;
-	send(message: SendMessage): Promise<{ id?: string } | undefined>;
+	send(message: SendMessage): Promise<SentMessage | undefined>;
 };
 
 export type AdapterEvent =
@@ -56,6 +56,7 @@ export function busyEvents(): AdapterEvents {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
+				replyTo: context.message.dm ? undefined : context.message.id,
 				text: "Queued. I’ll start it when the current task finishes.",
 			});
 		},
@@ -63,6 +64,7 @@ export function busyEvents(): AdapterEvents {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
+				replyTo: context.message.dm ? undefined : context.message.id,
 				text: "Updated the active task.",
 			});
 		},
@@ -70,6 +72,7 @@ export function busyEvents(): AdapterEvents {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
+				replyTo: context.message.dm ? undefined : context.message.id,
 				text: "I’m already working on another request in this conversation.",
 			});
 		},

@@ -67,6 +67,22 @@ describe("chat storage", () => {
 		expect(first.sessionDir).not.toBe(second.sessionDir);
 	});
 
+	it("shares workspace and memory across native containers with the same parent channel", () => {
+		const state = makeState();
+		const first = storageFor(agent, state, { ...message, conversation: "thread-1", channel: "parent" });
+		const second = storageFor(agent, state, { ...message, conversation: "thread-2", channel: "parent" });
+
+		expect(first.workspaceDir).toBe(second.workspaceDir);
+		expect(first.memoryDir).toBe(second.memoryDir);
+		expect(first.secretDir).toBe(second.secretDir);
+		expect(first.sessionDir).not.toBe(second.sessionDir);
+		expect(first.repliesPath).not.toBe(second.repliesPath);
+	});
+
+	it("prefers a logical session over the native thread", () => {
+		expect(executionKey({ ...message, session: "root-message" })).toBe("slack:workspace:root-message");
+	});
+
 	it("creates storage directories", async () => {
 		const storage = storageFor(agent, makeState(), message);
 

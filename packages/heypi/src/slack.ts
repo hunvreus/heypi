@@ -202,13 +202,14 @@ export function slackMessage(
 	const conversation = event.channel ?? "unknown";
 	const bot = slackBotSender(event, self);
 	const isSelf = botIdentityMatches(bot, self);
+	const thread = event.channel_type === "im" ? undefined : (event.thread_ts ?? event.ts);
 	return {
 		id: event.ts ?? `slack-${Date.now()}`,
 		adapter: "slack",
 		adapterId,
 		conversation,
-		thread: event.channel_type === "im" ? undefined : (event.thread_ts ?? event.ts),
-		...(event.thread_ts ? { reply: true } : {}),
+		thread,
+		...(thread ? { session: thread } : {}),
 		user: {
 			id: event.user ?? event.bot_id ?? event.app_id ?? "unknown",
 			name: event.username,

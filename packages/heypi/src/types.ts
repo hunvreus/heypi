@@ -33,8 +33,10 @@ export type ChatMessage = {
 	adapter: AdapterKind | string;
 	adapterId: string;
 	conversation: string;
+	channel?: string;
+	session?: string;
 	thread?: string;
-	reply?: boolean;
+	replyTo?: string;
 	user: {
 		id: string;
 		name?: string;
@@ -52,6 +54,7 @@ export type ChatMessage = {
 export type SendMessage = {
 	conversation: string;
 	thread?: string;
+	replyTo?: string;
 	text: string;
 	attachments?: ChatAttachment[];
 };
@@ -62,6 +65,11 @@ export type UpdateMessage = {
 	id: string;
 	text: string;
 	attachments?: ChatAttachment[];
+};
+
+export type SentMessage = {
+	id?: string;
+	ids?: string[];
 };
 
 export type BusyMode = "queue" | "steer" | "reject";
@@ -88,14 +96,15 @@ export type Adapter = {
 	events?: AdapterEvents;
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
-	send(message: SendMessage): Promise<{ id?: string } | undefined>;
+	send(message: SendMessage): Promise<SentMessage | undefined>;
 	update?(message: UpdateMessage): Promise<void>;
 	materializeAttachments?(message: ChatMessage, context: MaterializeContext): Promise<ChatMessage>;
 	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 };
 
 export type AllowConfig = {
-	conversations?: string[];
+	dms?: boolean;
+	channels?: string[];
 	users?: string[];
 	groups?: string[];
 	bots?: true | string[];
@@ -160,6 +169,7 @@ export type ApprovalView = {
 	layout?: ApprovalLayout;
 	conversation?: string;
 	thread?: string;
+	replyTo?: string;
 	reason: string;
 	requestedBy?: string;
 	detailLabel?: string;
@@ -172,6 +182,7 @@ export type ApprovalView = {
 
 export type ApprovalDecision = {
 	approved: boolean;
+	messageIds?: string[];
 	resolvedById?: string;
 	resolvedBy?: string;
 	roles?: string[];

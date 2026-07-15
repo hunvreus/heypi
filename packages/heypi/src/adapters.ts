@@ -25,8 +25,11 @@ function localMessage(input: LocalMessage, adapterId: string): ChatMessage {
 		id: input.id,
 		adapter: "local",
 		adapterId,
-		conversation: "local",
+		conversation: input.conversation ?? "local",
+		channel: input.channel,
+		session: input.session,
 		thread: input.thread,
+		replyTo: input.replyTo,
 		user: input.user,
 		text: input.text,
 		mentioned: input.mentioned ?? true,
@@ -153,7 +156,10 @@ function webhookMessage(input: unknown, adapterId: string): ChatMessage {
 		adapter: "webhook",
 		adapterId: typeof record.adapterId === "string" ? record.adapterId : adapterId,
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
-		thread: typeof record.thread === "string" ? record.thread : undefined,
+		...(typeof record.channel === "string" ? { channel: record.channel } : {}),
+		...(typeof record.session === "string" ? { session: record.session } : {}),
+		...(typeof record.thread === "string" ? { thread: record.thread } : {}),
+		...(typeof record.replyTo === "string" ? { replyTo: record.replyTo } : {}),
 		user: {
 			id: typeof user.id === "string" ? user.id : "webhook",
 			name: typeof user.name === "string" ? user.name : undefined,
@@ -163,8 +169,8 @@ function webhookMessage(input: unknown, adapterId: string): ChatMessage {
 		text: typeof record.text === "string" ? record.text : "",
 		mentioned: record.mentioned !== false,
 		dm: record.dm === true,
-		time: typeof record.time === "string" ? record.time : undefined,
-		attachments: Array.isArray(record.attachments) ? (record.attachments as ChatMessage["attachments"]) : undefined,
+		...(typeof record.time === "string" ? { time: record.time } : {}),
+		...(Array.isArray(record.attachments) ? { attachments: record.attachments as ChatMessage["attachments"] } : {}),
 	};
 }
 

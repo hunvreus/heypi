@@ -118,7 +118,9 @@ describe("channel", () => {
 		});
 		channel.next();
 		await channel.complete("done");
-		await expect(channel.ingest({ ...message("reply", "continue", false), thread: "root" })).resolves.toMatchObject({
+		await expect(
+			channel.ingest({ ...message("reply", "continue", false), session: "root", thread: "root" }),
+		).resolves.toMatchObject({
 			action: "started",
 		});
 

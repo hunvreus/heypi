@@ -247,6 +247,7 @@ describe("slackMessage", () => {
 			adapter: "slack",
 			adapterId: "slack",
 			conversation: "C1",
+			session: "123.456",
 			thread: "123.456",
 			user: { id: "U1", name: "Ronan", isBot: false },
 			text: "hey <@BOT>",

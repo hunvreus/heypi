@@ -974,6 +974,220 @@ describe("createHeypi", () => {
 		});
 	});
 
+	it("can disable DMs explicitly", async () => {
+		const adapter = local({ allow: { dms: false }, todo: false });
+		let sends = 0;
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-no-dm-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-no-dm-state") },
+			}),
+			piHost: () =>
+				replyHost("Done.", () => {
+					sends++;
+				}),
+		});
+		await app.start();
+
+		await adapter.receive({ id: "dm1", user: { id: "u1" }, text: "hello" });
+		await app.stop();
+
+		expect(sends).toBe(0);
+		expect(adapter.sent).toEqual([]);
+	});
+
+	it("uses the parent channel for public access control", async () => {
+		const adapter = local({ allow: { channels: ["parent"] }, todo: false });
+		const prompts: string[] = [];
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-channel-access-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-channel-access-state") },
+			}),
+			piHost: () =>
+				replyHost("Done.", (prompt) => {
+					prompts.push(prompt);
+				}),
+		});
+		await app.start();
+
+		await adapter.receive({
+			id: "m1",
+			conversation: "native-thread",
+			channel: "parent",
+			dm: false,
+			user: { id: "u1" },
+			text: "allowed",
+		});
+		await adapter.receive({
+			id: "m2",
+			conversation: "other-thread",
+			channel: "other",
+			dm: false,
+			user: { id: "u1" },
+			text: "denied",
+		});
+		await app.stop();
+
+		expect(prompts).toEqual([expect.stringContaining("allowed")]);
+	});
+
+	it("isolates public root mentions into separate Pi sessions", async () => {
+		const root = await makeDir("app-public-roots-agent");
+		const state = await makeDir("app-public-roots-state");
+		const adapter = local({ todo: false });
+		const sessions: string[] = [];
+		let active = 0;
+		let maxActive = 0;
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost(options) {
+				sessions.push(options.sessionDir);
+				return replyHost("Done.", async () => {
+					active++;
+					maxActive = Math.max(maxActive, active);
+					await new Promise((resolve) => setTimeout(resolve, 10));
+					active--;
+				});
+			},
+		});
+		await app.start();
+
+		await Promise.all([
+			adapter.receive({ id: "root-1", conversation: "room", dm: false, user: { id: "u1" }, text: "one" }),
+			adapter.receive({ id: "root-2", conversation: "room", dm: false, user: { id: "u1" }, text: "two" }),
+		]);
+		await app.stop();
+
+		expect(sessions).toHaveLength(2);
+		expect(new Set(sessions).size).toBe(2);
+		expect(maxActive).toBe(1);
+		expect(adapter.sent.map((message) => message.replyTo).sort()).toEqual(["root-1", "root-2"]);
+	});
+
+	it("continues from every message emitted by a chunked response", async () => {
+		const adapter = local({ todo: false });
+		const send = adapter.send.bind(adapter);
+		let sends = 0;
+		adapter.send = async (message) => {
+			const sent = await send(message);
+			sends++;
+			return sends === 1 ? { ...sent, ids: [sent?.id ?? "", "chunk-2"] } : sent;
+		};
+		const prompts: string[] = [];
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-chunk-reply-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-chunk-reply-state") },
+			}),
+			piHost: () =>
+				replyHost("Done.", (prompt) => {
+					prompts.push(prompt);
+				}),
+		});
+		await app.start();
+
+		await adapter.receive({ id: "root", conversation: "room", dm: false, user: { id: "u1" }, text: "start" });
+		await adapter.receive({
+			id: "follow-up",
+			conversation: "room",
+			dm: false,
+			mentioned: false,
+			replyTo: "chunk-2",
+			user: { id: "u1" },
+			text: "continue",
+		});
+		await app.stop();
+
+		expect(prompts).toHaveLength(2);
+		expect(prompts[1]).toContain("continue");
+	});
+
+	it("continues from direct control responses", async () => {
+		const adapter = local({ admins: { users: ["u1"] }, todo: false });
+		const prompts: string[] = [];
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-control-reply-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-control-reply-state") },
+			}),
+			piHost: () =>
+				replyHost("Done.", (prompt) => {
+					prompts.push(prompt);
+				}),
+		});
+		await app.start();
+
+		await adapter.receive({ id: "status", conversation: "room", dm: false, user: { id: "u1" }, text: "/status" });
+		await adapter.receive({
+			id: "follow-up",
+			conversation: "room",
+			dm: false,
+			mentioned: false,
+			replyTo: "local-1",
+			user: { id: "u1" },
+			text: "start actual work",
+		});
+		await app.stop();
+
+		expect(prompts).toEqual([expect.stringContaining("start actual work")]);
+	});
+
+	it("restores public reply-chain sessions after restart and across users", async () => {
+		const root = await makeDir("app-reply-restart-agent");
+		const state = await makeDir("app-reply-restart-state");
+		const first = local({ todo: false });
+		const firstApp = await createHeypi({
+			adapters: [first],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost: () => replyHost("First reply."),
+		});
+		await firstApp.start();
+		await first.receive({
+			id: "root",
+			conversation: "room",
+			dm: false,
+			user: { id: "u1" },
+			text: "start",
+		});
+		await firstApp.stop();
+
+		const prompts: string[] = [];
+		const second = local({ todo: false });
+		const secondApp = await createHeypi({
+			adapters: [second],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost: () =>
+				replyHost("Second reply.", (prompt) => {
+					prompts.push(prompt);
+				}),
+		});
+		await secondApp.start();
+		await second.receive({
+			id: "follow-up",
+			conversation: "room",
+			dm: false,
+			mentioned: false,
+			replyTo: "local-1",
+			user: { id: "u2" },
+			text: "continue",
+		});
+		await secondApp.stop();
+
+		expect(prompts).toEqual([expect.stringContaining("continue")]);
+		expect(second.sent).toContainEqual({
+			conversation: "room",
+			thread: undefined,
+			replyTo: "follow-up",
+			text: "Second reply.",
+		});
+	});
+
 	it("dispatches authored schedules through the conversation queue", async () => {
 		const root = await makeDir("app-schedule-agent");
 		const state = await makeDir("app-schedule-state");

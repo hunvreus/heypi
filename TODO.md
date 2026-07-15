@@ -71,6 +71,9 @@
   - Git credential-helper support backed by stored secrets.
   - Missing-secret flow: request secret, wait for submission, then resume or retry the blocked work.
   - Rotation/expiry UI and hosted `heypi.dev/secret` deployment.
+- Add OAuth and trusted-side credential brokering only through concrete connection or runtime-provider
+  boundaries. Keep credentials out of model-visible prompts, tool inputs, workspaces, and process
+  environments.
 
 ## Agent-created skills
 
@@ -89,7 +92,25 @@
   - Slack, Discord, and Telegram upload local files when possible.
 - Inbound Slack, Discord, and Telegram attachments are materialized into the conversation workspace
   before the turn is queued.
-  - Still missing: richer previews and adapter-specific retry/rate-limit handling.
+  - Still missing: configurable file-size and media-type policies, allowed-host restrictions for
+    remote files, richer previews, and adapter-specific retry/rate-limit handling.
+
+## Admin and audit
+
+- Expand the local admin and audit surface only where operational use requires it.
+  - Add structured schedule run history and filtering.
+  - Add telemetry export hooks and correlation IDs across adapter events, Pi turns, tool calls, and
+    schedule runs.
+  - Add eval artifacts and captured event streams for reproducible failures.
+  - Consider durable event streaming, step-level replay, and crash recovery only with a runtime that
+    can provide those guarantees; do not duplicate Pi's transcript locally.
+
+## Channel breadth
+
+- Add channels based on concrete product demand rather than framework parity.
+  - Candidates: Teams, GitHub, Linear, Twilio, and a first-party web client.
+  - Extend the existing webhook adapter or add a custom HTTP/WebSocket channel contract only when a
+    real integration needs behavior that the normalized adapter interface cannot express.
 
 ## Scheduling
 

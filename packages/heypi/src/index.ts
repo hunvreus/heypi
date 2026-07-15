@@ -118,6 +118,7 @@ export type {
 	RuntimeConfig,
 	RuntimeKind,
 	SendMessage,
+	SentMessage,
 	StateConfig,
 	ToolConfig,
 	ToolConfigMap,

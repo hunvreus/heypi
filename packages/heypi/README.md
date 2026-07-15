@@ -141,6 +141,11 @@ triggering message. Older chat is available through the `chat_history` Pi tool. 
 when history is actually needed instead of carrying old Slack/Discord/Telegram context in every
 request.
 
+DMs keep one persistent Pi session per chat. In public channels, each top-level mention starts a new
+Pi session. Slack thread replies continue the thread session; Discord and Telegram replies to bot
+messages continue the corresponding reply-chain session. Discord native threads and Telegram forum
+topics remain delivery containers, so a new top-level mention inside one starts a new session.
+
 Adapter hooks may later attach small event-specific context, but broad passive history injection is
 not part of the core API.
 
@@ -155,13 +160,19 @@ const adapter = slack({
 	appToken,
 	reaction: "eyes",
 	allow: {
-		conversations: ["C0123456789"],
+		dms: false,
+		channels: ["C0123456789"],
 		users: ["U0123456789"],
 		groups: ["S0123456789"],
 		bots: true,
 	},
 });
 ```
+
+`dms` defaults to `true`. `channels` applies only to non-DM destinations; omit it to allow all
+channels or set it to `[]` to allow none. Discord native threads inherit their parent channel's
+permission. Telegram forum topics inherit their group chat's permission. User and group rules are
+applied in addition to the destination rule.
 
 ## Todo
 
