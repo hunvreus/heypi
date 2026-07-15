@@ -1,0 +1,41 @@
+{
+	"name": "@hunvreus/heypi-runtime-just-bash",
+	"version": "0.1.0",
+	"description": "just-bash runtime provider for HeyPi.",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest --run",
+		"pack:dry": "corepack pnpm run build && npm pack --dry-run",
+		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public"
+	},
+	"dependencies": {
+		"@hunvreus/heypi": "workspace:*",
+		"just-bash": "^3.1.0"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.1",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}

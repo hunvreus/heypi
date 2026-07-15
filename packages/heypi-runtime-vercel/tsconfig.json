@@ -1,0 +1,4 @@
+{
+	"extends": "../heypi/tsconfig.json",
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

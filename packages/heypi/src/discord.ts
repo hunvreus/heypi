@@ -1,13 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
-import {
-	type AdapterEvent,
-	type AdapterEventHandler,
-	type AdapterEvents,
-	type AdapterEventType,
-	busyEvents,
-} from "./events.js";
+import type { AdapterEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
@@ -19,6 +13,7 @@ import type {
 	BusyMode,
 	ChatMessage,
 } from "./types.js";
+import { createTypingControls, typingEvents } from "./typing.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
@@ -60,12 +55,6 @@ type PendingApproval = {
 	message?: { id: string; edit(payload: unknown): Promise<unknown> };
 	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
-};
-
-type TypingControls = {
-	start(message: ChatMessage): void;
-	stop(message: ChatMessage): void;
-	stopAll(): void;
 };
 
 export type DiscordApprovalPayload = {
@@ -178,81 +167,13 @@ function memberRoles(member: unknown): string[] {
 	return [...(keys.call(cache) as Iterable<string>)];
 }
 
-function typingKey(message: ChatMessage): string {
-	return `${message.conversation}:${message.thread ?? ""}`;
-}
-
-function createTypingControls(getClient: () => Client | undefined): TypingControls {
-	const timers = new Map<string, ReturnType<typeof setInterval>>();
-
-	async function sendTyping(message: ChatMessage): Promise<void> {
-		const client = getClient();
-		if (!client) return;
-		const channel = await client.channels.fetch(message.conversation);
-		if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") {
-			await channel.sendTyping();
-		}
-	}
-
-	return {
-		start(message) {
-			const key = typingKey(message);
-			if (timers.has(key)) return;
-			void sendTyping(message);
-			timers.set(
-				key,
-				setInterval(() => {
-					void sendTyping(message);
-				}, 5000),
-			);
-		},
-		stop(message) {
-			const key = typingKey(message);
-			const timer = timers.get(key);
-			if (!timer) return;
-			clearInterval(timer);
-			timers.delete(key);
-		},
-		stopAll() {
-			for (const timer of timers.values()) clearInterval(timer);
-			timers.clear();
-		},
-	};
-}
-
-function withTypingEvents(events: AdapterEvents | undefined, typing: TypingControls): AdapterEvents {
-	function wrap<T extends AdapterEventType>(
-		type: T,
-		native: AdapterEventHandler<Extract<AdapterEvent, { type: T }>>,
-	): AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false {
-		const user = events?.[type] as AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false | undefined;
-		if (user === false) return false;
-		return async (event, context) => {
-			await native(event, context);
-			await user?.(event, context);
-		};
-	}
-
-	return {
-		...busyEvents(),
-		...events,
-		"message.accepted": wrap("message.accepted", (_event, context) => typing.start(context.message)),
-		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
-		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
-		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
-		"turn.canceled": wrap("turn.canceled", (_event, context) => typing.stop(context.message)),
-	};
-}
-
-function typingEvents(enabled: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (enabled === false) return { ...busyEvents(), ...(events ?? {}) };
-	return withTypingEvents(events, typing);
-}
-
 export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
 	const pending = new Map<string, PendingApproval>();
-	const typing = createTypingControls(() => client);
+	const typing = createTypingControls(5000, async (message) => {
+		const channel = await client?.channels.fetch(message.conversation);
+		if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") await channel.sendTyping();
+	});
 	const adapterId = config.id ?? "discord";
 	return {
 		kind: "discord",

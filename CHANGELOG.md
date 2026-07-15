@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added separate Gondolin, just-bash, Vercel Sandbox, and Cloudflare Sandbox runtime packages. All
+  seven Pi core tools run through the selected provider without host fallback; managed providers
+  synchronize generated files back to the durable host workspace.
 - Added `heypi create` and `pnpm create heypi` with bundled, standalone examples as first-party
   project templates.
 - Added code-owned cron schedules discovered from `agent/schedules`, with isolated Pi prompt runs,
@@ -12,6 +15,8 @@
 
 ### Changed
 
+- Consolidated host, Docker, and external runtime tool wiring behind one path-confined filesystem
+  contract, and deduplicated Discord/Telegram typing lifecycle handling.
 - Made DMs persistent conversations while isolating each public root mention into its own Pi
   session. Slack threads continue natively; Discord and Telegram bot replies now form persisted
   reply-chain conversations that cover chunked outputs, survive restarts, and allow cross-user

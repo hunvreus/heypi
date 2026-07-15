@@ -194,11 +194,25 @@ export type StateConfig = {
 	dir?: string;
 };
 
-export type RuntimeKind = "host" | "docker";
+export type RuntimeKind = "host" | "docker" | "gondolin" | "just-bash" | "vercel" | "cloudflare";
+
+export type RuntimeContext = {
+	workspace: string;
+	shared?: string;
+	env?: Record<string, string>;
+};
+
+export type RuntimeInstance = {
+	tools: ToolDefinition<any, any, any>[];
+	cleanup(): Promise<void>;
+};
+
+export type RuntimeProvider = (context: RuntimeContext) => Promise<RuntimeInstance>;
 
 export type RuntimeConfig = {
 	kind?: RuntimeKind;
 	workspace?: string;
+	provider?: RuntimeProvider;
 	/**
 	 * Environment variables visible to code executed by the runtime.
 	 *

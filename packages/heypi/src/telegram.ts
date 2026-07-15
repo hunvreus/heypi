@@ -1,13 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { approvalActorAllowed, renderApprovalMessage } from "./approval.js";
 import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
-import {
-	type AdapterEvent,
-	type AdapterEventHandler,
-	type AdapterEvents,
-	type AdapterEventType,
-	busyEvents,
-} from "./events.js";
+import type { AdapterEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
@@ -20,6 +14,7 @@ import type {
 	BusyMode,
 	ChatMessage,
 } from "./types.js";
+import { createTypingControls, typingEvents } from "./typing.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
@@ -90,12 +85,6 @@ type PendingApproval = {
 	message?: number;
 	timer?: ReturnType<typeof setTimeout>;
 	resolve(decision: ApprovalDecision): void;
-};
-
-type TypingControls = {
-	start(message: ChatMessage): void;
-	stop(message: ChatMessage): void;
-	stopAll(): void;
 };
 
 export type TelegramApprovalPayload = {
@@ -214,67 +203,6 @@ export function telegramApprovalPayload(view: ApprovalView): TelegramApprovalPay
 	};
 }
 
-function typingKey(message: ChatMessage): string {
-	return `${message.conversation}:${message.thread ?? ""}`;
-}
-
-function createTypingControls(sendTyping: (message: ChatMessage) => Promise<void>): TypingControls {
-	const timers = new Map<string, ReturnType<typeof setInterval>>();
-	return {
-		start(message) {
-			const key = typingKey(message);
-			if (timers.has(key)) return;
-			void sendTyping(message);
-			timers.set(
-				key,
-				setInterval(() => {
-					void sendTyping(message);
-				}, 4000),
-			);
-		},
-		stop(message) {
-			const key = typingKey(message);
-			const timer = timers.get(key);
-			if (!timer) return;
-			clearInterval(timer);
-			timers.delete(key);
-		},
-		stopAll() {
-			for (const timer of timers.values()) clearInterval(timer);
-			timers.clear();
-		},
-	};
-}
-
-function withTypingEvents(events: AdapterEvents | undefined, typing: TypingControls): AdapterEvents {
-	function wrap<T extends AdapterEventType>(
-		type: T,
-		native: AdapterEventHandler<Extract<AdapterEvent, { type: T }>>,
-	): AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false {
-		const user = events?.[type] as AdapterEventHandler<Extract<AdapterEvent, { type: T }>> | false | undefined;
-		if (user === false) return false;
-		return async (event, context) => {
-			await native(event, context);
-			await user?.(event, context);
-		};
-	}
-
-	return {
-		...busyEvents(),
-		...events,
-		"message.accepted": wrap("message.accepted", (_event, context) => typing.start(context.message)),
-		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
-		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
-		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
-		"turn.canceled": wrap("turn.canceled", (_event, context) => typing.stop(context.message)),
-	};
-}
-
-function typingEvents(enabled: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (enabled === false) return { ...busyEvents(), ...(events ?? {}) };
-	return withTypingEvents(events, typing);
-}
-
 export function telegram(config: TelegramConfig): Adapter {
 	let running = false;
 	let offset = 0;
@@ -297,7 +225,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		return payload.result;
 	}
 
-	const typing = createTypingControls((message) => call("sendChatAction", telegramTypingPayload(message)));
+	const typing = createTypingControls(4000, (message) => call("sendChatAction", telegramTypingPayload(message)));
 
 	async function poll(
 		receive: (message: ChatMessage) => Promise<void>,

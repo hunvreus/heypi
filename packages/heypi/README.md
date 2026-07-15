@@ -110,14 +110,31 @@ With Docker, `read`, `write`, `edit`, `find`, `grep`, `ls`, and `bash` run again
 container with the workspace bind-mounted at `/workspace`. The configured workspace path must be
 mountable by Docker; on Docker Desktop, prefer a project directory over a system temp directory.
 
-Provider runtimes should expose the same core tool contract from separate packages:
+Additional runtimes expose the same core tool contract from separate packages:
 
 ```ts
 import { gondolin } from "@hunvreus/heypi-runtime-gondolin";
+
+const agent = loadAgent("./agent", {
+	runtime: gondolin({ workspace: "./workspace" }),
+});
 ```
 
-The contract is uniform: a runtime either owns a core tool or it should not expose that tool. heypi
-should not silently fall back to host file or shell access when a sandbox runtime is selected.
+Available providers:
+
+- `@hunvreus/heypi-runtime-just-bash`: in-process shell interpreter with host directories mounted
+  through `just-bash`'s confined filesystem. Network access is disabled unless configured explicitly.
+- `@hunvreus/heypi-runtime-gondolin`: local QEMU micro-VM with `/workspace` and `/shared` bind-mounted;
+  requires Node 23.6+ and QEMU.
+- `@hunvreus/heypi-runtime-vercel`: creates and stops a Vercel Sandbox, synchronizing durable host
+  roots into the sandbox and materializing remote writes back to the host.
+- `@hunvreus/heypi-runtime-cloudflare`: uses a caller-owned Cloudflare `ISandbox`, creates an explicit
+  execution session, and deletes that session during cleanup. Configure the SDK's RPC transport.
+
+The contract is uniform: a runtime owns all seven Pi core tools and never falls back to host file or
+shell access. Vercel and Cloudflare synchronize files after each bash command so `chat_attach` can
+read generated files. Synchronization preserves unrelated host files; remote deletions are therefore
+not propagated to the host workspace.
 
 Runtime `env` values are visible to model-driven commands. Do not put credentials there unless
 leakage is acceptable:

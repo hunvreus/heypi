@@ -246,7 +246,7 @@ Status: implemented.
 
 ### just-bash
 
-Status: planned.
+Status: implemented.
 
 - Integrates with Vercel Labs `just-bash` as a virtual bash/filesystem provider.
 - Useful for lightweight isolated command execution where a full container is unnecessary.
@@ -254,7 +254,7 @@ Status: planned.
 
 ### Docker
 
-Status: planned.
+Status: implemented.
 
 - Runs command/file effects inside a container workspace.
 - Stages agent resources read-only and mounts or copies the selected workspace separately.
@@ -264,13 +264,13 @@ Status: planned.
 - Should provide explicit lifecycle hooks: prepare, start, stop, clean, health.
 - Good enough target for shared Slack/Discord demos before adding Gondolin.
 
-### Gondolin-style provider
+### Gondolin and managed providers
 
-Status: later.
+Status: implemented.
 
-- Same conceptual boundary as Docker, but remote/durable.
-- Should plug into the runtime interface after local/bash/docker are stable.
-- Do not add Gondolin-specific assumptions to core chat/adapters.
+- Gondolin bind-mounts durable roots into a local micro-VM.
+- Vercel and Cloudflare providers synchronize durable host roots with managed sandboxes.
+- Provider-specific assumptions stay in separate packages behind the runtime factory contract.
 
 ## Examples
 

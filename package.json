@@ -3,8 +3,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "corepack pnpm --filter @hunvreus/heypi run build",
-		"build:all": "corepack pnpm --filter @hunvreus/heypi run build",
+		"build": "corepack pnpm -r --filter \"./packages/*\" run build",
+		"build:all": "corepack pnpm -r --filter \"./packages/*\" run build",
 		"dev:codex-tag": "corepack pnpm --filter @hunvreus/heypi run build && corepack pnpm --filter heypi-example-codex-tag run dev",
 		"prepack": "corepack pnpm run build",
 		"pack:dry": "corepack pnpm --filter @hunvreus/heypi run pack:dry",
@@ -13,8 +13,8 @@
 		"publish:dry:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "corepack pnpm --filter @hunvreus/heypi run typecheck",
-		"test": "corepack pnpm --filter @hunvreus/heypi run test"
+		"typecheck": "corepack pnpm -r --filter \"./packages/*\" run typecheck",
+		"test": "corepack pnpm -r --filter \"./packages/*\" run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

@@ -1,22 +1,8 @@
-import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import {
-	createBashToolDefinition,
-	createEditToolDefinition,
-	createFindToolDefinition,
-	createGrepToolDefinition,
-	createLocalBashOperations,
-	createLsToolDefinition,
-	createReadToolDefinition,
-	createWriteToolDefinition,
-	type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
-import { GUEST_SHARED, GUEST_WORKSPACE, guestPath, hostPath, type RuntimeRoots } from "./runtime-path.js";
-import { findFiles, guardPathInput, mapPathInput } from "./runtime-util.js";
-
-function hostCwd(roots: RuntimeRoots, inputPath: string | undefined): { host: string; guest: string } {
-	if (!inputPath || inputPath === ".") return { host: roots.workspace, guest: GUEST_WORKSPACE };
-	return { host: hostPath(roots, inputPath), guest: guestPath(roots, inputPath) };
-}
+import { access, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { createLocalBashOperations, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { assertInside, GUEST_SHARED, GUEST_WORKSPACE, hostPath, type RuntimeRoots } from "./runtime-path.js";
+import { createRuntimeToolDefinitions, type RuntimeFileSystem } from "./runtime-provider.js";
 
 function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
@@ -28,59 +14,46 @@ function rewriteGuestPaths(command: string, roots: RuntimeRoots): string {
 	return rewritten;
 }
 
+async function safeHostPath(roots: RuntimeRoots, path: string, parent = false): Promise<string> {
+	const target = hostPath(roots, path);
+	const root = path === GUEST_SHARED || path.startsWith(`${GUEST_SHARED}/`) ? roots.shared : roots.workspace;
+	if (!root) throw new Error(`path escapes runtime workspace: ${path}`);
+	let existing = parent ? dirname(target) : target;
+	while (true) {
+		try {
+			assertInside(await realpath(root), await realpath(existing));
+			return target;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT" || existing === root) throw error;
+			existing = dirname(existing);
+		}
+	}
+}
+
 export function createHostRuntimeTools(
 	roots: RuntimeRoots,
 	env?: Record<string, string>,
 ): ToolDefinition<any, any, any>[] {
-	const guard = (path: string) => hostPath(roots, path);
-	const readOps = {
-		readFile: (path: string) => readFile(guard(path)),
-		access: (path: string) => access(guard(path)),
-	};
-	const writeOps = {
-		writeFile: (path: string, content: string) => writeFile(guard(path), content),
-		mkdir: async (path: string) => {
-			await mkdir(guard(path), { recursive: true });
+	const fs: RuntimeFileSystem = {
+		access: async (path) => access(await safeHostPath(roots, path)),
+		mkdir: async (path) => {
+			await mkdir(await safeHostPath(roots, path, true), { recursive: true });
 		},
+		readFile: async (path) => readFile(await safeHostPath(roots, path)),
+		readdir: async (path) => readdir(await safeHostPath(roots, path)),
+		stat: async (path) => stat(await safeHostPath(roots, path)),
+		writeFile: async (path, content) => writeFile(await safeHostPath(roots, path, true), content),
 	};
-	const grepOps = {
-		isDirectory: async (path: string) => (await stat(guard(path))).isDirectory(),
-		readFile: async (path: string) => readFile(guard(path), "utf8"),
-	};
-	const findOps = {
-		exists: async (path: string) => {
-			try {
-				await access(guard(path));
-				return true;
-			} catch {
-				return false;
-			}
+	const local = createLocalBashOperations();
+	return createRuntimeToolDefinitions({
+		fs,
+		roots,
+		bash: {
+			exec: (command, cwd, options) =>
+				local.exec(rewriteGuestPaths(command, roots), hostPath(roots, cwd), {
+					...options,
+					env: { ...options.env, ...env },
+				}),
 		},
-		glob: async (pattern: string, cwd: string, options: { ignore: string[]; limit: number }) => {
-			const root = hostCwd(roots, cwd);
-			return (await findFiles(root.host, pattern, options)).map((path) => `${root.guest}/${path}`);
-		},
-	};
-	const lsOps = {
-		exists: findOps.exists,
-		stat: (path: string) => stat(guard(path)),
-		readdir: (path: string) => readdir(guard(path)),
-	};
-	return [
-		createReadToolDefinition(GUEST_WORKSPACE, { operations: readOps }),
-		createBashToolDefinition(GUEST_WORKSPACE, {
-			operations: createLocalBashOperations(),
-			spawnHook: (context) => ({
-				...context,
-				cwd: roots.workspace,
-				command: rewriteGuestPaths(context.command, roots),
-				env: { ...context.env, ...env },
-			}),
-		}),
-		createEditToolDefinition(GUEST_WORKSPACE, { operations: { ...readOps, ...writeOps } }),
-		createWriteToolDefinition(GUEST_WORKSPACE, { operations: writeOps }),
-		mapPathInput(createGrepToolDefinition(roots.workspace, { operations: grepOps }), guard, ["path"]),
-		createFindToolDefinition(GUEST_WORKSPACE, { operations: findOps }),
-		guardPathInput(createLsToolDefinition(GUEST_WORKSPACE, { operations: lsOps }), guard, ["path"]),
-	];
+	});
 }

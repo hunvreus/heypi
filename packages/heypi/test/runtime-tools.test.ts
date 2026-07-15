@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -110,5 +110,20 @@ describe("createRuntimeTools", () => {
 		).resolves.toMatchObject({
 			content: [{ type: "text", text: expect.stringContaining(`${canonicalWorkspace}\nok`) }],
 		});
+	});
+
+	it("rejects host file-tool access through escaping symlinks", async () => {
+		const workspace = await makeWorkspace();
+		const outside = await makeWorkspace();
+		await writeFile(join(outside, "secret.txt"), "private\n");
+		await symlink(outside, join(workspace, "escape"));
+		const runtime = await createRuntimeTools(host({ workspace }), workspace);
+
+		await expect(
+			tool(runtime.tools, "read").execute("read", { path: "escape/secret.txt" }, undefined, undefined, {} as never),
+		).rejects.toThrow("path escapes runtime workspace");
+		await expect(
+			tool(runtime.tools, "find").execute("find", { pattern: "*.txt" }, undefined, undefined, {} as never),
+		).rejects.toThrow("path escapes runtime workspace");
 	});
 });

@@ -26,7 +26,9 @@ import { todoEvents } from "../src/index.js";
 describe("public entrypoint", () => {
 	it("exports config and approval integration types", () => {
 		expectTypeOf<AdapterKind>().toEqualTypeOf<"slack" | "discord" | "telegram" | "webhook" | "local">();
-		expectTypeOf<RuntimeKind>().toEqualTypeOf<"host" | "docker">();
+		expectTypeOf<RuntimeKind>().toEqualTypeOf<
+			"host" | "docker" | "gondolin" | "just-bash" | "vercel" | "cloudflare"
+		>();
 		expectTypeOf<ApprovalLayout>().toEqualTypeOf<"message" | "card">();
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
 		expectTypeOf<AllowConfig>().toMatchTypeOf<{ dms?: boolean; channels?: string[]; users?: string[] }>();

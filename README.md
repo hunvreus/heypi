@@ -16,7 +16,19 @@ corepack pnpm run test
 corepack pnpm run build
 ```
 
-## Package
+## Packages
+
+- [`@hunvreus/heypi`](packages/heypi) provides the agent, adapters, and host/Docker runtimes.
+- [`@hunvreus/heypi-runtime-just-bash`](packages/heypi-runtime-just-bash) provides lightweight
+  interpreter isolation.
+- [`@hunvreus/heypi-runtime-gondolin`](packages/heypi-runtime-gondolin) provides local micro-VM
+  isolation.
+- [`@hunvreus/heypi-runtime-vercel`](packages/heypi-runtime-vercel) provides managed Vercel
+  Sandbox execution.
+- [`@hunvreus/heypi-runtime-cloudflare`](packages/heypi-runtime-cloudflare) adapts a caller-owned
+  Cloudflare Sandbox SDK instance.
+
+## Quick start
 
 ```ts
 import { createHeypi, loadAgent, local } from "@hunvreus/heypi";
@@ -32,7 +44,7 @@ const app = await createHeypi({
 await app.start();
 ```
 
-See [packages/heypi/README.md](packages/heypi/README.md) for the current API surface.
+See [packages/heypi/README.md](packages/heypi/README.md) for the API and runtime selection guide.
 
 ## Examples
 

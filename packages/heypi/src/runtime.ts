@@ -1,5 +1,13 @@
 import type { RuntimeConfig } from "./types.js";
 
+export { downloadRuntimeRoots, mirrorRuntimeFileSystem, uploadRuntimeRoots } from "./runtime-mirror.js";
+export {
+	createRuntimeToolDefinitions,
+	type RuntimeFileSystem,
+	type RuntimeToolOptions,
+} from "./runtime-provider.js";
+export type { RuntimeConfig, RuntimeContext, RuntimeInstance, RuntimeKind, RuntimeProvider } from "./types.js";
+
 export type HostRuntimeOptions = {
 	workspace?: string;
 	env?: Record<string, string>;

@@ -1,13 +1,9 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createDockerRuntimeTools } from "./runtime-docker.js";
 import { createHostRuntimeTools } from "./runtime-host.js";
 import type { RuntimeRoots } from "./runtime-path.js";
-import type { RuntimeConfig } from "./types.js";
+import type { RuntimeConfig, RuntimeInstance } from "./types.js";
 
-export type RuntimeTools = {
-	tools: ToolDefinition<any, any, any>[];
-	cleanup(): Promise<void>;
-};
+export type RuntimeTools = RuntimeInstance;
 
 /**
  * Builds Pi tool definitions for the configured runtime.
@@ -22,6 +18,7 @@ export async function createRuntimeTools(
 ): Promise<RuntimeTools> {
 	const kind = runtime?.kind ?? "host";
 	const roots: RuntimeRoots = shared ? { workspace, shared } : { workspace };
+	if (runtime?.provider) return runtime.provider({ ...roots, env: runtime.env });
 	if (kind === "host") {
 		return { tools: createHostRuntimeTools(roots, runtime?.env), async cleanup() {} };
 	}

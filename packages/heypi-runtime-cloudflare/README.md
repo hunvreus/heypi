@@ -1,0 +1,21 @@
+# HeyPi Cloudflare Sandbox runtime
+
+Adapts a caller-owned Cloudflare Sandbox SDK `ISandbox`. The provider creates one explicit execution
+session, synchronizes durable roots, and deletes only that session during cleanup.
+
+```ts
+import { getSandbox } from "@cloudflare/sandbox";
+import { cloudflare } from "@hunvreus/heypi-runtime-cloudflare";
+
+const runtime = cloudflare({
+	workspace: "./workspace",
+	sandbox: getSandbox(env.Sandbox, "agent", {
+		transport: "rpc",
+		enableDefaultSession: false,
+	}),
+});
+```
+
+The caller owns the Durable Object sandbox lifecycle and must export/configure the Cloudflare Sandbox
+binding. Remote deletions are not propagated to the host. Runtime `env` values are model-visible and
+are not secret brokering.
