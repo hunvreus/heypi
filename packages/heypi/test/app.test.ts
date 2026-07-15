@@ -73,6 +73,33 @@ function encryptedSecretReply(url: string, secret: string): string {
 }
 
 describe("createHeypi", () => {
+	it("warns when runtime defaults to host execution", async () => {
+		const warnings: Array<{ event: string; data?: Record<string, unknown> }> = [];
+		const app = await createHeypi({
+			adapters: [local("local-dev")],
+			agent: loadAgent(await makeDir("app-host-warning-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-host-warning-state") },
+			}),
+			logger: {
+				debug() {},
+				info() {},
+				warn(event, data) {
+					warnings.push({ event, data });
+				},
+				error() {},
+			},
+		});
+
+		await app.start();
+		await app.stop();
+
+		expect(warnings).toContainEqual({
+			event: "security.runtime_default_host",
+			data: { reason: "runtime omitted; shell commands execute on the host" },
+		});
+	});
+
 	it("starts with tool approvals even when adapters do not restrict approvers", async () => {
 		const root = await makeDir("app-open-approval-agent");
 		const state = await makeDir("app-open-approval-state");

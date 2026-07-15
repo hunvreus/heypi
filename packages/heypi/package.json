@@ -26,6 +26,10 @@
 		"./authoring": {
 			"types": "./dist/authoring.d.ts",
 			"import": "./dist/authoring.js"
+		},
+		"./cli": {
+			"types": "./dist/cli.d.ts",
+			"import": "./dist/cli.js"
 		}
 	},
 	"files": [

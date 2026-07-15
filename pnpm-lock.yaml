@@ -37,6 +37,19 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/create-heypi:
+    dependencies:
+      '@hunvreus/heypi':
+        specifier: ^0.1.0
+        version: link:../heypi
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/heypi:
     dependencies:
       '@earendil-works/pi-coding-agent':

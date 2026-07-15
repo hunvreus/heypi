@@ -1,16 +1,13 @@
-import { approval, type Adapter, createHeypi, docker, host, loadAgent, local, modelFromEnv, slack } from "@hunvreus/heypi";
+import { approval, type Adapter, createHeypi, docker, loadAgent, local, modelFromEnv, slack } from "@hunvreus/heypi";
 
 function env(name: string): string | undefined {
 	return process.env[name]?.trim() || undefined;
 }
 
 function runtime() {
-	const workspace = env("HEYPI_WORKSPACE") ?? process.cwd();
 	const token = env("GITHUB_TOKEN");
 	const runtimeEnv = token ? { GITHUB_TOKEN: token } : undefined;
-	if (env("HEYPI_RUNTIME") === "host") return host({ workspace, env: runtimeEnv });
 	return docker({
-		workspace,
 		image: env("HEYPI_DOCKER_IMAGE") ?? "heypi-codex-tag:local",
 		env: runtimeEnv,
 	});
@@ -25,9 +22,6 @@ const agent = loadAgent(new URL("./agent", import.meta.url).pathname, {
 		},
 	},
 	runtime: runtime(),
-	state: {
-		dir: env("HEYPI_STATE") ?? new URL("./.heypi", import.meta.url).pathname,
-	},
 	admin: { port: Number(env("HEYPI_ADMIN_PORT") ?? 4321), token: env("HEYPI_ADMIN_TOKEN") },
 });
 

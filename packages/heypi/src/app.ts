@@ -11,7 +11,7 @@ import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
 import { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";
 import { createSecretManager, type SecretManager } from "./secrets.js";
 import { createStatusSlot, type StatusSlot } from "./status.js";
-import { type ChatStorage, ensureChatStorage, executionKey, storageFor } from "./storage.js";
+import { type ChatStorage, ensureChatStorage, executionKey, storageFor, userMemoryDir } from "./storage.js";
 import { createTodoController, renderTodo, type TodoController } from "./todo.js";
 import { toolSettings } from "./tool-config.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger, SendMessage } from "./types.js";
@@ -281,9 +281,16 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				agent.memory === false
 					? undefined
 					: createMemoryExtension({
-							stores: {
-								adapter: createFileMemoryStore(running.storage.adapterMemoryDir),
-								conversation: createFileMemoryStore(running.storage.memoryDir),
+							store(destination) {
+								if (destination === "conversation") {
+									return createFileMemoryStore(running.storage.memoryDir, "memory");
+								}
+								if (destination === "shared") {
+									return createFileMemoryStore(running.storage.sharedMemoryDir, "memory");
+								}
+								const active = running.activeMessage;
+								if (!active) throw new Error("User memory requires an active chat user.");
+								return createFileMemoryStore(userMemoryDir(running.storage, active.user.id), "user");
 							},
 							source: () => {
 								const active = running.activeMessage;
@@ -650,6 +657,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	return {
 		async start() {
 			stopping = false;
+			if (!agent.runtime) {
+				logger.warn("security.runtime_default_host", {
+					reason: "runtime omitted; shell commands execute on the host",
+				});
+			}
 			await admin?.start();
 			if (admin) logger.info("admin.start", { url: admin.url() });
 			const adapters = options.adapters;

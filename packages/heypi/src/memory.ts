@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 
-export type MemoryScope = "adapter" | "conversation";
+export type MemoryDestination = "conversation" | "user" | "shared";
 export type MemoryTarget = "memory" | "user";
 
 export type MemorySource = {
@@ -35,7 +35,7 @@ export type MemoryStore = {
 };
 
 export type MemoryExtensionOptions = {
-	stores: Record<MemoryScope, MemoryStore>;
+	store(destination: MemoryDestination): MemoryStore;
 	source?(): MemorySource | undefined;
 	recallLimit?: number;
 	recallChars?: number;
@@ -75,14 +75,10 @@ const STOP_WORDS = new Set([
 
 const memoryParameters = Type.Object({
 	action: Type.Union([Type.Literal("add"), Type.Literal("replace"), Type.Literal("remove")]),
-	scope: Type.Optional(
-		Type.Union([Type.Literal("adapter"), Type.Literal("conversation")], {
-			description: "Adapter memory is shared across conversations for this adapter; conversation memory is local to this chat",
-		}),
-	),
-	target: Type.Optional(
-		Type.Union([Type.Literal("memory"), Type.Literal("user")], {
-			description: "Use user for preferences/profile; memory for facts, decisions, conventions, and lessons",
+	destination: Type.Optional(
+		Type.Union([Type.Literal("conversation"), Type.Literal("user"), Type.Literal("shared")], {
+			description:
+				"Use conversation for local facts and decisions, user for the active user's stable profile, or shared for reusable adapter-wide knowledge",
 		}),
 	),
 	id: Type.Optional(Type.String({ description: "Existing memory ID for replace or remove" })),
@@ -91,8 +87,9 @@ const memoryParameters = Type.Object({
 
 const searchParameters = Type.Object({
 	query: Type.Optional(Type.String({ description: "Words or phrase to recall" })),
-	scope: Type.Optional(Type.Union([Type.Literal("adapter"), Type.Literal("conversation")])),
-	target: Type.Optional(Type.Union([Type.Literal("memory"), Type.Literal("user")])),
+	destination: Type.Optional(
+		Type.Union([Type.Literal("conversation"), Type.Literal("user"), Type.Literal("shared")]),
+	),
 	limit: Type.Optional(Type.Number({ minimum: 1, maximum: 50 })),
 });
 
@@ -216,28 +213,26 @@ function enqueue<T>(key: string, run: () => Promise<T>): Promise<T> {
 	return next;
 }
 
-export function createFileMemoryStore(dir: string): MemoryStore {
+export function createFileMemoryStore(dir: string, only?: MemoryTarget): MemoryStore {
+	const targets: MemoryTarget[] = only ? [only] : ["memory", "user"];
 	const paths: Record<MemoryTarget, string> = {
 		memory: join(dir, FILES.memory),
 		user: join(dir, FILES.user),
 	};
 
 	async function readAll(): Promise<MemoryRecord[]> {
-		const records = await Promise.all(
-			(["memory", "user"] as const).map((target) => readFileRecords(paths[target], target)),
-		);
+		const records = await Promise.all(targets.map((target) => readFileRecords(paths[target], target)));
 		return records.flat();
 	}
 
 	async function rewrite(records: MemoryRecord[]): Promise<void> {
-		await Promise.all(
-			(["memory", "user"] as const).map((target) => writeAtomic(paths[target], renderFile(target, records))),
-		);
+		await Promise.all(targets.map((target) => writeAtomic(paths[target], renderFile(target, records))));
 	}
 
 	return {
 		async put(input) {
 			return enqueue(dir, async () => {
+				if (only && input.target !== only) throw new Error(`This store only accepts ${only} memory.`);
 				const text = validateText(input.text);
 				const existing = await readAll();
 				const current = input.id ? existing.find((record) => record.id === input.id) : undefined;
@@ -291,9 +286,13 @@ export function createFileMemoryStore(dir: string): MemoryStore {
 	};
 }
 
-function formatMemory(records: Array<MemoryRecord & { scope: MemoryScope }>): string {
+function targetFor(destination: MemoryDestination): MemoryTarget {
+	return destination === "user" ? "user" : "memory";
+}
+
+function formatMemory(records: Array<MemoryRecord & { destination: MemoryDestination }>): string {
 	if (records.length === 0) return "No matching memory found.";
-	return records.map((record) => `- [${record.id}] [${record.scope}/${record.target}] ${record.text}`).join("\n");
+	return records.map((record) => `- [${record.id}] [${record.destination}] ${record.text}`).join("\n");
 }
 
 function messageText(message: unknown): string {
@@ -314,15 +313,19 @@ function escapeContext(text: string): string {
 }
 
 async function searchStores(
-	stores: Record<MemoryScope, MemoryStore>,
+	options: MemoryExtensionOptions,
 	input: SearchParams,
-): Promise<Array<MemoryRecord & { scope: MemoryScope }>> {
-	const scopes: MemoryScope[] = input.scope ? [input.scope] : ["conversation", "adapter"];
+): Promise<Array<MemoryRecord & { destination: MemoryDestination }>> {
+	const destinations: MemoryDestination[] = input.destination
+		? [input.destination]
+		: ["conversation", "user", "shared"];
 	const records = await Promise.all(
-		scopes.map(async (scope) => {
-			return (await stores[scope].search({ query: input.query, target: input.target, limit: 50 })).map((record) => ({
+		destinations.map(async (destination) => {
+			return (await options.store(destination).search({ query: input.query, limit: 50 }))
+				.filter((record) => record.target === targetFor(destination))
+				.map((record) => ({
 				...record,
-				scope,
+				destination,
 			}));
 		}),
 	);
@@ -335,21 +338,25 @@ async function searchStores(
 }
 
 async function recall(
-	stores: Record<MemoryScope, MemoryStore>,
+	options: MemoryExtensionOptions,
 	query: string,
 	limit: number,
 	maxChars: number,
 ): Promise<string> {
 	const [profile, relevant] = await Promise.all([
-		searchStores(stores, { target: "user", limit }),
-		searchStores(stores, { query, target: "memory", limit }),
+		searchStores(options, { destination: "user", limit }),
+		Promise.all(
+			(["conversation", "shared"] as const).map((destination) =>
+				searchStores(options, { query, destination, limit }),
+			),
+		).then((records) => records.flat()),
 	]);
 	const seen = new Set<string>();
 	const lines: string[] = [];
 	let chars = 0;
 	for (const record of [...profile, ...relevant]) {
 		if (seen.has(record.id) || lines.length >= limit) continue;
-		const line = `- [${record.scope}/${record.target}] ${escapeContext(record.text)}`;
+		const line = `- [${record.destination}] ${escapeContext(record.text)}`;
 		if (chars + line.length > maxChars) break;
 		seen.add(record.id);
 		lines.push(line);
@@ -369,28 +376,29 @@ export function createMemoryExtension(options: MemoryExtensionOptions): Extensio
 		pi.registerTool({
 			name: "memory",
 			label: "Memory",
-			description: "Add, replace, or remove curated durable memory and user-profile entries.",
+			description: "Add, replace, or remove curated durable conversation, user, or shared memory.",
 			promptSnippet: "Manage curated durable memory when important information should survive this session.",
 			promptGuidelines: [
 				"Save only durable facts, preferences, decisions, conventions, corrections, and recurring lessons.",
 				"Do not save transient task progress, raw tool output, ordinary conversation, secrets, or credentials.",
-				"Use target=user for user preferences/profile and target=memory for facts, decisions, conventions, and lessons.",
-				"Use scope=adapter only when the memory should apply across this adapter's conversations; otherwise use conversation.",
+				"Omit destination for current-conversation memory. Use user only for the active user's stable preferences or profile facts.",
+				"Use shared only for reusable knowledge that is safe and useful across this adapter's conversations.",
 			],
 			parameters: memoryParameters,
 			async execute(_toolCallId, params, signal) {
 				signal?.throwIfAborted?.();
 				const input = params as MemoryParams;
-				const scope = input.scope ?? "conversation";
-				const target = input.target ?? "memory";
+				const destination = input.destination ?? "conversation";
+				const target = targetFor(destination);
+				const store = options.store(destination);
 				let record: MemoryRecord;
 				if (input.action === "remove") {
 					if (!input.id) throw new Error("memory remove requires id.");
-					record = await options.stores[scope].remove(input.id);
+					record = await store.remove(input.id);
 				} else {
 					if (!input.text) throw new Error(`memory ${input.action} requires text.`);
 					if (input.action === "replace" && !input.id) throw new Error("memory replace requires id.");
-					record = await options.stores[scope].put({
+					record = await store.put({
 						id: input.action === "replace" ? input.id : undefined,
 						target,
 						text: input.text,
@@ -400,7 +408,7 @@ export function createMemoryExtension(options: MemoryExtensionOptions): Extensio
 				pi.appendEntry(MEMORY_ENTRY, {
 					action: input.action,
 					id: record.id,
-					scope,
+					destination,
 					target: record.target,
 					time: new Date().toISOString(),
 				});
@@ -408,10 +416,10 @@ export function createMemoryExtension(options: MemoryExtensionOptions): Extensio
 					content: [
 						{
 							type: "text",
-							text: `${input.action === "remove" ? "Removed" : "Stored"} ${scope} memory ${record.id}.`,
+							text: `${input.action === "remove" ? "Removed" : "Stored"} ${destination} memory ${record.id}.`,
 						},
 					],
-					details: { ...record, scope },
+					details: { ...record, destination },
 				};
 			},
 		});
@@ -427,7 +435,7 @@ export function createMemoryExtension(options: MemoryExtensionOptions): Extensio
 			async execute(_toolCallId, params, signal) {
 				signal?.throwIfAborted?.();
 				const input = params as SearchParams;
-				const records = await searchStores(options.stores, input);
+				const records = await searchStores(options, input);
 				return { content: [{ type: "text", text: formatMemory(records) }], details: { count: records.length } };
 			},
 		});
@@ -444,7 +452,7 @@ export function createMemoryExtension(options: MemoryExtensionOptions): Extensio
 			const query = messageText(user);
 			if (!query) return;
 			const context = await recall(
-				options.stores,
+				options,
 				query,
 				options.recallLimit ?? DEFAULT_RECALL_LIMIT,
 				options.recallChars ?? DEFAULT_RECALL_CHARS,

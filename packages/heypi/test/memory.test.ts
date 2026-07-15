@@ -1,16 +1,22 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFileMemoryStore, createMemoryExtension, type MemoryScope, type MemoryStore } from "../src/memory.js";
+import {
+	createFileMemoryStore,
+	createMemoryExtension,
+	type MemoryDestination,
+	type MemoryStore,
+} from "../src/memory.js";
 
 function memoryDir(label: string): string {
 	return join(tmpdir(), `heypi-memory-${label}-${Date.now()}-${Math.random()}`);
 }
 
-function stores(label: string): Record<MemoryScope, MemoryStore> {
+function stores(label: string): Record<MemoryDestination, MemoryStore> {
 	return {
-		adapter: createFileMemoryStore(memoryDir(`${label}-adapter`)),
 		conversation: createFileMemoryStore(memoryDir(`${label}-conversation`)),
+		shared: createFileMemoryStore(memoryDir(`${label}-shared`)),
+		user: createFileMemoryStore(memoryDir(`${label}-user`)),
 	};
 }
 
@@ -47,15 +53,16 @@ describe("memory", () => {
 		);
 	});
 
-	it("registers scoped mutation and search tools", async () => {
+	it("registers destination-based mutation and search tools", async () => {
 		type Tool = {
 			name: string;
 			execute(toolCallId: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
 		};
 		const tools = new Map<string, Tool>();
 		const entries: Array<{ type: string; data: unknown }> = [];
+		const scoped = stores("tools");
 		const extension = createMemoryExtension({
-			stores: stores("tools"),
+			store: (destination) => scoped[destination],
 			source: () => ({ adapter: "slack", user: "U1" }),
 		});
 
@@ -72,28 +79,32 @@ describe("memory", () => {
 		await expect(
 			tools.get("memory")?.execute("call", {
 				action: "add",
-				scope: "adapter",
-				target: "user",
+				destination: "user",
 				text: "Ronan prefers concise answers.",
 			}),
 		).resolves.toMatchObject({
-			details: { scope: "adapter", target: "user", source: { adapter: "slack", user: "U1" } },
+			details: { destination: "user", target: "user", source: { adapter: "slack", user: "U1" } },
 		});
 		await expect(tools.get("memory_search")?.execute("call", { query: "concise" })).resolves.toMatchObject({
 			details: { count: 1 },
 		});
-		expect(entries).toMatchObject([{ type: "heypi.memory", data: { action: "add", scope: "adapter" } }]);
+		expect(entries).toMatchObject([{ type: "heypi.memory", data: { action: "add", destination: "user" } }]);
 	});
 
 	it("recalls bounded profile and relevant memory through Pi context", async () => {
 		const scoped = stores("recall");
-		await scoped.adapter.put({ target: "user", text: "Ronan prefers concise technical answers." });
+		await scoped.user.put({ target: "user", text: "Ronan prefers concise technical answers." });
+		await scoped.shared.put({ target: "memory", text: "All repositories use changesets for releases." });
 		await scoped.conversation.put({ target: "memory", text: "This repository uses pnpm for package management." });
 		await scoped.conversation.put({ target: "memory", text: "Deploy production from the release branch." });
 		let contextHandler:
 			| ((event: { messages: unknown[] }) => Promise<{ messages?: unknown[] } | undefined>)
 			| undefined;
-		const extension = createMemoryExtension({ stores: scoped, recallLimit: 4, recallChars: 1_000 });
+		const extension = createMemoryExtension({
+			store: (destination) => scoped[destination],
+			recallLimit: 4,
+			recallChars: 1_000,
+		});
 
 		extension({
 			registerTool() {},
@@ -115,13 +126,57 @@ describe("memory", () => {
 		expect(messages).toHaveLength(1);
 	});
 
+	it("isolates user profiles by the active adapter user", async () => {
+		const conversation = createFileMemoryStore(memoryDir("isolated-conversation"));
+		const shared = createFileMemoryStore(memoryDir("isolated-shared"));
+		const users = new Map([
+			["U1", createFileMemoryStore(memoryDir("isolated-u1"))],
+			["U2", createFileMemoryStore(memoryDir("isolated-u2"))],
+		]);
+		await users.get("U1")?.put({ target: "user", text: "Ronan prefers concise answers." });
+		await users.get("U2")?.put({ target: "user", text: "Susan prefers detailed explanations." });
+		let activeUser = "U2";
+		let contextHandler:
+			| ((event: { messages: unknown[] }) => Promise<{ messages?: unknown[] } | undefined>)
+			| undefined;
+		createMemoryExtension({
+			store(destination) {
+				if (destination === "conversation") return conversation;
+				if (destination === "shared") return shared;
+				const store = users.get(activeUser);
+				if (!store) throw new Error(`Missing user memory store: ${activeUser}`);
+				return store;
+			},
+			source: () => ({ adapter: "slack", user: activeUser }),
+		})({
+			registerTool() {},
+			appendEntry() {},
+			on(event: string, handler: typeof contextHandler) {
+				if (event === "context") contextHandler = handler;
+			},
+		} as never);
+
+		const result = await contextHandler?.({
+			messages: [{ role: "user", content: [{ type: "text", text: "How should you answer me?" }] }],
+		});
+		const injected = JSON.stringify(result?.messages?.at(-2));
+		expect(injected).toContain("Susan prefers detailed explanations.");
+		expect(injected).not.toContain("Ronan prefers concise answers.");
+
+		activeUser = "U1";
+		const second = await contextHandler?.({
+			messages: [{ role: "user", content: [{ type: "text", text: "How should you answer me?" }] }],
+		});
+		expect(JSON.stringify(second?.messages?.at(-2))).toContain("Ronan prefers concise answers.");
+	});
+
 	it("does not inject memory when no record is relevant", async () => {
 		const scoped = stores("empty-recall");
 		await scoped.conversation.put({ target: "memory", text: "Deploy production from the release branch." });
 		let contextHandler:
 			| ((event: { messages: unknown[] }) => Promise<{ messages?: unknown[] } | undefined>)
 			| undefined;
-		createMemoryExtension({ stores: scoped })({
+		createMemoryExtension({ store: (destination) => scoped[destination] })({
 			registerTool() {},
 			appendEntry() {},
 			on(event: string, handler: typeof contextHandler) {

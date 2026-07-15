@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureChatStorage, executionKey, storageFor, storageSegment } from "../src/storage.js";
+import { ensureChatStorage, executionKey, storageFor, storageSegment, userMemoryDir } from "../src/storage.js";
 import type { AgentConfig, ChatMessage } from "../src/types.js";
 
 const message: ChatMessage = {
@@ -44,7 +44,8 @@ describe("chat storage", () => {
 		expect(storage.sessionDir).toBe(join(storage.conversationDir, "sessions", executionKey(message)));
 		expect(storage.logPath).toBe(join(storage.sessionDir, "log.jsonl"));
 		expect(storage.memoryDir).toBe(join(storage.conversationDir, "memory"));
-		expect(storage.adapterMemoryDir).toBe(join(storage.adapterDir, "memory"));
+		expect(storage.sharedMemoryDir).toBe(join(storage.sharedDir, "memory"));
+		expect(userMemoryDir(storage, "U1")).toBe(join(storage.adapterDir, "users", "U1", "memory"));
 		expect(storage.secretDir).toBe(join(storage.conversationDir, "secrets"));
 	});
 

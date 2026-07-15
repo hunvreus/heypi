@@ -30,16 +30,17 @@ Every project under the repository's `examples/` directory is also a standalone 
 Codex Tag and install its dependencies with:
 
 ```sh
-npx @hunvreus/heypi create codex-tag
+pnpm create heypi codex-tag
 ```
 
 Use a different destination or skip installation when needed:
 
 ```sh
-npx @hunvreus/heypi create codex-tag my-agent --no-install
+pnpm create heypi codex-tag my-agent --no-install
 ```
 
-Run `heypi templates` to list bundled templates after installing the package. Templates declare the
+The equivalent lower-level command is `pnpm dlx @hunvreus/heypi create codex-tag`. Run
+`heypi templates` to list bundled templates after installing the package. Templates declare the
 published heypi version they support. Inside this monorepo, pnpm links that same dependency to the
 local workspace package when the semver range matches, so the checked-in files are also the files
 users receive.
@@ -82,7 +83,8 @@ to be registered explicitly.
 
 ## Runtime
 
-The default runtime is host execution:
+The default runtime is host execution. Omitting `runtime` logs a security warning because model-driven
+shell commands then execute on the host. Configure it explicitly when that access is intentional:
 
 ```ts
 const agent = loadAgent("./agent", {
@@ -168,14 +170,16 @@ rendering in the active chat thread. Set `todo: false` in `loadAgent()` to disab
 ## Memory
 
 heypi registers a built-in memory Pi extension by default. The `memory` tool adds, replaces, and
-removes curated records; `memory_search` performs explicit recall. Records can target general
-memory or the user profile and use one of two scopes:
+removes curated records; `memory_search` performs explicit recall. Records use one of three
+destinations:
 
-- conversation: local to the active chat surface
-- adapter: shared across conversations for the adapter
+- conversation: local to the active chat surface and used by default
+- user: the active user's profile, isolated from other users on the adapter
+- shared: reusable memory shared across conversations for the adapter
 
 The extension adds a small, relevant memory snapshot through Pi's context event without modifying
-the session transcript. Recalled content is fenced as untrusted reference context. Set
+the session transcript. User profiles are resolved from the active message, including when different
+users participate in one thread. Recalled content is fenced as untrusted reference context. Set
 `memory: false` in `loadAgent()` to disable the extension.
 
 ## Secrets

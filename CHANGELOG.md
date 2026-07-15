@@ -4,15 +4,17 @@
 
 ### Added
 
-- Added `heypi create` with bundled, standalone examples as first-party project templates.
+- Added `heypi create` and `pnpm create heypi` with bundled, standalone examples as first-party
+  project templates.
 
 ### Changed
 
 - Removed the redundant adapter-account allowlist and renamed persisted chat audit storage from
   channels to conversations.
-- Rebuilt memory as a curated Pi extension with adapter and conversation scopes, explicit
-  add/replace/remove/search tools, bounded relevant context recall, source metadata, and optional
-  disablement through `memory: false`.
+- Rebuilt memory as a curated Pi extension with conversation, active-user, and shared destinations,
+  per-user profile isolation, explicit add/replace/remove/search tools, bounded relevant context
+  recall, source metadata, and optional disablement through `memory: false`.
+- Added a startup security warning when an agent omits `runtime` and therefore uses host execution.
 - Configured the Codex Tag Docker image to authenticate Git HTTPS operations through GitHub CLI.
 - Added configurable per-adapter busy handling with durable queueing, native Pi steering, rejection,
   and adapter event hooks for each outcome.

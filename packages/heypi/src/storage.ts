@@ -11,7 +11,7 @@ export type ChatStorage = {
 	logPath: string;
 	lockPath: string;
 	sessionDir: string;
-	adapterMemoryDir: string;
+	sharedMemoryDir: string;
 	memoryDir: string;
 	secretDir: string;
 };
@@ -50,10 +50,14 @@ export function storageFor(agent: AgentConfig, stateDir: string, message: ChatMe
 		logPath: join(sessionDir, "log.jsonl"),
 		lockPath: join(sessionDir, "run.lock"),
 		sessionDir,
-		adapterMemoryDir: join(adapterDir, "memory"),
+		sharedMemoryDir: join(sharedDir, "memory"),
 		memoryDir: join(conversationDir, "memory"),
 		secretDir: join(conversationDir, "secrets"),
 	};
+}
+
+export function userMemoryDir(storage: ChatStorage, userId: string): string {
+	return join(storage.adapterDir, "users", storageSegment(userId), "memory");
 }
 
 export async function ensureChatStorage(storage: ChatStorage): Promise<void> {

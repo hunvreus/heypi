@@ -40,9 +40,9 @@ export { consoleLogger } from "./log.js";
 export {
 	createFileMemoryStore,
 	createMemoryExtension,
+	type MemoryDestination,
 	type MemoryExtensionOptions,
 	type MemoryRecord,
-	type MemoryScope,
 	type MemorySearch,
 	type MemorySource,
 	type MemoryStore,
