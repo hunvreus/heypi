@@ -27,7 +27,7 @@
 		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "workspace:*",
+		"@hunvreus/heypi": "^0.1.0",
 		"@vercel/sandbox": "2.6.0"
 	},
 	"devDependencies": {

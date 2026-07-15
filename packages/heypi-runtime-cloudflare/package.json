@@ -28,7 +28,7 @@
 	},
 	"dependencies": {
 		"@cloudflare/sandbox": "^0.12.3",
-		"@hunvreus/heypi": "workspace:*"
+		"@hunvreus/heypi": "^0.1.0"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.1",
