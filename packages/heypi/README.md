@@ -49,7 +49,7 @@ See also:
 
 - [Creating agents](docs/creating-agents.md)
 - [Creating custom tools](docs/creating-custom-tools.md)
-- [Scheduling plan](docs/scheduling.md)
+- [Scheduling](docs/scheduling.md)
 
 `createHeypi()` accepts an optional `piHost` factory for tests and future runtime providers. The
 factory must return the Pi host contract; heypi still sends chat deltas to Pi instead of running its
@@ -64,6 +64,7 @@ agent/
   skills/
   tools/
   extensions/
+  schedules/
 ```
 
 During staging, `system.md` is written as Pi's native `SYSTEM.md`, and `instructions.md` is written
@@ -152,6 +153,7 @@ omitted, that field is unrestricted. Denied messages are not acknowledged, queue
 const adapter = slack({
 	token,
 	appToken,
+	reaction: "eyes",
 	allow: {
 		conversations: ["C0123456789"],
 		users: ["U0123456789"],
@@ -238,6 +240,8 @@ the endpoints directly:
 - `GET /admin/conversations`
 - `GET /admin/conversations/:key`
 - `GET /admin/secret`
+- `GET /admin/schedules`
+- `POST /admin/schedules/run` with `{ "id": "reports/weekly" }`
 - `POST /admin/secret` with `{ "reply": "!secret:<id>:<payload>" }`
 
 Loopback admin servers are unauthenticated by default for local development. If admin is bound to a
@@ -359,8 +363,8 @@ Included:
 - approval message rendering and Pi tool-call approval extension
 - programmable approval policies with command classification
 - `chat_history` Pi tool for explicit older-context lookup
-- adapter-owned progress updates from normalized Pi/heypi events, configurable with `progress` or
-  adapter `events`
+- adapter-owned activity from normalized Pi/heypi events, configurable with Slack `status`,
+  Discord/Telegram `typing`, or adapter `events`
 - `todo` Pi extension for visible task progress
 - built-in `memory` and `memory_search` Pi extension with bounded relevant recall
 - audit helpers for heypi-owned adapter coordination logs
@@ -368,63 +372,52 @@ Included:
 
 ## Progress
 
-heypi renders transient activity from Pi runtime events. Slack posts an editable `Thinking...`
-message immediately when a turn starts, changes it to `Working...` when Pi uses a tool, and removes
-it when the turn ends. Discord and Telegram use refreshed native typing indicators. The final answer
-is always a separate message.
+heypi renders transient activity with each chat platform's native surface. Slack calls
+`assistant.threads.setStatus` with `Thinking...` when a message is accepted and `Working...` when Pi
+starts a tool. Discord and Telegram refresh their native typing indicators. No adapter posts a chat
+message for transient activity.
 
-The built-in todo extension owns a second editable message. Activity and todo updates never compete
-for the same message: activity is transient, while the settled todo list remains visible.
+Slack immediately acknowledges app mentions with an `eyes` reaction before staging attachments. Set
+`reaction` to another Slack emoji name or `false` to disable it. The Slack app needs the
+`reactions:write` scope.
+
+Slack clears its native status while an approval is pending and restores it when work resumes. Todo
+updates remain a separate editable message; Slack restores the native status after posting or
+updating that message. Queue, steer, and reject acknowledgements also restore `Working...`. Posting
+the terminal reply clears the status without a separate API call.
 
 ```ts
 slack({
 	token,
 	appToken,
-	progress: true,
+	status: true,
 });
 ```
 
-Set adapter `progress: false` to disable activity and visible todo rendering. The Pi todo tool remains
-available unless the agent sets `todo: false`.
-
-The current built-in text progress is intentionally coarse: `Thinking...` before tool work and
-`Working...` once Pi starts using tools.
+Set Slack `status: false` to disable native assistant activity. Visible Slack todo updates remain
+enabled unless the agent sets `todo: false`. Discord and Telegram expose the equivalent native
+activity toggle as `typing`.
 
 Adapters can override individual event handlers:
 
 ```ts
-import { slack, statusEvents } from "@hunvreus/heypi";
+import { slack } from "@hunvreus/heypi";
 
 slack({
 	token,
 	appToken,
 	events: {
-		...statusEvents(),
 		"tool.started": false,
-		"turn.started": (_event, { status }) => status?.replace("Checking..."),
 	},
 });
 ```
+
+Custom Slack lifecycle handlers replace the built-in handler for that event. Set an event to `false`
+to disable it.
 
 Stable events are `message.accepted`, `turn.started`, `tool.started`, `todo.changed`,
 `message.completed`, `turn.canceled`, `turn.failed`, `message.queued`, `message.steered`, and
 `message.rejected`. Pi-derived events are normalized before adapters see them.
-
-Slack reactions are available through the same event context instead of a separate reaction setting:
-
-```ts
-slack({
-	token,
-	appToken,
-	events: {
-		...statusEvents(),
-		"message.accepted": async (event, context) => {
-			context.status?.replace("Thinking...");
-			if (event.message.mentioned) await context.react?.("eyes");
-		},
-	},
-});
-```
 
 ## Busy conversations
 

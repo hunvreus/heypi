@@ -49,6 +49,7 @@ describe("stageAgent", () => {
 		await mkdir(join(root, "tools"), { recursive: true });
 		await mkdir(join(root, "extensions"), { recursive: true });
 		await mkdir(join(root, "skills"), { recursive: true });
+		await mkdir(join(root, "schedules"), { recursive: true });
 		await mkdir(join(root, ".heypi", "sessions"), { recursive: true });
 		await mkdir(join(root, "node_modules", "ignored"), { recursive: true });
 		await writeFile(join(root, "instructions.md"), "Instruction");
@@ -56,6 +57,7 @@ describe("stageAgent", () => {
 		await writeFile(join(root, "tools", "tool.ts"), "export {};");
 		await writeFile(join(root, "extensions", "extension.ts"), "export {};");
 		await writeFile(join(root, "skills", "skill.md"), "skill");
+		await writeFile(join(root, "schedules", "daily.ts"), "export default {};");
 		await writeFile(join(root, ".heypi", "sessions", "state.jsonl"), "state");
 		await writeFile(join(root, "node_modules", "ignored", "x.ts"), "ignored");
 
@@ -69,6 +71,7 @@ describe("stageAgent", () => {
 		await expect(readFile(join(second.agentDir, "SYSTEM.md"), "utf8")).resolves.toBe("System");
 		await expect(readFile(join(second.agentDir, "skills", "skill.md"), "utf8")).resolves.toBe("skill");
 		await expect(readFile(join(second.agentDir, "extensions", "extension.ts"), "utf8")).resolves.toBe("export {};");
+		await expect(readFile(join(second.agentDir, "schedules", "daily.ts"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, "stale.txt"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, ".heypi", "sessions", "state.jsonl"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, "node_modules", "ignored", "x.ts"), "utf8")).rejects.toThrow();

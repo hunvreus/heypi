@@ -213,7 +213,10 @@ describe("chat tools", () => {
 				text: expect.stringContaining("https://heypi.dev/secret#"),
 			},
 		]);
-		expect(result.content[0]?.text).toContain("Secret request sent");
-		expect(result.content[0]?.text).not.toContain("ghp_");
+		const content = result.content[0];
+		expect(content?.type).toBe("text");
+		if (content?.type !== "text") throw new Error("Expected a text tool result.");
+		expect(content.text).toContain("Secret request sent");
+		expect(content.text).not.toContain("ghp_");
 	});
 });

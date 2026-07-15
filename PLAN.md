@@ -40,7 +40,7 @@ const app = createHeypi({
     slack({
       token,
       appToken,
-      progress: true,
+      status: true,
     }),
   ],
 });
@@ -71,7 +71,7 @@ giant `createHeypi({ model, runtime, adapters, tools, skills, ... })` object.
   - optional `admin`
 - Adapter config owns platform behavior:
   - inbound filtering/auth/context through hooks such as `onMessage`
-  - progress UX through adapter defaults and optional `onProgress`
+  - activity UX through adapter defaults and event overrides
   - platform primitives such as Slack reactions
   - thread/DM/channel behavior
 - Tool/runtime definitions own action safety:
@@ -87,15 +87,15 @@ Adapters must work with minimal configuration and strong defaults.
 
 - Slack:
   - app mentions and DMs are accepted by default when adapter allow rules permit them.
-  - inbound accepted turns immediately show a transient `Thinking...` progress message.
-  - when Pi starts work, the same progress surface updates to `Working...`.
-  - final success replaces/removes the progress message; final failure replaces it with a concise
-    error.
-  - no reaction by default. `reaction: "eyes"` can opt in.
+  - inbound accepted turns immediately set Slack's native assistant status to `Thinking...`.
+  - when Pi starts a tool, the native status updates to `Working...`.
+  - approvals clear the native status while paused and restore it when work resumes.
+  - posting a terminal reply clears the native status without a separate API call.
+  - app mentions get an immediate `eyes` reaction by default; `reaction` accepts another emoji name
+    or `false`.
 - Discord and Telegram:
   - native typing indicators are used by default.
-  - no text progress messages by default.
-  - text progress can be added later through adapter hooks if needed.
+  - no text progress messages are posted.
 
 Ignored, denied, empty, or invalid adapter events must not start Pi work and must not leave progress
 behind.
@@ -118,22 +118,11 @@ loadAgent("./agent", {
 Use adapter defaults plus small adapter-local switches:
 
 ```ts
-slack({ progress: false });
-slack({ reaction: "eyes" });
+slack({ status: false });
 ```
 
-Advanced customization should be function-based:
-
-```ts
-slack({
-  onProgress(ctx, event) {
-    if (event.type === "tool.started") return `Running ${event.tool}`;
-    return ctx.default(event);
-  },
-});
-```
-
-Expose low-level event hooks only if common hooks such as `onMessage` and `onProgress` are not enough.
+Advanced customization uses adapter event hooks. Setting a Slack lifecycle event to `false` disables
+its built-in status behavior for that event.
 
 ### Approval API
 

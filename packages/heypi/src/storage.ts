@@ -16,6 +16,13 @@ export type ChatStorage = {
 	secretDir: string;
 };
 
+export type ChatAddress = {
+	adapter: string;
+	adapterId: string;
+	conversation: string;
+	thread?: string;
+};
+
 function shortHash(value: string): string {
 	return createHash("sha256").update(value).digest("hex").slice(0, 10);
 }
@@ -26,12 +33,16 @@ export function storageSegment(value: string): string {
 	return `id-${shortHash(value)}`;
 }
 
-export function executionKey(message: ChatMessage): string {
+export function executionKey(message: ChatAddress): string {
 	const stream = message.thread ? `${message.conversation}:${message.thread}` : message.conversation;
 	return storageSegment(`${message.adapter}:${message.adapterId}:${stream}`);
 }
 
 export function storageFor(agent: AgentConfig, stateDir: string, message: ChatMessage): ChatStorage {
+	return storageForAddress(agent, stateDir, message);
+}
+
+export function storageForAddress(agent: AgentConfig, stateDir: string, message: ChatAddress): ChatStorage {
 	const adapterId = storageSegment(message.adapterId);
 	const conversation = storageSegment(message.conversation);
 	const adapterDir = join(stateDir, "adapters", adapterId);

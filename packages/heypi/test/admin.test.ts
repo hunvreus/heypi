@@ -93,6 +93,44 @@ describe("admin", () => {
 		}
 	});
 
+	it("lists and manually runs schedules", async () => {
+		const state = await makeDir("admin-schedules");
+		const calls: string[] = [];
+		const admin = createAdmin({
+			stateDir: state,
+			port: freePort(),
+			schedules: {
+				list: () => [{ id: "daily", cron: "0 9 * * *", timezone: "UTC", active: false }],
+				async run(id) {
+					calls.push(id);
+					return {
+						id: "run-1",
+						scheduleId: id,
+						scheduledFor: "2026-07-14T09:00:00.000Z",
+						firedAt: "2026-07-14T09:00:00.000Z",
+						status: "completed",
+					};
+				},
+			},
+		});
+		await admin.start();
+		try {
+			await expect(fetch(`${admin.url()}/schedules`).then((response) => response.json())).resolves.toEqual({
+				schedules: [{ id: "daily", cron: "0 9 * * *", timezone: "UTC", active: false }],
+			});
+			await expect(
+				fetch(`${admin.url()}/schedules/run`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ id: "daily" }),
+				}).then((response) => response.json()),
+			).resolves.toMatchObject({ run: { id: "run-1", scheduleId: "daily", status: "completed" } });
+			expect(calls).toEqual(["daily"]);
+		} finally {
+			await admin.stop();
+		}
+	});
+
 	it("rejects malformed request bodies without crashing", async () => {
 		const state = await makeDir("admin-bad-json");
 		const admin = createAdmin({
@@ -172,6 +210,7 @@ describe("admin", () => {
 					adapterId: "local",
 					conversation: "room",
 					actor: { id: "u1", name: "Ronan" },
+					cause: { kind: "message", messageId: "m1" },
 				},
 			],
 		});

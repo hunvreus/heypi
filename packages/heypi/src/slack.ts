@@ -2,7 +2,7 @@ import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
 import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
 import { materializeAttachments } from "./attachments.js";
-import { type AdapterEvents, busyEvents, statusEvents } from "./events.js";
+import { type AdapterEvents, busyEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
 import type {
 	Adapter,
@@ -28,7 +28,8 @@ export type SlackConfig = {
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	busy?: BusyMode;
-	progress?: boolean;
+	reaction?: false | string;
+	status?: boolean;
 	events?: AdapterEvents;
 };
 
@@ -51,7 +52,25 @@ type PendingApproval = {
 	message: string;
 	view: ApprovalView;
 	timer?: ReturnType<typeof setTimeout>;
-	resolve(decision: ApprovalDecision): void;
+	resolve(decision: ApprovalDecision): Promise<void>;
+};
+
+type SlackStatusPayload = {
+	channel_id: string;
+	thread_ts: string;
+	status: string;
+	loading_messages?: string[];
+};
+
+type SlackActivityTarget = {
+	conversation: string;
+	thread?: string;
+};
+
+type SlackActivity = {
+	events: AdapterEvents;
+	resume(target: SlackActivityTarget): Promise<void>;
+	stop(): Promise<void>;
 };
 
 type SlackApprovalPayload = {
@@ -62,6 +81,111 @@ type SlackApprovalPayload = {
 
 const HUMAN_MESSAGE_SUBTYPES = new Set(["file_share", "me_message", "thread_broadcast"]);
 const SLACK_TEXT_LIMIT = 39_000;
+
+function activityKey(target: SlackActivityTarget): string {
+	return `${target.conversation}\u0000${target.thread ?? ""}`;
+}
+
+/** Drive Slack's native assistant status for active threads. */
+export function createSlackActivity(
+	statusEnabled: boolean,
+	reaction: string | undefined,
+	react: (message: ChatMessage, emoji: string) => Promise<void>,
+	request: (payload: SlackStatusPayload) => Promise<void>,
+	overrides?: AdapterEvents,
+): SlackActivity {
+	type ActiveStatus = { conversation: string; threadTs: string; status: string };
+	const active = new Map<string, ActiveStatus>();
+	const busy = busyEvents();
+
+	async function send(entry: ActiveStatus, status: string): Promise<void> {
+		await request({
+			channel_id: entry.conversation,
+			thread_ts: entry.threadTs,
+			status,
+			...(status ? { loading_messages: [status] } : {}),
+		});
+	}
+
+	async function set(message: ChatMessage, status: string): Promise<void> {
+		const key = activityKey(message);
+		const entry = {
+			conversation: message.conversation,
+			threadTs: active.get(key)?.threadTs ?? message.thread ?? message.id,
+			status,
+		};
+		active.set(key, entry);
+		await send(entry, status);
+	}
+
+	async function restore(target: SlackActivityTarget): Promise<void> {
+		const entry = active.get(activityKey(target));
+		if (entry) await send(entry, entry.status);
+	}
+
+	async function clear(target: SlackActivityTarget): Promise<void> {
+		const entry = active.get(activityKey(target));
+		if (!entry) return;
+		await send(entry, "");
+	}
+
+	const defaults: AdapterEvents = {
+		"message.accepted": async (_event, context) => {
+			if (reaction && context.message.mentioned) await react(context.message, reaction);
+			if (statusEnabled && !active.has(activityKey(context.message))) await set(context.message, "Thinking...");
+		},
+		"todo.changed": async (event, context) => {
+			await context.todo?.replace(event.text);
+			await restore(context.message);
+		},
+		...(statusEnabled
+			? {
+					"tool.started": async (_event, context) => set(context.message, "Working..."),
+					"message.queued": async (event, context) => {
+						const handler = busy["message.queued"];
+						if (typeof handler === "function") await handler(event, context);
+						await restore(context.message);
+					},
+					"message.steered": async (event, context) => {
+						const handler = busy["message.steered"];
+						if (typeof handler === "function") await handler(event, context);
+						await restore(context.message);
+					},
+					"message.rejected": async (event, context) => {
+						const handler = busy["message.rejected"];
+						if (typeof handler === "function") await handler(event, context);
+						await restore(context.message);
+					},
+					"message.completed": async (event, context) => {
+						if (!event.text.trim() && context.todo) await clear(context.message);
+						active.delete(activityKey(context.message));
+					},
+					"turn.failed": (_event, context) => {
+						active.delete(activityKey(context.message));
+					},
+					"turn.canceled": (_event, context) => {
+						active.delete(activityKey(context.message));
+					},
+				}
+			: {}),
+	};
+
+	return {
+		events: { ...busy, ...defaults, ...(overrides ?? {}) },
+		async resume(target) {
+			if (!statusEnabled) return;
+			const entry = active.get(activityKey(target));
+			if (!entry) return;
+			entry.status = "Working...";
+			await send(entry, entry.status);
+		},
+		async stop() {
+			if (!statusEnabled) return;
+			await Promise.allSettled([...active.values()].map((entry) => send(entry, "")));
+			active.clear();
+		},
+	};
+}
 
 export type SlackBotIdentity = {
 	botId?: string;
@@ -109,6 +233,37 @@ export function slack(config: SlackConfig): Adapter {
 	let self: SlackBotIdentity = {};
 	const pending = new Map<string, PendingApproval>();
 	const id = config.id ?? "slack";
+	const reaction = config.reaction === false ? undefined : (config.reaction ?? "eyes");
+	const activity = createSlackActivity(
+		config.status !== false,
+		reaction,
+		async (message, emoji) => {
+			if (!app) return;
+			try {
+				await app.client.reactions.add({
+					channel: message.conversation,
+					name: emoji,
+					timestamp: message.id,
+				});
+			} catch (error) {
+				context?.logger.warn("slack.reaction_failed", {
+					emoji,
+					message: error instanceof Error ? error.message : String(error),
+				});
+			}
+		},
+		async (payload) => {
+			if (!app) return;
+			try {
+				await app.client.assistant.threads.setStatus(payload);
+			} catch (error) {
+				context?.logger.warn("slack.status_failed", {
+					message: error instanceof Error ? error.message : String(error),
+				});
+			}
+		},
+		config.events,
+	);
 
 	return {
 		kind: "slack",
@@ -118,8 +273,7 @@ export function slack(config: SlackConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		busy: config.busy ?? "queue",
-		progress: config.progress ?? true,
-		events: progressEvents(config.progress, config.events),
+		events: activity.events,
 		async start(nextContext) {
 			context = nextContext;
 			app = new App({ appToken: config.appToken, socketMode: true, token: config.token });
@@ -154,7 +308,7 @@ export function slack(config: SlackConfig): Adapter {
 					ts: approval.message,
 					...slackApprovalPayload({ ...approval.view, state: "approved", resolvedBy }),
 				});
-				approval.resolve({ approved: true, resolvedBy, resolvedById });
+				await approval.resolve({ approved: true, resolvedBy, resolvedById });
 			});
 			app.action(REJECT, async ({ ack, body }) => {
 				await ack();
@@ -172,7 +326,7 @@ export function slack(config: SlackConfig): Adapter {
 					ts: approval.message,
 					...slackApprovalPayload({ ...approval.view, state: "rejected", resolvedBy }),
 				});
-				approval.resolve({
+				await approval.resolve({
 					approved: false,
 					resolvedBy,
 					resolvedById,
@@ -183,16 +337,9 @@ export function slack(config: SlackConfig): Adapter {
 			context.logger.info("adapter.slack.start", { mode: "socket" });
 		},
 		async stop() {
+			await activity.stop();
 			await app?.stop();
 			app = undefined;
-		},
-		async react(message, emoji) {
-			if (!app) throw new Error("Slack adapter is not started");
-			await app.client.reactions.add({
-				channel: message.conversation,
-				name: emoji,
-				timestamp: message.id,
-			});
 		},
 		async materializeAttachments(message, target) {
 			return {
@@ -248,10 +395,6 @@ export function slack(config: SlackConfig): Adapter {
 				text: formatOutgoingText(message.text, message.attachments),
 			});
 		},
-		async remove(message) {
-			if (!app) throw new Error("Slack adapter is not started");
-			await app.client.chat.delete({ channel: message.conversation, ts: message.id });
-		},
 		async requestApproval(view) {
 			if (!app) return { approved: false, reason: "Slack adapter is not started." };
 			if (!view.conversation) return { approved: false, reason: "Slack approval has no target conversation." };
@@ -265,7 +408,10 @@ export function slack(config: SlackConfig): Adapter {
 					channel: view.conversation ?? "",
 					message: result.ts ?? "",
 					view,
-					resolve,
+					async resolve(decision) {
+						await activity.resume({ conversation: view.conversation ?? "", thread: view.thread });
+						resolve(decision);
+					},
 				};
 				const timeoutMs = config.approvals?.timeoutMs;
 				if (timeoutMs && timeoutMs > 0) {
@@ -278,18 +424,13 @@ export function slack(config: SlackConfig): Adapter {
 								...slackApprovalPayload({ ...view, state: "rejected", resolvedBy: "timeout" }),
 							})
 							.catch(() => undefined);
-						resolve({ approved: false, reason: "Approval expired." });
+						void pendingApproval.resolve({ approved: false, reason: "Approval expired." });
 					}, timeoutMs);
 				}
 				pending.set(view.id, pendingApproval);
 			});
 		},
 	};
-}
-
-function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
-	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
-	return { ...statusEvents(), ...(events ?? {}) };
 }
 
 async function slackBotIdentity(app: App, logger: AdapterContext["logger"]): Promise<SlackBotIdentity> {

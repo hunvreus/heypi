@@ -1,5 +1,232 @@
-import { describe, expect, it } from "vitest";
-import { slackApprovalPayload, slackMessage, slackMessageEventAllowed } from "../src/slack.js";
+import { describe, expect, it, vi } from "vitest";
+import type { AdapterEvent, AdapterEventContext, AdapterEventHandler, AdapterEvents } from "../src/events.js";
+import { createSlackActivity, slackApprovalPayload, slackMessage, slackMessageEventAllowed } from "../src/slack.js";
+
+async function emit(events: AdapterEvents, event: AdapterEvent, context: AdapterEventContext): Promise<void> {
+	const handler = events[event.type] as AdapterEventHandler | false | undefined;
+	if (!handler) throw new Error(`Missing handler: ${event.type}`);
+	await handler(event, context);
+}
+
+function activityContext(): AdapterEventContext {
+	return {
+		message: {
+			id: "123.456",
+			adapter: "slack",
+			adapterId: "slack",
+			conversation: "C1",
+			thread: "100.000",
+			user: { id: "U1" },
+			text: "work",
+			mentioned: true,
+			dm: false,
+		},
+		send: vi.fn().mockResolvedValue({ id: "reply" }),
+		todo: { replace: vi.fn().mockResolvedValue(undefined) },
+	};
+}
+
+describe("Slack activity", () => {
+	it("includes native loading messages", async () => {
+		const requests: unknown[] = [];
+		const reactions: string[] = [];
+		const activity = createSlackActivity(
+			true,
+			"eyes",
+			async (_message, emoji) => {
+				reactions.push(emoji);
+			},
+			async (payload) => {
+				requests.push(payload);
+			},
+		);
+		const context = activityContext();
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+
+		expect(requests).toEqual([
+			{
+				channel_id: "C1",
+				thread_ts: "100.000",
+				status: "Thinking...",
+				loading_messages: ["Thinking..."],
+			},
+		]);
+		expect(reactions).toEqual(["eyes"]);
+	});
+
+	it("lets custom lifecycle hooks replace native status", async () => {
+		const order: string[] = [];
+		const activity = createSlackActivity(
+			true,
+			undefined,
+			async () => {},
+			async () => {
+				order.push("status");
+			},
+			{
+				"message.accepted": () => {
+					order.push("custom");
+				},
+			},
+		);
+		const context = activityContext();
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+
+		expect(order).toEqual(["custom"]);
+	});
+
+	it("disables status without disabling reactions or todo rendering", async () => {
+		const reactions: string[] = [];
+		const requests: unknown[] = [];
+		const activity = createSlackActivity(
+			false,
+			"eyes",
+			async (_message, emoji) => {
+				reactions.push(emoji);
+			},
+			async (payload) => {
+				requests.push(payload);
+			},
+		);
+		const context = activityContext();
+		const job = {
+			id: "job",
+			state: "running" as const,
+			conversation: "C1",
+			thread: "100.000",
+			adapter: "slack",
+			adapterId: "slack",
+			actor: { id: "U1" },
+			cause: { kind: "message" as const, messageId: "123.456" },
+		};
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "todo.changed", origin: "heypi", job, text: "● Patch" }, context);
+
+		expect(reactions).toEqual(["eyes"]);
+		expect(context.todo?.replace).toHaveBeenCalledWith("● Patch");
+		expect(requests).toEqual([]);
+	});
+
+	it("does not react to non-mention messages", async () => {
+		const reactions: string[] = [];
+		const activity = createSlackActivity(
+			false,
+			"eyes",
+			async (_message, emoji) => {
+				reactions.push(emoji);
+			},
+			async () => {},
+		);
+		const context = activityContext();
+		context.message.mentioned = false;
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+
+		expect(reactions).toEqual([]);
+	});
+
+	it("uses native status across work, todo, resume, and completion", async () => {
+		const requests: Array<{ thread_ts: string; status: string }> = [];
+		const activity = createSlackActivity(
+			true,
+			undefined,
+			async () => {},
+			async (payload) => {
+				requests.push({ thread_ts: payload.thread_ts, status: payload.status });
+			},
+		);
+		const context = activityContext();
+		const job = {
+			id: "job",
+			state: "running" as const,
+			conversation: "C1",
+			thread: "100.000",
+			adapter: "slack",
+			adapterId: "slack",
+			actor: { id: "U1" },
+			cause: { kind: "message" as const, messageId: "123.456" },
+		};
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "tool.started", origin: "pi", job, tool: "bash" }, context);
+		await emit(activity.events, { type: "todo.changed", origin: "heypi", job, text: "● Patch" }, context);
+		await activity.resume({ conversation: "C1", thread: "100.000" });
+		await emit(activity.events, { type: "message.completed", origin: "pi", job, text: "Done." }, context);
+		await activity.stop();
+
+		expect(context.todo?.replace).toHaveBeenCalledWith("● Patch");
+		expect(requests).toEqual([
+			{ thread_ts: "100.000", status: "Thinking..." },
+			{ thread_ts: "100.000", status: "Working..." },
+			{ thread_ts: "100.000", status: "Working..." },
+			{ thread_ts: "100.000", status: "Working..." },
+		]);
+	});
+
+	it("restores native status after busy messages", async () => {
+		const statuses: string[] = [];
+		const activity = createSlackActivity(
+			true,
+			undefined,
+			async () => {},
+			async ({ status }) => {
+				statuses.push(status);
+			},
+		);
+		const context = activityContext();
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(
+			activity.events,
+			{
+				type: "tool.started",
+				origin: "pi",
+				job: {
+					id: "job",
+					state: "running",
+					conversation: "C1",
+					thread: "100.000",
+					adapter: "slack",
+					adapterId: "slack",
+					actor: { id: "U1" },
+					cause: { kind: "message", messageId: "123.456" },
+				},
+				tool: "bash",
+			},
+			context,
+		);
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message.queued", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message.steered", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message.rejected", origin: "heypi", message: context.message }, context);
+
+		expect(context.send).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("Queued") }));
+		expect(context.send).toHaveBeenCalledTimes(3);
+		expect(statuses).toEqual(["Thinking...", "Working...", "Working...", "Working...", "Working..."]);
+	});
+
+	it("uses the triggering message as the native DM thread", async () => {
+		const threads: string[] = [];
+		const activity = createSlackActivity(
+			true,
+			undefined,
+			async () => {},
+			async ({ thread_ts }) => {
+				threads.push(thread_ts);
+			},
+		);
+		const context = activityContext();
+		context.message.thread = undefined;
+		context.message.conversation = "D1";
+		context.message.dm = true;
+
+		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+
+		expect(threads).toEqual(["123.456"]);
+	});
+});
 
 describe("slackMessage", () => {
 	it("normalizes Slack app mentions", () => {

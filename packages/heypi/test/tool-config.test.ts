@@ -30,7 +30,7 @@ describe("toolSettings", () => {
 			description: "Deploy something",
 			parameters: Type.Object({}),
 			async execute() {
-				return { content: [{ type: "text" as const, text: "ok" }] };
+				return { content: [{ type: "text" as const, text: "ok" }], details: {} };
 			},
 		};
 		const settings = toolSettings({

@@ -1,4 +1,4 @@
-import { constants, createCipheriv, publicEncrypt, randomBytes } from "node:crypto";
+import { constants, createCipheriv, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,9 +23,11 @@ function encryptedReply(url: string, secret: string): string {
 	const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final(), cipher.getAuthTag()]);
 	const encryptedKey = publicEncrypt(
 		{
-			key: Buffer.from(request.k, "base64"),
-			format: "der",
-			type: "spki",
+			key: createPublicKey({
+				key: Buffer.from(request.k, "base64"),
+				format: "der",
+				type: "spki",
+			}),
 			padding: constants.RSA_PKCS1_OAEP_PADDING,
 			oaepHash: "sha256",
 		},

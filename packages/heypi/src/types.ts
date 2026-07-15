@@ -64,12 +64,6 @@ export type UpdateMessage = {
 	attachments?: ChatAttachment[];
 };
 
-export type RemoveMessage = {
-	conversation: string;
-	thread?: string;
-	id: string;
-};
-
 export type BusyMode = "queue" | "steer" | "reject";
 
 export type AdapterContext = {
@@ -91,14 +85,11 @@ export type Adapter = {
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	busy?: BusyMode;
-	progress?: boolean;
 	events?: AdapterEvents;
 	start(context: AdapterContext): Promise<void> | void;
 	stop?(): Promise<void> | void;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
 	update?(message: UpdateMessage): Promise<void>;
-	remove?(message: RemoveMessage): Promise<void>;
-	react?(message: ChatMessage, emoji: string): Promise<void>;
 	materializeAttachments?(message: ChatMessage, context: MaterializeContext): Promise<ChatMessage>;
 	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
 };

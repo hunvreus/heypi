@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { type AdapterEvents, busyEvents, statusEvents } from "./events.js";
+import { type AdapterEvents, busyEvents, todoEvents } from "./events.js";
 import type {
 	Adapter,
 	AdapterApprovalConfig,
@@ -36,9 +36,9 @@ function localMessage(input: LocalMessage, adapterId: string): ChatMessage {
 	};
 }
 
-function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
-	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
-	return { ...statusEvents(), ...(events ?? {}) };
+function localEvents(todo: boolean | undefined, events: AdapterEvents | undefined): AdapterEvents | undefined {
+	if (todo === false) return { ...busyEvents(), ...(events ?? {}) };
+	return { ...busyEvents(), ...todoEvents(), ...(events ?? {}) };
 }
 
 export type LocalConfig = {
@@ -47,7 +47,7 @@ export type LocalConfig = {
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
-	progress?: boolean;
+	todo?: boolean;
 	busy?: BusyMode;
 	events?: AdapterEvents;
 };
@@ -66,9 +66,8 @@ export function local(config: string | LocalConfig = "local"): LocalAdapter {
 		admins: resolved.admins,
 		approvers: resolved.approvers,
 		approvals: resolved.approvals,
-		progress: resolved.progress ?? true,
 		busy: resolved.busy ?? "queue",
-		events: progressEvents(resolved.progress, resolved.events),
+		events: localEvents(resolved.todo, resolved.events),
 		sent,
 		start(nextContext) {
 			context = nextContext;
@@ -93,13 +92,6 @@ export function local(config: string | LocalConfig = "local"): LocalAdapter {
 			sent[index] = updated;
 			messages.set(message.id, updated);
 		},
-		async remove(message) {
-			const previous = messages.get(message.id);
-			if (!previous) return;
-			const index = sent.indexOf(previous);
-			if (index >= 0) sent.splice(index, 1);
-			messages.delete(message.id);
-		},
 		async receive(message) {
 			if (!context) throw new Error("Local adapter is not started");
 			await context.receive(localMessage(message, id));
@@ -118,7 +110,6 @@ export type WebhookConfig = {
 	admins?: ApproverSet;
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
-	progress?: boolean;
 	busy?: BusyMode;
 	events?: AdapterEvents;
 };
@@ -219,7 +210,6 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 		admins: config.admins,
 		approvers: config.approvers,
 		approvals: config.approvals,
-		progress: config.progress ?? false,
 		busy: config.busy ?? "queue",
 		events: config.events,
 		sent,

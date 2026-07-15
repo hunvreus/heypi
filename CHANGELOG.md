@@ -6,9 +6,14 @@
 
 - Added `heypi create` and `pnpm create heypi` with bundled, standalone examples as first-party
   project templates.
+- Added code-owned cron schedules discovered from `agent/schedules`, with isolated Pi prompt runs,
+  trusted conversation dispatch, persistent occurrence claims and audit records, restart misfire
+  handling, overlap protection, bounded run history, and application/admin manual-run controls.
 
 ### Changed
 
+- Aligned the Codex Tag template with current heypi defaults for state, workspaces, adapters, admin,
+  approvals, and lifecycle handling.
 - Removed the redundant adapter-account allowlist and renamed persisted chat audit storage from
   channels to conversations.
 - Rebuilt memory as a curated Pi extension with conversation, active-user, and shared destinations,
@@ -18,10 +23,14 @@
 - Configured the Codex Tag Docker image to authenticate Git HTTPS operations through GitHub CLI.
 - Added configurable per-adapter busy handling with durable queueing, native Pi steering, rejection,
   and adapter event hooks for each outcome.
-- Separated transient `Thinking...` / `Working...` activity from persistent todo rendering and final
-  replies.
-- Moved Slack reactions to adapter event context so handlers can react conditionally from normalized
-  message metadata.
+- Replaced Slack's editable `Thinking...` / `Working...` messages with native
+  `assistant.threads.setStatus` activity, including approval pause/resume and restoration after todo
+  updates; terminal replies clear status without a separate API call, and the obsolete activity slot
+  and adapter message-deletion API were removed.
+- Added immediate Slack app-mention reaction acknowledgements before attachment staging, configurable as
+  `reaction: false | string` and defaulting to `eyes`.
+- Replaced the shared adapter `progress` capability with behavior-specific Slack `status` and
+  Discord/Telegram `typing` options; todo rendering is controlled by adapter events.
 - Restarted heypi as a clean Pi-native package.
 - Added the first clean vertical slice: agent folder loading, resource staging, Pi session wrapper,
   local adapter, channel turn coordination, and approval rendering/extension boundary.
@@ -64,7 +73,7 @@
 - Removed heypi-owned `context.maxMessages` and `context.maxChars`; `delta` history now sends the raw
   message delta and leaves compaction to Pi.
 - Removed the model-callable `chat_reply` progress tool.
-- Changed adapter-owned progress to use one editable coarse status message driven by adapter events.
+- Changed adapter-owned progress to use platform-native activity driven by adapter events.
 - Reworked the built-in `todo` extension around full-list updates, strict task transitions,
   automatic task advancement, Pi-session replay, final reconciliation, active timestamps, and
   honest terminal states; agents can disable it with `todo: false`.
@@ -72,7 +81,7 @@
   extension examples.
 - Hardened adapter normalization so Slack system/edit events and empty messages cannot trigger Pi
   turns, while Telegram now detects self messages by bot id and uses forum topic ids for replies.
-- Moved adapters out of `loadAgent()` and into `createHeypi()`, and moved allow/progress/approval
+- Moved adapters out of `loadAgent()` and into `createHeypi()`, and moved allow/activity/approval
   rendering to adapter config.
 - Replaced global approval config with tool-scoped approval policies under `tools`.
 - Renamed local runtime config from `workspaceDir` to `workspace`.

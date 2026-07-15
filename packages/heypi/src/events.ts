@@ -1,7 +1,12 @@
-import type { StatusSlot } from "./status.js";
+import type { MessageSlot } from "./message-slot.js";
 import type { ChatMessage, SendMessage } from "./types.js";
 
 export type ChatJobState = "queued" | "running" | "completed" | "failed" | "canceled";
+
+export type TurnCause =
+	| { kind: "message"; messageId: string }
+	| { kind: "schedule"; scheduleId: string; runId: string; scheduledFor: string }
+	| { kind: "manual" };
 
 export type ChatJob = {
 	id: string;
@@ -11,16 +16,15 @@ export type ChatJob = {
 	adapter: string;
 	adapterId: string;
 	actor: { id: string; name?: string };
+	cause: TurnCause;
 	startedAt?: string;
 };
 
 export type AdapterEventContext = {
 	message: ChatMessage;
 	job?: ChatJob;
-	status?: StatusSlot;
-	todo?: StatusSlot;
+	todo?: MessageSlot;
 	send(message: SendMessage): Promise<{ id?: string } | undefined>;
-	react?(emoji: string): Promise<void>;
 };
 
 export type AdapterEvent =
@@ -72,20 +76,10 @@ export function busyEvents(): AdapterEvents {
 	};
 }
 
-export function statusEvents(): AdapterEvents {
+export function todoEvents(): AdapterEvents {
 	return {
-		...busyEvents(),
-		"message.accepted": (_event, context) => {
-			context.status?.replace("Thinking...");
-		},
-		"turn.started": (_event, context) => {
-			context.status?.replace("Thinking...");
-		},
-		"tool.started": (_event, context) => {
-			context.status?.replace("Working...");
-		},
-		"todo.changed": (event, context) => {
-			context.todo?.replace(event.text);
+		"todo.changed": async (event, context) => {
+			await context.todo?.replace(event.text);
 		},
 	};
 }

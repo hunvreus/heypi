@@ -1,5 +1,5 @@
-import { constants, createCipheriv, publicEncrypt, randomBytes } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { constants, createCipheriv, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,9 +56,11 @@ function encryptedSecretReply(url: string, secret: string): string {
 	const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final(), cipher.getAuthTag()]);
 	const encryptedKey = publicEncrypt(
 		{
-			key: Buffer.from(request.k, "base64"),
-			format: "der",
-			type: "spki",
+			key: createPublicKey({
+				key: Buffer.from(request.k, "base64"),
+				format: "der",
+				type: "spki",
+			}),
 			padding: constants.RSA_PKCS1_OAEP_PADDING,
 			oaepHash: "sha256",
 		},
@@ -104,7 +106,7 @@ describe("createHeypi", () => {
 		const root = await makeDir("app-open-approval-agent");
 		const state = await makeDir("app-open-approval-state");
 		const app = await createHeypi({
-			adapters: [local({ progress: false })],
+			adapters: [local({ todo: false })],
 			agent: loadAgent(root, {
 				id: "agent",
 				state: { dir: state },
@@ -157,6 +159,31 @@ describe("createHeypi", () => {
 		]);
 	});
 
+	it("rolls back adapters when startup fails", async () => {
+		const root = await makeDir("app-start-rollback-agent");
+		const state = await makeDir("app-start-rollback-state");
+		const first = local("first");
+		const second = local("second");
+		const stopped: string[] = [];
+		first.stop = async () => {
+			stopped.push("first");
+		};
+		second.stop = async () => {
+			stopped.push("second");
+		};
+		second.start = async () => {
+			throw new Error("adapter failed to start");
+		};
+		const app = await createHeypi({
+			adapters: [first, second],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost: () => replyHost(),
+		});
+
+		await expect(app.start()).rejects.toThrow("adapter failed to start");
+		expect(stopped).toEqual(["second", "first"]);
+	});
+
 	it("routes triggered adapter messages through Pi and replies in the source thread", async () => {
 		const root = await makeDir("app-agent");
 		const state = await makeDir("app-state");
@@ -197,7 +224,7 @@ describe("createHeypi", () => {
 	it("intercepts encrypted secret replies before they reach Pi", async () => {
 		const root = await makeDir("app-secret-agent");
 		const state = await makeDir("app-secret-state");
-		const adapter = local({ progress: false });
+		const adapter = local({ todo: false });
 		let sends = 0;
 		let secretUrl: string | undefined;
 
@@ -212,7 +239,7 @@ describe("createHeypi", () => {
 					async start() {},
 					async send() {
 						sends++;
-						const tool = options.customTools.find((tool) => tool.name === "chat_request_secret");
+						const tool = options.customTools?.find((tool) => tool.name === "chat_request_secret");
 						await tool?.execute(
 							"call",
 							{ name: "github-token", description: "GitHub token" },
@@ -250,17 +277,11 @@ describe("createHeypi", () => {
 		});
 	});
 
-	it("sends adapter-owned progress from Pi runtime events", async () => {
+	it("logs Pi tool activity without emitting progress messages", async () => {
 		const root = await makeDir("app-progress-agent");
 		const state = await makeDir("app-progress-state");
 		const adapter = local();
-		const updates: string[] = [];
 		const logs: Array<{ event: string; data?: Record<string, unknown> }> = [];
-		const update = adapter.update?.bind(adapter);
-		adapter.update = async (message) => {
-			updates.push(message.text);
-			await update?.(message);
-		};
 
 		const app = await createHeypi({
 			adapters: [adapter],
@@ -320,7 +341,6 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toEqual([
 			{ conversation: "local", thread: undefined, text: "Done.", attachments: undefined },
 		]);
-		expect(updates).toEqual(["Working..."]);
 		expect(logs).toContainEqual({
 			event: "pi.tool.start",
 			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
@@ -331,7 +351,7 @@ describe("createHeypi", () => {
 		});
 	});
 
-	it("replaces progress with an error when Pi fails", async () => {
+	it("reports an error when Pi fails", async () => {
 		const root = await makeDir("app-progress-error-agent");
 		const state = await makeDir("app-progress-error-state");
 		const adapter = local();
@@ -496,7 +516,7 @@ describe("createHeypi", () => {
 	it("supports in-chat status and stop controls for the active actor", async () => {
 		const root = await makeDir("app-chat-controls-agent");
 		const state = await makeDir("app-chat-controls-state");
-		const adapter = local({ progress: false });
+		const adapter = local({ todo: false });
 		let rejectSend: ((error: Error) => void) | undefined;
 		let resolveSendStarted: (() => void) | undefined;
 		const sendStarted = new Promise<void>((resolve) => {
@@ -730,43 +750,36 @@ describe("createHeypi", () => {
 		]);
 	});
 
-	it("exposes adapter reactions through message events", async () => {
-		const root = await makeDir("app-reaction-agent");
-		const state = await makeDir("app-reaction-state");
-		const adapter = local();
-		const reactions: string[] = [];
-		adapter.react = async (_message, emoji) => {
-			reactions.push(emoji);
-		};
+	it("emits accepted messages before staging attachments", async () => {
+		const root = await makeDir("app-ack-agent");
+		const state = await makeDir("app-ack-state");
+		const adapter = local({ todo: false });
+		const order: string[] = [];
 		adapter.events = {
-			...adapter.events,
-			"message.accepted": async (_event, context) => {
-				await context.react?.("eyes");
-				context.status?.replace("Thinking...");
+			"message.accepted": async () => {
+				order.push("ack");
 			},
 		};
-
+		adapter.materializeAttachments = async (message) => {
+			order.push("stage");
+			return message;
+		};
 		const app = await createHeypi({
 			adapters: [adapter],
-			agent: loadAgent(root, {
-				id: "agent",
-				state: { dir: state },
-			}),
-			piHost() {
-				return replyHost("Still done.");
-			},
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost: () => replyHost("Done."),
 		});
 
 		await app.start();
 		await adapter.receive({
 			id: "m1",
-			user: { id: "u1", name: "Ronan" },
-			text: "hello",
+			user: { id: "u1" },
+			text: "Inspect this.",
+			attachments: [{ name: "issue.txt", url: "https://example.com/issue.txt" }],
 		});
 		await app.stop();
 
-		expect(reactions).toEqual(["eyes"]);
-		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Still done." }]);
+		expect(order).toEqual(["ack", "stage"]);
 	});
 
 	it("does not send replies after stop begins", async () => {
@@ -875,7 +888,7 @@ describe("createHeypi", () => {
 	it("steers the active Pi turn when configured", async () => {
 		const root = await makeDir("app-steer-agent");
 		const state = await makeDir("app-steer-state");
-		const adapter = local({ busy: "steer", progress: false });
+		const adapter = local({ busy: "steer", todo: false });
 		let release: (() => void) | undefined;
 		let started: (() => void) | undefined;
 		const sending = new Promise<void>((resolve) => {
@@ -927,7 +940,7 @@ describe("createHeypi", () => {
 	it("rejects new turns while busy when configured", async () => {
 		const root = await makeDir("app-reject-agent");
 		const state = await makeDir("app-reject-state");
-		const adapter = local({ busy: "reject", progress: false });
+		const adapter = local({ busy: "reject", todo: false });
 		let release: (() => void) | undefined;
 		let started: (() => void) | undefined;
 		const sending = new Promise<void>((resolve) => {
@@ -959,5 +972,81 @@ describe("createHeypi", () => {
 			thread: undefined,
 			text: "I’m already working on another request in this conversation.",
 		});
+	});
+
+	it("dispatches authored schedules through the conversation queue", async () => {
+		const root = await makeDir("app-schedule-agent");
+		const state = await makeDir("app-schedule-state");
+		await mkdir(join(root, "schedules"), { recursive: true });
+		await writeFile(
+			join(root, "schedules", "report.js"),
+			`export default {
+				cron: "0 0 1 1 *",
+				timezone: "UTC",
+				async run({ dispatch }) {
+					await dispatch({ prompt: "Prepare report.", target: { adapterId: "local", conversation: "reports" } });
+				}
+			};`,
+		);
+		const adapter = local({ todo: false });
+		const prompts: string[] = [];
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost() {
+				return replyHost("Scheduled reply.", (prompt) => {
+					prompts.push(prompt);
+				});
+			},
+		});
+		await app.start();
+
+		const run = await app.schedules.run("report");
+		for (let attempt = 0; attempt < 20 && app.schedules.runs("report").at(-1)?.status !== "completed"; attempt++) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		await app.stop();
+
+		expect(run).toMatchObject({ status: "claimed" });
+		expect(app.schedules.runs("report").at(-1)).toMatchObject({
+			status: "completed",
+			output: "Scheduled reply.",
+		});
+		expect(prompts).toEqual(["Prepare report."]);
+		expect(adapter.sent).toContainEqual({ conversation: "reports", thread: undefined, text: "Scheduled reply." });
+	});
+
+	it("runs prompt schedules in fresh background Pi sessions", async () => {
+		const root = await makeDir("app-background-schedule-agent");
+		const state = await makeDir("app-background-schedule-state");
+		await mkdir(join(root, "schedules"), { recursive: true });
+		await writeFile(
+			join(root, "schedules", "cleanup.js"),
+			`export default { cron: "0 0 1 1 *", timezone: "UTC", prompt: "Clean up." };`,
+		);
+		const options: PiHostOptions[] = [];
+		const app = await createHeypi({
+			adapters: [local({ todo: false })],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost(input) {
+				options.push(input);
+				return replyHost("Cleanup complete.");
+			},
+		});
+		await app.start();
+
+		const run = await app.schedules.run("cleanup");
+		for (let attempt = 0; attempt < 20 && app.schedules.runs("cleanup").at(-1)?.status !== "completed"; attempt++) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		await app.stop();
+
+		expect(run).toMatchObject({ status: "claimed" });
+		expect(app.schedules.runs("cleanup").at(-1)).toMatchObject({
+			status: "completed",
+			output: "Cleanup complete.",
+		});
+		expect(options).toHaveLength(1);
+		expect(options[0]).toMatchObject({ mode: "background", customTools: [] });
 	});
 });

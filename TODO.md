@@ -1,5 +1,11 @@
 # TODO
 
+## Slack activity
+
+- Consider a Slack-specific status formatter if fixed `Thinking...` and `Working...` labels prove
+  insufficient. Keep it adapter-local and map normalized lifecycle events to status text; do not
+  restore a generic progress API.
+
 ## Todo and memory extensions
 
 - Continue hardening the built-in todo Pi extension.
@@ -87,11 +93,10 @@
 
 ## Scheduling
 
-- Plan: [`packages/heypi/docs/scheduling.md`](packages/heypi/docs/scheduling.md)
-- Add agent heartbeats only after durable scheduled jobs exist and the execution scope is explicit.
-  - Reuse the scheduled-job runner rather than building a second scheduler.
-  - Decide whether a heartbeat is agent-scoped, adapter-scoped, or opt-in per conversation; do not
-    fan out across every channel and DM by default.
-  - Define the shared state a non-conversation heartbeat may inspect and the trusted destinations it
-    may notify.
-  - Support conditional no-op completion with no outbound delivery while retaining run audit logs.
+- Cron schedules are implemented as code-owned modules; see
+  [`packages/heypi/docs/scheduling.md`](packages/heypi/docs/scheduling.md).
+- Add intervals, one-shot jobs, pause/resume, and runtime-managed schedules only when a concrete use
+  case needs them.
+- Keep heartbeats as ordinary cron schedules. Do not add a second scheduler or fan out across every
+  conversation by default.
+- Add distributed claims only when heypi supports multiple workers against one state store.

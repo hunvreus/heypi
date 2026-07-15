@@ -35,7 +35,7 @@ export type TelegramConfig = {
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	busy?: BusyMode;
-	progress?: boolean;
+	typing?: boolean;
 	events?: AdapterEvents;
 };
 
@@ -265,8 +265,8 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	};
 }
 
-function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
+function typingEvents(enabled: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
+	if (enabled === false) return { ...busyEvents(), ...(events ?? {}) };
 	return withTypingEvents(events, typing);
 }
 
@@ -363,8 +363,7 @@ export function telegram(config: TelegramConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		busy: config.busy ?? "queue",
-		progress: config.progress ?? false,
-		events: progressEvents(config.progress, config.events, typing),
+		events: typingEvents(config.typing, config.events, typing),
 		async start(context) {
 			self = await loadTelegramBotIdentity(call, context.logger, config.botUsername);
 			running = true;
@@ -434,12 +433,6 @@ export function telegram(config: TelegramConfig): Adapter {
 				chat_id: message.conversation,
 				message_id: Number(message.id),
 				text: formatOutgoingText(message.text, message.attachments),
-			});
-		},
-		async remove(message) {
-			await call("deleteMessage", {
-				chat_id: message.conversation,
-				message_id: Number(message.id),
 			});
 		},
 		async requestApproval(view) {

@@ -1,7 +1,7 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
 	"files": {
-		"includes": ["**", "!.claude", "!**/dist", "!.heypi"]
+		"includes": ["**", "!.claude", "!**/dist", "!**/.heypi", "!examples/*/workspace", "!examples/*/slack"]
 	},
 	"linter": {
 		"enabled": true,

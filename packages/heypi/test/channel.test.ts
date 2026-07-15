@@ -265,4 +265,32 @@ describe("channel", () => {
 		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_canceled"]);
 		expect(records.at(-1)?.reason).toBe("user canceled");
 	});
+
+	it("returns queued trusted jobs so their owners can settle them", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-cancel-trusted-${Date.now()}-${Math.random()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+		await channel.ingest(message("active", "first"));
+		channel.next();
+		await channel.trigger({
+			adapter: "local",
+			adapterId: "test",
+			conversation: "room",
+			prompt: "Scheduled work.",
+			actor: { id: "schedule:daily" },
+			cause: {
+				kind: "schedule",
+				scheduleId: "daily",
+				runId: "run-1",
+				scheduledFor: "2026-07-14T09:00:00.000Z",
+			},
+		});
+
+		await expect(channel.cancelQueued("application stopped")).resolves.toMatchObject([
+			{
+				state: "queued",
+				cause: { kind: "schedule", scheduleId: "daily", runId: "run-1" },
+			},
+		]);
+	});
 });

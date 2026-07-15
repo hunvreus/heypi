@@ -52,7 +52,10 @@ export async function listAuditConversations(options: AuditOptions): Promise<Aud
 	}
 }
 
-export async function readAuditConversationKey(options: AuditOptions, key: string): Promise<ChannelRecord[] | undefined> {
+export async function readAuditConversationKey(
+	options: AuditOptions,
+	key: string,
+): Promise<ChannelRecord[] | undefined> {
 	const conversation = (await listAuditConversations(options)).find((entry) => entry.key === key);
 	if (!conversation) return undefined;
 	return readAuditConversation(conversation.path);

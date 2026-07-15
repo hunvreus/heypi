@@ -87,9 +87,7 @@ const memoryParameters = Type.Object({
 
 const searchParameters = Type.Object({
 	query: Type.Optional(Type.String({ description: "Words or phrase to recall" })),
-	destination: Type.Optional(
-		Type.Union([Type.Literal("conversation"), Type.Literal("user"), Type.Literal("shared")]),
-	),
+	destination: Type.Optional(Type.Union([Type.Literal("conversation"), Type.Literal("user"), Type.Literal("shared")])),
 	limit: Type.Optional(Type.Number({ minimum: 1, maximum: 50 })),
 });
 
@@ -169,9 +167,7 @@ function parseFile(target: MemoryTarget, text: string): MemoryRecord[] {
 				updatedAt: data.updatedAt,
 				source: data.source,
 			});
-		} catch {
-			continue;
-		}
+		} catch {}
 	}
 	return records;
 }
@@ -324,9 +320,9 @@ async function searchStores(
 			return (await options.store(destination).search({ query: input.query, limit: 50 }))
 				.filter((record) => record.target === targetFor(destination))
 				.map((record) => ({
-				...record,
-				destination,
-			}));
+					...record,
+					destination,
+				}));
 		}),
 	);
 	return records

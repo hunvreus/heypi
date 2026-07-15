@@ -1,5 +1,6 @@
 export {
 	type LocalAdapter,
+	type LocalConfig,
 	type LocalMessage,
 	local,
 	type WebhookAdapter,
@@ -34,8 +35,9 @@ export type {
 	AdapterEventType,
 	ChatJob,
 	ChatJobState,
+	TurnCause,
 } from "./events.js";
-export { busyEvents, statusEvents } from "./events.js";
+export { busyEvents, todoEvents } from "./events.js";
 export { consoleLogger } from "./log.js";
 export {
 	createFileMemoryStore,
@@ -48,6 +50,7 @@ export {
 	type MemoryStore,
 	type MemoryTarget,
 } from "./memory.js";
+export type { MessageSlot } from "./message-slot.js";
 export { modelFromEnv } from "./model.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";
 export {
@@ -57,6 +60,17 @@ export {
 	host,
 } from "./runtime.js";
 export {
+	defineSchedule,
+	type LoadedSchedule,
+	loadSchedules,
+	type ScheduleContext,
+	type ScheduleDefinition,
+	type ScheduleDispatch,
+	type ScheduleTarget,
+} from "./schedule.js";
+export type { ScheduleRun, ScheduleRunStatus, ScheduleStore } from "./schedule-store.js";
+export type { ScheduleInfo, Scheduler } from "./scheduler.js";
+export {
 	createSecretManager,
 	type SecretManager,
 	type SecretRequest,
@@ -64,7 +78,6 @@ export {
 	secretPageHtml,
 } from "./secrets.js";
 export { type SlackConfig, slack, slackApprovalPayload, slackMessage } from "./slack.js";
-export type { StatusSlot } from "./status.js";
 export {
 	type TelegramConfig,
 	telegram,
@@ -102,7 +115,6 @@ export type {
 	LoadAgentOptions,
 	Logger,
 	ModelConfig,
-	RemoveMessage,
 	RuntimeConfig,
 	RuntimeKind,
 	SendMessage,

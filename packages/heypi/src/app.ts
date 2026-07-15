@@ -1,17 +1,29 @@
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { createAdmin } from "./admin.js";
 import { stageAgent } from "./agent.js";
 import { createApprovalExtension } from "./approval.js";
-import { type Channel, createChannel } from "./channel.js";
+import { type Channel, createChannel, type Turn } from "./channel.js";
 import { createChatAttachTool, createChatHistoryTool, createChatRequestSecretTool } from "./chat-tools.js";
-import type { AdapterEvent, ChatJob } from "./events.js";
+import type { AdapterEvent, ChatJob, TurnCause } from "./events.js";
 import { consoleLogger } from "./log.js";
 import { createFileMemoryStore, createMemoryExtension } from "./memory.js";
+import { createMessageSlot, type MessageSlot } from "./message-slot.js";
 import { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";
+import { type LoadedSchedule, loadSchedules, type ScheduleDispatch } from "./schedule.js";
+import { createScheduleStore, type ScheduleRun } from "./schedule-store.js";
+import { createScheduler, type ScheduleInfo, type Scheduler } from "./scheduler.js";
 import { createSecretManager, type SecretManager } from "./secrets.js";
-import { createStatusSlot, type StatusSlot } from "./status.js";
-import { type ChatStorage, ensureChatStorage, executionKey, storageFor, userMemoryDir } from "./storage.js";
+import {
+	type ChatAddress,
+	type ChatStorage,
+	ensureChatStorage,
+	executionKey,
+	storageForAddress,
+	storageSegment,
+	userMemoryDir,
+} from "./storage.js";
 import { createTodoController, renderTodo, type TodoController } from "./todo.js";
 import { toolSettings } from "./tool-config.js";
 import type { Adapter, AgentConfig, ChatMessage, Logger, SendMessage } from "./types.js";
@@ -22,6 +34,11 @@ export type HeypiApp = {
 	jobs(): ChatJob[];
 	cancelQueued(reason?: string): Promise<number>;
 	cancelActive(reason?: string): Promise<number>;
+	schedules: {
+		list(): ScheduleInfo[];
+		run(id: string): Promise<ScheduleRun>;
+		runs(id?: string): ScheduleRun[];
+	};
 };
 
 export type CreateHeypiOptions = {
@@ -39,12 +56,13 @@ type RunningChannel = {
 	pi?: PiHost;
 	piStarting?: Promise<PiHost>;
 	storage: ChatStorage;
-	activity?: StatusSlot;
-	todoStatus?: StatusSlot;
+	todoMessage?: MessageSlot;
 	activeMessage?: ChatMessage;
+	activeTurn?: Turn;
 	todo?: TodoController;
 	canceling?: string;
 	idleTimer?: ReturnType<typeof setTimeout>;
+	dispatching?: Promise<void>;
 };
 
 const IDLE_RUNTIME_TTL_MS = 10 * 60 * 1000;
@@ -53,7 +71,7 @@ function appendUrl(base: string, suffix: string): string {
 	return `${base.replace(/\/$/, "")}/${suffix.replace(/^\//, "")}`;
 }
 
-function keyFor(message: ChatMessage): string {
+function keyFor(message: ChatAddress): string {
 	return executionKey(message);
 }
 
@@ -89,10 +107,7 @@ function allowed(adapter: Adapter, message: ChatMessage): boolean {
 	const allow = adapter.allow;
 	if (!botAllowed(allow, message)) return false;
 	if (!allow) return true;
-	return (
-		includes(allow.conversations, message.conversation) &&
-		actorAllowed(allow, message)
-	);
+	return includes(allow.conversations, message.conversation) && actorAllowed(allow, message);
 }
 
 function piToolName(event: PiEvent): string | undefined {
@@ -142,8 +157,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const stateDir = agent.state?.dir ?? join(process.cwd(), ".heypi");
 	const toolConfig = toolSettings(agent);
 	const staged = await stageAgent(agent, stateDir);
+	const scheduleDefinitions = await loadSchedules(agent.root);
+	const scheduleStore = createScheduleStore(join(stateDir, "schedules", "state.json"));
 	const channels = new Map<string, RunningChannel>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
+	let scheduler: Scheduler;
 	let secrets: SecretManager;
 	const admin = agent.admin
 		? createAdmin({
@@ -154,6 +172,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				secret: {
 					pageHtml: () => secrets.pageHtml(),
 					accept: (reply) => secrets.accept(reply),
+				},
+				schedules: {
+					list: () => scheduler.list(),
+					run: (id) => scheduler.run(id),
 				},
 			})
 		: undefined;
@@ -179,17 +201,17 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 						counts.reduce((sum, count) => sum + count, 0),
 					)
 				: 0;
-		const queued =
+		const queuedJobs =
 			scope === "queued" || scope === "all"
-				? await Promise.all([...channels.values()].map((running) => running.channel.cancelQueued(reason))).then(
-						(counts) => counts.reduce((sum, count) => sum + count, 0),
-					)
-				: 0;
+				? (await Promise.all([...channels.values()].map((running) => running.channel.cancelQueued(reason)))).flat()
+				: [];
+		await settleCanceledScheduleJobs(queuedJobs, reason ?? "canceled");
+		const queued = queuedJobs.length;
 		return { active, queued };
 	}
 
-	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
-		const key = keyFor(message);
+	async function channelForAddress(adapter: Adapter, address: ChatAddress): Promise<RunningChannel> {
+		const key = keyFor(address);
 		const cached = channels.get(key);
 		if (cached) {
 			if (cached.idleTimer) {
@@ -200,7 +222,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		}
 		const loading = loadingChannels.get(key);
 		if (loading) return loading;
-		const storage = storageFor(agent, stateDir, message);
+		const storage = storageForAddress(agent, stateDir, address);
 		const loadingChannel = (async () => {
 			await ensureChatStorage(storage);
 			const channel = createChannel({ logPath: storage.logPath, lockPath: storage.lockPath });
@@ -217,13 +239,17 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		}
 	}
 
+	async function channelFor(adapter: Adapter, message: ChatMessage): Promise<RunningChannel> {
+		return channelForAddress(adapter, message);
+	}
+
 	async function sendLogged(running: RunningChannel, message: SendMessage): Promise<{ id?: string } | undefined> {
 		const sent = await running.adapter.send(message);
 		await running.channel.outbound(message, sent?.id);
 		return sent;
 	}
 
-	async function startPi(running: RunningChannel, message: ChatMessage): Promise<PiHost> {
+	async function startPi(running: RunningChannel, turn: Turn): Promise<PiHost> {
 		if (running.idleTimer) {
 			clearTimeout(running.idleTimer);
 			running.idleTimer = undefined;
@@ -241,31 +267,37 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 							admins: adapter.admins,
 							approvers: adapter.approvers,
 							policies: toolConfig.approvalPolicies,
-							context: () => ({
-								adapter: message.adapter,
-								adapterId: message.adapterId,
-								conversation: message.conversation,
-								thread: channel.activeMessageId(),
-								actor: channel.activeUser(),
-							}),
-							request: (view) =>
-								adapter.requestApproval?.({
-									...view,
-									conversation: message.conversation,
-									thread: channel.activeMessageId(),
-								}) ??
-								Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` }),
+							context: () => {
+								const active = running.activeTurn ?? turn;
+								return {
+									adapter: active.adapter,
+									adapterId: active.adapterId,
+									conversation: active.conversation,
+									thread: active.replyThread,
+									actor: active.actor,
+								};
+							},
+							request: (view) => {
+								const active = running.activeTurn ?? turn;
+								return (
+									adapter.requestApproval?.({
+										...view,
+										conversation: active.conversation,
+										thread: active.replyThread,
+									}) ??
+									Promise.resolve({ approved: false, reason: `${adapter.kind} adapter cannot approve tools.` })
+								);
+							},
 						});
 			const todo = todoEnabled(agent)
 				? createTodoController({
 						render: async (update) => {
 							const job = currentJob(running);
-							const active = running.activeMessage;
-							if (!active || !job) return;
-							running.todoStatus ??= createStatusSlot({
+							const active = running.activeTurn;
+							if (!active || !job || !running.activeMessage) return;
+							running.todoMessage ??= createMessageSlot({
 								adapter: running.adapter,
-								message: active,
-								thread: channel.activeMessageId(),
+								target: { conversation: active.conversation, thread: active.replyThread },
 							});
 							await emit(running, {
 								type: "todo.changed",
@@ -321,9 +353,9 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 						workspaceDir: running.storage.workspaceDir,
 						sharedDir: running.storage.sharedDir,
 						target: () => {
-							const active = running.activeMessage;
+							const active = running.activeTurn;
 							if (!active) return undefined;
-							return { conversation: active.conversation, thread: channel.activeMessageId() };
+							return { conversation: active.conversation, thread: active.replyThread };
 						},
 						send: (message) => sendLogged(running, message),
 					}),
@@ -331,9 +363,9 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 						secretDir: running.storage.secretDir,
 						manager: secrets,
 						target: () => {
-							const active = running.activeMessage;
+							const active = running.activeTurn;
 							if (!active) return undefined;
-							return { conversation: active.conversation, thread: channel.activeMessageId() };
+							return { conversation: active.conversation, thread: active.replyThread };
 						},
 						send: (message) => sendLogged(running, message),
 					}),
@@ -374,12 +406,8 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			await handler(event as never, {
 				message,
 				job: "job" in event ? event.job : undefined,
-				status: running.activity,
-				todo: running.todoStatus,
+				todo: running.todoMessage,
 				send: (message) => sendLogged(running, message),
-				react: running.adapter.react
-					? (emoji) => running.adapter.react?.(message, emoji) ?? Promise.resolve()
-					: undefined,
 			});
 		} catch (error) {
 			logger.warn("adapter.event_failed", {
@@ -400,12 +428,8 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		try {
 			await handler({ type, origin: "heypi", message } as never, {
 				message,
-				status: running.activity,
-				todo: running.todoStatus,
+				todo: running.todoMessage,
 				send: (outbound) => sendLogged(running, outbound),
-				react: running.adapter.react
-					? (emoji) => running.adapter.react?.(message, emoji) ?? Promise.resolve()
-					: undefined,
 			});
 		} catch (error) {
 			logger.warn("adapter.event_failed", {
@@ -422,21 +446,22 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			if (!turn) break;
 			if (stopping) {
 				await running.channel.fail("stopped");
+				await settleScheduledTurn(turn, "canceled", undefined, "application stopped");
 				return;
 			}
-			const message = turn.message;
 			logger.info("turn.start", {
-				adapter: message.adapter,
-				conversation: message.conversation,
+				adapter: turn.adapter,
+				conversation: turn.conversation,
 				thread: turn.replyThread,
+				cause: turn.cause.kind,
 			});
 			let finalText = "";
 			let unsubscribe: (() => void) | undefined;
 			try {
-				running.activeMessage = message;
-				running.activity ??= createStatusSlot({ adapter: running.adapter, message, thread: turn.replyThread });
-				running.todoStatus = undefined;
-				const pi = await startPi(running, message);
+				running.activeMessage = turn.message;
+				running.activeTurn = turn;
+				running.todoMessage = undefined;
+				const pi = await startPi(running, turn);
 				running.todo?.reset();
 				const job = currentJob(running);
 				if (job) await emit(running, { type: "turn.started", origin: "pi", job });
@@ -447,8 +472,8 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					const toolName = piToolName(event);
 					if (toolName) {
 						logger.info("pi.tool.start", {
-							adapter: message.adapter,
-							conversation: message.conversation,
+							adapter: turn.adapter,
+							conversation: turn.conversation,
 							thread: turn.replyThread,
 							tool: toolName,
 						});
@@ -458,19 +483,18 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					const toolEnd = piToolEnd(event);
 					if (toolEnd) {
 						logger[toolEnd.error ? "warn" : "info"](toolEnd.error ? "pi.tool.error" : "pi.tool.end", {
-							adapter: message.adapter,
-							conversation: message.conversation,
+							adapter: turn.adapter,
+							conversation: turn.conversation,
 							thread: turn.replyThread,
 							tool: toolEnd.tool,
 						});
 					}
 				});
 				await pi.send(turn.prompt);
-				await running.activity.wait();
 				if (stopping) {
 					await running.todo?.cancel();
-					await running.activity.clear();
 					await running.channel.fail("stopped");
+					await settleScheduledTurn(turn, "canceled", undefined, "application stopped");
 					return;
 				}
 				await running.todo?.complete();
@@ -478,29 +502,28 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				const completedJob = currentJob(running);
 				if (completedJob)
 					await emit(running, { type: "message.completed", origin: "pi", job: completedJob, text: finalText });
-				await running.activity.clear();
 				if (final) {
 					await sendLogged(running, {
-						conversation: message.conversation,
+						conversation: turn.conversation,
 						thread: turn.replyThread,
 						text: finalText,
 					});
-				} else if (!running.todoStatus) {
+				} else if (!running.todoMessage) {
 					await sendLogged(running, {
-						conversation: message.conversation,
+						conversation: turn.conversation,
 						thread: turn.replyThread,
 						text: "Done.",
 					});
 				}
 				await running.channel.complete(finalText);
+				await settleScheduledTurn(turn, "completed", finalText);
 				logger.info("turn.complete", {
-					adapter: message.adapter,
-					conversation: message.conversation,
+					adapter: turn.adapter,
+					conversation: turn.conversation,
 					thread: turn.replyThread,
 				});
 			} catch (error) {
 				const text = error instanceof Error ? error.message : String(error);
-				await running.activity?.wait();
 				if (stopping || running.canceling) await running.todo?.cancel();
 				else await running.todo?.fail();
 				const canceled = running.canceling;
@@ -508,21 +531,22 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				if (canceled) {
 					if (job) await emit(running, { type: "turn.canceled", origin: "heypi", job, reason: canceled });
 					await running.channel.cancelActive(canceled);
+					await settleScheduledTurn(turn, "canceled", undefined, canceled);
 					logger.info("turn.cancel", {
-						adapter: message.adapter,
-						conversation: message.conversation,
+						adapter: turn.adapter,
+						conversation: turn.conversation,
 						thread: turn.replyThread,
 						reason: canceled,
 					});
 					const text = canceled === "canceled" ? "Canceled." : `Canceled: ${canceled}`;
-					await running.activity?.clear();
-					await sendLogged(running, { conversation: message.conversation, thread: turn.replyThread, text });
+					await sendLogged(running, { conversation: turn.conversation, thread: turn.replyThread, text });
 				} else {
 					if (job) await emit(running, { type: "turn.failed", origin: "heypi", job, error: text });
 					await running.channel.fail(text);
+					await settleScheduledTurn(turn, "failed", undefined, text);
 					logger.error("turn.fail", {
-						adapter: message.adapter,
-						conversation: message.conversation,
+						adapter: turn.adapter,
+						conversation: turn.conversation,
 						thread: turn.replyThread,
 						message: text,
 					});
@@ -531,18 +555,17 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				if (stopping) return;
 				if (!canceled) {
 					const failure = `The agent failed: ${text}`;
-					await running.activity?.clear();
 					await sendLogged(running, {
-						conversation: message.conversation,
+						conversation: turn.conversation,
 						thread: turn.replyThread,
 						text: failure,
 					});
 				}
 			} finally {
 				unsubscribe?.();
-				running.activity = undefined;
-				running.todoStatus = undefined;
+				running.todoMessage = undefined;
 				running.activeMessage = undefined;
+				running.activeTurn = undefined;
 			}
 		}
 		if (!running.idleTimer) {
@@ -553,6 +576,53 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					running.idleTimer = undefined;
 				});
 			}, IDLE_RUNTIME_TTL_MS);
+		}
+	}
+
+	function runDispatch(running: RunningChannel): Promise<void> {
+		if (running.dispatching) return running.dispatching;
+		const task = dispatch(running).finally(() => {
+			if (running.dispatching === task) running.dispatching = undefined;
+		});
+		running.dispatching = task;
+		return task;
+	}
+
+	async function settleScheduledTurn(
+		turn: Turn,
+		status: "completed" | "failed" | "canceled",
+		output?: string,
+		error?: string,
+	): Promise<void> {
+		await settleScheduleCause(turn.cause, status, output, error);
+	}
+
+	async function settleCanceledScheduleJobs(jobs: ChatJob[], reason: string): Promise<void> {
+		await Promise.all(jobs.map((job) => settleScheduleCause(job.cause, "canceled", undefined, reason)));
+	}
+
+	async function settleScheduleCause(
+		cause: TurnCause,
+		status: "completed" | "failed" | "canceled",
+		output?: string,
+		error?: string,
+	): Promise<void> {
+		if (cause.kind !== "schedule") return;
+		const scheduleId = cause.scheduleId;
+		const runId = cause.runId;
+		try {
+			await scheduleStore.update(runId, {
+				status,
+				output: output?.trim() || undefined,
+				error,
+				finishedAt: new Date().toISOString(),
+			});
+		} catch (failure) {
+			logger.error("schedule.audit.failed", {
+				schedule: scheduleId,
+				run: runId,
+				message: failure instanceof Error ? failure.message : String(failure),
+			});
 		}
 	}
 
@@ -617,7 +687,9 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				return;
 			}
 			const canceled = await cancelActive(running, "canceled by chat");
-			const queued = await running.channel.cancelQueued("canceled by chat");
+			const queuedJobs = await running.channel.cancelQueued("canceled by chat");
+			await settleCanceledScheduleJobs(queuedJobs, "canceled by chat");
+			const queued = queuedJobs.length;
 			await adapter.send({
 				conversation: message.conversation,
 				thread: message.thread,
@@ -626,10 +698,14 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			return;
 		}
 		const running = await channelFor(adapter, message);
-		const prepared = await (adapter.materializeAttachments?.(message, {
-			dir: join(running.storage.workspaceDir, "attachments", message.id.replaceAll(/[^a-zA-Z0-9_.-]/g, "_")),
-			displayDir: `attachments/${message.id.replaceAll(/[^a-zA-Z0-9_.-]/g, "_")}`,
-		}) ?? Promise.resolve(message));
+		const accepted = running.channel.accepts(message);
+		if (accepted) await emitMessage(running, "message.accepted", message);
+		const prepared = accepted
+			? await (adapter.materializeAttachments?.(message, {
+					dir: join(running.storage.workspaceDir, "attachments", message.id.replaceAll(/[^a-zA-Z0-9_.-]/g, "_")),
+					displayDir: `attachments/${message.id.replaceAll(/[^a-zA-Z0-9_.-]/g, "_")}`,
+				}) ?? Promise.resolve(message))
+			: message;
 		const result = await running.channel.ingest(prepared, adapter.busy ?? "queue");
 		logger.info("adapter.message", {
 			adapter: prepared.adapter,
@@ -642,17 +718,112 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		if (result.action === "rejected") return emitMessage(running, "message.rejected", prepared);
 		if (result.action === "queued") return emitMessage(running, "message.queued", prepared);
 		if (result.action === "steer") {
-			const active = running.activeMessage;
+			const active = running.activeTurn;
 			if (!active) return emitMessage(running, "message.rejected", prepared);
 			const pi = await startPi(running, active);
 			if (!pi.steer) return emitMessage(running, "message.rejected", prepared);
 			await pi.steer(result.prompt);
 			return emitMessage(running, "message.steered", prepared);
 		}
-		running.activity = createStatusSlot({ adapter: running.adapter, message: prepared, thread: prepared.thread });
-		await emitMessage(running, "message.accepted", prepared);
-		await dispatch(running);
+		await runDispatch(running);
 	}
+
+	function adapterById(id: string): Adapter {
+		const matches = options.adapters.filter((adapter) => (adapter.id ?? adapter.kind) === id);
+		if (matches.length !== 1) throw new Error(`Schedule target must resolve to one adapter: ${id}`);
+		return matches[0];
+	}
+
+	async function dispatchSchedule(input: ScheduleDispatch, run: ScheduleRun): Promise<{ jobId: string }> {
+		if (stopping) throw new Error("application is stopping");
+		const adapter = adapterById(input.target.adapterId);
+		const address: ChatAddress = {
+			adapter: adapter.kind,
+			adapterId: input.target.adapterId,
+			conversation: input.target.conversation,
+			thread: input.target.thread,
+		};
+		const running = await channelForAddress(adapter, address);
+		const accepted = await running.channel.trigger({
+			...address,
+			prompt: input.prompt,
+			actor: { id: `schedule:${run.scheduleId}`, name: run.scheduleId },
+			cause: {
+				kind: "schedule",
+				scheduleId: run.scheduleId,
+				runId: run.id,
+				scheduledFor: run.scheduledFor,
+			},
+		});
+		if (accepted.action === "started") void runDispatch(running);
+		return { jobId: accepted.id };
+	}
+
+	async function executeSchedulePrompt(
+		schedule: LoadedSchedule,
+		run: ScheduleRun,
+		signal: AbortSignal,
+	): Promise<{ output?: string; sessionId?: string }> {
+		if (schedule.definition.prompt === undefined) throw new Error(`Schedule ${schedule.id} has no prompt.`);
+		const root = join(stateDir, "schedules", storageSegment(schedule.id));
+		const workspaceDir = join(root, "workspace");
+		const sessionDir = join(root, "runs", run.id, "session");
+		await mkdir(workspaceDir, { recursive: true });
+		await mkdir(sessionDir, { recursive: true });
+		const approvalExtension =
+			Object.keys(toolConfig.approvalPolicies).length === 0
+				? undefined
+				: createApprovalExtension({
+						policies: toolConfig.approvalPolicies,
+						context: () => ({}),
+						request: async () => ({
+							approved: false,
+							reason: "Background schedules cannot wait for interactive approval.",
+						}),
+					});
+		const pi = piHost({
+			agent,
+			agentDir: staged.agentDir,
+			workspaceDir,
+			sessionDir,
+			extensionPaths: staged.extensionPaths,
+			excludeTools: toolConfig.excludeTools,
+			customTools: toolConfig.customTools,
+			extensions: approvalExtension ? [approvalExtension] : [],
+			mode: "background",
+		});
+		let finalText = "";
+		let unsubscribe: (() => void) | undefined;
+		const abort = () => void pi.abort?.();
+		try {
+			if (signal.aborted) throw new Error("schedule canceled");
+			signal.addEventListener("abort", abort, { once: true });
+			await pi.start();
+			if (signal.aborted) {
+				await pi.abort?.();
+				throw new Error("schedule canceled");
+			}
+			unsubscribe = pi.subscribe((event) => {
+				if (event.type === "message_end" && event.message.role === "assistant") {
+					finalText = assistantText(event.message);
+				}
+			});
+			await pi.send(schedule.definition.prompt);
+			return { output: finalText.trim() || undefined, sessionId: run.id };
+		} finally {
+			signal.removeEventListener("abort", abort);
+			unsubscribe?.();
+			await pi.stop();
+		}
+	}
+
+	scheduler = createScheduler({
+		definitions: scheduleDefinitions,
+		store: scheduleStore,
+		logger,
+		dispatch: dispatchSchedule,
+		executePrompt: executeSchedulePrompt,
+	});
 
 	return {
 		async start() {
@@ -662,11 +833,27 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					reason: "runtime omitted; shell commands execute on the host",
 				});
 			}
-			await admin?.start();
-			if (admin) logger.info("admin.start", { url: admin.url() });
 			const adapters = options.adapters;
-			for (const adapter of adapters) {
-				await adapter.start({ agentId: agent.id, logger, receive: (message) => receive(adapter, message) });
+			const startedAdapters: Adapter[] = [];
+			let adminStarted = false;
+			try {
+				await admin?.start();
+				adminStarted = Boolean(admin);
+				if (admin) logger.info("admin.start", { url: admin.url() });
+				for (const adapter of adapters) {
+					startedAdapters.push(adapter);
+					await adapter.start({ agentId: agent.id, logger, receive: (message) => receive(adapter, message) });
+				}
+				await scheduler.start();
+			} catch (error) {
+				await scheduler.stop().catch(() => undefined);
+				for (const adapter of startedAdapters.reverse()) {
+					try {
+						await adapter.stop?.();
+					} catch {}
+				}
+				if (adminStarted) await admin?.stop().catch(() => undefined);
+				throw error;
 			}
 			const adapterNames = adapters.map((adapter) => adapter.id ?? adapter.kind);
 			logger.info("app.start", { agent: agent.id, adapters: adapterNames.length, admin: admin?.url() });
@@ -674,8 +861,16 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		},
 		async stop() {
 			stopping = true;
+			await scheduler.stop();
 			for (const channel of channels.values()) {
 				if (channel.idleTimer) clearTimeout(channel.idleTimer);
+				const queued = await channel.channel.cancelQueued("application stopped");
+				await settleCanceledScheduleJobs(queued, "application stopped");
+				if (channel.dispatching) {
+					channel.canceling = "application stopped";
+					const pi = channel.pi ?? (await channel.piStarting?.catch(() => undefined));
+					await pi?.abort?.();
+				}
 				await channel.pi?.stop();
 				await channel.channel.close();
 			}
@@ -691,6 +886,11 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 		},
 		async cancelActive(reason = "canceled") {
 			return (await cancelJobs("active", reason)).active;
+		},
+		schedules: {
+			list: () => scheduler.list(),
+			run: (id) => scheduler.run(id),
+			runs: (id) => scheduler.runs(id),
 		},
 	};
 }

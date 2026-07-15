@@ -2,12 +2,24 @@ import { randomUUID } from "node:crypto";
 import type { FileHandle } from "node:fs/promises";
 import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ChatJob } from "./events.js";
+import type { ChatJob, TurnCause } from "./events.js";
 import type { BusyMode, ChatMessage, SendMessage } from "./types.js";
 
 export type ChannelRecord =
 	| ({ type: "inbound"; record: number } & ChatMessage)
 	| ({ type: "outbound"; record: number; message?: string; time: string } & SendMessage)
+	| {
+			type: "trigger";
+			record: number;
+			adapter: string;
+			adapterId: string;
+			conversation: string;
+			thread?: string;
+			prompt: string;
+			actor: { id: string; name?: string };
+			cause: TurnCause;
+			time: string;
+	  }
 	| { type: "turn_queued"; record: number; id: string; trigger: number }
 	| { type: "turn_steered"; record: number; id: string; trigger: number }
 	| { type: "turn_rejected"; record: number; trigger: number }
@@ -17,9 +29,24 @@ export type ChannelRecord =
 
 export type Turn = {
 	id: string;
-	message: ChatMessage;
+	message?: ChatMessage;
+	adapter: string;
+	adapterId: string;
+	conversation: string;
 	replyThread?: string;
 	prompt: string;
+	actor: { id: string; name?: string };
+	cause: TurnCause;
+};
+
+export type TrustedTurn = {
+	adapter: string;
+	adapterId: string;
+	conversation: string;
+	thread?: string;
+	prompt: string;
+	actor: { id: string; name?: string };
+	cause: Exclude<TurnCause, { kind: "message" }>;
 };
 
 type QueuedTurn = {
@@ -35,10 +62,12 @@ export type ChannelOptions = {
 export type Channel = {
 	load(): Promise<void>;
 	close(): Promise<void>;
+	accepts(message: ChatMessage): boolean;
 	ingest(message: ChatMessage, busy?: BusyMode): Promise<IngestResult>;
+	trigger(input: TrustedTurn): Promise<{ action: "started" | "queued"; id: string }>;
 	next(): Turn | undefined;
 	jobs(): ChatJob[];
-	cancelQueued(reason?: string): Promise<number>;
+	cancelQueued(reason?: string): Promise<ChatJob[]>;
 	cancelActive(reason?: string): Promise<boolean>;
 	outbound(message: SendMessage, remoteId?: string): Promise<void>;
 	complete(reply?: string): Promise<void>;
@@ -134,6 +163,14 @@ export function createChannel(options: ChannelOptions): Channel {
 		});
 	}
 
+	function activeTrigger(): (ChannelRecord & ({ type: "inbound" } | { type: "trigger" })) | undefined {
+		if (!active) return undefined;
+		return records.find(
+			(record): record is ChannelRecord & ({ type: "inbound" } | { type: "trigger" }) =>
+				(record.type === "inbound" || record.type === "trigger") && record.record === active?.trigger,
+		);
+	}
+
 	async function failInterruptedTurns(): Promise<void> {
 		queued.splice(0, queued.length);
 		const finished = new Set<string>();
@@ -185,6 +222,8 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function buildPrompt(trigger: number): string {
+		const trusted = records.find((record) => record.type === "trigger" && record.record === trigger);
+		if (trusted?.type === "trigger") return trusted.prompt;
 		const boundary = trigger - 1;
 		const prompt = records
 			.filter(isInbound)
@@ -195,10 +234,12 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function jobFor(turn: QueuedTurn, state: ChatJob["state"]): ChatJob | undefined {
-		const trigger = records.find((record): record is ChannelRecord & { type: "inbound" } => {
-			return isInbound(record) && record.record === turn.trigger;
-		});
+		const trigger = records.find(
+			(record): record is ChannelRecord & ({ type: "inbound" } | { type: "trigger" }) =>
+				(record.type === "inbound" || record.type === "trigger") && record.record === turn.trigger,
+		);
 		if (!trigger) return undefined;
+		const actor = trigger.type === "inbound" ? trigger.user : trigger.actor;
 		return {
 			id: turn.id,
 			state,
@@ -206,7 +247,8 @@ export function createChannel(options: ChannelOptions): Channel {
 			adapterId: trigger.adapterId,
 			conversation: trigger.conversation,
 			thread: trigger.thread,
-			actor: { id: trigger.user.id, name: trigger.user.name },
+			actor: { id: actor.id, name: actor.name },
+			cause: trigger.type === "inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause,
 			startedAt: trigger.time,
 		};
 	}
@@ -232,6 +274,10 @@ export function createChannel(options: ChannelOptions): Channel {
 			await releaseLock();
 		},
 
+		accepts(message) {
+			return shouldTrigger(message);
+		},
+
 		async ingest(message, busy = "queue") {
 			const record: ChannelRecord = {
 				type: "inbound",
@@ -255,18 +301,41 @@ export function createChannel(options: ChannelOptions): Channel {
 			return { action: active ? "queued" : "started", id: turn.id };
 		},
 
+		async trigger(input) {
+			const record: ChannelRecord = {
+				type: "trigger",
+				record: nextRecord++,
+				...input,
+				time: new Date().toISOString(),
+			};
+			await append(record);
+			const turn = { id: randomUUID(), trigger: record.record };
+			queued.push(turn);
+			await append({ type: "turn_queued", record: nextRecord++, id: turn.id, trigger: turn.trigger });
+			return { action: active ? "queued" : "started", id: turn.id };
+		},
+
 		next() {
 			if (active || queued.length === 0) return undefined;
 			const turn = queued.shift();
 			if (!turn) return undefined;
 			active = turn;
-			const message = activeMessage();
-			if (!message) return undefined;
+			const trigger = activeTrigger();
+			if (!trigger) return undefined;
+			const message = trigger.type === "inbound" ? trigger : undefined;
+			const actor = trigger.type === "inbound" ? trigger.user : trigger.actor;
+			const cause: TurnCause =
+				trigger.type === "inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause;
 			return {
 				id: turn.id,
 				message,
-				replyThread: message?.thread,
+				adapter: trigger.adapter,
+				adapterId: trigger.adapterId,
+				conversation: trigger.conversation,
+				replyThread: trigger.thread,
 				prompt: buildPrompt(turn.trigger),
+				actor: { id: actor.id, name: actor.name },
+				cause,
 			};
 		},
 
@@ -279,6 +348,7 @@ export function createChannel(options: ChannelOptions): Channel {
 
 		async cancelQueued(reason) {
 			const turns = queued.splice(0, queued.length);
+			const jobs = turns.map((turn) => jobFor(turn, "queued")).filter((job): job is ChatJob => Boolean(job));
 			for (const turn of turns) {
 				await append({
 					type: "turn_canceled",
@@ -288,7 +358,7 @@ export function createChannel(options: ChannelOptions): Channel {
 					reason,
 				});
 			}
-			return turns.length;
+			return jobs;
 		},
 
 		async cancelActive(reason) {

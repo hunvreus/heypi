@@ -5,3 +5,4 @@ export {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 export { Type } from "@sinclair/typebox";
+export { defineSchedule, type ScheduleContext, type ScheduleDefinition } from "./schedule.js";

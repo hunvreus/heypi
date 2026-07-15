@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { listAuditConversations, readAuditConversationKey } from "./audit.js";
 import type { ChatJob } from "./events.js";
+import type { ScheduleRun } from "./schedule-store.js";
+import type { ScheduleInfo } from "./scheduler.js";
 import type { AdminConfig } from "./types.js";
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -20,6 +22,11 @@ export type CancelJobs = (
 export type SecretAdmin = {
 	pageHtml(): string;
 	accept(reply: string): Promise<{ name: string } | undefined>;
+};
+
+export type ScheduleAdmin = {
+	list(): ScheduleInfo[];
+	run(id: string): Promise<ScheduleRun>;
 };
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -132,7 +139,13 @@ function escapeHtml(value: string): string {
 	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function adminHtml(path: string, jobs: ChatJob[], conversations: string[], token?: string): string {
+function adminHtml(
+	path: string,
+	jobs: ChatJob[],
+	conversations: string[],
+	schedules: ScheduleInfo[],
+	token?: string,
+): string {
 	const jobRows =
 		jobs
 			.map(
@@ -152,6 +165,18 @@ function adminHtml(path: string, jobs: ChatJob[], conversations: string[], token
 				return `<li><a href="${href}">${escapeHtml(conversation)}</a></li>`;
 			})
 			.join("") || "<li>No conversations</li>";
+	const scheduleRows =
+		schedules
+			.map(
+				(schedule) => `<tr>
+					<td>${escapeHtml(schedule.id)}</td>
+					<td><code>${escapeHtml(schedule.cron)}</code></td>
+					<td>${escapeHtml(schedule.timezone)}</td>
+					<td>${escapeHtml(schedule.nextRun ?? "")}</td>
+					<td><button data-schedule=${JSON.stringify(schedule.id)}>Run</button></td>
+				</tr>`,
+			)
+			.join("") || `<tr><td colspan="5">No schedules</td></tr>`;
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -184,6 +209,13 @@ code{background:#eee;padding:2px 4px}
 </table>
 </section>
 <section>
+<h2>Schedules</h2>
+<table>
+<thead><tr><th>ID</th><th>Cron</th><th>Timezone</th><th>Next run</th><th></th></tr></thead>
+<tbody>${scheduleRows}</tbody>
+</table>
+</section>
+<section>
 <h2>Conversations</h2>
 <ul>${channelRows}</ul>
 </section>
@@ -200,13 +232,29 @@ for (const button of document.querySelectorAll("button[data-scope]")) {
 		location.reload();
 	});
 }
+for (const button of document.querySelectorAll("button[data-schedule]")) {
+	button.addEventListener("click", async () => {
+		await fetch(${JSON.stringify(joinUrl(path, "/schedules/run"))}, {
+			method: "POST",
+			headers: { "content-type": "application/json"${token ? `, "x-heypi-admin-token": ${JSON.stringify(token)}` : ""} },
+			body: JSON.stringify({ id: button.dataset.schedule }),
+		});
+		location.reload();
+	});
+}
 </script>
 </body>
 </html>`;
 }
 
 export function createAdmin(
-	config: AdminConfig & { stateDir: string; jobs?: () => ChatJob[]; cancel?: CancelJobs; secret?: SecretAdmin },
+	config: AdminConfig & {
+		stateDir: string;
+		jobs?: () => ChatJob[];
+		cancel?: CancelJobs;
+		secret?: SecretAdmin;
+		schedules?: ScheduleAdmin;
+	},
 ): AdminServer {
 	const host = config.host ?? "127.0.0.1";
 	const port = config.port ?? 4321;
@@ -242,6 +290,13 @@ export function createAdmin(
 						const canceled = await config.cancel(cancelScope(body.scope), reason);
 						return sendJson(response, 200, { canceled });
 					}
+					if (request.method === "POST" && url.pathname === joinUrl(path, "/schedules/run")) {
+						if (!config.schedules) return sendJson(response, 404, { error: "not_found" });
+						const body = await readJson(request);
+						if (typeof body.id !== "string") return sendJson(response, 400, { error: "missing_id" });
+						const run = await config.schedules.run(body.id);
+						return sendJson(response, 202, { run });
+					}
 					if (request.method !== "GET") return sendJson(response, 404, { error: "not_found" });
 					if (url.pathname === path) {
 						if (wantsHtml(request)) {
@@ -253,6 +308,7 @@ export function createAdmin(
 									path,
 									config.jobs?.() ?? [],
 									conversations.map(({ key }) => key),
+									config.schedules?.list() ?? [],
 									token,
 								),
 							);
@@ -263,6 +319,8 @@ export function createAdmin(
 								health: joinUrl(path, "/health"),
 								jobs: joinUrl(path, "/jobs"),
 								cancelJobs: joinUrl(path, "/jobs/cancel"),
+								schedules: config.schedules ? joinUrl(path, "/schedules") : undefined,
+								runSchedule: config.schedules ? joinUrl(path, "/schedules/run") : undefined,
 								conversations: joinUrl(path, "/conversations"),
 								secret: config.secret ? joinUrl(path, "/secret") : undefined,
 							},
@@ -271,6 +329,8 @@ export function createAdmin(
 					if (url.pathname === joinUrl(path, "/health")) return sendJson(response, 200, { ok: true });
 					if (url.pathname === joinUrl(path, "/jobs"))
 						return sendJson(response, 200, { jobs: config.jobs?.() ?? [] });
+					if (url.pathname === joinUrl(path, "/schedules"))
+						return sendJson(response, 200, { schedules: config.schedules?.list() ?? [] });
 					if (url.pathname === joinUrl(path, "/conversations")) {
 						const conversations = await listAuditConversations({ stateDir: config.stateDir });
 						return sendJson(response, 200, { conversations: conversations.map(({ key }) => key) });

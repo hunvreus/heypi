@@ -33,7 +33,7 @@ export type DiscordConfig = {
 	approvers?: ApproverSet;
 	approvals?: AdapterApprovalConfig;
 	busy?: BusyMode;
-	progress?: boolean;
+	typing?: boolean;
 	events?: AdapterEvents;
 };
 
@@ -240,8 +240,8 @@ function withTypingEvents(events: AdapterEvents | undefined, typing: TypingContr
 	};
 }
 
-function progressEvents(progress: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
-	if (progress === false) return { ...busyEvents(), ...(events ?? {}) };
+function typingEvents(enabled: boolean | undefined, events: AdapterEvents | undefined, typing: TypingControls) {
+	if (enabled === false) return { ...busyEvents(), ...(events ?? {}) };
 	return withTypingEvents(events, typing);
 }
 
@@ -258,8 +258,7 @@ export function discord(config: DiscordConfig): Adapter {
 		approvers: config.approvers,
 		approvals: config.approvals,
 		busy: config.busy ?? "queue",
-		progress: config.progress ?? false,
-		events: progressEvents(config.progress, config.events, typing),
+		events: typingEvents(config.typing, config.events, typing),
 		async start(context) {
 			client = new Client({
 				intents: [
@@ -385,13 +384,6 @@ export function discord(config: DiscordConfig): Adapter {
 			if (target && "edit" in target && typeof target.edit === "function") {
 				await target.edit({ content: formatOutgoingText(message.text, message.attachments) });
 			}
-		},
-		async remove(message) {
-			if (!client) throw new Error("Discord adapter is not started");
-			const channel = await client.channels.fetch(message.conversation);
-			if (!channel || !("messages" in channel)) return;
-			const target = await channel.messages.fetch(message.id);
-			await target.delete();
 		},
 		async requestApproval(view) {
 			if (!client) return { approved: false, reason: "Discord adapter is not started." };

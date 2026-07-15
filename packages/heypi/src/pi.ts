@@ -23,6 +23,7 @@ export type PiHostOptions = {
 	extensions?: ExtensionFactory[];
 	excludeTools?: string[];
 	customTools?: ToolDefinition[];
+	mode?: "chat" | "background";
 };
 
 export type PiHost = {
@@ -49,7 +50,9 @@ export function createPiHost(options: PiHostOptions): PiHost {
 					: await createRuntimeTools(options.agent.runtime, options.workspaceDir, options.sharedDir);
 			cleanupRuntimeTools = runtimeTools.cleanup;
 			const prompt = [
-				"Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
+				options.mode === "background"
+					? "This is a scheduled background run with no chat history or remote reply target. Complete the prompt and return a concise final result."
+					: "Incoming chat messages are supplied as the current chat delta. Reply in the same remote thread.",
 				options.sharedDir
 					? "Use /workspace for this channel or DM. Use /shared only for reusable adapter-level files. Do not put secrets or private channel-specific content in /shared."
 					: undefined,
