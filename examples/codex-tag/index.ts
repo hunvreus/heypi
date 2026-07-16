@@ -29,6 +29,7 @@ if (slackToken && slackAppToken) {
 		slack({
 			token: slackToken,
 			appToken: slackAppToken,
+			busy: "steer",
 		}),
 	);
 }

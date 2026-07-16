@@ -31,6 +31,8 @@ guarantee with those releases.
 
 ### Changed
 
+- Changed the Codex Tag example to steer follow-up Slack messages into the active turn instead of
+  queueing them.
 - Replaced the previous database-centered runtime with small JSONL coordination logs alongside Pi's
   native session transcripts.
 - Moved adapters into `createHeypi()` and agent behavior into code-owned `loadAgent()` options and
