@@ -185,6 +185,7 @@ describe("Slack activity", () => {
 			{ thread_ts: "100.000", status: "Working..." },
 			{ thread_ts: "100.000", status: "Working..." },
 			{ thread_ts: "100.000", status: "Working..." },
+			{ thread_ts: "100.000", status: "" },
 		]);
 	});
 

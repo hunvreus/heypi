@@ -93,6 +93,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 					cwd,
 					agentDir,
 					resourceLoaderOptions: {
+						noContextFiles: true,
 						additionalExtensionPaths: options.extensionPaths,
 						extensionFactories: extensions,
 						appendSystemPrompt: prompt ? [prompt] : undefined,

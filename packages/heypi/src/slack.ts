@@ -160,18 +160,20 @@ export function createSlackActivity(
 						if (typeof handler === "function") await handler(event, context);
 						await restore(context.message);
 					},
-					message_completed: async (event, context) => {
-						if (!event.text.trim() && context.todo) await clear(context.message);
+					message_completed: async (_event, context) => {
+						await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
 					message_failed: async (_event, context) => {
 						await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
-					turn_failed: (_event, context) => {
+					turn_failed: async (_event, context) => {
+						await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
-					turn_canceled: (_event, context) => {
+					turn_canceled: async (_event, context) => {
+						await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
 				}
