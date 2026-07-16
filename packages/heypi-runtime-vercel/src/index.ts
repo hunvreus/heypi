@@ -1,12 +1,10 @@
 import { Writable } from "node:stream";
 import {
+	createRuntimeMirror,
 	createRuntimeToolDefinitions,
-	downloadRuntimeRoots,
-	mirrorRuntimeFileSystem,
 	type RuntimeConfig,
 	type RuntimeContext,
-	type RuntimeFileSystem,
-	uploadRuntimeRoots,
+	type RuntimeMirrorFileSystem,
 } from "@hunvreus/heypi/runtime";
 import { Sandbox } from "@vercel/sandbox";
 
@@ -19,15 +17,22 @@ export type VercelRuntimeOptions = {
 	create?(options: CreateOptions): Promise<Sandbox>;
 };
 
-function runtimeFs(sandbox: Sandbox): RuntimeFileSystem {
+function runtimeFs(sandbox: Sandbox): RuntimeMirrorFileSystem {
 	return {
 		access: (path) => sandbox.fs.access(path),
+		chmod: (path, mode) => sandbox.fs.chmod(path, mode),
 		mkdir: async (path) => {
 			await sandbox.fs.mkdir(path, { recursive: true });
 		},
 		readFile: (path) => sandbox.fs.readFile(path),
+		readlink: (path) => sandbox.fs.readlink(path),
 		readdir: (path) => sandbox.fs.readdir(path),
+		lstat: (path) => sandbox.fs.lstat(path),
+		rm: async (path) => {
+			await sandbox.fs.rm(path, { recursive: true, force: true });
+		},
 		stat: (path) => sandbox.fs.stat(path),
+		symlink: (target, path) => sandbox.fs.symlink(target, path),
 		writeFile: (path, content) => sandbox.fs.writeFile(path, content),
 	};
 }
@@ -58,40 +63,37 @@ export function vercel(options: VercelRuntimeOptions = {}): RuntimeConfig {
 		async provider(context) {
 			const sandbox = await createSandbox(options, context);
 			const remote = runtimeFs(sandbox);
-			try {
-				await uploadRuntimeRoots(remote, context);
-			} catch (error) {
-				await sandbox.stop().catch(() => undefined);
-				throw error;
-			}
+			const mirror = createRuntimeMirror(remote, context);
 			return {
+				prepare: mirror.upload,
 				tools: createRuntimeToolDefinitions({
-					fs: mirrorRuntimeFileSystem(remote, context),
+					fs: mirror.fs,
 					roots: context,
 					bash: {
 						async exec(command, cwd, run) {
-							const result = await sandbox.runCommand({
-								cmd: "/bin/sh",
-								args: ["-lc", command],
-								cwd,
-								env: Object.fromEntries(
-									Object.entries(run.env ?? {}).filter(
-										(entry): entry is [string, string] => entry[1] !== undefined,
+							const result = await mirror.downloadAfter(() =>
+								sandbox.runCommand({
+									cmd: "/bin/bash",
+									args: ["-lc", command],
+									cwd,
+									env: Object.fromEntries(
+										Object.entries(run.env ?? {}).filter(
+											(entry): entry is [string, string] => entry[1] !== undefined,
+										),
 									),
-								),
-								signal: run.signal,
-								timeoutMs: run.timeout ? run.timeout * 1000 : undefined,
-								stdout: output(run.onData),
-								stderr: output(run.onData),
-							});
-							await downloadRuntimeRoots(remote, context);
+									signal: run.signal,
+									timeoutMs: run.timeout ? run.timeout * 1000 : undefined,
+									stdout: output(run.onData),
+									stderr: output(run.onData),
+								}),
+							);
 							return { exitCode: result.exitCode };
 						},
 					},
 				}),
 				async cleanup() {
 					try {
-						await downloadRuntimeRoots(remote, context);
+						await mirror.download();
 					} finally {
 						await sandbox.stop();
 					}

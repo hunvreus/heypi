@@ -14,7 +14,7 @@ function inside(root: string, path: string): boolean {
 }
 
 export function assertInside(root: string, path: string): void {
-	if (!inside(root, path)) throw new Error(`path escapes runtime workspace: ${path}`);
+	if (!inside(root, path)) throw new Error("path escapes runtime workspace");
 }
 
 export function assertGuestPath(path: string): string {

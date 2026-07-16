@@ -1,12 +1,10 @@
 import type { ExecutionSession, ISandbox } from "@cloudflare/sandbox";
 import {
+	createRuntimeMirror,
 	createRuntimeToolDefinitions,
-	downloadRuntimeRoots,
-	mirrorRuntimeFileSystem,
 	type RuntimeConfig,
 	type RuntimeContext,
-	type RuntimeFileSystem,
-	uploadRuntimeRoots,
+	type RuntimeMirrorFileSystem,
 } from "@hunvreus/heypi/runtime";
 
 export type CloudflareRuntimeOptions = {
@@ -19,10 +17,19 @@ function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function runtimeFs(session: ExecutionSession): RuntimeFileSystem {
+async function shell(session: ExecutionSession, command: string): Promise<string> {
+	const result = await session.exec(`/bin/bash -lc ${shellQuote(command)}`);
+	if (result.exitCode !== 0) throw new Error(result.stderr || `Sandbox command failed: ${result.exitCode}`);
+	return result.stdout;
+}
+
+function runtimeFs(session: ExecutionSession): RuntimeMirrorFileSystem {
 	return {
 		async access(path) {
 			if (!(await session.exists(path)).exists) throw new Error(`No such file or directory: ${path}`);
+		},
+		async chmod(path, mode) {
+			await shell(session, `chmod ${mode.toString(8)} -- ${shellQuote(path)}`);
 		},
 		async mkdir(path) {
 			await session.mkdir(path, { recursive: true });
@@ -32,12 +39,32 @@ function runtimeFs(session: ExecutionSession): RuntimeFileSystem {
 			return Buffer.from(result.content, "base64");
 		},
 		async readdir(path) {
-			const result = await session.listFiles(path);
+			const result = await session.listFiles(path, { includeHidden: true });
 			return result.files.map((file) => file.name);
 		},
+		async lstat(path) {
+			const output = await shell(
+				session,
+				`if [ -L ${shellQuote(path)} ]; then kind=l; elif [ -d ${shellQuote(path)} ]; then kind=d; elif [ -f ${shellQuote(path)} ]; then kind=f; elif [ -e ${shellQuote(path)} ]; then kind=o; else exit 44; fi; printf '%s %s' "$kind" "$(stat -c '%a' -- ${shellQuote(path)})"`,
+			);
+			const [entry, permissions] = output.trim().split(/\s+/);
+			return {
+				isDirectory: () => entry === "d",
+				isFile: () => entry === "f",
+				isSymbolicLink: () => entry === "l",
+				mode: Number.parseInt(permissions ?? "644", 8),
+			};
+		},
+		readlink: (path) => shell(session, `readlink -- ${shellQuote(path)}`).then((value) => value.trimEnd()),
+		async rm(path) {
+			await shell(session, `rm -rf -- ${shellQuote(path)}`);
+		},
 		async stat(path) {
-			const result = await session.exec(`test -d ${shellQuote(path)}`);
+			const result = await session.exec(`/bin/bash -lc ${shellQuote(`test -d ${shellQuote(path)}`)}`);
 			return { isDirectory: () => result.exitCode === 0 };
+		},
+		async symlink(target, path) {
+			await shell(session, `ln -s -- ${shellQuote(target)} ${shellQuote(path)}`);
 		},
 		async writeFile(path, content) {
 			const binary = typeof content === "string" ? Buffer.from(content) : Buffer.from(content);
@@ -60,34 +87,31 @@ export function cloudflare(options: CloudflareRuntimeOptions): RuntimeConfig {
 			const sandbox = await resolveSandbox(options, context);
 			const session = await sandbox.createSession({ cwd: "/workspace", env: context.env });
 			const remote = runtimeFs(session);
-			try {
-				await uploadRuntimeRoots(remote, context);
-			} catch (error) {
-				await sandbox.deleteSession(session.id).catch(() => undefined);
-				throw error;
-			}
+			const mirror = createRuntimeMirror(remote, context);
 			return {
+				prepare: mirror.upload,
 				tools: createRuntimeToolDefinitions({
-					fs: mirrorRuntimeFileSystem(remote, context),
+					fs: mirror.fs,
 					roots: context,
 					bash: {
 						async exec(command, cwd, run) {
-							const result = await session.exec(command, {
-								cwd,
-								env: run.env,
-								timeout: run.timeout ? run.timeout * 1000 : undefined,
-								signal: run.signal,
-								stream: true,
-								onOutput: (_stream, data) => run.onData(Buffer.from(data)),
-							});
-							await downloadRuntimeRoots(remote, context);
+							const result = await mirror.downloadAfter(() =>
+								session.exec(`/bin/bash -lc ${shellQuote(command)}`, {
+									cwd,
+									env: run.env,
+									timeout: run.timeout ? run.timeout * 1000 : undefined,
+									signal: run.signal,
+									stream: true,
+									onOutput: (_stream, data) => run.onData(Buffer.from(data)),
+								}),
+							);
 							return { exitCode: result.exitCode };
 						},
 					},
 				}),
 				async cleanup() {
 					try {
-						await downloadRuntimeRoots(remote, context);
+						await mirror.download();
 					} finally {
 						await sandbox.deleteSession(session.id);
 					}

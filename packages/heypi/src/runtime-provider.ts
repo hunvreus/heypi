@@ -24,8 +24,23 @@ export type RuntimeFileSystem = {
 	mkdir(path: string): Promise<void>;
 	readFile(path: string): Promise<Buffer | Uint8Array | string>;
 	readdir(path: string): Promise<string[]>;
-	stat(path: string): Promise<{ isDirectory(): boolean }>;
+	stat(path: string): Promise<RuntimeFileStat>;
 	writeFile(path: string, content: string | Uint8Array): Promise<void>;
+};
+
+export type RuntimeFileStat = {
+	isDirectory(): boolean;
+	isFile?(): boolean;
+	isSymbolicLink?(): boolean;
+	mode?: number;
+};
+
+export type RuntimeMirrorFileSystem = RuntimeFileSystem & {
+	chmod(path: string, mode: number): Promise<void>;
+	lstat(path: string): Promise<RuntimeFileStat & { isFile(): boolean }>;
+	readlink(path: string): Promise<string>;
+	rm(path: string): Promise<void>;
+	symlink(target: string, path: string): Promise<void>;
 };
 
 export type RuntimeToolOptions = {

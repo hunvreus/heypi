@@ -65,7 +65,7 @@ function dockerFileSystem(container: string, roots: RuntimeRoots): RuntimeFileSy
 		writeFile: async (path, content) => {
 			await dockerExec(
 				container,
-				["sh", "-lc", 'cat > "$1"', "sh", resolve(path)],
+				["/bin/bash", "-lc", 'cat > "$1"', "bash", resolve(path)],
 				typeof content === "string" ? content : Buffer.from(content),
 			);
 		},
@@ -111,7 +111,7 @@ function dockerBashOperations(container: string, roots: RuntimeRoots, env?: Reco
 					guestPath(roots, cwd),
 					...Object.entries(env ?? {}).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
 					container,
-					"sh",
+					"/bin/bash",
 					"-lc",
 					command,
 				];

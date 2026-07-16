@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
@@ -10,6 +11,7 @@ import {
 	SessionManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { GUEST_SHARED, GUEST_WORKSPACE } from "./runtime-path.js";
 import { createRuntimeTools } from "./runtime-tools.js";
 import type { AgentConfig } from "./types.js";
 
@@ -37,8 +39,27 @@ export type PiHost = {
 
 export type PiEvent = AgentSessionEvent;
 
+/** Replace HeyPi's physical storage roots before Pi sends its generated prompt to the model. */
+export function createRuntimePromptExtension(options: PiHostOptions): ExtensionFactory {
+	const paths = [
+		[resolve(options.workspaceDir), GUEST_WORKSPACE],
+		...(options.sharedDir ? [[resolve(options.sharedDir), GUEST_SHARED]] : []),
+		[resolve(options.agentDir), "/agent"],
+		[resolve(options.sessionDir), "/sessions"],
+	] as Array<[string, string]>;
+	paths.sort(([left], [right]) => right.length - left.length);
+	return (pi) => {
+		pi.on("before_agent_start", (event) => {
+			let systemPrompt = event.systemPrompt;
+			for (const [host, guest] of paths) systemPrompt = systemPrompt.replaceAll(host, guest);
+			return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
+		});
+	};
+}
+
 export function createPiHost(options: PiHostOptions): PiHost {
 	let runtime: AgentSessionRuntime | undefined;
+	let prepareRuntimeTools: (() => Promise<void>) | undefined;
 	let cleanupRuntimeTools: (() => Promise<void>) | undefined;
 
 	return {
@@ -48,6 +69,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 				options.agent.noTools === "all"
 					? { tools: [], async cleanup() {} }
 					: await createRuntimeTools(options.agent.runtime, options.workspaceDir, options.sharedDir);
+			prepareRuntimeTools = runtimeTools.prepare;
 			cleanupRuntimeTools = runtimeTools.cleanup;
 			const prompt = [
 				options.mode === "background"
@@ -60,6 +82,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 			]
 				.filter(Boolean)
 				.join("\n\n");
+			const extensions = [createRuntimePromptExtension(options), ...(options.extensions ?? [])];
 			const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 				cwd,
 				agentDir,
@@ -71,7 +94,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 					agentDir,
 					resourceLoaderOptions: {
 						additionalExtensionPaths: options.extensionPaths,
-						extensionFactories: options.extensions,
+						extensionFactories: extensions,
 						appendSystemPrompt: prompt ? [prompt] : undefined,
 					},
 				});
@@ -91,16 +114,38 @@ export function createPiHost(options: PiHostOptions): PiHost {
 				});
 				return { ...result, services, diagnostics: services.diagnostics };
 			};
-			runtime = await createAgentSessionRuntime(createRuntime, {
-				cwd: options.workspaceDir,
-				agentDir: options.agentDir,
-				sessionManager: manager,
-			});
-			runtime.session.sessionManager.appendSessionInfo(`heypi ${options.agent.id}`);
+			try {
+				runtime = await createAgentSessionRuntime(createRuntime, {
+					cwd: options.workspaceDir,
+					agentDir: options.agentDir,
+					sessionManager: manager,
+				});
+				runtime.session.sessionManager.appendSessionInfo(`heypi ${options.agent.id}`);
+			} catch (error) {
+				const failures: unknown[] = [error];
+				try {
+					await runtime?.dispose();
+				} catch (disposeError) {
+					failures.push(disposeError);
+				}
+				try {
+					await cleanupRuntimeTools?.();
+				} catch (cleanupError) {
+					failures.push(cleanupError);
+				} finally {
+					runtime = undefined;
+					prepareRuntimeTools = undefined;
+					cleanupRuntimeTools = undefined;
+				}
+				if (failures.length > 1)
+					throw new AggregateError(failures, "Pi startup and runtime cleanup failed", { cause: error });
+				throw error;
+			}
 		},
 
 		async send(text) {
 			if (!runtime) throw new Error("Pi session is not started");
+			await prepareRuntimeTools?.();
 			await runtime.session.sendUserMessage(text);
 		},
 
@@ -125,6 +170,7 @@ export function createPiHost(options: PiHostOptions): PiHost {
 			} finally {
 				await cleanupRuntimeTools?.();
 				runtime = undefined;
+				prepareRuntimeTools = undefined;
 				cleanupRuntimeTools = undefined;
 			}
 		},

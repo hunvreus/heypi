@@ -20,7 +20,7 @@ function runtimeFs(fs: VmFs): RuntimeFileSystem {
 
 /** Run Pi's core tools in a Gondolin micro-VM with durable bind mounts. */
 export function gondolin(options: GondolinRuntimeOptions = {}): RuntimeConfig {
-	const { workspace, env, shell = "/bin/sh", ...vmOptions } = options;
+	const { workspace, env, shell = "/bin/bash", ...vmOptions } = options;
 	return {
 		kind: "gondolin",
 		workspace,

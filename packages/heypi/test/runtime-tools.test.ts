@@ -56,6 +56,10 @@ describe("createRuntimeTools", () => {
 		).resolves.toBeDefined();
 		await expect(readFile(join(workspace, "src", "new.ts"), "utf8")).resolves.toBe("export const next = 2;\n");
 		await expect(
+			write.execute("write", { path: "root.txt", content: "root\n" }, undefined, undefined, {} as never),
+		).resolves.toBeDefined();
+		await expect(readFile(join(workspace, "root.txt"), "utf8")).resolves.toBe("root\n");
+		await expect(
 			write.execute("write", { path: "../outside.ts", content: "nope\n" }, undefined, undefined, {} as never),
 		).rejects.toThrow("path escapes runtime workspace");
 		await expect(
@@ -112,11 +116,33 @@ describe("createRuntimeTools", () => {
 		});
 	});
 
+	it("rewrites shell guest-path tokens without changing path prefixes", async () => {
+		const workspace = await makeWorkspace();
+		await writeFile(join(workspace, "value.txt"), "hello\n");
+		const runtime = await createRuntimeTools(host({ workspace }), workspace);
+		const bash = tool(runtime.tools, "bash");
+
+		await expect(
+			bash.execute(
+				"bash",
+				{
+					command: `SUFFIX=/value.txt; cat "/workspace\${SUFFIX}"; cat \\/workspace/value.txt; printf "\\n%s\\n%s" "/tmp/workspace" "/workspace2"`,
+				},
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).resolves.toMatchObject({
+			content: [{ type: "text", text: "hello\nhello\n\n/tmp/workspace\n/workspace2" }],
+		});
+	});
+
 	it("rejects host file-tool access through escaping symlinks", async () => {
 		const workspace = await makeWorkspace();
 		const outside = await makeWorkspace();
 		await writeFile(join(outside, "secret.txt"), "private\n");
 		await symlink(outside, join(workspace, "escape"));
+		await symlink(join(outside, "secret.txt"), join(workspace, "linked.txt"));
 		const runtime = await createRuntimeTools(host({ workspace }), workspace);
 
 		await expect(
@@ -125,5 +151,15 @@ describe("createRuntimeTools", () => {
 		await expect(
 			tool(runtime.tools, "find").execute("find", { pattern: "*.txt" }, undefined, undefined, {} as never),
 		).rejects.toThrow("path escapes runtime workspace");
+		await expect(
+			tool(runtime.tools, "write").execute(
+				"write",
+				{ path: "linked.txt", content: "escaped\n" },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).rejects.toThrow("path escapes runtime workspace");
+		await expect(readFile(join(outside, "secret.txt"), "utf8")).resolves.toBe("private\n");
 	});
 });
