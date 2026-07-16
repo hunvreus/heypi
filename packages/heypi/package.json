@@ -16,7 +16,7 @@
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"bin": {
-		"heypi": "./dist/cli.js"
+		"heypi": "dist/cli.js"
 	},
 	"exports": {
 		".": {
@@ -46,15 +46,19 @@
 	"engines": {
 		"node": ">=22"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-examples.mjs",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "corepack pnpm run build && tsc --noEmit",
 		"test": "vitest --run",
-		"pack:dry": "corepack pnpm run build && npm pack --dry-run",
-		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public",
-		"publish:beta": "corepack pnpm run build && npm publish --access public --tag beta"
+		"pack:dry": "npm pack --dry-run",
+		"publish:dry": "npm publish --dry-run --access public --tag beta",
+		"publish:beta": "npm publish --access public --tag beta",
+		"prepack": "corepack pnpm run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "^0.79.6",

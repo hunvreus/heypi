@@ -59,4 +59,4 @@ guarantee with those releases.
   credential brokering.
 
 [Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.0...HEAD
-[0.3.0-beta.0]: https://github.com/hunvreus/heypi/compare/0.2.0-beta.0...0.3.0-beta.0
+[0.3.0-beta.0]: https://github.com/hunvreus/heypi/releases/tag/0.3.0-beta.0

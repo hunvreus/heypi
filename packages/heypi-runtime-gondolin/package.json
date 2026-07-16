@@ -32,9 +32,10 @@
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest --run",
-		"pack:dry": "corepack pnpm run build && npm pack --dry-run",
-		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public",
-		"publish:beta": "corepack pnpm run build && npm publish --access public --tag beta"
+		"pack:dry": "npm pack --dry-run",
+		"publish:dry": "npm publish --dry-run --access public --tag beta",
+		"publish:beta": "npm publish --access public --tag beta",
+		"prepack": "corepack pnpm run build"
 	},
 	"dependencies": {
 		"@earendil-works/gondolin": "^0.12.0",
