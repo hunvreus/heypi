@@ -9,20 +9,18 @@ approval UI, and small adapter coordination.
 ## Usage
 
 ```ts
-import { createHeypi, host, loadAgent, local } from "@hunvreus/heypi";
+import { host, loadAgent, local, modelFromEnv, runHeypi } from "@hunvreus/heypi";
 
 const agent = loadAgent("./agent", {
-	model,
+	model: modelFromEnv(),
 	runtime: host({ workspace: "./workspace" }),
 });
 
-const app = await createHeypi({
-	agent,
-	adapters: [local()],
-});
-
-await app.start();
+await runHeypi(agent, [local()]);
 ```
+
+`modelFromEnv()` reads `HEYPI_MODEL` in `provider/model` form. Provider credentials follow Pi's
+normal authentication and environment-variable support.
 
 ## Create from a template
 
@@ -45,11 +43,48 @@ published heypi version they support. Inside this monorepo, pnpm links that same
 local workspace package when the semver range matches, so the checked-in files are also the files
 users receive.
 
-See also:
+## CLI setup helpers
 
-- [Creating agents](docs/creating-agents.md)
-- [Creating custom tools](docs/creating-custom-tools.md)
-- [Scheduling](docs/scheduling.md)
+The CLI can validate configured adapters and discover the IDs needed by adapter config without
+starting an agent:
+
+```sh
+heypi check
+
+heypi slack check
+heypi slack channels --query project --private
+heypi slack users --query alice
+heypi slack manifest --mode socket
+heypi slack env-example
+
+heypi discord check
+heypi discord guilds
+heypi discord channels --guild 123456789
+heypi discord invite
+heypi discord env-example
+
+heypi telegram check
+heypi telegram webhook-info
+heypi telegram listen --timeout 20 --force
+heypi telegram env-example
+```
+
+Commands load `.env` and then `.env.local`; exported environment variables take precedence. Use
+`--env-file path` to load a different file and `--json` for machine-readable output. Output and
+errors redact configured tokens, secrets, passwords, webhook secrets, and token-bearing URLs.
+
+These commands only read platform state and print config values or snippets. They do not modify
+source or environment files. `telegram listen` is the exception to passive inspection: it calls
+`getUpdates`, which can consume updates intended for a running adapter, so it requires `--force` and
+refuses to run while a webhook is configured.
+
+## Documentation
+
+- **Getting started:** [Quickstart](docs/getting-started/index.md), [agent files](docs/getting-started/agent-files.md)
+- **Configuration:** [Overview](docs/configuration/index.md), [scheduling](docs/configuration/scheduling.md)
+- **Adapters:** [Overview](docs/adapters/index.md)
+- **Guides:** [Custom tools](docs/guides/custom-tools.md), [custom adapters](docs/guides/custom-adapters.md), [custom runtimes](docs/guides/custom-runtimes.md)
+- **Reference:** [Public entrypoints and events](docs/reference/index.md)
 
 `createHeypi()` accepts an optional `piHost` factory for tests and future runtime providers. The
 factory must return the Pi host contract; heypi still sends chat deltas to Pi instead of running its
@@ -79,8 +114,21 @@ from that bundle; heypi does not expose host source paths to the model. Staging 
 `.heypi`, and `node_modules`.
 
 `skills/` and `extensions/` are copied into the staged Pi bundle for Pi-native discovery. Files in
-`tools/` are loaded as authored Pi extension files; use that folder for local tool modules that need
-to be registered explicitly.
+`tools/` are loaded as authored Pi extension files. `schedules/` contains trusted application code
+and is loaded by heypi without being exposed as a Pi resource.
+
+## Storage
+
+The default state root is `.heypi`. Each adapter ID gets an isolated area containing:
+
+- one writable `/shared` root for deliberate reuse across that adapter's conversations;
+- one workspace per channel, DM, or equivalent chat surface;
+- one Pi session and heypi audit log per independent conversation or thread;
+- conversation, active-user, and adapter-shared memory files.
+
+Slack threads in one channel share its workspace but keep separate Pi sessions. Discord and
+Telegram use the equivalent channel, DM, reply-chain, thread, or topic identifiers. Heypi serializes
+operations that touch the same workspace or shared root without collapsing independent chat queues.
 
 ## Runtime
 
@@ -96,7 +144,7 @@ const agent = loadAgent("./agent", {
 If `workspace` is omitted, heypi creates a clean staged workspace under `.heypi`.
 Host file tools are constrained to the configured workspace. Host bash starts in that workspace, but
 it is not a sandbox: a shell command can still leave the directory unless the operating system
-prevents it.
+prevents it. Unix host execution requires `/bin/bash`; Windows uses Pi's Git Bash discovery.
 
 Docker is wired for Pi core file tools and command execution:
 
@@ -109,6 +157,8 @@ const agent = loadAgent("./agent", {
 With Docker, `read`, `write`, `edit`, `find`, `grep`, `ls`, and `bash` run against a managed
 container with the workspace bind-mounted at `/workspace`. The configured workspace path must be
 mountable by Docker; on Docker Desktop, prefer a project directory over a system temp directory.
+Docker itself does not provide a shell: the selected image does. Heypi invokes `/bin/bash -lc`, so
+custom images must include Bash. The default `node:22-bookworm` image includes it.
 
 Additional runtimes expose the same core tool contract from separate packages:
 
@@ -132,9 +182,12 @@ Available providers:
   execution session, and deletes that session during cleanup. Configure the SDK's RPC transport.
 
 The contract is uniform: a runtime owns all seven Pi core tools and never falls back to host file or
-shell access. Vercel and Cloudflare synchronize files after each bash command so `chat_attach` can
-read generated files. Synchronization preserves unrelated host files; remote deletions are therefore
-not propagated to the host workspace.
+shell access. Vercel and Cloudflare refresh files before each turn and synchronize them after each
+bash command so `chat_attach` can read generated files. Synchronization preserves modes and
+root-confined symlinks, propagates remote deletions, and leaves unrelated host files intact.
+The host, Docker, Gondolin, Vercel, and Cloudflare providers execute Bash commands with Bash;
+`just-bash` uses its in-process Bash-compatible interpreter. Custom Docker and Gondolin images must
+provide the configured shell.
 
 Runtime `env` values are visible to model-driven commands. Do not put credentials there unless
 leakage is acceptable:
@@ -180,7 +233,6 @@ const adapter = slack({
 		dms: false,
 		channels: ["C0123456789"],
 		users: ["U0123456789"],
-		groups: ["S0123456789"],
 		bots: true,
 	},
 });
@@ -188,8 +240,9 @@ const adapter = slack({
 
 `dms` defaults to `true`. `channels` applies only to non-DM destinations; omit it to allow all
 channels or set it to `[]` to allow none. Discord native threads inherit their parent channel's
-permission. Telegram forum topics inherit their group chat's permission. User and group rules are
-applied in addition to the destination rule.
+permission. Telegram forum topics inherit their group chat's permission. User rules are applied in
+addition to the destination rule. The generic `groups` rule applies only to custom adapters that
+populate `message.user.groups`; built-in adapters do not resolve external group memberships.
 
 ## Todo
 
@@ -246,10 +299,20 @@ Inbound Slack, Discord, and Telegram attachments are copied into the active conv
 under `attachments/{messageId}/...` before the model sees the message. The model receives the
 runtime-visible path, not the adapter's transient download URL.
 
+Adapter `attachments` policy can restrict `maxBytes`, `timeoutMs`, `mimeTypes`, and remote `hosts`,
+and configure bounded download `retry`. Built-in adapters validate every redirect against their
+platform file hosts and remove partial files when a batch fails. Telegram's adapter-level
+`timeoutMs` bounds Bot API requests independently from attachment downloads.
+
 ## Audit
 
 heypi stores adapter coordination logs under `.heypi/adapters/*/conversations/*/sessions/*/log.jsonl`.
 These records are for admin/audit surfaces; they are not Pi's model transcript.
+Approval requests and resolutions are stored in this HeyPi log as the canonical authorization ledger.
+Pi session JSONL remains the execution trace; heypi only mirrors reduced, non-authoritative approval
+annotations into Pi for correlation.
+HeyPi does not mirror message routing or turn lifecycle records into Pi; those remain in the HeyPi
+conversation log and are joined to Pi sessions through `heypi.turn`.
 
 ```ts
 import { listAuditConversations, readAuditConversation } from "@hunvreus/heypi";
@@ -267,6 +330,8 @@ the endpoints directly:
 - `POST /admin/jobs/cancel` with `{ "scope": "active" | "queued" | "all", "reason": "..." }`
 - `GET /admin/conversations`
 - `GET /admin/conversations/:key`
+- `GET /admin/pi-sessions/:key`
+- `GET /admin/pi-sessions/:key/:id`
 - `GET /admin/secret`
 - `GET /admin/schedules`
 - `POST /admin/schedules/run` with `{ "id": "reports/weekly" }`
@@ -338,6 +403,12 @@ Telegram forum topics get separate Pi sessions and replies stay in the originati
 Approvals run at the Pi tool-call boundary. heypi renders the approval UI through the active adapter,
 then the Pi tool call either continues, is rejected by a person, or is blocked by policy.
 Approvals are opt-in per tool.
+When an interactive approval is required, heypi writes `approval_requested` before posting the
+adapter UI and writes `approval_resolved` before allowing the tool to continue. If either canonical
+write fails, the tool is blocked. Pi receives `heypi.approval.requested` and
+`heypi.approval.resolved` custom entries with `authoritative: false` and no full tool input.
+These dotted values are Pi custom-entry identifiers, not HeyPi event discriminants; public events,
+conversation records, and logger events use flat snake_case.
 `layout: "message"` renders a compact text list with buttons. `layout: "card"` uses Slack
 attachments and Discord embeds; Telegram keeps text plus inline buttons.
 Adapter-level `admins` and `approvers` decide who can approve. Admins are always accepted as
@@ -370,6 +441,26 @@ Policy predicates receive the attempted tool call and request metadata: `toolNam
 full Pi transcript or chat history. Use approval decisions for side-effect safety, not model
 reasoning.
 
+## Tools
+
+The `tools` map changes Pi tools by name:
+
+```ts
+const agent = loadAgent("./agent", {
+	tools: {
+		bash: { approve: approval.command() },
+		write: false,
+	},
+});
+```
+
+- `false` disables a built-in or discovered tool.
+- `{ approve }` adds an approval policy to that tool.
+- A Pi `ToolDefinition` registers a code-defined tool.
+
+Files under `agent/tools/` remain the preferred home for authored tools. Invalid map entries fail at
+startup instead of being treated as partial tool configuration.
+
 ## Current scope
 
 Included:
@@ -377,7 +468,7 @@ Included:
 - `loadAgent("./agent", options)`
 - clean staging for `instructions.md`, `system.md`, `skills/`, `tools/`, and `extensions/`
   into Pi-native resource names and folders
-- local runtime workspace selection
+- host and Docker runtimes, plus separate Gondolin, just-bash, Vercel, and Cloudflare providers
 - exact-match conversation/user/group/bot allowlists before Pi work is queued
 - thread-aware session keys and reply targets for thread-capable adapters
 - Pi session creation through `@earendil-works/pi-coding-agent`
@@ -396,7 +487,8 @@ Included:
 - `todo` Pi extension for visible task progress
 - built-in `memory` and `memory_search` Pi extension with bounded relevant recall
 - audit helpers for heypi-owned adapter coordination logs
-- read-only admin HTTP audit and live job endpoints
+- admin HTTP audit, live job controls, and schedule endpoints
+- code-owned cron schedules and schedule audit
 
 ## Progress
 
@@ -435,7 +527,7 @@ slack({
 	token,
 	appToken,
 	events: {
-		"tool.started": false,
+		tool_started: false,
 	},
 });
 ```
@@ -443,9 +535,9 @@ slack({
 Custom Slack lifecycle handlers replace the built-in handler for that event. Set an event to `false`
 to disable it.
 
-Stable events are `message.accepted`, `turn.started`, `tool.started`, `todo.changed`,
-`message.completed`, `turn.canceled`, `turn.failed`, `message.queued`, `message.steered`, and
-`message.rejected`. Pi-derived events are normalized before adapters see them.
+Stable events are `message_accepted`, `turn_started`, `tool_started`, `todo_changed`,
+`message_completed`, `turn_canceled`, `turn_failed`, `message_queued`, `message_steered`, and
+`message_rejected`. Pi-derived events are normalized before adapters see them.
 
 ## Busy conversations
 
@@ -464,9 +556,8 @@ slack({
 - `steer` sends the message to Pi's active session through `session.steer()`.
 - `reject` declines the message without creating a turn.
 
-The default responses are adapter events. Override or disable `message.queued`, `message.steered`,
-or `message.rejected` to customize their user-facing behavior.
+The default responses are adapter events. Override or disable `message_queued`, `message_steered`,
+or `message_rejected` to customize their user-facing behavior.
 
-Not included yet:
-
-- richer admin UI and non-local runtime providers
+Not included yet: distributed scheduling, brokered runtime credentials, and a richer operational
+admin UI.

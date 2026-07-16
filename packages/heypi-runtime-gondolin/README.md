@@ -12,3 +12,5 @@ const agent = loadAgent("./agent", {
 ```
 
 Requires Node 23.6+ and QEMU. Runtime `env` values are model-visible and must not contain secrets.
+Commands use `/bin/bash -lc` by default. Gondolin's default root filesystem includes Bash; custom
+images must include it or set `shell` to another Bash-compatible executable.

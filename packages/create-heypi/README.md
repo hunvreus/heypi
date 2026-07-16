@@ -6,4 +6,11 @@ Create a Heypi project from a bundled template:
 pnpm create heypi codex-tag
 ```
 
-This package delegates to the scaffolder shipped by `@hunvreus/heypi`.
+Choose a destination or skip dependency installation:
+
+```sh
+pnpm create heypi codex-tag my-agent --no-install
+```
+
+Run `pnpm dlx @hunvreus/heypi templates` to list templates. This package delegates to the
+scaffolder shipped by `@hunvreus/heypi`.

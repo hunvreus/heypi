@@ -17,5 +17,7 @@ const runtime = cloudflare({
 ```
 
 The caller owns the Durable Object sandbox lifecycle and must export/configure the Cloudflare Sandbox
-binding. Remote deletions are not propagated to the host. Runtime `env` values are model-visible and
-are not secret brokering.
+binding. The mirror refreshes before each turn, preserves modes and root-confined symlinks,
+propagates remote deletions, and leaves unrelated host files intact. Runtime `env` values are
+model-visible and are not secret brokering.
+Commands run with `/bin/bash -lc`; the Cloudflare sandbox image must include Bash.

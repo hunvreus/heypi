@@ -14,6 +14,8 @@ const agent = loadAgent("./agent", {
 });
 ```
 
-Authentication follows the Vercel SDK (`VERCEL_OIDC_TOKEN` or explicit Vercel credentials). Remote
-deletions are not propagated to the host. Runtime `env` values are model-visible and are not secret
-brokering.
+Authentication follows the Vercel SDK (`VERCEL_OIDC_TOKEN` or explicit Vercel credentials). The
+mirror refreshes before each turn, preserves modes and root-confined symlinks, propagates remote
+deletions, and leaves unrelated host files intact. Runtime `env` values are model-visible and are not
+secret brokering.
+Commands run with `/bin/bash -lc`; the selected Vercel runtime must include Bash.

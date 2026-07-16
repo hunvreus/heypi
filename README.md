@@ -31,18 +31,19 @@ corepack pnpm run build
 ## Quick start
 
 ```ts
-import { createHeypi, loadAgent, local } from "@hunvreus/heypi";
+import { host, loadAgent, local, modelFromEnv, runHeypi } from "@hunvreus/heypi";
 
 const agent = loadAgent("./agent", {
-	model,
+	model: modelFromEnv(),
+	runtime: host({ workspace: "./workspace" }),
 });
 
-const app = await createHeypi({
-	agent,
-	adapters: [local()],
-});
-await app.start();
+await runHeypi(agent, [local()]);
 ```
+
+Set `HEYPI_MODEL` to a Pi model ID such as `openai/gpt-5.4-mini` and configure that provider's
+credentials. The local adapter is intended for embedding and tests; use Slack, Discord, Telegram,
+or webhook for network ingress.
 
 See [packages/heypi/README.md](packages/heypi/README.md) for the API and runtime selection guide.
 

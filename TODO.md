@@ -1,5 +1,30 @@
 # TODO
 
+## CLI and setup
+
+- Consider an interactive `heypi setup` / `heypi setup <adapter>` later.
+  - Use it for selecting channels/users/roles, Telegram pairing, and generating config snippets.
+  - Keep setup TUI separate from the runtime admin panel.
+  - If setup writes `.env`, create it with private file permissions and do not echo secret values
+    back to the terminal.
+- Keep admin auth simple.
+  - Loopback admin can run without a token.
+  - Non-loopback admin must require `admin.token` unless the user explicitly disables auth in code.
+  - Do not print admin tokens in URLs; admin auth should stay header-based.
+  - Do not port the old admin login-link/session machinery unless token/proxy auth proves too
+    painful.
+- Deprioritize old CLI surfaces that do not map cleanly to the Pi-native JSONL architecture.
+  - Do not directly port old DB, jobs, threads, events, eval, or approval-bypass commands.
+  - Build admin web inspection for conversation JSONL, approval records, and related Pi session JSONL
+    before adding a terminal audit CLI.
+- Revisit `heypi dev` / `heypi start` only when multiple real app templates need a shared startup
+  contract.
+  - Current templates can keep local `pnpm dev` scripts.
+  - A future shared command should centralize env loading, TSX/watch, and startup hints.
+- Do not add per-channel `trigger: "mention" | "message"` until there is a concrete need.
+  - Current default remains DMs plus public mentions, with thread follow-ups.
+  - Every-message mode can be noisy and expensive in busy channels.
+
 ## Slack activity
 
 - Consider a Slack-specific status formatter if fixed `Thinking...` and `Working...` labels prove
@@ -13,34 +38,16 @@
     status characters, active timestamps, final reconciliation, and Pi-session replay.
   - Add a stale-update reminder only if real usage still shows several meaningful tool calls without
     a todo update after the stricter tool contract.
-  - References:
-    - `/Users/hunvreus/Workspace/_sandbox/rpiv-mono/packages/rpiv-todo`
-    - `/Users/hunvreus/Workspace/_sandbox/pi-tasks`
 - Continue hardening the built-in memory Pi extension only where real usage requires it.
-  - Current implementation owns curated add/replace/remove/search, adapter and conversation scopes,
-    user-profile records, source metadata, bounded context recall, and credential rejection.
+  - Current implementation owns curated add/replace/remove/search, conversation, active-user, and
+    adapter-shared destinations, source metadata, bounded context recall, and credential rejection.
   - Writes are immediately durable, so there is no buffered state to flush during compaction or
     shutdown.
   - Consider semantic retrieval or background extraction only after lexical recall and explicit
     writes prove insufficient.
-  - References:
-    - `/Users/hunvreus/Workspace/_sandbox/pi-hermes-memory`
-    - `/Users/hunvreus/Workspace/_sandbox/remnic/packages/plugin-pi`
-- Completed reference pass:
-  - `/Users/hunvreus/Workspace/_sandbox/rpiv-mono/packages/rpiv-todo`
-  - `/Users/hunvreus/Workspace/_sandbox/pi-tasks`
-  - `/Users/hunvreus/Workspace/_sandbox/pi-hermes-memory`
-  - `/Users/hunvreus/Workspace/_sandbox/remnic/packages/plugin-pi`
 
 ## Runtime providers
 
-- Harden runtime-backed Pi core tool operations for `bash`, `read`, `write`, `edit`, `find`,
-  `grep`, and `ls`.
-  - Host file tools are workspace-constrained.
-  - Host bash starts in the workspace but is not sandboxed.
-  - Docker owns all exposed core tools without host fallback.
-- Treat runtime `env` as model-visible and unsafe for secrets.
-  - Document env as configuration only, not credential isolation.
 - Add secret-safe runtime capabilities after provider execution exists.
 	- Vercel Sandbox: map host-scoped secret brokers to native firewall credential brokering.
 	- Cloudflare Sandbox: map host-scoped secret brokers to the outbound Worker/proxy model.
@@ -74,7 +81,6 @@
 
 - Investigate a Hermes-style skill creation workflow as an optional capability, likely starting in an
   example rather than core.
-  - Reference: `/Users/hunvreus/Workspace/_sandbox/hermes-agent/tools/skill_manager_tool.py`
   - Hermes supports agent-managed `create`, `edit`, `patch`, `delete`, supporting files, and security
     scanning for skills written under `~/.hermes/skills/`.
   - Decide whether heypi should provide this as a bundled example skill/tool, an optional package, or
@@ -87,8 +93,8 @@
   - Slack, Discord, and Telegram upload local files when possible.
 - Inbound Slack, Discord, and Telegram attachments are materialized into the conversation workspace
   before the turn is queued.
-  - Still missing: configurable file-size and media-type policies, allowed-host restrictions for
-    remote files, richer previews, and adapter-specific retry/rate-limit handling.
+  - File-size, media-type, allowed-host, timeout, and retry policies are configurable per adapter.
+  - Still missing: richer previews and adapter-specific upload failure UX.
 
 ## Admin and audit
 
@@ -110,7 +116,7 @@
 ## Scheduling
 
 - Cron schedules are implemented as code-owned modules; see
-  [`packages/heypi/docs/scheduling.md`](packages/heypi/docs/scheduling.md).
+  [`packages/heypi/docs/configuration/scheduling.md`](packages/heypi/docs/configuration/scheduling.md).
 - Add intervals, one-shot jobs, pause/resume, and runtime-managed schedules only when a concrete use
   case needs them.
 - Keep heartbeats as ordinary cron schedules. Do not add a second scheduler or fan out across every
