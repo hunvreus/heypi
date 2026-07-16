@@ -1,3 +1,7 @@
+---
+description: Work with GitHub repositories, issues, pull requests, checks, branches, worktrees, commits, and pushes.
+---
+
 # GitHub work
 
 Use `git` for repository operations and `gh` for GitHub issues, pull requests, checks, and HTTPS

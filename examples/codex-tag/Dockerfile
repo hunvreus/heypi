@@ -11,5 +11,7 @@ RUN apt-get update \
 	&& apt-get update \
 	&& apt-get install -y --no-install-recommends gh \
 	&& git config --system credential.helper '!gh auth git-credential' \
+	&& git config --system user.name 'Codex Tag' \
+	&& git config --system user.email 'codex@example.com' \
 	&& corepack enable \
 	&& rm -rf /var/lib/apt/lists/*

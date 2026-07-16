@@ -44,7 +44,9 @@ not secret isolation. Production GitHub access should move to trusted-side GitHu
 runtime-specific credential broker.
 
 The bundled image configures Git's HTTPS credential helper through `gh`, so both `git push` and
-GitHub CLI commands use `GITHUB_TOKEN` without embedding it in repository remotes.
+GitHub CLI commands use `GITHUB_TOKEN` without embedding it in repository remotes. It also sets the
+default Git commit identity to `Codex Tag <codex@example.com>` so fresh repository commits work
+without per-repo configuration.
 
 ## Useful tests
 
