@@ -33,6 +33,8 @@ guarantee with those releases.
 
 - Changed the Codex Tag example to steer follow-up Slack messages into the active turn instead of
   queueing them.
+- Changed Codex Tag PR tasks to prefer local and GitHub CLI inspection, use dedicated worktrees,
+  and complete explicit PR requests through push and pull-request creation.
 - Replaced the previous database-centered runtime with small JSONL coordination logs alongside Pi's
   native session transcripts.
 - Moved adapters into `createHeypi()` and agent behavior into code-owned `loadAgent()` options and
@@ -41,6 +43,12 @@ guarantee with those releases.
 - Replaced generic progress messages with Slack native thread status and Discord/Telegram typing.
 - Standardized model-visible runtime paths and Bash execution across built-in runtime providers.
 - Made Pi responsible for context-window compaction; older chat context is fetched explicitly.
+
+### Fixed
+
+- Cleared Slack native activity status explicitly when turns complete, fail, or are canceled.
+- Disabled Pi's automatic ancestor context-file discovery so host project instructions and paths
+  are not exposed to runtime sessions.
 
 ### Removed
 

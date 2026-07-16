@@ -13,14 +13,20 @@ Repo handling:
 - Use `/workspace` as the working root.
 - Reuse an existing checkout when it matches the requested repo.
 - Clone missing repos under `/workspace/{repo}`.
-- If code changes are needed, create a branch before editing.
-- Use a worktree for independent/concurrent work on the same repo.
+- Inspect repository files locally. Use `gh issue view` or `gh pr view` for GitHub context; use web
+  search only when the checkout and GitHub CLI cannot provide the needed information.
+- For pull-request work, keep the canonical checkout as the base and create a dedicated branch and
+  worktree before editing.
 - Do not overwrite unrelated dirty changes.
 - Remember durable repo location/default-branch facts when useful.
 
 For PR work:
 
-- Inspect the issue or PR first.
+- Inspect the issue or PR before editing.
+- Treat requests to create, open, post, submit, or prepare a PR as requests to complete the full
+  workflow: branch and worktree, edit, validate, commit, push, and `gh pr create`.
+- Stop at a local commit only when the user explicitly asks for local or PR-ready changes without
+  pushing, or when authentication or permissions block publication.
 - Commit only relevant files.
-- Push and open a PR only when requested.
-- Include validation results in the final message.
+- Verify the pushed branch and include the pull-request URL and validation results in the final
+  message.
