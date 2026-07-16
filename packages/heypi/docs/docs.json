@@ -1,0 +1,88 @@
+{
+	"title": "heypi",
+	"description": "Pi-native chat adapters for team agents.",
+	"source": {
+		"repo": "https://github.com/hunvreus/heypi",
+		"branch": "main",
+		"base": "packages/heypi"
+	},
+	"groups": [
+		{
+			"title": "Getting started",
+			"pages": [
+				{
+					"title": "Introduction",
+					"slug": "",
+					"file": "index.md",
+					"icon": "info"
+				},
+				{
+					"title": "Quickstart",
+					"slug": "getting-started",
+					"file": "getting-started/index.md",
+					"icon": "zap"
+				},
+				{
+					"title": "Agent files",
+					"slug": "getting-started/agent-files",
+					"file": "getting-started/agent-files.md"
+				}
+			]
+		},
+		{
+			"title": "Configuration",
+			"pages": [
+				{
+					"title": "Overview",
+					"slug": "configuration",
+					"file": "configuration/index.md"
+				},
+				{
+					"title": "Scheduling",
+					"slug": "configuration/scheduling",
+					"file": "configuration/scheduling.md"
+				}
+			]
+		},
+		{
+			"title": "Adapters",
+			"pages": [
+				{
+					"title": "Overview",
+					"slug": "adapters",
+					"file": "adapters/index.md"
+				}
+			]
+		},
+		{
+			"title": "Guides",
+			"pages": [
+				{
+					"title": "Custom tools",
+					"slug": "guides/custom-tools",
+					"file": "guides/custom-tools.md"
+				},
+				{
+					"title": "Custom adapters",
+					"slug": "guides/custom-adapters",
+					"file": "guides/custom-adapters.md"
+				},
+				{
+					"title": "Custom runtimes",
+					"slug": "guides/custom-runtimes",
+					"file": "guides/custom-runtimes.md"
+				}
+			]
+		},
+		{
+			"title": "Reference",
+			"pages": [
+				{
+					"title": "Entrypoints and events",
+					"slug": "reference",
+					"file": "reference/index.md"
+				}
+			]
+		}
+	]
+}

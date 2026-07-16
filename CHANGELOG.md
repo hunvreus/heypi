@@ -46,6 +46,7 @@ guarantee with those releases.
 
 ### Fixed
 
+- Restored the hosted documentation manifest and navigation for the rewritten documentation set.
 - Cleared Slack native activity status explicitly when turns complete, fail, or are canceled.
 - Disabled Pi's automatic ancestor context-file discovery so host project instructions and paths
   are not exposed to runtime sessions.
