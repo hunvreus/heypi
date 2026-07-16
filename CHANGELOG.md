@@ -1,113 +1,62 @@
 # Changelog
 
+This changelog starts with the Pi-native rewrite. Releases through `0.2.0-beta.1` describe the
+previous architecture; `0.3.0-beta.0` has no configuration, persistence, or API compatibility
+guarantee with those releases.
+
 ## [Unreleased]
+
+## [0.3.0-beta.0] - 2026-07-16
 
 ### Added
 
-- Added separate Gondolin, just-bash, Vercel Sandbox, and Cloudflare Sandbox runtime packages. All
-  seven Pi core tools run through the selected provider without host fallback; managed providers
-  synchronize generated files back to the durable host workspace.
-- Added `heypi create` and `pnpm create heypi` with bundled, standalone examples as first-party
-  project templates.
-- Added code-owned cron schedules discovered from `agent/schedules`, with isolated Pi prompt runs,
-  trusted conversation dispatch, persistent occurrence claims and audit records, restart misfire
-  handling, overlap protection, bounded run history, and application/admin manual-run controls.
+- Added a Pi-native agent host where Pi owns model execution, sessions, compaction, tools,
+  extensions, and transcripts.
+- Added Slack, Discord, Telegram, webhook, and local adapters with normalized access rules,
+  persistent DMs, public root conversations, native threads, and Discord/Telegram reply chains.
+- Added tool-scoped approval policies, native approval layouts, durable authorization records,
+  adapter-specific approvers, cancellation, timeouts, and restart reconciliation.
+- Added host and Docker runtimes in the core package plus separate Gondolin, just-bash, Vercel
+  Sandbox, and Cloudflare Sandbox providers.
+- Added runtime-backed `bash`, `read`, `write`, `edit`, `find`, `grep`, and `ls` tools with
+  `/workspace` and optional `/shared` roots.
+- Added inbound attachment staging, outbound `chat_attach`, configurable attachment policies, and
+  encrypted secret ingress that stays outside model-visible workspaces.
+- Added explicit `chat_history`, todo, and curated memory tools.
+- Added code-owned cron schedules with durable claims, restart handling, background Pi runs,
+  conversation dispatch, run history, and admin controls.
+- Added a local admin and audit surface for active jobs, cancellation, conversations, approvals,
+  Pi session records, schedules, and encrypted secret entry.
+- Added `heypi create`, `pnpm create heypi`, adapter inspection commands, and the Codex Tag example.
 
 ### Changed
 
-- Consolidated host, Docker, and external runtime tool wiring behind one path-confined filesystem
-  contract, and deduplicated Discord/Telegram typing lifecycle handling.
-- Made DMs persistent conversations while isolating each public root mention into its own Pi
-  session. Slack threads continue natively; Discord and Telegram bot replies now form persisted
-  reply-chain conversations that cover chunked outputs, survive restarts, and allow cross-user
-  continuation. Native containers share their parent-channel workspace and memory, while independent
-  sessions using that workspace remain serialized for safe execution.
-- Replaced the ambiguous adapter `allow.conversations` option with `allow.dms` and
-  `allow.channels`; Discord threads and Telegram forum topics inherit access from their parent
-  channel or group.
-- Aligned the Codex Tag template with current heypi defaults for state, workspaces, adapters, admin,
-  approvals, and lifecycle handling.
-- Removed the redundant adapter-account allowlist and renamed persisted chat audit storage from
-  channels to conversations.
-- Rebuilt memory as a curated Pi extension with conversation, active-user, and shared destinations,
-  per-user profile isolation, explicit add/replace/remove/search tools, bounded relevant context
-  recall, source metadata, and optional disablement through `memory: false`.
-- Added a startup security warning when an agent omits `runtime` and therefore uses host execution.
-- Configured the Codex Tag Docker image to authenticate Git HTTPS operations through GitHub CLI.
-- Added configurable per-adapter busy handling with durable queueing, native Pi steering, rejection,
-  and adapter event hooks for each outcome.
-- Replaced Slack's editable `Thinking...` / `Working...` messages with native
-  `assistant.threads.setStatus` activity, including approval pause/resume and restoration after todo
-  updates; terminal replies clear status without a separate API call, and the obsolete activity slot
-  and adapter message-deletion API were removed.
-- Added immediate Slack app-mention reaction acknowledgements before attachment staging, configurable as
-  `reaction: false | string` and defaulting to `eyes`.
-- Replaced the shared adapter `progress` capability with behavior-specific Slack `status` and
-  Discord/Telegram `typing` options; todo rendering is controlled by adapter events.
-- Restarted heypi as a clean Pi-native package.
-- Added the first clean vertical slice: agent folder loading, resource staging, Pi session wrapper,
-  local adapter, channel turn coordination, and approval rendering/extension boundary.
-- Added a minimal webhook adapter with HTTP ingress tests.
-- Added HMAC-signed webhook ingress support and require a webhook secret for non-loopback hosts.
-- Removed passive context selection config; chat history is now explicit through the `chat_history`
-  Pi tool.
-- Added agent and custom-tool authoring guides.
-- Added a minimal Slack Socket Mode adapter shell with message normalization, replies, reactions,
-  and approval buttons.
-- Added a minimal Discord adapter shell with mention/DM normalization and replies.
-- Added a minimal Telegram adapter shell with polling, mention/DM normalization, and replies.
-- Added explicit `chat_history` Pi tool and adapter-owned progress updates from Pi events.
-- Added Discord and Telegram approval button payloads and callback handling.
-- Added programmable, tool-scoped approval policies with `never`, `always`, `once`, `when`, and
-  `command` helpers.
-- Clarified staged resource loading: `skills/` and `extensions/` use Pi discovery, while `tools/`
-  is treated as an extension-file alias.
-- Made local adapter test/embedding messages trigger by default.
-- Documented the approval policy context boundary.
-- Made approvals opt-in per tool instead of installing a global default approval policy.
-- Added an injectable Pi host boundary and app-level chat routing test.
-- Added real Slack and Discord card approval layouts.
-- Avoid starting Pi sessions for non-triggering adapter messages.
-- Avoid sending blank final adapter replies when Pi produces no assistant text.
-- Stage `system.md` and `instructions.md` into Pi-native prompt files instead of manually appending
-  them in the heypi runtime wrapper.
-- Exclude `.heypi` state from staged agent resources so session/channel data is not exposed to Pi as
-  authored context.
-- Removed `config.json` support; agent configuration now lives only in code via `loadAgent()`.
-- Report Pi startup failures back to the source chat thread and mark the queued turn failed.
-- Restore persisted queued turns after restart so accepted work is not lost before Pi runs it.
-- Serialize first-time channel creation so concurrent messages share one channel queue and Pi session.
-- Export public config and approval integration types from the package entrypoint.
-- Added explicit memory tools backed by bounded Markdown storage.
-- Added exact-match DM/channel/user/group/bot access rules before Pi work is queued.
-- Added Discord and Telegram typing acknowledgements for accepted messages.
-- Added normalized native thread and topic ids for adapter delivery targets.
-- Removed heypi-owned `context.maxMessages` and `context.maxChars`; `delta` history now sends the raw
-  message delta and leaves compaction to Pi.
-- Removed the model-callable `chat_reply` progress tool.
-- Changed adapter-owned progress to use platform-native activity driven by adapter events.
-- Reworked the built-in `todo` extension around full-list updates, strict task transitions,
-  automatic task advancement, Pi-session replay, final reconciliation, active timestamps, and
-  honest terminal states; agents can disable it with `todo: false`.
-- Captured the Pi-native todo and memory extension direction with references to the reviewed Pi
-  extension examples.
-- Hardened adapter normalization so Slack system/edit events and empty messages cannot trigger Pi
-  turns, while Telegram now detects self messages by bot id and uses forum topic ids for replies.
-- Moved adapters out of `loadAgent()` and into `createHeypi()`, and moved allow/activity/approval
-  rendering to adapter config.
-- Replaced global approval config with tool-scoped approval policies under `tools`.
-- Renamed local runtime config from `workspaceDir` to `workspace`.
-- Removed public global context/progress/todo/memory config objects; history lookup is explicit via
-  `chat_history`, while todo and memory are built-in Pi tools for now.
-- Added runtime-backed Pi core tools for host and Docker execution.
-- Documented Gondolin, just-bash, Vercel Sandbox, and Cloudflare Sandbox as separate runtime package
-  work.
-- Documented runtime `env` as model-visible configuration rather than secret isolation.
-- Documented the Codex Tag GitHub PR demo path for host runtime with `gh`/`GITHUB_TOKEN`, including
-  the secret-leakage caveat.
-- Added adapter event hooks for turn/tool/todo/final/error progress, live job inspection, queued and
-  active job cancellation, `/admin/jobs`, and adapter-scoped admins/approvers with approval timeouts.
-- Added long-running native typing refresh for Discord and Telegram while a Pi turn is active.
-- Added a minimal local admin dashboard with live jobs, cancellation controls, and audit channel links.
-- Added encrypted secret ingress through `chat_request_secret`, `/admin/secret`, browser-side
-  encryption, chat paste interception, and trusted encrypted-at-rest storage.
+- Replaced the previous database-centered runtime with small JSONL coordination logs alongside Pi's
+  native session transcripts.
+- Moved adapters into `createHeypi()` and agent behavior into code-owned `loadAgent()` options and
+  staged Pi resources.
+- Made tool approvals opt-in and policy-driven instead of globally configured.
+- Replaced generic progress messages with Slack native thread status and Discord/Telegram typing.
+- Standardized model-visible runtime paths and Bash execution across built-in runtime providers.
+- Made Pi responsible for context-window compaction; older chat context is fetched explicitly.
+
+### Removed
+
+- Removed compatibility with the previous config file, database schema, CLI, admin application,
+  runtime packages, and persistence layout.
+- Removed the generic progress API, passive chat-context injection, and model-callable progress
+  reply tool.
+- Removed legacy examples and migration shims that did not fit the Pi-native architecture.
+
+### Security
+
+- Constrained runtime file tools and remote mirrors to declared roots, including symlink checks.
+- Added bounded attachment downloads, host/MIME policies, webhook signatures, and non-loopback admin
+  authentication requirements.
+- Added startup warnings for unrestricted host execution and approval policies without configured
+  approvers.
+- Kept runtime environment values explicitly model-visible and reserved trusted-side boundaries for
+  credential brokering.
+
+[Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.0...HEAD
+[0.3.0-beta.0]: https://github.com/hunvreus/heypi/compare/0.2.0-beta.0...0.3.0-beta.0

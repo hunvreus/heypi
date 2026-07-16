@@ -11,10 +11,11 @@
 		"pack:dry:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run pack:dry",
 		"publish:dry": "corepack pnpm --filter @hunvreus/heypi run publish:dry",
 		"publish:dry:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:dry",
+		"publish:beta:packages": "corepack pnpm -r --workspace-concurrency=1 --filter \"./packages/*\" run publish:beta",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
 		"typecheck": "corepack pnpm -r --filter \"./packages/*\" run typecheck",
-		"test": "corepack pnpm -r --filter \"./packages/*\" run test"
+		"test": "corepack pnpm --filter @hunvreus/heypi run build && corepack pnpm -r --filter \"./packages/*\" run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

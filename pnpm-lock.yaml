@@ -24,7 +24,7 @@ importers:
   examples/codex-tag:
     dependencies:
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../../packages/heypi
     devDependencies:
       '@types/node':
@@ -40,7 +40,7 @@ importers:
   packages/create-heypi:
     dependencies:
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../heypi
     devDependencies:
       '@types/node':
@@ -84,7 +84,7 @@ importers:
         specifier: ^0.12.3
         version: 0.12.3
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../heypi
     devDependencies:
       '@types/node':
@@ -103,7 +103,7 @@ importers:
         specifier: ^0.12.0
         version: 0.12.0
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../heypi
     devDependencies:
       '@types/node':
@@ -119,7 +119,7 @@ importers:
   packages/heypi-runtime-just-bash:
     dependencies:
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../heypi
       just-bash:
         specifier: ^3.1.0
@@ -138,7 +138,7 @@ importers:
   packages/heypi-runtime-vercel:
     dependencies:
       '@hunvreus/heypi':
-        specifier: ^0.1.0
+        specifier: ^0.3.0-beta.0
         version: link:../heypi
       '@vercel/sandbox':
         specifier: 2.6.0

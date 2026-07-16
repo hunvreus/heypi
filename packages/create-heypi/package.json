@@ -1,6 +1,6 @@
 {
 	"name": "create-heypi",
-	"version": "0.1.0",
+	"version": "0.3.0-beta.0",
 	"description": "Create a Heypi project from a bundled template.",
 	"license": "MIT",
 	"type": "module",
@@ -27,10 +27,11 @@
 		"typecheck": "tsc --noEmit",
 		"pack:dry": "corepack pnpm run build && npm pack --dry-run",
 		"publish:dry": "corepack pnpm run build && npm publish --dry-run --access public",
+		"publish:beta": "corepack pnpm run build && npm publish --access public --tag beta",
 		"prepack": "corepack pnpm run build"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "^0.1.0"
+		"@hunvreus/heypi": "^0.3.0-beta.0"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.1",
