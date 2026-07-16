@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { listAuditConversations, readAuditConversationKey } from "./audit.js";
+import { listAuditConversations, listAuditPiSessions, readAuditConversationKey, readAuditPiSession } from "./audit.js";
 import type { ChatJob } from "./events.js";
 import type { ScheduleRun } from "./schedule-store.js";
 import type { ScheduleInfo } from "./scheduler.js";
@@ -72,6 +72,22 @@ function conversationKey(pathname: string, base: string): string | undefined {
 		return undefined;
 	}
 	return /^[a-zA-Z0-9_.:/-]+$/.test(key) ? key : undefined;
+}
+
+function piSessionKey(pathname: string, base: string): { key: string; id?: string } | undefined {
+	const prefix = joinUrl(base, "/pi-sessions/");
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length < 1 || !parts[0]) return undefined;
+	try {
+		const key = decodeURIComponent(parts[0]);
+		const id = parts[1] ? decodeURIComponent(parts.slice(1).join("/")) : undefined;
+		if (!/^[a-zA-Z0-9_.:/-]+$/.test(key)) return undefined;
+		if (id !== undefined && !/^[a-zA-Z0-9_.:/-]+$/.test(id)) return undefined;
+		return { key, id };
+	} catch {
+		return undefined;
+	}
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -162,7 +178,8 @@ function adminHtml(
 		conversations
 			.map((conversation) => {
 				const href = joinUrl(path, `/conversations/${encodeURIComponent(conversation)}`);
-				return `<li><a href="${href}">${escapeHtml(conversation)}</a></li>`;
+				const pi = joinUrl(path, `/pi-sessions/${encodeURIComponent(conversation)}`);
+				return `<li><a href="${href}">${escapeHtml(conversation)}</a> · <a href="${pi}">Pi sessions</a></li>`;
 			})
 			.join("") || "<li>No conversations</li>";
 	const scheduleRows =
@@ -322,6 +339,7 @@ export function createAdmin(
 								schedules: config.schedules ? joinUrl(path, "/schedules") : undefined,
 								runSchedule: config.schedules ? joinUrl(path, "/schedules/run") : undefined,
 								conversations: joinUrl(path, "/conversations"),
+								piSessions: joinUrl(path, "/pi-sessions/{conversation}"),
 								secret: config.secret ? joinUrl(path, "/secret") : undefined,
 							},
 						});
@@ -334,6 +352,28 @@ export function createAdmin(
 					if (url.pathname === joinUrl(path, "/conversations")) {
 						const conversations = await listAuditConversations({ stateDir: config.stateDir });
 						return sendJson(response, 200, { conversations: conversations.map(({ key }) => key) });
+					}
+					const piSession = piSessionKey(url.pathname, path);
+					if (piSession) {
+						if (piSession.id === undefined) {
+							const sessions = await listAuditPiSessions({ stateDir: config.stateDir }, piSession.key);
+							if (!sessions) return sendJson(response, 404, { error: "not_found" });
+							return sendJson(response, 200, {
+								key: piSession.key,
+								sessions: sessions.map((session) => ({
+									id: session.id,
+									url: joinUrl(
+										path,
+										`/pi-sessions/${encodeURIComponent(piSession.key)}/${encodeURIComponent(session.id)}`,
+									),
+								})),
+							});
+						}
+						const text = await readAuditPiSession({ stateDir: config.stateDir }, piSession.key, piSession.id);
+						if (text === undefined) return sendJson(response, 404, { error: "not_found" });
+						response.writeHead(200, { "content-type": "application/jsonl; charset=utf-8" });
+						response.end(text);
+						return;
 					}
 					const key = conversationKey(url.pathname, path);
 					if (key) {

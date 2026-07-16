@@ -154,7 +154,7 @@ function webhookMessage(input: unknown, adapterId: string): ChatMessage {
 	return {
 		id: typeof record.id === "string" ? record.id : `webhook-${Date.now()}`,
 		adapter: "webhook",
-		adapterId: typeof record.adapterId === "string" ? record.adapterId : adapterId,
+		adapterId,
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
 		...(typeof record.channel === "string" ? { channel: record.channel } : {}),
 		...(typeof record.session === "string" ? { session: record.session } : {}),
@@ -240,7 +240,7 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 				server?.once("error", reject);
 				server?.listen(config.port, host, resolve);
 			});
-			context.logger.info("adapter.webhook.start", { url: this.url() });
+			context.logger.info("adapter_webhook_started", { url: this.url() });
 		},
 		async stop() {
 			if (!server) return;

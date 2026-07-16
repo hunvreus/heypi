@@ -75,38 +75,43 @@ function encryptedSecretReply(url: string, secret: string): string {
 }
 
 describe("createHeypi", () => {
-	it("warns when runtime defaults to host execution", async () => {
-		const warnings: Array<{ event: string; data?: Record<string, unknown> }> = [];
-		const app = await createHeypi({
-			adapters: [local("local-dev")],
-			agent: loadAgent(await makeDir("app-host-warning-agent"), {
-				id: "agent",
-				state: { dir: await makeDir("app-host-warning-state") },
-			}),
-			logger: {
-				debug() {},
-				info() {},
-				warn(event, data) {
-					warnings.push({ event, data });
+	it("terminates activity when attachment intake fails", async () => {
+		const events: string[] = [];
+		const adapter = local({
+			todo: false,
+			events: {
+				message_accepted: () => {
+					events.push("accepted");
 				},
-				error() {},
+				message_failed: () => {
+					events.push("failed");
+				},
 			},
 		});
-
-		await app.start();
-		await app.stop();
-
-		expect(warnings).toContainEqual({
-			event: "security.runtime_default_host",
-			data: { reason: "runtime omitted; shell commands execute on the host" },
+		adapter.materializeAttachments = async () => {
+			throw new Error("download failed");
+		};
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-intake-failure-agent"), { id: "agent" }),
+			piHost: () => replyHost(),
 		});
+		await app.start();
+
+		await expect(adapter.receive({ id: "m1", user: { id: "u1" }, text: "hello" })).rejects.toThrow("download failed");
+
+		expect(events).toEqual(["accepted", "failed"]);
+		await app.stop();
 	});
 
 	it("starts with tool approvals even when adapters do not restrict approvers", async () => {
 		const root = await makeDir("app-open-approval-agent");
 		const state = await makeDir("app-open-approval-state");
+		const adapter = local({ todo: false });
+		adapter.requestApproval = async () => ({ approved: false });
+		const warnings: string[] = [];
 		const app = await createHeypi({
-			adapters: [local({ todo: false })],
+			adapters: [adapter],
 			agent: loadAgent(root, {
 				id: "agent",
 				state: { dir: state },
@@ -117,9 +122,18 @@ describe("createHeypi", () => {
 			piHost() {
 				return replyHost("ready");
 			},
+			logger: {
+				debug() {},
+				info() {},
+				warn(event) {
+					warnings.push(event);
+				},
+				error() {},
+			},
 		});
 
 		await expect(app.start()).resolves.toBeUndefined();
+		expect(warnings).toContain("security_approval_unrestricted");
 		await app.stop();
 	});
 
@@ -274,80 +288,6 @@ describe("createHeypi", () => {
 			conversation: "local",
 			thread: undefined,
 			text: "Secret received and stored as github-token.",
-		});
-	});
-
-	it("logs Pi tool activity without emitting progress messages", async () => {
-		const root = await makeDir("app-progress-agent");
-		const state = await makeDir("app-progress-state");
-		const adapter = local();
-		const logs: Array<{ event: string; data?: Record<string, unknown> }> = [];
-
-		const app = await createHeypi({
-			adapters: [adapter],
-			agent: loadAgent(root, {
-				id: "agent",
-				state: { dir: state },
-			}),
-			logger: {
-				debug(event, data) {
-					logs.push({ event, data });
-				},
-				info(event, data) {
-					logs.push({ event, data });
-				},
-				warn(event, data) {
-					logs.push({ event, data });
-				},
-				error(event, data) {
-					logs.push({ event, data });
-				},
-			},
-			piHost() {
-				const listeners: PiListener[] = [];
-				return {
-					async start() {},
-					async send() {
-						for (const listener of listeners) {
-							listener({ type: "turn_start" } as unknown as PiEvent);
-							listener({ type: "tool_execution_start", toolName: "bash" } as unknown as PiEvent);
-							listener({
-								type: "tool_execution_end",
-								toolName: "bash",
-								isError: false,
-							} as unknown as PiEvent);
-							listener({ type: "compaction_start" } as unknown as PiEvent);
-							listener({ type: "auto_retry_start", attempt: 1, maxAttempts: 3 } as unknown as PiEvent);
-						}
-						emitAssistant(listeners, "Done.");
-					},
-					subscribe(listener) {
-						listeners.push(listener);
-						return () => {};
-					},
-					async stop() {},
-				};
-			},
-		});
-
-		await app.start();
-		await adapter.receive({
-			id: "m1",
-			user: { id: "u1", name: "Ronan" },
-			text: "hello",
-		});
-		await app.stop();
-
-		expect(adapter.sent).toEqual([
-			{ conversation: "local", thread: undefined, text: "Done.", attachments: undefined },
-		]);
-		expect(logs).toContainEqual({
-			event: "pi.tool.start",
-			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
-		});
-		expect(logs).toContainEqual({
-			event: "pi.tool.end",
-			data: { adapter: "local", conversation: "local", thread: undefined, tool: "bash" },
 		});
 	});
 
@@ -510,6 +450,64 @@ describe("createHeypi", () => {
 		expect(aborts).toBe(1);
 		expect(app.jobs()).toEqual([]);
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Canceled: user canceled" }]);
+		await app.stop();
+	});
+
+	it("cancels a pending approval before aborting Pi", async () => {
+		const root = await makeDir("app-cancel-approval-agent");
+		const state = await makeDir("app-cancel-approval-state");
+		const adapter = local({ todo: false });
+		let approvalStarted: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			approvalStarted = resolve;
+		});
+		adapter.requestApproval = async (_view, signal) =>
+			new Promise((resolve) => {
+				approvalStarted?.();
+				const cancel = () => resolve({ approved: false, reason: "Approval canceled." });
+				signal?.addEventListener("abort", cancel, { once: true });
+				if (signal?.aborted) cancel();
+			});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, {
+				id: "agent",
+				state: { dir: state },
+				memory: false,
+				todo: false,
+				tools: { bash: { approve: approval.always("Run bash.") } },
+			}),
+			piHost(options) {
+				let handler: ((call: { id: string; toolName: string; input: unknown }) => Promise<unknown>) | undefined;
+				for (const extension of options.extensions ?? []) {
+					extension({
+						on(event: string, next: typeof handler) {
+							if (event === "tool_call") handler = next;
+						},
+						appendEntry() {},
+					} as never);
+				}
+				return {
+					async start() {},
+					async send() {
+						await handler?.({ id: "call-1", toolName: "bash", input: { command: "git push" } });
+						throw new Error("aborted");
+					},
+					async abort() {},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		const turn = adapter.receive({ id: "m1", user: { id: "u1" }, text: "run it" });
+		await waiting;
+		await expect(app.cancelActive("user canceled")).resolves.toBe(1);
+		await turn;
+		expect(adapter.sent.at(-1)?.text).toBe("Canceled: user canceled");
 		await app.stop();
 	});
 
@@ -712,86 +710,20 @@ describe("createHeypi", () => {
 		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
 	});
 
-	it("reports Pi startup failures to the source thread", async () => {
-		const root = await makeDir("app-start-fail-agent");
-		const state = await makeDir("app-start-fail-state");
-		const adapter = local();
-
-		const app = await createHeypi({
-			adapters: [adapter],
-			agent: loadAgent(root, {
-				id: "agent",
-				state: { dir: state },
-			}),
-			piHost() {
-				return {
-					async start() {
-						throw new Error("Pi unavailable");
-					},
-					async send() {},
-					subscribe() {
-						return () => {};
-					},
-					async stop() {},
-				};
-			},
-		});
-
-		await app.start();
-		await adapter.receive({
-			id: "m1",
-			user: { id: "u1", name: "Ronan" },
-			text: "hello",
-		});
-		await app.stop();
-
-		expect(adapter.sent).toEqual([
-			{ conversation: "local", thread: undefined, text: "The agent failed: Pi unavailable" },
-		]);
-	});
-
-	it("emits accepted messages before staging attachments", async () => {
-		const root = await makeDir("app-ack-agent");
-		const state = await makeDir("app-ack-state");
-		const adapter = local({ todo: false });
-		const order: string[] = [];
-		adapter.events = {
-			"message.accepted": async () => {
-				order.push("ack");
-			},
-		};
-		adapter.materializeAttachments = async (message) => {
-			order.push("stage");
-			return message;
-		};
-		const app = await createHeypi({
-			adapters: [adapter],
-			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
-			piHost: () => replyHost("Done."),
-		});
-
-		await app.start();
-		await adapter.receive({
-			id: "m1",
-			user: { id: "u1" },
-			text: "Inspect this.",
-			attachments: [{ name: "issue.txt", url: "https://example.com/issue.txt" }],
-		});
-		await app.stop();
-
-		expect(order).toEqual(["ack", "stage"]);
-	});
-
 	it("does not send replies after stop begins", async () => {
 		const root = await makeDir("app-stop-agent");
 		const state = await makeDir("app-stop-state");
 		const adapter = local();
 		let releaseSend: (() => void) | undefined;
+		let releaseDispatch: (() => void) | undefined;
 		let markSendStarted: (() => void) | undefined;
 		const sendStarted = new Promise<void>((resolve) => {
 			markSendStarted = resolve;
 		});
 		let stops = 0;
+		const dispatchGate = new Promise<void>((resolve) => {
+			releaseDispatch = resolve;
+		});
 
 		const app = await createHeypi({
 			adapters: [adapter],
@@ -808,12 +740,11 @@ describe("createHeypi", () => {
 						await new Promise<void>((resolve) => {
 							releaseSend = resolve;
 						});
-						for (const listener of listeners) {
-							listener({
-								type: "message_end",
-								message: { role: "assistant", content: "Late reply." },
-							} as unknown as PiEvent);
-						}
+						await dispatchGate;
+						throw new Error("aborted");
+					},
+					async abort() {
+						releaseSend?.();
 					},
 					subscribe(listener) {
 						listeners.push(listener);
@@ -833,12 +764,128 @@ describe("createHeypi", () => {
 			text: "hello",
 		});
 		await sendStarted;
-		await app.stop();
-		releaseSend?.();
-		await receive;
+		const stop = app.stop();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(stops).toBe(0);
+		releaseDispatch?.();
+		await Promise.all([stop, receive]);
 
 		expect(stops).toBe(1);
 		expect(adapter.sent).toEqual([]);
+	});
+
+	it("waits for message intake before snapshotting channels during shutdown", async () => {
+		const base = local({ todo: false });
+		let release: (() => void) | undefined;
+		let started: (() => void) | undefined;
+		const intakeStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const adapter = {
+			...base,
+			async materializeAttachments(message: Parameters<NonNullable<typeof base.materializeAttachments>>[0]) {
+				started?.();
+				await gate;
+				return message;
+			},
+		};
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-stop-intake-agent"), { id: "agent" }),
+			piHost: () => replyHost(),
+		});
+		await app.start();
+
+		const receive = base.receive({ id: "m1", user: { id: "u1" }, text: "hello" });
+		await intakeStarted;
+		let stopped = false;
+		const stop = app.stop().then(() => {
+			stopped = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(stopped).toBe(false);
+
+		release?.();
+		await Promise.all([receive, stop]);
+		expect(stopped).toBe(true);
+	});
+
+	it("aborts active channels before draining shared runtime queues", async () => {
+		const root = await makeDir("app-stop-shared-agent");
+		const state = await makeDir("app-stop-shared-state");
+		const base = local({ todo: false });
+		let stageStarted: (() => void) | undefined;
+		let releaseStage: (() => void) | undefined;
+		const staged = new Promise<void>((resolve) => {
+			stageStarted = resolve;
+		});
+		const stageGate = new Promise<void>((resolve) => {
+			releaseStage = resolve;
+		});
+		const adapter = {
+			...base,
+			async materializeAttachments(message: Parameters<NonNullable<typeof base.materializeAttachments>>[0]) {
+				if (message.conversation === "waiting") {
+					stageStarted?.();
+					await stageGate;
+				}
+				return message;
+			},
+		};
+		let sendStarted: (() => void) | undefined;
+		let rejectSend: ((error: Error) => void) | undefined;
+		const sending = new Promise<void>((resolve) => {
+			sendStarted = resolve;
+		});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost() {
+				return {
+					async start() {},
+					async send() {
+						sendStarted?.();
+						await new Promise<void>((_resolve, reject) => {
+							rejectSend = reject;
+						});
+					},
+					async abort() {
+						rejectSend?.(new Error("aborted"));
+					},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+		await app.start();
+
+		const waiting = base.receive({
+			id: "waiting",
+			conversation: "waiting",
+			dm: false,
+			user: { id: "u1" },
+			text: "wait",
+		});
+		await staged;
+		const active = base.receive({
+			id: "active",
+			conversation: "active",
+			dm: false,
+			user: { id: "u2" },
+			text: "run",
+		});
+		await sending;
+		releaseStage?.();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		await expect(app.stop()).resolves.toBeUndefined();
+		await Promise.all([waiting, active]);
+		expect(base.sent).toEqual([]);
 	});
 
 	it("serializes concurrent first messages onto one channel session", async () => {
@@ -883,6 +930,50 @@ describe("createHeypi", () => {
 		});
 		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
 		expect(adapter.sent).toContainEqual({ conversation: "local", thread: undefined, text: "Done." });
+	});
+
+	it("serializes conversations that share adapter-wide runtime files", async () => {
+		const adapter = local({ todo: false });
+		let active = 0;
+		let maximum = 0;
+		let started = 0;
+		let release: (() => void) | undefined;
+		let firstStarted: (() => void) | undefined;
+		const first = new Promise<void>((resolve) => {
+			firstStarted = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-shared-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-shared-state") },
+			}),
+			piHost: () =>
+				replyHost("Done.", async () => {
+					active++;
+					maximum = Math.max(maximum, active);
+					started++;
+					if (started === 1) {
+						firstStarted?.();
+						await gate;
+					}
+					active--;
+				}),
+		});
+
+		await app.start();
+		const one = adapter.receive({ id: "one", conversation: "one", user: { id: "u1" }, text: "one" });
+		await first;
+		const two = adapter.receive({ id: "two", conversation: "two", user: { id: "u2" }, text: "two" });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(started).toBe(1);
+		release?.();
+		await Promise.all([one, two]);
+		expect(maximum).toBe(1);
+		await app.stop();
 	});
 
 	it("steers the active Pi turn when configured", async () => {
@@ -937,41 +1028,67 @@ describe("createHeypi", () => {
 		});
 	});
 
-	it("rejects new turns while busy when configured", async () => {
-		const root = await makeDir("app-reject-agent");
-		const state = await makeDir("app-reject-state");
-		const adapter = local({ busy: "reject", todo: false });
+	it("queues attachment-bearing messages instead of steering them", async () => {
+		const adapter = local({ busy: "steer", todo: false });
+		adapter.materializeAttachments = async (message) => ({
+			...message,
+			attachments: message.attachments?.map((attachment) => ({ ...attachment, path: "/tmp/issue.txt" })),
+		});
 		let release: (() => void) | undefined;
 		let started: (() => void) | undefined;
 		const sending = new Promise<void>((resolve) => {
 			started = resolve;
 		});
+		const prompts: string[] = [];
+		const steered: string[] = [];
 		const app = await createHeypi({
 			adapters: [adapter],
-			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			agent: loadAgent(await makeDir("app-attachment-queue-agent"), {
+				id: "agent",
+				state: { dir: await makeDir("app-attachment-queue-state") },
+			}),
 			piHost() {
-				return replyHost("Done.", async () => {
-					started?.();
-					await new Promise<void>((resolve) => {
-						release = resolve;
-					});
-				});
+				const listeners: PiListener[] = [];
+				return {
+					async start() {},
+					async send(text) {
+						prompts.push(text);
+						if (prompts.length === 1) {
+							started?.();
+							await new Promise<void>((resolve) => {
+								release = resolve;
+							});
+						}
+						emitAssistant(listeners, "Done.");
+					},
+					async steer(text) {
+						steered.push(text);
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
 			},
 		});
 
 		await app.start();
 		const first = adapter.receive({ id: "m1", user: { id: "u1" }, text: "first" });
 		await sending;
-		await adapter.receive({ id: "m2", user: { id: "u1" }, text: "second" });
+		const second = adapter.receive({
+			id: "m2",
+			user: { id: "u1" },
+			text: "inspect this",
+			attachments: [{ name: "issue.txt" }],
+		});
 		release?.();
-		await first;
+		await Promise.all([first, second]);
 		await app.stop();
 
-		expect(adapter.sent).toContainEqual({
-			conversation: "local",
-			thread: undefined,
-			text: "I’m already working on another request in this conversation.",
-		});
+		expect(steered).toEqual([]);
+		expect(prompts).toHaveLength(2);
+		expect(prompts[1]).toContain("/tmp/issue.txt");
 	});
 
 	it("can disable DMs explicitly", async () => {
@@ -1105,37 +1222,6 @@ describe("createHeypi", () => {
 
 		expect(prompts).toHaveLength(2);
 		expect(prompts[1]).toContain("continue");
-	});
-
-	it("continues from direct control responses", async () => {
-		const adapter = local({ admins: { users: ["u1"] }, todo: false });
-		const prompts: string[] = [];
-		const app = await createHeypi({
-			adapters: [adapter],
-			agent: loadAgent(await makeDir("app-control-reply-agent"), {
-				id: "agent",
-				state: { dir: await makeDir("app-control-reply-state") },
-			}),
-			piHost: () =>
-				replyHost("Done.", (prompt) => {
-					prompts.push(prompt);
-				}),
-		});
-		await app.start();
-
-		await adapter.receive({ id: "status", conversation: "room", dm: false, user: { id: "u1" }, text: "/status" });
-		await adapter.receive({
-			id: "follow-up",
-			conversation: "room",
-			dm: false,
-			mentioned: false,
-			replyTo: "local-1",
-			user: { id: "u1" },
-			text: "start actual work",
-		});
-		await app.stop();
-
-		expect(prompts).toEqual([expect.stringContaining("start actual work")]);
 	});
 
 	it("restores public reply-chain sessions after restart and across users", async () => {

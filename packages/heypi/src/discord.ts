@@ -6,10 +6,12 @@ import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.
 import type {
 	Adapter,
 	AdapterApprovalConfig,
+	AdapterContext,
 	AllowConfig,
 	ApprovalDecision,
 	ApprovalView,
 	ApproverSet,
+	AttachmentPolicy,
 	BusyMode,
 	ChatMessage,
 } from "./types.js";
@@ -17,6 +19,7 @@ import { createTypingControls, typingEvents } from "./typing.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
+const APPROVAL_CANCELED = "Approval canceled.";
 const DISCORD_TEXT_LIMIT = 2_000;
 
 export type DiscordConfig = {
@@ -29,6 +32,7 @@ export type DiscordConfig = {
 	approvals?: AdapterApprovalConfig;
 	busy?: BusyMode;
 	typing?: boolean;
+	attachments?: AttachmentPolicy;
 	events?: AdapterEvents;
 };
 
@@ -54,6 +58,7 @@ type PendingApproval = {
 	view: ApprovalView;
 	message?: { id: string; edit(payload: unknown): Promise<unknown> };
 	timer?: ReturnType<typeof setTimeout>;
+	cancel(): void;
 	resolve(decision: ApprovalDecision): void;
 };
 
@@ -169,11 +174,20 @@ function memberRoles(member: unknown): string[] {
 
 export function discord(config: DiscordConfig): Adapter {
 	let client: Client | undefined;
+	let context: AdapterContext | undefined;
 	const pending = new Map<string, PendingApproval>();
-	const typing = createTypingControls(5000, async (message) => {
-		const channel = await client?.channels.fetch(message.conversation);
-		if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") await channel.sendTyping();
-	});
+	const typing = createTypingControls(
+		5000,
+		async (message) => {
+			const channel = await client?.channels.fetch(message.conversation);
+			if (channel && "sendTyping" in channel && typeof channel.sendTyping === "function") await channel.sendTyping();
+		},
+		(error) => {
+			context?.logger.warn("adapter_discord_typing_failed", {
+				message: error instanceof Error ? error.message : String(error),
+			});
+		},
+	);
 	const adapterId = config.id ?? "discord";
 	return {
 		kind: "discord",
@@ -184,7 +198,8 @@ export function discord(config: DiscordConfig): Adapter {
 		approvals: config.approvals,
 		busy: config.busy ?? "queue",
 		events: typingEvents(config.typing, config.events, typing),
-		async start(context) {
+		async start(nextContext) {
+			context = nextContext;
 			client = new Client({
 				intents: [
 					GatewayIntentBits.DirectMessages,
@@ -218,7 +233,7 @@ export function discord(config: DiscordConfig): Adapter {
 				);
 				if (normalized.user.isSelf) return;
 				if (!normalized.dm && !normalized.mentioned && !normalized.replyTo) return;
-				await context.receive(normalized);
+				await nextContext.receive(normalized);
 			});
 			client.on("interactionCreate", async (interaction) => {
 				if (!interaction.isButton()) return;
@@ -255,19 +270,26 @@ export function discord(config: DiscordConfig): Adapter {
 				});
 			});
 			await client.login(config.token);
-			context.logger.info("adapter.discord.start");
+			nextContext.logger.info("adapter_discord_started");
 		},
 		async stop() {
+			for (const approval of [...pending.values()]) approval.cancel();
 			typing.stopAll();
 			await client?.destroy();
 			client = undefined;
 		},
 		async materializeAttachments(message, target) {
+			const policy = config.attachments;
 			return {
 				...message,
 				attachments: await materializeAdapterAttachments(message.attachments, {
 					dir: target.dir,
 					displayDir: target.displayDir,
+					maxBytes: policy?.maxBytes,
+					timeoutMs: policy?.timeoutMs,
+					mimeTypes: policy?.mimeTypes,
+					hosts: policy?.hosts ?? ["*.discordapp.com", "*.discordapp.net"],
+					retry: policy?.retry,
 				}),
 			};
 		},
@@ -318,7 +340,7 @@ export function discord(config: DiscordConfig): Adapter {
 				await target.edit({ content: formatOutgoingText(message.text, message.attachments) });
 			}
 		},
-		async requestApproval(view) {
+		async requestApproval(view, signal) {
 			if (!client) return { approved: false, reason: "Discord adapter is not started." };
 			if (!view.conversation) return { approved: false, reason: "Discord approval has no target conversation." };
 			const channel = await client.channels.fetch(view.conversation);
@@ -334,7 +356,24 @@ export function discord(config: DiscordConfig): Adapter {
 				edit(payload: unknown): Promise<unknown>;
 			};
 			return new Promise<ApprovalDecision>((resolve) => {
-				const pendingApproval: PendingApproval = { view, message: sent, resolve };
+				const cleanup = () => signal?.removeEventListener("abort", cancel);
+				const cancel = () => {
+					if (!pending.delete(view.id)) return;
+					if (pendingApproval.timer) clearTimeout(pendingApproval.timer);
+					pendingApproval.resolve({ approved: false, messageIds: [sent.id], reason: APPROVAL_CANCELED });
+					void sent
+						.edit(discordApprovalPayload({ ...view, state: "rejected", resolvedBy: "canceled" }))
+						.catch(() => undefined);
+				};
+				const pendingApproval: PendingApproval = {
+					view,
+					message: sent,
+					cancel,
+					resolve(decision) {
+						cleanup();
+						resolve(decision);
+					},
+				};
 				const timeoutMs = config.approvals?.timeoutMs;
 				if (timeoutMs && timeoutMs > 0) {
 					pendingApproval.timer = setTimeout(() => {
@@ -342,10 +381,16 @@ export function discord(config: DiscordConfig): Adapter {
 						void sent
 							.edit(discordApprovalPayload({ ...view, state: "rejected", resolvedBy: "timeout" }))
 							.catch(() => undefined);
-						resolve({ approved: false, messageIds: [sent.id], reason: "Approval expired." });
+						pendingApproval.resolve({
+							approved: false,
+							messageIds: [sent.id],
+							reason: "Approval expired.",
+						});
 					}, timeoutMs);
 				}
 				pending.set(view.id, pendingApproval);
+				signal?.addEventListener("abort", cancel, { once: true });
+				if (signal?.aborted) cancel();
 			});
 		},
 	};

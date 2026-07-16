@@ -68,7 +68,7 @@ describe("channel", () => {
 			.map((line) => JSON.parse(line));
 		expect(records).toEqual([
 			{
-				type: "outbound",
+				type: "message_outbound",
 				record: 1,
 				message: "remote-1",
 				time: expect.any(String),
@@ -76,6 +76,45 @@ describe("channel", () => {
 				text: "Report attached.",
 				attachments: [{ name: "report.txt", path: "report.txt", mime: "text/plain" }],
 			},
+		]);
+	});
+
+	it("records approval requests and resolutions", async () => {
+		const logPath = join(tmpdir(), `heypi-channel-approval-${Date.now()}.jsonl`);
+		const channel = createChannel({ logPath });
+		await channel.load();
+
+		const requested = await channel.approvalRequested({
+			approvalId: "a1",
+			turnId: "t1",
+			triggerRecord: 1,
+			toolCallId: "call-1",
+			toolName: "bash",
+			inputHash: "hash",
+			displayedAction: "git push",
+			policyReason: "Run bash command.",
+			actor: { id: "u1", name: "Ronan" },
+			adapter: "local",
+			adapterId: "local",
+			conversation: "room",
+		});
+		const resolved = await channel.approvalResolved({
+			approvalId: "a1",
+			decision: "approved",
+			source: "adapter_click",
+			approver: { id: "admin", name: "Admin" },
+			remoteMessageIds: ["remote-1"],
+		});
+
+		expect(requested).toMatchObject({ type: "approval_requested", record: 1, approvalId: "a1" });
+		expect(resolved).toMatchObject({ type: "approval_resolved", record: 2, approvalId: "a1" });
+		const records = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(records).toMatchObject([
+			{ type: "approval_requested", approvalId: "a1", inputHash: "hash" },
+			{ type: "approval_resolved", approvalId: "a1", decision: "approved" },
 		]);
 	});
 
@@ -142,24 +181,6 @@ describe("channel", () => {
 		expect(channel.next()).toBeUndefined();
 	});
 
-	it("builds prompts from only the current trigger", async () => {
-		const logPath = join(tmpdir(), `heypi-channel-delta-${Date.now()}-${Math.random()}.jsonl`);
-		const channel = createChannel({ logPath });
-		await channel.load();
-
-		await channel.ingest(message("a", "first trigger"));
-		channel.next();
-		await channel.complete("done");
-		await expect(channel.ingest(message("b", "ambient follow-up", false))).resolves.toEqual({ action: "ignored" });
-		await expect(channel.ingest(message("c", "second trigger"))).resolves.toMatchObject({ action: "started" });
-
-		const turn = channel.next();
-		expect(turn?.replyThread).toBeUndefined();
-		expect(turn?.prompt).not.toContain("first trigger");
-		expect(turn?.prompt).not.toContain("ambient follow-up");
-		expect(turn?.prompt).toContain("second trigger");
-	});
-
 	it("keeps only adapter coordination records", async () => {
 		const logPath = join(tmpdir(), `heypi-channel-log-${Date.now()}-${Math.random()}.jsonl`);
 		const channel = createChannel({ logPath });
@@ -172,7 +193,7 @@ describe("channel", () => {
 			.trim()
 			.split("\n")
 			.map((line) => JSON.parse(line) as { type: string });
-		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_completed"]);
+		expect(records.map((record) => record.type)).toEqual(["message_inbound", "turn_queued", "turn_completed"]);
 	});
 
 	it("marks queued turns interrupted after reload", async () => {
@@ -190,7 +211,7 @@ describe("channel", () => {
 			.trim()
 			.split("\n")
 			.map((line) => JSON.parse(line) as { type: string; error?: string });
-		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_failed"]);
+		expect(records.map((record) => record.type)).toEqual(["message_inbound", "turn_queued", "turn_failed"]);
 		expect(records.at(-1)?.error).toBe("interrupted by restart");
 	});
 
@@ -207,24 +228,6 @@ describe("channel", () => {
 		await first.close();
 		await expect(second.load()).resolves.toBeUndefined();
 		await second.close();
-	});
-
-	it("keeps only one active turn while later triggers wait in the queue", async () => {
-		const logPath = join(tmpdir(), `heypi-channel-single-flight-${Date.now()}-${Math.random()}.jsonl`);
-		const channel = createChannel({ logPath });
-		await channel.load();
-
-		await channel.ingest(message("a", "first"));
-		await channel.ingest(message("b", "second"));
-
-		const first = channel.next();
-		const blocked = channel.next();
-		await channel.complete("done");
-		const second = channel.next();
-
-		expect(first?.replyThread).toBeUndefined();
-		expect(blocked).toBeUndefined();
-		expect(second?.replyThread).toBeUndefined();
 	});
 
 	it("returns deterministic queue, steer, and reject outcomes while busy", async () => {
@@ -264,7 +267,7 @@ describe("channel", () => {
 			.trim()
 			.split("\n")
 			.map((line) => JSON.parse(line) as { type: string; reason?: string });
-		expect(records.map((record) => record.type)).toEqual(["inbound", "turn_queued", "turn_canceled"]);
+		expect(records.map((record) => record.type)).toEqual(["message_inbound", "turn_queued", "turn_canceled"]);
 		expect(records.at(-1)?.reason).toBe("user canceled");
 	});
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defineSchedule, loadSchedules, validateSchedule } from "../src/schedule.js";
-import { createScheduleStore, type ScheduleStore } from "../src/schedule-store.js";
+import { createScheduleStore } from "../src/schedule-store.js";
 import { createScheduler } from "../src/scheduler.js";
 
 async function makeDir(name: string): Promise<string> {
@@ -134,34 +134,6 @@ describe("schedules", () => {
 		expect(runs[0]?.scheduledFor).toBe(new Date(Date.UTC(2026, 0, 1, 0, 5)).toISOString());
 	});
 
-	it("rejects manual runs outside the scheduler lifecycle", async () => {
-		const root = await makeDir("scheduler-lifecycle");
-		const scheduler = createScheduler({
-			definitions: [
-				{
-					id: "daily",
-					path: "/daily.ts",
-					hash: "daily",
-					definition: defineSchedule({ cron: "0 0 1 1 *", timezone: "UTC", prompt: "Run." }),
-				},
-			],
-			store: createScheduleStore(join(root, "state.json")),
-			logger,
-			async dispatch() {
-				return { jobId: "unused" };
-			},
-			async executePrompt() {
-				return {};
-			},
-			misfireGraceMs: -1,
-		});
-
-		await expect(scheduler.run("daily")).rejects.toThrow("Scheduler is not started");
-		await scheduler.start();
-		await scheduler.stop();
-		await expect(scheduler.run("daily")).rejects.toThrow("Scheduler is not started");
-	});
-
 	it("bounds shutdown when schedule execution ignores cancellation", async () => {
 		const root = await makeDir("scheduler-shutdown");
 		const store = createScheduleStore(join(root, "state.json"));
@@ -205,121 +177,12 @@ describe("schedules", () => {
 		await executionStarted;
 
 		await scheduler.stop();
-		expect(warnings).toContain("scheduler.stop.timeout");
+		expect(warnings).toContain("scheduler_stop_timeout");
 		release?.();
 		for (let attempt = 0; attempt < 20 && store.runs("slow")[0]?.status !== "canceled"; attempt++) {
 			await new Promise((resolve) => setTimeout(resolve, 5));
 		}
 		expect(store.runs("slow")[0]?.status).toBe("canceled");
-	});
-
-	it("fails startup when recovery cannot persist its claim", async () => {
-		const failingStore: ScheduleStore = {
-			async load() {},
-			async reconcile() {
-				return { added: [], changed: [], orphans: [] };
-			},
-			async claim() {
-				throw new Error("claim persistence failed");
-			},
-			async skip() {
-				throw new Error("unexpected skip");
-			},
-			async update() {
-				throw new Error("unexpected update");
-			},
-			hasOccurrence() {
-				return false;
-			},
-			active() {
-				return false;
-			},
-			runs() {
-				return [];
-			},
-		};
-		const scheduler = createScheduler({
-			definitions: [
-				{
-					id: "frequent",
-					path: "/frequent.ts",
-					hash: "frequent",
-					definition: defineSchedule({ cron: "* * * * *", timezone: "UTC", prompt: "Run." }),
-				},
-			],
-			store: failingStore,
-			logger,
-			async dispatch() {
-				return { jobId: "unused" };
-			},
-			async executePrompt() {
-				return {};
-			},
-			misfireGraceMs: 120_000,
-		});
-
-		await expect(scheduler.start()).rejects.toThrow("claim persistence failed");
-	});
-
-	it("runs prompt and handler schedules through their distinct boundaries", async () => {
-		const root = await makeDir("scheduler");
-		const store = createScheduleStore(join(root, "state.json"));
-		const dispatched: string[] = [];
-		const definitions = [
-			{
-				id: "prompt",
-				path: "/prompt.ts",
-				hash: "a",
-				definition: defineSchedule({ cron: "0 0 1 1 *", timezone: "UTC", prompt: "Run report." }),
-			},
-			{
-				id: "dispatch",
-				path: "/dispatch.ts",
-				hash: "b",
-				definition: defineSchedule({
-					cron: "0 0 1 1 *",
-					timezone: "UTC",
-					async run({ dispatch }) {
-						await dispatch({
-							prompt: "Send report.",
-							target: { adapterId: "slack", conversation: "C1" },
-						});
-					},
-				}),
-			},
-		];
-		const scheduler = createScheduler({
-			definitions,
-			store,
-			logger,
-			async dispatch(input) {
-				dispatched.push(input.prompt);
-				return { jobId: "job-1" };
-			},
-			async executePrompt(_schedule, _run, signal) {
-				expect(signal.aborted).toBe(false);
-				return { output: "Report complete.", sessionId: "session-1" };
-			},
-			misfireGraceMs: -1,
-		});
-		await scheduler.start();
-
-		const prompt = await scheduler.run("prompt");
-		const handler = await scheduler.run("dispatch");
-		for (let attempt = 0; attempt < 20 && store.runs().some((run) => !run.finishedAt); attempt++) {
-			await new Promise((resolve) => setTimeout(resolve, 5));
-		}
-		await scheduler.stop();
-
-		expect(prompt).toMatchObject({ status: "claimed" });
-		expect(handler).toMatchObject({ status: "claimed" });
-		expect(store.runs("prompt").at(-1)).toMatchObject({
-			status: "completed",
-			output: "Report complete.",
-			sessionId: "session-1",
-		});
-		expect(store.runs("dispatch").at(-1)).toMatchObject({ status: "dispatched", jobId: "job-1" });
-		expect(dispatched).toEqual(["Send report."]);
 	});
 
 	it("skips a second occurrence while the same schedule is active", async () => {

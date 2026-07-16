@@ -94,7 +94,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 			const message = error instanceof Error ? error.message : String(error);
 			const current = options.store.runs(schedule.id).find((candidate) => candidate.id === run.id);
 			if (current?.status === "dispatched" || current?.finishedAt) {
-				options.logger.warn("schedule.handler.failed_after_dispatch", {
+				options.logger.warn("schedule_handler_failed_after_dispatch", {
 					schedule: schedule.id,
 					run: run.id,
 					message,
@@ -106,7 +106,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 				error: message,
 				finishedAt: new Date().toISOString(),
 			});
-			options.logger.error("schedule.run.failed", { schedule: schedule.id, run: run.id, message });
+			options.logger.error("schedule_run_failed", { schedule: schedule.id, run: run.id, message });
 			return failed;
 		} finally {
 			controllers.delete(run.id);
@@ -119,7 +119,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 			() => tasks.delete(task),
 			(error) => {
 				tasks.delete(task);
-				options.logger.error("schedule.task.failed", {
+				options.logger.error("schedule_task_failed", {
 					message: error instanceof Error ? error.message : String(error),
 				});
 			},
@@ -137,7 +137,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 			}),
 		]);
 		if (timer) clearTimeout(timer);
-		if (timedOut) options.logger.warn("scheduler.stop.timeout", { tasks: tasks.size, graceMs });
+		if (timedOut) options.logger.warn("scheduler_stop_timeout", { tasks: tasks.size, graceMs });
 	}
 
 	async function claimAndStart(schedule: LoadedSchedule, scheduledFor: Date, manual = false): Promise<ScheduleRun> {
@@ -150,12 +150,12 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 		}
 		if (options.store.active(schedule.id)) {
 			const skipped = await options.store.skip(schedule.id, scheduled, firedAt, "previous run still active");
-			options.logger.warn("schedule.run.skipped", { schedule: schedule.id, run: skipped.id, reason: skipped.error });
+			options.logger.warn("schedule_run_skipped", { schedule: schedule.id, run: skipped.id, reason: skipped.error });
 			return skipped;
 		}
 		const run = await options.store.claim(schedule.id, scheduled, firedAt, manual);
 		if (!run) throw new Error(`Schedule occurrence could not be claimed: ${schedule.id}`);
-		options.logger.info("schedule.run.claimed", { schedule: schedule.id, run: run.id, scheduledFor: scheduled });
+		options.logger.info("schedule_run_claimed", { schedule: schedule.id, run: run.id, scheduledFor: scheduled });
 		const task = execute(schedule, run);
 		track(task);
 		return run;
@@ -170,7 +170,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 				paused,
 				protect: true,
 				catch: (error) => {
-					options.logger.error("schedule.timer.failed", {
+					options.logger.error("schedule_timer_failed", {
 						schedule: schedule.id,
 						message: error instanceof Error ? error.message : String(error),
 					});
@@ -209,7 +209,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 			try {
 				await options.store.load();
 				const { added, changed, orphans } = await options.store.reconcile(options.definitions);
-				for (const id of orphans) options.logger.warn("schedule.orphaned", { schedule: id });
+				for (const id of orphans) options.logger.warn("schedule_orphaned", { schedule: id });
 				for (const schedule of options.definitions) {
 					if (!added.includes(schedule.id) && !changed.includes(schedule.id)) await recover(schedule);
 					jobs.set(schedule.id, cronFor(schedule, false));
@@ -223,7 +223,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 				throw error;
 			}
 			if (options.definitions.length)
-				options.logger.info("scheduler.start", { schedules: options.definitions.length });
+				options.logger.info("scheduler_started", { schedules: options.definitions.length });
 		},
 
 		async stop() {

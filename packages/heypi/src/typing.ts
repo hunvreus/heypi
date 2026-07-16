@@ -17,16 +17,21 @@ function key(message: ChatMessage): string {
 	return `${message.conversation}:${message.thread ?? ""}`;
 }
 
-export function createTypingControls(interval: number, send: (message: ChatMessage) => Promise<void>): TypingControls {
+export function createTypingControls(
+	interval: number,
+	send: (message: ChatMessage) => Promise<void>,
+	onError: (error: unknown) => void = () => undefined,
+): TypingControls {
 	const timers = new Map<string, ReturnType<typeof setInterval>>();
+	const trigger = (message: ChatMessage) => void send(message).catch(onError);
 	return {
 		start(message) {
 			const id = key(message);
 			if (timers.has(id)) return;
-			void send(message);
+			trigger(message);
 			timers.set(
 				id,
-				setInterval(() => void send(message), interval),
+				setInterval(() => trigger(message), interval),
 			);
 		},
 		stop(message) {
@@ -66,10 +71,11 @@ export function typingEvents(
 	return {
 		...busyEvents(),
 		...events,
-		"message.accepted": wrap("message.accepted", (_event, context) => typing.start(context.message)),
-		"turn.started": wrap("turn.started", (_event, context) => typing.start(context.message)),
-		"message.completed": wrap("message.completed", (_event, context) => typing.stop(context.message)),
-		"turn.failed": wrap("turn.failed", (_event, context) => typing.stop(context.message)),
-		"turn.canceled": wrap("turn.canceled", (_event, context) => typing.stop(context.message)),
+		message_accepted: wrap("message_accepted", (_event, context) => typing.start(context.message)),
+		turn_started: wrap("turn_started", (_event, context) => typing.start(context.message)),
+		message_completed: wrap("message_completed", (_event, context) => typing.stop(context.message)),
+		message_failed: wrap("message_failed", (_event, context) => typing.stop(context.message)),
+		turn_failed: wrap("turn_failed", (_event, context) => typing.stop(context.message)),
+		turn_canceled: wrap("turn_canceled", (_event, context) => typing.stop(context.message)),
 	};
 }

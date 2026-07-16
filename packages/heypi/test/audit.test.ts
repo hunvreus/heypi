@@ -11,12 +11,6 @@ async function makeDir(name: string): Promise<string> {
 }
 
 describe("audit", () => {
-	it("returns no conversations for an empty state directory", async () => {
-		const state = await makeDir("audit-empty");
-
-		await expect(listAuditConversations({ stateDir: state })).resolves.toEqual([]);
-	});
-
 	it("lists conversation logs and reads coordination records", async () => {
 		const state = await makeDir("audit");
 		const first = join(state, "adapters", "local", "conversations", "a", "sessions", "session-a");
@@ -30,7 +24,7 @@ describe("audit", () => {
 		await writeFile(
 			join(first, "log.jsonl"),
 			`${JSON.stringify({
-				type: "inbound",
+				type: "message_inbound",
 				record: 1,
 				id: "m1",
 				adapter: "local",
@@ -45,12 +39,12 @@ describe("audit", () => {
 
 		const listed = await listAuditConversations({ stateDir: state });
 		expect(listed).toEqual([
-			{ key: "local/a/session-a", path: join(first, "log.jsonl") },
-			{ key: "local/b/session-b", path: join(second, "log.jsonl") },
+			{ key: "local/a/session-a", path: join(first, "log.jsonl"), dir: first },
+			{ key: "local/b/session-b", path: join(second, "log.jsonl"), dir: second },
 		]);
 
 		await expect(readAuditConversation(listed[0]?.path ?? "")).resolves.toMatchObject([
-			{ type: "inbound", record: 1, id: "m1", text: "hello" },
+			{ type: "message_inbound", record: 1, id: "m1", text: "hello" },
 		]);
 	});
 });

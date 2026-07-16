@@ -6,10 +6,10 @@ import type { ChatJob, TurnCause } from "./events.js";
 import type { BusyMode, ChatMessage, SendMessage } from "./types.js";
 
 export type ChannelRecord =
-	| ({ type: "inbound"; record: number } & ChatMessage)
-	| ({ type: "outbound"; record: number; message?: string; time: string } & SendMessage)
+	| ({ type: "message_inbound"; record: number } & ChatMessage)
+	| ({ type: "message_outbound"; record: number; message?: string; time: string } & SendMessage)
 	| {
-			type: "trigger";
+			type: "turn_trigger";
 			record: number;
 			adapter: string;
 			adapterId: string;
@@ -25,10 +25,50 @@ export type ChannelRecord =
 	| { type: "turn_rejected"; record: number; trigger: number }
 	| { type: "turn_completed"; record: number; id: string; trigger: number; reply?: string }
 	| { type: "turn_failed"; record: number; id: string; trigger: number; error: string }
-	| { type: "turn_canceled"; record: number; id: string; trigger: number; reason?: string };
+	| { type: "turn_canceled"; record: number; id: string; trigger: number; reason?: string }
+	| ApprovalRequestedRecord
+	| ApprovalResolvedRecord;
+
+export type ApprovalRequestedRecord = {
+	type: "approval_requested";
+	record: number;
+	approvalId: string;
+	turnId: string;
+	triggerRecord: number;
+	toolCallId: string;
+	toolName: string;
+	inputHash: string;
+	displayedAction?: string;
+	policyReason: string;
+	actor: { id: string; name?: string };
+	adapter: string;
+	adapterId: string;
+	conversation: string;
+	thread?: string;
+	requestedAt: string;
+	expiresAt?: string;
+};
+
+export type ApprovalResolvedRecord = {
+	type: "approval_resolved";
+	record: number;
+	approvalId: string;
+	decision: "approved" | "rejected" | "expired" | "canceled" | "failed" | "orphaned";
+	source: "adapter_click" | "timeout" | "turn_cancel" | "post_failed" | "restart_orphan" | "policy_rejection";
+	approver?: {
+		id?: string;
+		name?: string;
+		roles?: string[];
+		groups?: string[];
+	};
+	reason?: string;
+	remoteMessageIds?: string[];
+	resolvedAt: string;
+};
 
 export type Turn = {
 	id: string;
+	triggerRecord: number;
 	message?: ChatMessage;
 	adapter: string;
 	adapterId: string;
@@ -71,11 +111,19 @@ export type Channel = {
 	cancelQueued(reason?: string): Promise<ChatJob[]>;
 	cancelActive(reason?: string): Promise<boolean>;
 	outbound(message: SendMessage, remoteId?: string): Promise<void>;
+	approvalRequested(
+		input: Omit<ApprovalRequestedRecord, "type" | "record" | "requestedAt"> & { requestedAt?: string },
+	): Promise<ApprovalRequestedRecord>;
+	approvalResolved(
+		input: Omit<ApprovalResolvedRecord, "type" | "record" | "resolvedAt"> & { resolvedAt?: string },
+	): Promise<ApprovalResolvedRecord>;
 	complete(reply?: string): Promise<void>;
 	fail(error: string): Promise<void>;
 	activeMessageId(): string | undefined;
 	activeUser(): { id: string; name?: string } | undefined;
-	findHistory(query?: ChatHistoryQuery): Array<ChannelRecord & ({ type: "inbound" } | { type: "outbound" })>;
+	findHistory(
+		query?: ChatHistoryQuery,
+	): Array<ChannelRecord & ({ type: "message_inbound" } | { type: "message_outbound" })>;
 };
 
 export type IngestResult =
@@ -146,29 +194,29 @@ export function createChannel(options: ChannelOptions): Channel {
 		await appendFile(options.logPath, `${JSON.stringify(record)}\n`, "utf8");
 	}
 
-	function isInbound(record: ChannelRecord): record is ChannelRecord & { type: "inbound" } {
-		return record.type === "inbound";
+	function isInbound(record: ChannelRecord): record is ChannelRecord & { type: "message_inbound" } {
+		return record.type === "message_inbound";
 	}
 
 	function isMessageRecord(
 		record: ChannelRecord,
-	): record is ChannelRecord & ({ type: "inbound" } | { type: "outbound" }) {
-		return record.type === "inbound" || record.type === "outbound";
+	): record is ChannelRecord & ({ type: "message_inbound" } | { type: "message_outbound" }) {
+		return record.type === "message_inbound" || record.type === "message_outbound";
 	}
 
-	function activeMessage(): (ChannelRecord & { type: "inbound" }) | undefined {
+	function activeMessage(): (ChannelRecord & { type: "message_inbound" }) | undefined {
 		if (!active) return undefined;
 		const trigger = active.trigger;
-		return records.find((record): record is ChannelRecord & { type: "inbound" } => {
+		return records.find((record): record is ChannelRecord & { type: "message_inbound" } => {
 			return isInbound(record) && record.record === trigger;
 		});
 	}
 
-	function activeTrigger(): (ChannelRecord & ({ type: "inbound" } | { type: "trigger" })) | undefined {
+	function activeTrigger(): (ChannelRecord & ({ type: "message_inbound" } | { type: "turn_trigger" })) | undefined {
 		if (!active) return undefined;
 		return records.find(
-			(record): record is ChannelRecord & ({ type: "inbound" } | { type: "trigger" }) =>
-				(record.type === "inbound" || record.type === "trigger") && record.record === active?.trigger,
+			(record): record is ChannelRecord & ({ type: "message_inbound" } | { type: "turn_trigger" }) =>
+				(record.type === "message_inbound" || record.type === "turn_trigger") && record.record === active?.trigger,
 		);
 	}
 
@@ -212,7 +260,7 @@ export function createChannel(options: ChannelOptions): Channel {
 		});
 	}
 
-	function formatMessage(message: ChannelRecord & { type: "inbound" }): string {
+	function formatMessage(message: ChannelRecord & { type: "message_inbound" }): string {
 		const lines = [`- [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text || "(no text)"}`];
 		if (message.attachments?.length) {
 			lines.push("  attachments:");
@@ -223,8 +271,8 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function buildPrompt(trigger: number): string {
-		const trusted = records.find((record) => record.type === "trigger" && record.record === trigger);
-		if (trusted?.type === "trigger") return trusted.prompt;
+		const trusted = records.find((record) => record.type === "turn_trigger" && record.record === trigger);
+		if (trusted?.type === "turn_trigger") return trusted.prompt;
 		const boundary = trigger - 1;
 		const prompt = records
 			.filter(isInbound)
@@ -236,11 +284,11 @@ export function createChannel(options: ChannelOptions): Channel {
 
 	function jobFor(turn: QueuedTurn, state: ChatJob["state"]): ChatJob | undefined {
 		const trigger = records.find(
-			(record): record is ChannelRecord & ({ type: "inbound" } | { type: "trigger" }) =>
-				(record.type === "inbound" || record.type === "trigger") && record.record === turn.trigger,
+			(record): record is ChannelRecord & ({ type: "message_inbound" } | { type: "turn_trigger" }) =>
+				(record.type === "message_inbound" || record.type === "turn_trigger") && record.record === turn.trigger,
 		);
 		if (!trigger) return undefined;
-		const actor = trigger.type === "inbound" ? trigger.user : trigger.actor;
+		const actor = trigger.type === "message_inbound" ? trigger.user : trigger.actor;
 		return {
 			id: turn.id,
 			state,
@@ -249,7 +297,7 @@ export function createChannel(options: ChannelOptions): Channel {
 			conversation: trigger.conversation,
 			thread: trigger.thread,
 			actor: { id: actor.id, name: actor.name },
-			cause: trigger.type === "inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause,
+			cause: trigger.type === "message_inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause,
 			startedAt: trigger.time,
 		};
 	}
@@ -281,7 +329,7 @@ export function createChannel(options: ChannelOptions): Channel {
 
 		async ingest(message, busy = "queue") {
 			const record: ChannelRecord = {
-				type: "inbound",
+				type: "message_inbound",
 				record: nextRecord++,
 				...message,
 				time: message.time ?? new Date().toISOString(),
@@ -304,7 +352,7 @@ export function createChannel(options: ChannelOptions): Channel {
 
 		async trigger(input) {
 			const record: ChannelRecord = {
-				type: "trigger",
+				type: "turn_trigger",
 				record: nextRecord++,
 				...input,
 				time: new Date().toISOString(),
@@ -323,12 +371,13 @@ export function createChannel(options: ChannelOptions): Channel {
 			active = turn;
 			const trigger = activeTrigger();
 			if (!trigger) return undefined;
-			const message = trigger.type === "inbound" ? trigger : undefined;
-			const actor = trigger.type === "inbound" ? trigger.user : trigger.actor;
+			const message = trigger.type === "message_inbound" ? trigger : undefined;
+			const actor = trigger.type === "message_inbound" ? trigger.user : trigger.actor;
 			const cause: TurnCause =
-				trigger.type === "inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause;
+				trigger.type === "message_inbound" ? { kind: "message", messageId: trigger.id } : trigger.cause;
 			return {
 				id: turn.id,
+				triggerRecord: turn.trigger,
 				message,
 				adapter: trigger.adapter,
 				adapterId: trigger.adapterId,
@@ -378,12 +427,34 @@ export function createChannel(options: ChannelOptions): Channel {
 
 		async outbound(message, remoteId) {
 			await append({
-				type: "outbound",
+				type: "message_outbound",
 				record: nextRecord++,
 				message: remoteId,
 				time: new Date().toISOString(),
 				...message,
 			});
+		},
+
+		async approvalRequested(input) {
+			const record: ApprovalRequestedRecord = {
+				type: "approval_requested",
+				record: nextRecord++,
+				requestedAt: new Date().toISOString(),
+				...input,
+			};
+			await append(record);
+			return record;
+		},
+
+		async approvalResolved(input) {
+			const record: ApprovalResolvedRecord = {
+				type: "approval_resolved",
+				record: nextRecord++,
+				resolvedAt: new Date().toISOString(),
+				...input,
+			};
+			await append(record);
+			return record;
 		},
 
 		async complete(reply) {
@@ -419,7 +490,7 @@ export function createChannel(options: ChannelOptions): Channel {
 				.filter(isMessageRecord)
 				.filter((record) => {
 					if (record.record === activeTrigger) return false;
-					if (record.type === "inbound" && record.user.isBot) return false;
+					if (record.type === "message_inbound" && record.user.isBot) return false;
 					if (search && !record.text.toLowerCase().includes(search)) return false;
 					const time = record.time ? Date.parse(record.time) : undefined;
 					if (after !== undefined && time !== undefined && time < after) return false;

@@ -1,7 +1,143 @@
-import { describe, expect, it } from "vitest";
-import { telegramApprovalPayload, telegramMessage, telegramTypingPayload } from "../src/telegram.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { telegram, telegramApprovalPayload, telegramMessage, telegramTypingPayload } from "../src/telegram.js";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("telegramMessage", () => {
+	it("retries rate-limited API calls using Telegram retry metadata", async () => {
+		let getMeCalls = 0;
+		vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") {
+				getMeCalls += 1;
+				if (getMeCalls === 1) {
+					return Response.json(
+						{ ok: false, description: "Too Many Requests", parameters: { retry_after: 0 } },
+						{ status: 429 },
+					);
+				}
+				return Response.json({ ok: true, result: { id: 99, username: "codex" } });
+			}
+			return Response.json({ ok: true, result: [] });
+		});
+		const adapter = telegram({ token: "test", pollMs: 10_000, retry: { minDelayMs: 0 } });
+
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			receive: async () => {},
+		});
+
+		expect(getMeCalls).toBe(2);
+		await adapter.stop?.();
+	});
+
+	it("keeps polling while an accepted turn is running", async () => {
+		let polls = 0;
+		let secondPoll: (() => void) | undefined;
+		const polled = new Promise<void>((resolve) => {
+			secondPoll = resolve;
+		});
+		vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") return Response.json({ ok: true, result: { id: 99, username: "codex" } });
+			polls += 1;
+			if (polls > 1) {
+				secondPoll?.();
+				return Response.json({ ok: true, result: [] });
+			}
+			return Response.json({
+				ok: true,
+				result: [
+					{
+						update_id: 1,
+						message: { message_id: 1, text: "hello", chat: { id: 10, type: "private" }, from: { id: 20 } },
+					},
+				],
+			});
+		});
+		const adapter = telegram({ token: "test", pollMs: 0 });
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			enqueue: async () => {},
+			receive: () => new Promise(() => undefined),
+		});
+
+		await Promise.race([
+			polled,
+			new Promise((_, reject) => setTimeout(() => reject(new Error("poll blocked")), 500)),
+		]);
+		expect(polls).toBeGreaterThan(1);
+		await adapter.stop?.();
+	});
+
+	it("times out stalled API requests", async () => {
+		vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") return Promise.resolve(Response.json({ ok: true, result: { id: 99 } }));
+			if (method === "getUpdates") return Promise.resolve(Response.json({ ok: true, result: [] }));
+			return new Promise<Response>((_resolve, reject) => {
+				const signal = init?.signal;
+				signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		});
+		const adapter = telegram({ token: "test", pollMs: 10_000, timeoutMs: 5, retry: false });
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			receive: async () => {},
+		});
+
+		await expect(adapter.send({ conversation: "10", text: "hello" })).rejects.toThrow("Telegram request timed out");
+		await adapter.stop?.();
+	});
+
+	it("ignores edited messages instead of starting a new turn", async () => {
+		let polls = 0;
+		const receive = vi.fn();
+		let observed: (() => void) | undefined;
+		const polled = new Promise<void>((resolve) => {
+			observed = resolve;
+		});
+		vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") return Response.json({ ok: true, result: { id: 99, username: "codex" } });
+			polls += 1;
+			if (polls > 1) {
+				observed?.();
+				return Response.json({ ok: true, result: [] });
+			}
+			return Response.json({
+				ok: true,
+				result: [
+					{
+						update_id: 1,
+						edited_message: {
+							message_id: 1,
+							text: "edited",
+							chat: { id: 10, type: "private" },
+							from: { id: 20 },
+						},
+					},
+				],
+			});
+		});
+		const adapter = telegram({ token: "test", pollMs: 0 });
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			receive,
+		});
+
+		await Promise.race([
+			polled,
+			new Promise((_, reject) => setTimeout(() => reject(new Error("poll blocked")), 500)),
+		]);
+		expect(receive).not.toHaveBeenCalled();
+		await adapter.stop?.();
+	});
+
 	it("normalizes private messages", () => {
 		expect(
 			telegramMessage({

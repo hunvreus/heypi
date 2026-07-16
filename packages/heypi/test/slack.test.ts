@@ -42,7 +42,7 @@ describe("Slack activity", () => {
 		);
 		const context = activityContext();
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
 
 		expect(requests).toEqual([
 			{
@@ -55,6 +55,28 @@ describe("Slack activity", () => {
 		expect(reactions).toEqual(["eyes"]);
 	});
 
+	it("clears native status when intake fails", async () => {
+		const statuses: string[] = [];
+		const activity = createSlackActivity(
+			true,
+			undefined,
+			async () => {},
+			async ({ status }) => {
+				statuses.push(status);
+			},
+		);
+		const context = activityContext();
+
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
+		await emit(
+			activity.events,
+			{ type: "message_failed", origin: "heypi", message: context.message, error: "download failed" },
+			context,
+		);
+
+		expect(statuses).toEqual(["Thinking...", ""]);
+	});
+
 	it("lets custom lifecycle hooks replace native status", async () => {
 		const order: string[] = [];
 		const activity = createSlackActivity(
@@ -65,14 +87,14 @@ describe("Slack activity", () => {
 				order.push("status");
 			},
 			{
-				"message.accepted": () => {
+				message_accepted: () => {
 					order.push("custom");
 				},
 			},
 		);
 		const context = activityContext();
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
 
 		expect(order).toEqual(["custom"]);
 	});
@@ -102,8 +124,8 @@ describe("Slack activity", () => {
 			cause: { kind: "message" as const, messageId: "123.456" },
 		};
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
-		await emit(activity.events, { type: "todo.changed", origin: "heypi", job, text: "● Patch" }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "todo_changed", origin: "heypi", job, text: "● Patch" }, context);
 
 		expect(reactions).toEqual(["eyes"]);
 		expect(context.todo?.replace).toHaveBeenCalledWith("● Patch");
@@ -123,7 +145,7 @@ describe("Slack activity", () => {
 		const context = activityContext();
 		context.message.mentioned = false;
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
 
 		expect(reactions).toEqual([]);
 	});
@@ -150,11 +172,11 @@ describe("Slack activity", () => {
 			cause: { kind: "message" as const, messageId: "123.456" },
 		};
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
-		await emit(activity.events, { type: "tool.started", origin: "pi", job, tool: "bash" }, context);
-		await emit(activity.events, { type: "todo.changed", origin: "heypi", job, text: "● Patch" }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "tool_started", origin: "pi", job, tool: "bash" }, context);
+		await emit(activity.events, { type: "todo_changed", origin: "heypi", job, text: "● Patch" }, context);
 		await activity.resume({ conversation: "C1", thread: "100.000" });
-		await emit(activity.events, { type: "message.completed", origin: "pi", job, text: "Done." }, context);
+		await emit(activity.events, { type: "message_completed", origin: "pi", job, text: "Done." }, context);
 		await activity.stop();
 
 		expect(context.todo?.replace).toHaveBeenCalledWith("● Patch");
@@ -177,11 +199,11 @@ describe("Slack activity", () => {
 			},
 		);
 		const context = activityContext();
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
 		await emit(
 			activity.events,
 			{
-				type: "tool.started",
+				type: "tool_started",
 				origin: "pi",
 				job: {
 					id: "job",
@@ -197,10 +219,10 @@ describe("Slack activity", () => {
 			},
 			context,
 		);
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
-		await emit(activity.events, { type: "message.queued", origin: "heypi", message: context.message }, context);
-		await emit(activity.events, { type: "message.steered", origin: "heypi", message: context.message }, context);
-		await emit(activity.events, { type: "message.rejected", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_queued", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_steered", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_rejected", origin: "heypi", message: context.message }, context);
 
 		expect(context.send).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("Queued") }));
 		expect(context.send).toHaveBeenCalledTimes(3);
@@ -222,7 +244,7 @@ describe("Slack activity", () => {
 		context.message.conversation = "D1";
 		context.message.dm = true;
 
-		await emit(activity.events, { type: "message.accepted", origin: "heypi", message: context.message }, context);
+		await emit(activity.events, { type: "message_accepted", origin: "heypi", message: context.message }, context);
 
 		expect(threads).toEqual(["123.456"]);
 	});

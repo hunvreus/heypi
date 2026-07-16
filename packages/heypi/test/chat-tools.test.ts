@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -85,7 +85,7 @@ describe("chat tools", () => {
 					{
 						name: "report.txt",
 						path: "report.txt",
-						localPath: join(workspaceDir, "report.txt"),
+						localPath: await realpath(join(workspaceDir, "report.txt")),
 						mime: "text/plain",
 					},
 				],
@@ -125,10 +125,15 @@ describe("chat tools", () => {
 					{
 						name: "report.txt",
 						path: "report.txt",
-						localPath: join(workspaceDir, "report.txt"),
+						localPath: await realpath(join(workspaceDir, "report.txt")),
 						mime: "text/plain",
 					},
-					{ name: "chart.png", path: "chart.png", localPath: join(workspaceDir, "chart.png"), mime: "image/png" },
+					{
+						name: "chart.png",
+						path: "chart.png",
+						localPath: await realpath(join(workspaceDir, "chart.png")),
+						mime: "image/png",
+					},
 				],
 			},
 		]);
@@ -164,7 +169,7 @@ describe("chat tools", () => {
 					{
 						name: "summary.txt",
 						path: "/shared/summary.txt",
-						localPath: join(sharedDir, "summary.txt"),
+						localPath: await realpath(join(sharedDir, "summary.txt")),
 						mime: "text/plain",
 					},
 				],
@@ -185,6 +190,24 @@ describe("chat tools", () => {
 		await expect(
 			tool.execute("call", { paths: ["../secret.txt"] }, undefined, undefined, {} as never),
 		).rejects.toThrow("path escapes runtime workspace");
+	});
+
+	it("rejects attachments through escaping symlinks", async () => {
+		const workspaceDir = join(tmpdir(), `heypi-attach-link-${Date.now()}-${Math.random()}`);
+		const outsideDir = join(tmpdir(), `heypi-attach-outside-${Date.now()}-${Math.random()}`);
+		await mkdir(workspaceDir, { recursive: true });
+		await mkdir(outsideDir, { recursive: true });
+		await writeFile(join(outsideDir, "secret.txt"), "private");
+		await symlink(join(outsideDir, "secret.txt"), join(workspaceDir, "secret.txt"));
+		const tool = createChatAttachTool({
+			workspaceDir,
+			target: () => ({ conversation: "room" }),
+			async send() {},
+		});
+
+		await expect(tool.execute("call", { paths: ["secret.txt"] }, undefined, undefined, {} as never)).rejects.toThrow(
+			"path escapes runtime workspace",
+		);
 	});
 
 	it("requests secrets without returning the raw value to the model", async () => {

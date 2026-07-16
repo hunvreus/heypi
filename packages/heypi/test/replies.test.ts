@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -17,5 +17,20 @@ describe("reply index", () => {
 
 		expect(restored.resolve("m1")).toBe("s1");
 		expect(restored.resolve("m2")).toBe("s2");
+	});
+
+	it("recovers after a failed append without exposing an unpersisted alias", async () => {
+		const dir = join(tmpdir(), `heypi-replies-failure-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const path = join(dir, "replies.jsonl");
+		const index = createReplyIndex(path);
+		await index.load();
+		await rm(dir, { recursive: true });
+
+		await expect(index.add("m1", "s1")).rejects.toThrow();
+		expect(index.resolve("m1")).toBeUndefined();
+
+		await mkdir(dir, { recursive: true });
+		await expect(index.add("m2", "s2")).resolves.toBeUndefined();
+		expect(await readFile(path, "utf8")).toContain('"message":"m2"');
 	});
 });

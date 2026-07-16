@@ -28,16 +28,17 @@ export type AdapterEventContext = {
 };
 
 export type AdapterEvent =
-	| { type: "message.accepted"; origin: "heypi"; message: ChatMessage }
-	| { type: "message.queued"; origin: "heypi"; message: ChatMessage }
-	| { type: "message.steered"; origin: "heypi"; message: ChatMessage }
-	| { type: "message.rejected"; origin: "heypi"; message: ChatMessage }
-	| { type: "turn.started"; origin: "pi"; job: ChatJob }
-	| { type: "tool.started"; origin: "pi"; job: ChatJob; tool: string }
-	| { type: "todo.changed"; origin: "heypi"; job: ChatJob; text: string }
-	| { type: "message.completed"; origin: "pi"; job: ChatJob; text: string }
-	| { type: "turn.canceled"; origin: "heypi"; job: ChatJob; reason: string }
-	| { type: "turn.failed"; origin: "heypi" | "pi"; job: ChatJob; error: string };
+	| { type: "message_accepted"; origin: "heypi"; message: ChatMessage }
+	| { type: "message_queued"; origin: "heypi"; message: ChatMessage }
+	| { type: "message_steered"; origin: "heypi"; message: ChatMessage }
+	| { type: "message_rejected"; origin: "heypi"; message: ChatMessage }
+	| { type: "message_failed"; origin: "heypi"; message: ChatMessage; error: string }
+	| { type: "turn_started"; origin: "pi"; job: ChatJob }
+	| { type: "tool_started"; origin: "pi"; job: ChatJob; tool: string }
+	| { type: "todo_changed"; origin: "heypi"; job: ChatJob; text: string }
+	| { type: "message_completed"; origin: "pi"; job: ChatJob; text: string }
+	| { type: "turn_canceled"; origin: "heypi"; job: ChatJob; reason: string }
+	| { type: "turn_failed"; origin: "heypi" | "pi"; job: ChatJob; error: string };
 
 export type AdapterEventType = AdapterEvent["type"];
 
@@ -52,7 +53,7 @@ export type AdapterEvents = {
 
 export function busyEvents(): AdapterEvents {
 	return {
-		"message.queued": async (_event, context) => {
+		message_queued: async (_event, context) => {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
@@ -60,7 +61,7 @@ export function busyEvents(): AdapterEvents {
 				text: "Queued. I’ll start it when the current task finishes.",
 			});
 		},
-		"message.steered": async (_event, context) => {
+		message_steered: async (_event, context) => {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
@@ -68,7 +69,7 @@ export function busyEvents(): AdapterEvents {
 				text: "Updated the active task.",
 			});
 		},
-		"message.rejected": async (_event, context) => {
+		message_rejected: async (_event, context) => {
 			await context.send({
 				conversation: context.message.conversation,
 				thread: context.message.thread,
@@ -81,7 +82,7 @@ export function busyEvents(): AdapterEvents {
 
 export function todoEvents(): AdapterEvents {
 	return {
-		"todo.changed": async (event, context) => {
+		todo_changed: async (event, context) => {
 			await context.todo?.replace(event.text);
 		},
 	};

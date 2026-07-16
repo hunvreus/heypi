@@ -12,12 +12,14 @@ import type {
 	ApprovalDecision,
 	ApprovalView,
 	ApproverSet,
+	AttachmentPolicy,
 	BusyMode,
 	ChatMessage,
 } from "./types.js";
 
 const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
+const APPROVAL_CANCELED = "Approval canceled.";
 
 export type SlackConfig = {
 	id?: string;
@@ -30,6 +32,7 @@ export type SlackConfig = {
 	busy?: BusyMode;
 	reaction?: false | string;
 	status?: boolean;
+	attachments?: AttachmentPolicy;
 	events?: AdapterEvents;
 };
 
@@ -52,6 +55,7 @@ type PendingApproval = {
 	message: string;
 	view: ApprovalView;
 	timer?: ReturnType<typeof setTimeout>;
+	cancel(): void;
 	resolve(decision: ApprovalDecision): Promise<void>;
 };
 
@@ -130,40 +134,44 @@ export function createSlackActivity(
 	}
 
 	const defaults: AdapterEvents = {
-		"message.accepted": async (_event, context) => {
+		message_accepted: async (_event, context) => {
 			if (reaction && context.message.mentioned) await react(context.message, reaction);
 			if (statusEnabled && !active.has(activityKey(context.message))) await set(context.message, "Thinking...");
 		},
-		"todo.changed": async (event, context) => {
+		todo_changed: async (event, context) => {
 			await context.todo?.replace(event.text);
 			await restore(context.message);
 		},
 		...(statusEnabled
 			? {
-					"tool.started": async (_event, context) => set(context.message, "Working..."),
-					"message.queued": async (event, context) => {
-						const handler = busy["message.queued"];
+					tool_started: async (_event, context) => set(context.message, "Working..."),
+					message_queued: async (event, context) => {
+						const handler = busy.message_queued;
 						if (typeof handler === "function") await handler(event, context);
 						await restore(context.message);
 					},
-					"message.steered": async (event, context) => {
-						const handler = busy["message.steered"];
+					message_steered: async (event, context) => {
+						const handler = busy.message_steered;
 						if (typeof handler === "function") await handler(event, context);
 						await restore(context.message);
 					},
-					"message.rejected": async (event, context) => {
-						const handler = busy["message.rejected"];
+					message_rejected: async (event, context) => {
+						const handler = busy.message_rejected;
 						if (typeof handler === "function") await handler(event, context);
 						await restore(context.message);
 					},
-					"message.completed": async (event, context) => {
+					message_completed: async (event, context) => {
 						if (!event.text.trim() && context.todo) await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
-					"turn.failed": (_event, context) => {
+					message_failed: async (_event, context) => {
+						await clear(context.message);
 						active.delete(activityKey(context.message));
 					},
-					"turn.canceled": (_event, context) => {
+					turn_failed: (_event, context) => {
+						active.delete(activityKey(context.message));
+					},
+					turn_canceled: (_event, context) => {
 						active.delete(activityKey(context.message));
 					},
 				}
@@ -247,7 +255,7 @@ export function slack(config: SlackConfig): Adapter {
 					timestamp: message.id,
 				});
 			} catch (error) {
-				context?.logger.warn("slack.reaction_failed", {
+				context?.logger.warn("slack_reaction_failed", {
 					emoji,
 					message: error instanceof Error ? error.message : String(error),
 				});
@@ -258,7 +266,7 @@ export function slack(config: SlackConfig): Adapter {
 			try {
 				await app.client.assistant.threads.setStatus(payload);
 			} catch (error) {
-				context?.logger.warn("slack.status_failed", {
+				context?.logger.warn("slack_status_failed", {
 					message: error instanceof Error ? error.message : String(error),
 				});
 			}
@@ -335,20 +343,27 @@ export function slack(config: SlackConfig): Adapter {
 				});
 			});
 			await app.start();
-			context.logger.info("adapter.slack.start", { mode: "socket" });
+			context.logger.info("adapter_slack_started", { mode: "socket" });
 		},
 		async stop() {
+			for (const approval of [...pending.values()]) approval.cancel();
 			await activity.stop();
 			await app?.stop();
 			app = undefined;
 		},
 		async materializeAttachments(message, target) {
+			const policy = config.attachments;
 			return {
 				...message,
 				attachments: await materializeAttachments(message.attachments, {
 					dir: target.dir,
 					displayDir: target.displayDir,
 					headers: { authorization: `Bearer ${config.token}` },
+					maxBytes: policy?.maxBytes,
+					timeoutMs: policy?.timeoutMs,
+					mimeTypes: policy?.mimeTypes,
+					hosts: policy?.hosts ?? ["*.slack.com"],
+					retry: policy?.retry,
 				}),
 			};
 		},
@@ -396,7 +411,7 @@ export function slack(config: SlackConfig): Adapter {
 				text: formatOutgoingText(message.text, message.attachments),
 			});
 		},
-		async requestApproval(view) {
+		async requestApproval(view, signal) {
 			if (!app) return { approved: false, reason: "Slack adapter is not started." };
 			if (!view.conversation) return { approved: false, reason: "Slack approval has no target conversation." };
 			const result = await app.client.chat.postMessage({
@@ -405,12 +420,33 @@ export function slack(config: SlackConfig): Adapter {
 				...slackApprovalPayload(view),
 			});
 			return new Promise<ApprovalDecision>((resolve) => {
+				const cleanup = () => signal?.removeEventListener("abort", cancel);
+				const cancel = () => {
+					if (!pending.delete(view.id)) return;
+					if (pendingApproval.timer) clearTimeout(pendingApproval.timer);
+					void pendingApproval.resolve({
+						approved: false,
+						messageIds: pendingApproval.message ? [pendingApproval.message] : undefined,
+						reason: APPROVAL_CANCELED,
+					});
+					void app?.client.chat
+						.update({
+							channel: pendingApproval.channel,
+							ts: pendingApproval.message,
+							...slackApprovalPayload({ ...view, state: "rejected", resolvedBy: "canceled" }),
+						})
+						.catch(() => undefined);
+				};
 				const pendingApproval: PendingApproval = {
 					channel: view.conversation ?? "",
 					message: result.ts ?? "",
 					view,
+					cancel,
 					async resolve(decision) {
-						await activity.resume({ conversation: view.conversation ?? "", thread: view.thread });
+						cleanup();
+						if (decision.reason !== APPROVAL_CANCELED) {
+							await activity.resume({ conversation: view.conversation ?? "", thread: view.thread });
+						}
 						resolve(decision);
 					},
 				};
@@ -429,6 +465,8 @@ export function slack(config: SlackConfig): Adapter {
 					}, timeoutMs);
 				}
 				pending.set(view.id, pendingApproval);
+				signal?.addEventListener("abort", cancel, { once: true });
+				if (signal?.aborted) cancel();
 			});
 		},
 	};
@@ -439,7 +477,7 @@ async function slackBotIdentity(app: App, logger: AdapterContext["logger"]): Pro
 		const result = (await app.client.auth.test()) as { bot_id?: string; app_id?: string; user_id?: string };
 		return { botId: result.bot_id, appId: result.app_id, userId: result.user_id };
 	} catch (error) {
-		logger.warn("slack.auth_test_failed", { message: error instanceof Error ? error.message : String(error) });
+		logger.warn("slack_auth_test_failed", { message: error instanceof Error ? error.message : String(error) });
 		return {};
 	}
 }

@@ -1,5 +1,6 @@
 import type { CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AdapterEvents } from "./events.js";
+import type { RetryConfig } from "./retry.js";
 
 export type ModelConfig = CreateAgentSessionOptions["model"];
 
@@ -26,6 +27,14 @@ export type ChatAttachment = {
 	localPath?: string;
 	url?: string;
 	mime?: string;
+};
+
+export type AttachmentPolicy = {
+	maxBytes?: number;
+	timeoutMs?: number;
+	mimeTypes?: string[];
+	hosts?: string[];
+	retry?: RetryConfig | false;
 };
 
 export type ChatMessage = {
@@ -77,6 +86,8 @@ export type BusyMode = "queue" | "steer" | "reject";
 export type AdapterContext = {
 	agentId: string;
 	logger: Logger;
+	/** Persist and queue a message without waiting for its model turn to finish. */
+	enqueue?(message: ChatMessage): Promise<void>;
 	receive(message: ChatMessage): Promise<void>;
 };
 
@@ -99,7 +110,7 @@ export type Adapter = {
 	send(message: SendMessage): Promise<SentMessage | undefined>;
 	update?(message: UpdateMessage): Promise<void>;
 	materializeAttachments?(message: ChatMessage, context: MaterializeContext): Promise<ChatMessage>;
-	requestApproval?(view: ApprovalView): Promise<ApprovalDecision>;
+	requestApproval?(view: ApprovalView, signal?: AbortSignal): Promise<ApprovalDecision>;
 };
 
 export type AllowConfig = {
@@ -204,6 +215,8 @@ export type RuntimeContext = {
 
 export type RuntimeInstance = {
 	tools: ToolDefinition<any, any, any>[];
+	/** Refresh external runtime state before a new user turn. */
+	prepare?(): Promise<void>;
 	cleanup(): Promise<void>;
 };
 

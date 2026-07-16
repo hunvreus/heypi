@@ -33,7 +33,7 @@ describe("public entrypoint", () => {
 		expectTypeOf<ApprovalState>().toEqualTypeOf<"pending" | "approved" | "rejected">();
 		expectTypeOf<AllowConfig>().toMatchTypeOf<{ dms?: boolean; channels?: string[]; users?: string[] }>();
 		expectTypeOf<Adapter>().toMatchTypeOf<{ admins?: { users?: string[] }; approvers?: { users?: string[] } }>();
-		expectTypeOf<Adapter>().toMatchTypeOf<{ events?: { "turn.started"?: unknown } }>();
+		expectTypeOf<Adapter>().toMatchTypeOf<{ events?: { turn_started?: unknown } }>();
 		expectTypeOf<AdapterApprovalConfig>().toMatchTypeOf<{ layout?: ApprovalLayout; timeoutMs?: number }>();
 		expectTypeOf<ChatJob["id"]>().toEqualTypeOf<string>();
 		expectTypeOf<ChatJob["state"]>().toEqualTypeOf<"queued" | "running" | "completed" | "failed" | "canceled">();

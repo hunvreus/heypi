@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
@@ -57,12 +57,12 @@ function resolveUnder(root: string, path: string, label: string): string {
 function attachPath(
 	options: Pick<ChatAttachToolOptions, "workspaceDir" | "sharedDir">,
 	path: string,
-): { host: string; display: string } {
+): { host: string; display: string; root: string } {
 	if (path === "/shared" || path.startsWith("/shared/")) {
 		if (!options.sharedDir) throw new Error(`path escapes runtime workspace: ${path}`);
 		const host = resolve(options.sharedDir, posix.relative("/shared", posix.normalize(path)));
 		const rel = resolveUnder(options.sharedDir, host, "shared");
-		return { host, display: `/shared/${rel.split(sep).join("/")}` };
+		return { host, display: `/shared/${rel.split(sep).join("/")}`, root: options.sharedDir };
 	}
 	const host =
 		path === "/workspace" || path.startsWith("/workspace/")
@@ -71,7 +71,7 @@ function attachPath(
 				? resolve(path)
 				: resolve(options.workspaceDir, path);
 	const rel = resolveUnder(options.workspaceDir, host, "workspace");
-	return { host, display: rel.split(sep).join("/") };
+	return { host, display: rel.split(sep).join("/"), root: options.workspaceDir };
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -120,7 +120,7 @@ export function createChatHistoryTool(channel: Channel): ToolDefinition<typeof c
 					? results
 							.map((message) => {
 								const time = message.time ?? `record:${message.record}`;
-								if (message.type === "outbound") return `- [${time}] assistant: ${message.text}`;
+								if (message.type === "message_outbound") return `- [${time}] assistant: ${message.text}`;
 								return `- [${time}] [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text}`;
 							})
 							.join("\n")
@@ -146,8 +146,14 @@ export function createChatAttachTool(options: ChatAttachToolOptions): ToolDefini
 			const files = await Promise.all(
 				(params as ChatAttachParams).paths.map(async (path) => {
 					const file = attachPath(options, path);
-					if (!(await stat(file.host)).isFile()) throw new Error(`chat_attach can only attach files: ${path}`);
-					return file;
+					const host = await realpath(file.host);
+					resolveUnder(
+						await realpath(file.root),
+						host,
+						file.display.startsWith("/shared/") ? "shared" : "workspace",
+					);
+					if (!(await stat(host)).isFile()) throw new Error(`chat_attach can only attach files: ${path}`);
+					return { ...file, host };
 				}),
 			);
 			const attachments = files.map((file, index) => {

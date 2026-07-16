@@ -4,8 +4,10 @@ import {
 	approvalActorAllowed,
 	classifyCommand,
 	createApprovalExtension,
+	inputHash,
 	renderApprovalMessage,
 } from "../src/approval.js";
+import type { ApprovalRequestedRecord, ApprovalResolvedRecord } from "../src/channel.js";
 import type { ApprovalContext } from "../src/types.js";
 
 function context(input: Partial<ApprovalContext> = {}): ApprovalContext {
@@ -131,6 +133,11 @@ describe("approval policies", () => {
 			false,
 		);
 	});
+
+	it("hashes equivalent object inputs deterministically", () => {
+		expect(inputHash({ b: 2, a: 1 })).toBe(inputHash({ a: 1, b: 2 }));
+		expect(inputHash({ a: 1 })).not.toBe(inputHash({ a: 2 }));
+	});
 });
 
 describe("createApprovalExtension", () => {
@@ -204,6 +211,143 @@ describe("createApprovalExtension", () => {
 		expect(await handler?.({ toolName: "bash", input: { command: "git push" } })).toEqual({
 			block: true,
 			reason: "Approval actor is not allowed to approve this tool call.",
+		});
+	});
+
+	it("audits approval requests and resolutions with reduced Pi annotations", async () => {
+		type ToolCall = { id: string; toolName: string; input: unknown };
+		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
+		let handler: ToolHandler | undefined;
+		const entries: Array<{ type: string; data: Record<string, unknown> }> = [];
+		const requested: unknown[] = [];
+		const resolved: unknown[] = [];
+		const extension = createApprovalExtension({
+			policies: {
+				bash: approval.command(),
+			},
+			context: () => ({
+				turnId: "turn-1",
+				triggerRecord: 4,
+				inboundMessageId: "m1",
+				adapter: "local",
+				adapterId: "local",
+				conversation: "room",
+				actor: { id: "u1", name: "Ronan" },
+			}),
+			audit: {
+				async requested(input) {
+					requested.push(input);
+					return { type: "approval_requested", record: 10, requestedAt: "now", ...input };
+				},
+				async resolved(input) {
+					resolved.push(input);
+					return { type: "approval_resolved", record: 11, resolvedAt: "later", ...input };
+				},
+			},
+			async request() {
+				return { approved: true, resolvedById: "admin", resolvedBy: "Admin", messageIds: ["remote-1"] };
+			},
+		});
+
+		extension({
+			on(event: string, next: ToolHandler) {
+				if (event === "tool_call") handler = next;
+			},
+			appendEntry(type: string, data: Record<string, unknown>) {
+				entries.push({ type, data });
+			},
+		} as never);
+
+		await expect(
+			handler?.({ id: "call-1", toolName: "bash", input: { command: "git push" } }),
+		).resolves.toBeUndefined();
+		expect(requested).toMatchObject([
+			{
+				approvalId: expect.any(String),
+				turnId: "turn-1",
+				triggerRecord: 4,
+				toolCallId: "call-1",
+				toolName: "bash",
+				displayedAction: "git push",
+			},
+		]);
+		expect(resolved).toMatchObject([
+			{
+				approvalId: expect.any(String),
+				decision: "approved",
+				source: "adapter_click",
+				remoteMessageIds: ["remote-1"],
+			},
+		]);
+		expect(entries).toEqual([
+			{
+				type: "heypi.turn",
+				data: expect.objectContaining({
+					turnId: "turn-1",
+					inboundMessageId: "m1",
+					triggerRecord: 4,
+				}),
+			},
+			{
+				type: "heypi.approval.requested",
+				data: expect.objectContaining({
+					authoritative: false,
+					turnId: "turn-1",
+					toolCallId: "call-1",
+					heypiRecord: 10,
+				}),
+			},
+			{
+				type: "heypi.approval.resolved",
+				data: expect.objectContaining({
+					authoritative: false,
+					decision: "approved",
+					heypiRecord: 11,
+				}),
+			},
+		]);
+		expect(entries[1]?.data).not.toHaveProperty("input");
+	});
+
+	it("blocks approved tool calls when the canonical resolution write fails", async () => {
+		type ToolCall = { toolName: string; input: unknown };
+		type ToolHandler = (toolCall: ToolCall) => unknown | Promise<unknown>;
+		let handler: ToolHandler | undefined;
+		const extension = createApprovalExtension({
+			policies: {
+				bash: approval.command(),
+			},
+			context: () => ({
+				turnId: "turn-1",
+				triggerRecord: 4,
+				adapter: "local",
+				adapterId: "local",
+				conversation: "room",
+				actor: { id: "u1" },
+			}),
+			audit: {
+				async requested(input): Promise<ApprovalRequestedRecord> {
+					return { type: "approval_requested", record: 1, requestedAt: "now", ...input };
+				},
+				async resolved(): Promise<ApprovalResolvedRecord> {
+					throw new Error("disk full");
+				},
+			},
+			async request() {
+				return { approved: true };
+			},
+		});
+
+		extension({
+			on(event: string, next: ToolHandler) {
+				if (event === "tool_call") handler = next;
+			},
+			appendEntry() {},
+		} as never);
+
+		await expect(handler?.({ toolName: "bash", input: { command: "git push" } })).resolves.toEqual({
+			block: true,
+			reason: "Approval audit write failed.",
 		});
 	});
 });

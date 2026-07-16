@@ -53,6 +53,7 @@ export {
 export type { MessageSlot } from "./message-slot.js";
 export { modelFromEnv } from "./model.js";
 export { createPiHost, type PiEvent, type PiHost, type PiHostOptions } from "./pi.js";
+export type { RetryConfig } from "./retry.js";
 export {
 	type DockerRuntimeOptions,
 	docker,
@@ -109,6 +110,7 @@ export type {
 	ApprovalPolicyResult,
 	ApprovalState,
 	ApprovalView,
+	AttachmentPolicy,
 	BusyMode,
 	ChatAttachment,
 	ChatMessage,

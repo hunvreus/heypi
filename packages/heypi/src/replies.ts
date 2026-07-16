@@ -51,10 +51,14 @@ export function createReplyIndex(path: string): ReplyIndex {
 		},
 		add(message, session) {
 			if (sessions.get(message) === session) return writes;
-			sessions.set(message, session);
 			const record: ReplyRecord = { message, session };
-			writes = writes.then(() => appendFile(path, `${JSON.stringify(record)}\n`, "utf8"));
-			return writes;
+			const write = writes.then(async () => {
+				if (sessions.get(message) === session) return;
+				await appendFile(path, `${JSON.stringify(record)}\n`, "utf8");
+				sessions.set(message, session);
+			});
+			writes = write.catch(() => undefined);
+			return write;
 		},
 	};
 }

@@ -22,7 +22,7 @@ describe("admin", () => {
 		await writeFile(
 			join(logDir, "log.jsonl"),
 			`${JSON.stringify({
-				type: "inbound",
+				type: "message_inbound",
 				record: 1,
 				id: "m1",
 				adapter: "local",
@@ -44,6 +44,7 @@ describe("admin", () => {
 					jobs: "/admin/jobs",
 					cancelJobs: "/admin/jobs/cancel",
 					conversations: "/admin/conversations",
+					piSessions: "/admin/pi-sessions/{conversation}",
 				},
 			});
 			await expect(fetch(`${admin.url()}/health`).then((response) => response.json())).resolves.toEqual({
@@ -61,8 +62,44 @@ describe("admin", () => {
 				),
 			).resolves.toMatchObject({
 				key: "local/local/local-session",
-				records: [{ type: "inbound", text: "hello" }],
+				records: [{ type: "message_inbound", text: "hello" }],
 			});
+		} finally {
+			await admin.stop();
+		}
+	});
+
+	it("lists and reads Pi session JSONL related to a conversation", async () => {
+		const state = await makeDir("admin-pi");
+		const logDir = join(state, "adapters", "local", "conversations", "local", "sessions", "local-session");
+		await mkdir(join(logDir, "pi", "sessions"), { recursive: true });
+		await writeFile(join(logDir, "log.jsonl"), `${JSON.stringify({ type: "turn_queued", record: 1 })}\n`);
+		await writeFile(join(logDir, "pi", "sessions", "session.jsonl"), `${JSON.stringify({ type: "custom" })}\n`);
+		const admin = createAdmin({ stateDir: state, port: freePort() });
+		await admin.start();
+		try {
+			await expect(
+				fetch(`${admin.url()}/pi-sessions/${encodeURIComponent("local/local/local-session")}`).then((response) =>
+					response.json(),
+				),
+			).resolves.toEqual({
+				key: "local/local/local-session",
+				sessions: [
+					{
+						id: join("pi", "sessions", "session.jsonl"),
+						url: `/admin/pi-sessions/${encodeURIComponent("local/local/local-session")}/${encodeURIComponent(join("pi", "sessions", "session.jsonl"))}`,
+					},
+				],
+			});
+			const response = await fetch(
+				`${admin.url()}/pi-sessions/${encodeURIComponent("local/local/local-session")}/${encodeURIComponent(join("pi", "sessions", "session.jsonl"))}`,
+			);
+			await expect(response.text()).resolves.toContain('"type":"custom"');
+			await expect(
+				fetch(
+					`${admin.url()}/pi-sessions/${encodeURIComponent("local/local/local-session")}/${encodeURIComponent("../secret.jsonl")}`,
+				).then((response) => response.json()),
+			).resolves.toEqual({ error: "not_found" });
 		} finally {
 			await admin.stop();
 		}
@@ -187,7 +224,7 @@ describe("admin", () => {
 		await writeFile(
 			join(logDir, "log.jsonl"),
 			`${JSON.stringify({
-				type: "inbound",
+				type: "message_inbound",
 				record: 1,
 				id: "m1",
 				adapter: "local",
