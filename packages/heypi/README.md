@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-black.svg">
+    <img alt="heypi" src="docs/assets/logo-black.svg" width="320">
+  </picture>
+</p>
+
 # heypi
 
 Pi-native chat adapters for team agents.
