@@ -101,6 +101,14 @@ describe("CLI", () => {
 		expect(cli.stdout()).not.toContain("xoxb-test-secret");
 	});
 
+	it("generates only the supported Slack Socket Mode manifest", async () => {
+		const cli = harness();
+
+		expect(await runCli(["slack", "manifest", "--json"], cli.dependencies)).toBe(0);
+		expect(JSON.parse(cli.stdout())).toMatchObject({ settings: { socket_mode_enabled: true } });
+		expect(cli.stdout()).not.toContain("request_url");
+	});
+
 	it("checks Discord REST authentication and gateway intents", async () => {
 		const gateway = vi.fn(async () => undefined);
 		const cli = harness({

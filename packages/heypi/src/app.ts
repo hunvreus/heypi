@@ -168,6 +168,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 	const scheduleDefinitions = await loadSchedules(agent.root);
 	const scheduleStore = createScheduleStore(join(stateDir, "schedules", "state.json"));
 	const channels = new Map<string, RunningChannel>();
+	const pendingMessages = new Set<string>();
 	const loadingChannels = new Map<string, Promise<RunningChannel>>();
 	const replyIndexes = new Map<string, Promise<ReplyIndex>>();
 	const resourceQueues = new Map<string, Promise<void>>();
@@ -450,6 +451,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				sharedDir: running.storage.sharedDir,
 				sessionDir: running.storage.sessionDir,
 				extensionPaths: staged.extensionPaths,
+				skillsDir: staged.skillsDir,
 				excludeTools: toolConfig.excludeTools,
 				customTools: [
 					createChatHistoryTool(channel),
@@ -503,10 +505,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 
 	async function cancelActive(running: RunningChannel, reason = "canceled"): Promise<number> {
 		const job = currentJob(running);
-		if (!job || !running.pi?.abort) return 0;
+		if (!job) return 0;
 		running.canceling = reason;
 		running.abort?.abort(reason);
-		await running.pi.abort();
+		await running.pi?.abort?.();
 		return 1;
 	}
 
@@ -554,6 +556,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				running.activeTurn = turn;
 				running.todoMessage = undefined;
 				const pi = await startPi(running, turn);
+				if (running.canceling || running.abort.signal.aborted) throw new Error(running.canceling ?? "canceled");
 				running.todo?.reset();
 				const job = currentJob(running);
 				if (job) await emit(running, { type: "turn_started", origin: "pi", job });
@@ -634,12 +637,20 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 					});
 					if (!stopping) {
 						const text = canceled === "canceled" ? "Canceled." : `Canceled: ${canceled}`;
-						await sendLogged(running, {
-							conversation: turn.conversation,
-							thread: turn.replyThread,
-							replyTo: turn.replyTo,
-							text,
-						});
+						try {
+							await sendLogged(running, {
+								conversation: turn.conversation,
+								thread: turn.replyThread,
+								replyTo: turn.replyTo,
+								text,
+							});
+						} catch (error) {
+							logger.warn("turn_result_send_failed", {
+								adapter: turn.adapter,
+								conversation: turn.conversation,
+								message: error instanceof Error ? error.message : String(error),
+							});
+						}
 					}
 				} else {
 					if (job) await emit(running, { type: "turn_failed", origin: "heypi", job, error: text });
@@ -656,12 +667,20 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				if (stopping) return;
 				if (!canceled) {
 					const failure = `The agent failed: ${text}`;
-					await sendLogged(running, {
-						conversation: turn.conversation,
-						thread: turn.replyThread,
-						replyTo: turn.replyTo,
-						text: failure,
-					});
+					try {
+						await sendLogged(running, {
+							conversation: turn.conversation,
+							thread: turn.replyThread,
+							replyTo: turn.replyTo,
+							text: failure,
+						});
+					} catch (error) {
+						logger.warn("turn_result_send_failed", {
+							adapter: turn.adapter,
+							conversation: turn.conversation,
+							message: error instanceof Error ? error.message : String(error),
+						});
+					}
 				}
 			} finally {
 				unsubscribe?.();
@@ -756,6 +775,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			resolveIntake();
 		};
 		let accepted = false;
+		let pendingMessage: string | undefined;
 		try {
 			if (message.user.isSelf) {
 				logger.debug("adapter_message_ignored", {
@@ -838,6 +858,10 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 				return;
 			}
 			const running = await channelFor(adapter, message);
+			const messageKey = `${keyFor(message)}\u0000${message.id}`;
+			if (pendingMessages.has(messageKey) || running.channel.hasMessage(message.id)) return;
+			pendingMessages.add(messageKey);
+			pendingMessage = messageKey;
 			accepted = running.channel.accepts(message);
 			if (accepted) await emit(running, { type: "message_accepted", origin: "heypi", message });
 			const busy = adapter.busy ?? "queue";
@@ -893,6 +917,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			}
 			throw error;
 		} finally {
+			if (pendingMessage) pendingMessages.delete(pendingMessage);
 			finishIntake();
 		}
 	}
@@ -964,6 +989,7 @@ export async function createHeypi(options: CreateHeypiOptions): Promise<HeypiApp
 			workspaceDir,
 			sessionDir,
 			extensionPaths: staged.extensionPaths,
+			skillsDir: staged.skillsDir,
 			excludeTools: toolConfig.excludeTools,
 			customTools: toolConfig.customTools,
 			extensions: approvalExtension ? [approvalExtension] : [],

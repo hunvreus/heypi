@@ -210,6 +210,8 @@ export type RuntimeKind = "host" | "docker" | "gondolin" | "just-bash" | "vercel
 export type RuntimeContext = {
 	workspace: string;
 	shared?: string;
+	/** Trusted staged skill packages exposed at /agent/skills. */
+	skills?: string;
 	env?: Record<string, string>;
 };
 
@@ -238,6 +240,7 @@ export type RuntimeConfig = {
 
 export type AdminConfig = {
 	host?: string;
+	hosts?: string[];
 	port?: number;
 	path?: string;
 	token?: string;

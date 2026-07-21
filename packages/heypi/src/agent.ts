@@ -31,17 +31,15 @@ export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Pr
 export type StagedAgent = {
 	root: string;
 	agentDir: string;
-	workspaceDir: string;
 	extensionPaths: string[];
+	skillsDir?: string;
 };
 
 export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<StagedAgent> {
 	const root = join(stateDir, "agents", agent.id);
 	const agentDir = join(root, "agent");
-	const workspaceDir = agent.runtime?.workspace ? resolve(agent.runtime.workspace) : join(root, "workspace");
 	await mkdir(root, { recursive: true });
 	await rm(agentDir, { recursive: true, force: true });
-	await mkdir(workspaceDir, { recursive: true });
 	await cp(agent.root, agentDir, {
 		recursive: true,
 		force: true,
@@ -62,5 +60,6 @@ export async function stageAgent(agent: AgentConfig, stateDir: string): Promise<
 	const extensionPaths = (await listFiles(join(agentDir, "tools"))).filter(
 		(path) => path.endsWith(".ts") || path.endsWith(".js"),
 	);
-	return { root, agentDir, workspaceDir, extensionPaths };
+	const skillsDir = join(agentDir, "skills");
+	return { root, agentDir, extensionPaths, skillsDir: existsSync(skillsDir) ? skillsDir : undefined };
 }

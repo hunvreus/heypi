@@ -216,11 +216,7 @@ export async function slackUsers(context: CliContext, flags: CliFlags): Promise<
 	};
 }
 
-export function slackManifest(flags: CliFlags): CliResult {
-	const mode = flag(flags, "mode") ?? "socket";
-	if (mode !== "socket" && mode !== "http") throw new Error("--mode must be socket or http.");
-	const url = flag(flags, "url");
-	if (mode === "http" && !url) throw new Error("Slack HTTP mode requires --url.");
+export function slackManifest(): CliResult {
 	const manifest = {
 		_metadata: { major_version: 1 },
 		display_information: { name: "HeyPi" },
@@ -228,12 +224,11 @@ export function slackManifest(flags: CliFlags): CliResult {
 		oauth_config: { scopes: { bot: [...SLACK_RUNTIME_SCOPES, ...SLACK_DISCOVERY_SCOPES] } },
 		settings: {
 			event_subscriptions: {
-				...(mode === "http" ? { request_url: url } : {}),
 				bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim"],
 			},
-			interactivity: { is_enabled: true, ...(mode === "http" ? { request_url: url } : {}) },
+			interactivity: { is_enabled: true },
 			org_deploy_enabled: false,
-			socket_mode_enabled: mode === "socket",
+			socket_mode_enabled: true,
 		},
 	};
 	return { data: manifest, lines: [JSON.stringify(manifest, null, 2)] };

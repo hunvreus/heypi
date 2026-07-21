@@ -1,4 +1,5 @@
 ---
+name: github
 description: Work with GitHub repositories, issues, pull requests, checks, branches, worktrees, commits, and pushes.
 ---
 

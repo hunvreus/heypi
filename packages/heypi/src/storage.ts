@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { AgentConfig, ChatMessage } from "./types.js";
+import type { AgentConfig } from "./types.js";
 
 export type ChatStorage = {
 	adapterDir: string;
@@ -40,10 +40,6 @@ export function executionKey(message: ChatAddress): string {
 	const stream =
 		message.session ?? (message.thread ? `${message.conversation}:${message.thread}` : message.conversation);
 	return storageSegment(`${message.adapter}:${message.adapterId}:${stream}`);
-}
-
-export function storageFor(agent: AgentConfig, stateDir: string, message: ChatMessage): ChatStorage {
-	return storageForAddress(agent, stateDir, message);
 }
 
 export function storageForAddress(agent: AgentConfig, stateDir: string, message: ChatAddress): ChatStorage {

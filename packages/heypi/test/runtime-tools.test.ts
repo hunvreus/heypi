@@ -116,6 +116,65 @@ describe("createRuntimeTools", () => {
 		});
 	});
 
+	it("exposes staged skills without allowing runtime changes into the canonical source", async () => {
+		const workspace = await makeWorkspace();
+		const agent = await makeWorkspace();
+		const skills = join(agent, "skills");
+		const outside = await makeWorkspace();
+		await mkdir(skills, { recursive: true });
+		await writeFile(join(skills, "github.md"), "GitHub instructions\n");
+		await writeFile(join(outside, "secret.md"), "private\n");
+		await symlink(join(outside, "secret.md"), join(skills, "escape.md"));
+		const runtime = await createRuntimeTools(host({ workspace }), workspace, undefined, skills);
+
+		await expect(
+			tool(runtime.tools, "read").execute(
+				"read",
+				{ path: "/agent/skills/github.md" },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).resolves.toMatchObject({ content: [{ type: "text", text: "GitHub instructions\n" }] });
+		await expect(
+			tool(runtime.tools, "read").execute(
+				"read",
+				{ path: "/agent/skills/escape.md" },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).rejects.toThrow("path escapes runtime workspace");
+		await expect(
+			tool(runtime.tools, "write").execute(
+				"write",
+				{ path: "/agent/skills/new.md", content: "nope\n" },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).rejects.toThrow("path is read-only");
+		await tool(runtime.tools, "bash").execute(
+			"bash",
+			{ command: "printf changed > /agent/skills/github.md" },
+			undefined,
+			undefined,
+			{} as never,
+		);
+		expect(await readFile(join(skills, "github.md"), "utf8")).toBe("GitHub instructions\n");
+		await runtime.prepare?.();
+		await expect(
+			tool(runtime.tools, "read").execute(
+				"read",
+				{ path: "/agent/skills/github.md" },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		).resolves.toMatchObject({ content: [{ type: "text", text: "GitHub instructions\n" }] });
+		await runtime.cleanup();
+	});
+
 	it("rewrites shell guest-path tokens without changing path prefixes", async () => {
 		const workspace = await makeWorkspace();
 		await writeFile(join(workspace, "value.txt"), "hello\n");

@@ -63,6 +63,28 @@ export type ApprovalAudit = {
 	annotationFailed?(error: unknown): void;
 };
 
+type ApprovalSettlement = {
+	claim(): boolean;
+	timer?: ReturnType<typeof setTimeout>;
+	update(): Promise<unknown>;
+	updateFailed?(error: unknown): void;
+	resolve(): void | Promise<void>;
+};
+
+/** Resolve a claimed approval even when its platform annotation fails. */
+export async function settleApproval(settlement: ApprovalSettlement): Promise<boolean> {
+	if (!settlement.claim()) return false;
+	if (settlement.timer) clearTimeout(settlement.timer);
+	try {
+		await settlement.update();
+	} catch (error) {
+		settlement.updateFailed?.(error);
+	} finally {
+		await settlement.resolve();
+	}
+	return true;
+}
+
 const BLOCK_COMMANDS: RegExp[] = [/\brm\s+-rf\s+\/(?:\s|$)/i, /\bmkfs\b/i, /\bshutdown\b/i, /\breboot\b/i];
 
 const APPROVAL_COMMANDS: RegExp[] = [

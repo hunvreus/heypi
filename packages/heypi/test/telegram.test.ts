@@ -72,15 +72,125 @@ describe("telegramMessage", () => {
 		await adapter.stop?.();
 	});
 
-	it("times out stalled API requests", async () => {
+	it("does not advance the polling offset until intake succeeds", async () => {
+		const offsets: number[] = [];
+		let observed: (() => void) | undefined;
+		const polled = new Promise<void>((resolve) => {
+			observed = resolve;
+		});
+		vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") return Response.json({ ok: true, result: { id: 99 } });
+			const body = JSON.parse(String(init?.body)) as { offset: number };
+			offsets.push(body.offset);
+			if (offsets.length === 3) {
+				observed?.();
+				return Response.json({ ok: true, result: [] });
+			}
+			return Response.json({
+				ok: true,
+				result: [
+					{
+						update_id: 1,
+						message: { message_id: 1, text: "hello", chat: { id: 10, type: "private" }, from: { id: 20 } },
+					},
+				],
+			});
+		});
+		let intakes = 0;
+		const adapter = telegram({ token: "test", pollMs: 0 });
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			enqueue: async () => {
+				intakes += 1;
+				if (intakes === 1) throw new Error("intake failed");
+			},
+			receive: async () => {},
+		});
+
+		await Promise.race([
+			polled,
+			new Promise((_, reject) => setTimeout(() => reject(new Error("poll blocked")), 500)),
+		]);
+		expect(offsets.slice(0, 3)).toEqual([0, 0, 2]);
+		await adapter.stop?.();
+	});
+
+	it("drops a poison update after bounded retries and processes later updates", async () => {
+		const offsets: number[] = [];
+		let observed: (() => void) | undefined;
+		const processed = new Promise<void>((resolve) => {
+			observed = resolve;
+		});
+		vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+			const method = String(input).split("/").at(-1);
+			if (method === "getMe") return Response.json({ ok: true, result: { id: 99 } });
+			const body = JSON.parse(String(init?.body)) as { offset: number };
+			offsets.push(body.offset);
+			if (body.offset >= 3) {
+				observed?.();
+				return Response.json({ ok: true, result: [] });
+			}
+			return Response.json({
+				ok: true,
+				result: [
+					{
+						update_id: 1,
+						message: { message_id: 1, text: "bad", chat: { id: 10, type: "private" }, from: { id: 20 } },
+					},
+					{
+						update_id: 2,
+						message: { message_id: 2, text: "good", chat: { id: 10, type: "private" }, from: { id: 20 } },
+					},
+				],
+			});
+		});
+		const received: string[] = [];
+		const dropped: string[] = [];
+		const adapter = telegram({ token: "test", pollMs: 0 });
+		await adapter.start({
+			agentId: "agent",
+			logger: {
+				debug() {},
+				info() {},
+				warn() {},
+				error(event) {
+					dropped.push(event);
+				},
+			},
+			receive: async (message) => {
+				if (message.id === "1") throw new Error("permanent intake failure");
+				received.push(message.id);
+			},
+		});
+
+		await Promise.race([
+			processed,
+			new Promise((_, reject) => setTimeout(() => reject(new Error("poll blocked")), 500)),
+		]);
+		expect(offsets.slice(0, 4)).toEqual([0, 0, 0, 3]);
+		expect(received).toEqual(["2"]);
+		expect(dropped).toContain("adapter_telegram_update_dropped");
+		await adapter.stop?.();
+	});
+
+	it("times out stalled API response bodies", async () => {
 		vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
 			const method = String(input).split("/").at(-1);
 			if (method === "getMe") return Promise.resolve(Response.json({ ok: true, result: { id: 99 } }));
 			if (method === "getUpdates") return Promise.resolve(Response.json({ ok: true, result: [] }));
-			return new Promise<Response>((_resolve, reject) => {
-				const signal = init?.signal;
-				signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
-			});
+			const signal = init?.signal;
+			return Promise.resolve(
+				new Response(
+					new ReadableStream({
+						start(controller) {
+							signal?.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+						},
+					}),
+					{ status: 200 },
+				),
+			);
 		});
 		const adapter = telegram({ token: "test", pollMs: 10_000, timeoutMs: 5, retry: false });
 		await adapter.start({

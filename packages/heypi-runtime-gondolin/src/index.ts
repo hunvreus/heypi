@@ -7,6 +7,49 @@ export type GondolinRuntimeOptions = Omit<VMOptions, "env" | "vfs"> & {
 	shell?: string;
 };
 
+const MUTATING_PROVIDER_METHODS = new Set([
+	"appendFile",
+	"appendFileSync",
+	"copyFile",
+	"copyFileSync",
+	"link",
+	"linkSync",
+	"mkdir",
+	"mkdirSync",
+	"rename",
+	"renameSync",
+	"rmdir",
+	"rmdirSync",
+	"symlink",
+	"symlinkSync",
+	"unlink",
+	"unlinkSync",
+	"writeFile",
+	"writeFileSync",
+]);
+
+function readOnly(root: string): RealFSProvider {
+	const provider = new RealFSProvider(root);
+	return new Proxy(provider, {
+		get(target, property) {
+			if (property === "readonly") return true;
+			if (typeof property === "string" && MUTATING_PROVIDER_METHODS.has(property)) {
+				return () => {
+					throw new Error("read-only filesystem");
+				};
+			}
+			const value = Reflect.get(target, property, target);
+			if ((property === "open" || property === "openSync") && typeof value === "function") {
+				return (path: string, flags: string, mode?: number) => {
+					if (/[wa+]/.test(flags)) throw new Error("read-only filesystem");
+					return value.call(target, path, flags, mode);
+				};
+			}
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+}
+
 function runtimeFs(fs: VmFs): RuntimeFileSystem {
 	return {
 		access: (path) => fs.access(path),
@@ -33,6 +76,7 @@ export function gondolin(options: GondolinRuntimeOptions = {}): RuntimeConfig {
 					mounts: {
 						"/workspace": new RealFSProvider(context.workspace),
 						...(context.shared ? { "/shared": new RealFSProvider(context.shared) } : {}),
+						...(context.skills ? { "/agent/skills": readOnly(context.skills) } : {}),
 					},
 				},
 			});

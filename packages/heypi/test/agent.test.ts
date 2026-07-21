@@ -76,17 +76,6 @@ describe("stageAgent", () => {
 		await expect(readFile(join(second.agentDir, ".heypi", "sessions", "state.jsonl"), "utf8")).rejects.toThrow();
 		await expect(readFile(join(second.agentDir, "node_modules", "ignored", "x.ts"), "utf8")).rejects.toThrow();
 		expect(second.extensionPaths).toEqual([join(second.agentDir, "tools", "tool.ts")]);
-	});
-
-	it("uses an explicit host runtime workspace when configured", async () => {
-		const root = await makeDir("stage-runtime");
-		const state = await makeDir("state-runtime");
-		const workspace = await makeDir("workspace-runtime");
-
-		const agent = await loadAgent(root, { id: "agent", runtime: host({ workspace: workspace }) });
-		const staged = await stageAgent(agent, state);
-
-		expect(staged.workspaceDir).toBe(workspace);
-		expect(staged.agentDir).toBe(join(state, "agents", "agent", "agent"));
+		expect(second.skillsDir).toBe(join(second.agentDir, "skills"));
 	});
 });

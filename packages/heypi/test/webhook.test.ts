@@ -48,6 +48,37 @@ describe("webhook", () => {
 		}
 	});
 
+	it("acknowledges durable enqueue without waiting for the turn", async () => {
+		let enqueued: ChatMessage | undefined;
+		const adapter = webhook({ port: freePort() });
+		await adapter.start({
+			agentId: "agent",
+			logger: { debug() {}, info() {}, warn() {}, error() {} },
+			async receive() {
+				throw new Error("receive should not be used");
+			},
+			async enqueue(message) {
+				enqueued = message;
+			},
+		});
+		try {
+			const response = await fetch(adapter.url(), {
+				method: "POST",
+				body: JSON.stringify({ id: "m1", text: "hello", user: { id: "u1" } }),
+			});
+			expect(response.status).toBe(202);
+			expect(enqueued).toMatchObject({ id: "m1", text: "hello" });
+
+			const missingId = await fetch(adapter.url(), {
+				method: "POST",
+				body: JSON.stringify({ text: "hello", user: { id: "u1" } }),
+			});
+			expect(missingId.status).toBe(400);
+		} finally {
+			await adapter.stop?.();
+		}
+	});
+
 	it("records outbound replies", async () => {
 		const adapter = webhook({ port: freePort() });
 		await adapter.send({ conversation: "room", text: "reply" });

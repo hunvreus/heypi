@@ -12,16 +12,24 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
-import type { RuntimeRoots } from "./runtime-path.js";
+import {
+	assertWritableGuestPath,
+	GUEST_SHARED,
+	GUEST_SKILLS,
+	GUEST_WORKSPACE,
+	type RuntimeRoots,
+} from "./runtime-path.js";
 import type { RuntimeFileStat, RuntimeMirrorFileSystem } from "./runtime-provider.js";
 
 type Kind = "directory" | "file" | "symlink" | "other";
 type Entry = { kind: Kind; mode: number };
+type Pair = { guest: string; host: string; writable: boolean };
 
-function pairs(roots: RuntimeRoots): Array<{ guest: string; host: string }> {
+function pairs(roots: RuntimeRoots): Pair[] {
 	return [
-		{ guest: "/workspace", host: roots.workspace },
-		...(roots.shared ? [{ guest: "/shared", host: roots.shared }] : []),
+		{ guest: GUEST_WORKSPACE, host: roots.workspace, writable: true },
+		...(roots.shared ? [{ guest: GUEST_SHARED, host: roots.shared, writable: true }] : []),
+		...(roots.skills ? [{ guest: GUEST_SKILLS, host: roots.skills, writable: false }] : []),
 	];
 }
 
@@ -206,18 +214,22 @@ export function createRuntimeMirror(remote: RuntimeMirrorFileSystem, roots: Runt
 
 	async function upload(): Promise<void> {
 		for (const root of pairs(roots)) {
+			const canonicalRoot = await realpath(root.host);
 			const previous = snapshots.get(root.guest) ?? new Map();
 			const snapshot = new Map<string, Entry>();
-			await uploadDirectory(remote, await realpath(root.host), root.guest, root.host, root.guest, snapshot);
-			for (const path of previous.keys()) {
-				if (!snapshot.has(path)) await remote.rm(posix.join(root.guest, path));
+			if (!root.writable) await remote.rm(root.guest);
+			await uploadDirectory(remote, canonicalRoot, root.guest, root.host, root.guest, snapshot);
+			if (root.writable) {
+				for (const path of previous.keys()) {
+					if (!snapshot.has(path)) await remote.rm(posix.join(root.guest, path));
+				}
 			}
 			snapshots.set(root.guest, snapshot);
 		}
 	}
 
 	async function download(): Promise<void> {
-		for (const root of pairs(roots)) {
+		for (const root of pairs(roots).filter((entry) => entry.writable)) {
 			const snapshot = new Map<string, Entry>();
 			await downloadDirectory(remote, root.host, root.guest, root.guest, root.host, snapshot);
 			await removeDeleted(root.host, snapshots.get(root.guest) ?? new Map(), snapshot);
@@ -243,7 +255,7 @@ export function createRuntimeMirror(remote: RuntimeMirrorFileSystem, roots: Runt
 		return result;
 	}
 
-	function rootFor(path: string): { guest: string; host: string } {
+	function rootFor(path: string): Pair {
 		const root = pairs(roots).find(({ guest }) => path === guest || path.startsWith(`${guest}/`));
 		if (!root) throw new Error(`path escapes runtime workspace: ${path}`);
 		return root;
@@ -276,11 +288,13 @@ export function createRuntimeMirror(remote: RuntimeMirrorFileSystem, roots: Runt
 		fs: {
 			...remote,
 			async mkdir(path) {
+				assertWritableGuestPath(roots, path);
 				await Promise.all([remote.mkdir(path), mkdir(hostPath(path), { recursive: true })]);
 				const stat = await remote.lstat(path);
 				record(path, { kind: kind(stat), mode: mode(stat.mode) }, true);
 			},
 			async writeFile(path, content) {
+				assertWritableGuestPath(roots, path);
 				await Promise.all([remote.writeFile(path, content), writeFile(hostPath(path), content)]);
 				const stat = await remote.lstat(path);
 				record(path, { kind: kind(stat), mode: mode(stat.mode) });

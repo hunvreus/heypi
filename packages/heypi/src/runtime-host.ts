@@ -1,7 +1,15 @@
 import { access, lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createLocalBashOperations, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { assertInside, GUEST_SHARED, GUEST_WORKSPACE, hostPath, type RuntimeRoots } from "./runtime-path.js";
+import {
+	assertInside,
+	assertWritableGuestPath,
+	GUEST_SHARED,
+	GUEST_SKILLS,
+	GUEST_WORKSPACE,
+	hostPath,
+	type RuntimeRoots,
+} from "./runtime-path.js";
 import { createRuntimeToolDefinitions, type RuntimeFileSystem } from "./runtime-provider.js";
 
 function shellQuote(value: string): string {
@@ -35,6 +43,7 @@ function rewriteGuestPaths(command: string, roots: RuntimeRoots): string {
 	const mappings = [
 		{ guest: GUEST_WORKSPACE, host: roots.workspace },
 		...(roots.shared ? [{ guest: GUEST_SHARED, host: roots.shared }] : []),
+		...(roots.skills ? [{ guest: GUEST_SKILLS, host: roots.skills }] : []),
 	];
 	let output = "";
 	let quote: "'" | '"' | undefined;
@@ -73,8 +82,14 @@ function rewriteGuestPaths(command: string, roots: RuntimeRoots): string {
 }
 
 async function safeHostPath(roots: RuntimeRoots, path: string, create = false): Promise<string> {
+	if (create) assertWritableGuestPath(roots, path);
 	const target = hostPath(roots, path);
-	const root = path === GUEST_SHARED || path.startsWith(`${GUEST_SHARED}/`) ? roots.shared : roots.workspace;
+	const root =
+		path === GUEST_SHARED || path.startsWith(`${GUEST_SHARED}/`)
+			? roots.shared
+			: path === GUEST_SKILLS || path.startsWith(`${GUEST_SKILLS}/`)
+				? roots.skills
+				: roots.workspace;
 	if (!root) throw new Error(`path escapes runtime workspace: ${path}`);
 	const canonicalRoot = await realpath(root);
 	if (!create) {

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -92,9 +92,14 @@ describe("schedules", () => {
 		const path = join(root, "state.json");
 		const store = createScheduleStore(path);
 		await store.load();
-		const run = await store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z");
-		expect(run?.status).toBe("claimed");
-		await expect(store.claim("daily", "2026-07-14T09:00:00.000Z", new Date().toISOString())).resolves.toBeUndefined();
+		const claim = await store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z");
+		expect(claim).toMatchObject({ action: "claimed", run: { status: "claimed" } });
+		await expect(store.claim("daily", "2026-07-14T09:00:00.000Z", new Date().toISOString())).resolves.toMatchObject({
+			action: "existing",
+		});
+		await expect(store.claim("daily", "2026-07-15T09:00:00.000Z", new Date().toISOString())).resolves.toEqual({
+			action: "active",
+		});
 
 		const restored = createScheduleStore(path);
 		await restored.load();
@@ -106,12 +111,30 @@ describe("schedules", () => {
 		expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ version: 1 });
 	});
 
+	it("does not expose schedule mutations that fail to persist", async () => {
+		const root = await makeDir("schedule-write-failure");
+		const path = join(root, "state.json");
+		const store = createScheduleStore(path);
+		await store.load();
+		await rm(root, { recursive: true });
+		await writeFile(root, "not a directory");
+
+		await expect(store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z")).rejects.toThrow();
+		expect(store.active("daily")).toBe(false);
+
+		await rm(root);
+		await expect(store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z")).resolves.toMatchObject(
+			{ action: "claimed", run: { status: "claimed" } },
+		);
+	});
+
 	it("rejects terminal run regressions", async () => {
 		const root = await makeDir("schedule-terminal");
 		const store = createScheduleStore(join(root, "state.json"));
 		await store.load();
-		const run = await store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z");
-		if (!run) throw new Error("expected run");
+		const claim = await store.claim("daily", "2026-07-14T09:00:00.000Z", "2026-07-14T09:00:01.000Z");
+		if (claim.action !== "claimed") throw new Error("expected run");
+		const run = claim.run;
 		await store.update(run.id, { status: "completed", finishedAt: new Date().toISOString() });
 
 		await expect(store.update(run.id, { status: "failed" })).rejects.toThrow("completed -> failed");
@@ -124,8 +147,9 @@ describe("schedules", () => {
 		await store.load();
 		for (let index = 0; index < 105; index++) {
 			const scheduledFor = new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString();
-			const run = await store.claim("daily", scheduledFor, scheduledFor);
-			if (!run) throw new Error("expected run");
+			const claim = await store.claim("daily", scheduledFor, scheduledFor);
+			if (claim.action !== "claimed") throw new Error("expected run");
+			const run = claim.run;
 			await store.update(run.id, { status: "completed", finishedAt: scheduledFor });
 		}
 

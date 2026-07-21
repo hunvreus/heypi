@@ -19,6 +19,8 @@ export type ScheduleRun = {
 	finishedAt?: string;
 };
 
+export type ScheduleClaim = { action: "claimed" | "existing"; run: ScheduleRun } | { action: "active" };
+
 type ScheduleState = {
 	version: 1;
 	definitions: Record<string, { path: string; hash: string }>;
@@ -41,7 +43,7 @@ const TRANSITIONS: Record<ScheduleRunStatus, ReadonlySet<ScheduleRunStatus>> = {
 export type ScheduleStore = {
 	load(): Promise<void>;
 	reconcile(definitions: LoadedSchedule[]): Promise<{ added: string[]; changed: string[]; orphans: string[] }>;
-	claim(scheduleId: string, scheduledFor: string, firedAt: string, manual?: boolean): Promise<ScheduleRun | undefined>;
+	claim(scheduleId: string, scheduledFor: string, firedAt: string, manual?: boolean): Promise<ScheduleClaim>;
 	skip(scheduleId: string, scheduledFor: string, firedAt: string, error: string): Promise<ScheduleRun>;
 	update(id: string, patch: Partial<Omit<ScheduleRun, "id" | "scheduleId">>): Promise<ScheduleRun>;
 	hasOccurrence(scheduleId: string, scheduledFor: string): boolean;
@@ -51,24 +53,45 @@ export type ScheduleStore = {
 
 export function createScheduleStore(path: string): ScheduleStore {
 	let state: ScheduleState = { version: 1, definitions: {}, runs: [] };
-	let writes = Promise.resolve();
+	let updates = Promise.resolve();
 
-	async function persist(): Promise<void> {
-		const task = writes.then(async () => {
-			await mkdir(dirname(path), { recursive: true });
-			const temporary = `${path}.${process.pid}.tmp`;
-			await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-			await rename(temporary, path);
-		});
-		writes = task.catch(() => undefined);
-		await task;
+	async function persist(next: ScheduleState): Promise<void> {
+		await mkdir(dirname(path), { recursive: true });
+		const temporary = `${path}.${process.pid}.tmp`;
+		await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+		await rename(temporary, path);
 	}
 
-	function prune(): boolean {
+	function copyState(): ScheduleState {
+		return {
+			version: 1,
+			definitions: Object.fromEntries(
+				Object.entries(state.definitions).map(([id, definition]) => [id, { ...definition }]),
+			),
+			runs: state.runs.map((run) => ({ ...run })),
+		};
+	}
+
+	function mutate<T>(change: (next: ScheduleState) => T): Promise<T> {
+		const task = updates.then(async () => {
+			const next = copyState();
+			const result = change(next);
+			await persist(next);
+			state = next;
+			return result;
+		});
+		updates = task.then(
+			() => undefined,
+			() => undefined,
+		);
+		return task;
+	}
+
+	function prune(next: ScheduleState): boolean {
 		const terminalCounts = new Map<string, number>();
 		const kept = new Set<string>();
-		for (let index = state.runs.length - 1; index >= 0; index--) {
-			const run = state.runs[index];
+		for (let index = next.runs.length - 1; index >= 0; index--) {
+			const run = next.runs[index];
 			if (!run) continue;
 			if (!TERMINAL.has(run.status)) {
 				kept.add(run.id);
@@ -78,8 +101,8 @@ export function createScheduleStore(path: string): ScheduleStore {
 			if (count < MAX_TERMINAL_RUNS_PER_SCHEDULE) kept.add(run.id);
 			terminalCounts.set(run.scheduleId, count + 1);
 		}
-		if (kept.size === state.runs.length) return false;
-		state.runs = state.runs.filter((run) => kept.has(run.id));
+		if (kept.size === next.runs.length) return false;
+		next.runs = next.runs.filter((run) => kept.has(run.id));
 		return true;
 	}
 
@@ -95,74 +118,84 @@ export function createScheduleStore(path: string): ScheduleStore {
 
 	return {
 		async load() {
+			let next = state;
 			try {
-				state = JSON.parse(await readFile(path, "utf8")) as ScheduleState;
+				next = JSON.parse(await readFile(path, "utf8")) as ScheduleState;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 			let changed = false;
 			const now = new Date().toISOString();
-			for (const run of state.runs) {
+			for (const run of next.runs) {
 				if (!ACTIVE.has(run.status)) continue;
 				run.status = "failed";
 				run.error = "interrupted by restart";
 				run.finishedAt = now;
 				changed = true;
 			}
-			if (prune()) changed = true;
-			if (changed) await persist();
+			if (prune(next)) changed = true;
+			if (changed) await persist(next);
+			state = next;
 		},
 
 		async reconcile(definitions) {
-			const previous = new Set(Object.keys(state.definitions));
-			const next = Object.fromEntries(
-				definitions.map((schedule) => [schedule.id, { path: schedule.path, hash: schedule.hash }]),
-			);
-			const orphans = Object.keys(state.definitions).filter((id) => !(id in next));
-			const added = Object.keys(next).filter((id) => !previous.has(id));
-			const changed = Object.keys(next).filter(
-				(id) => previous.has(id) && state.definitions[id]?.hash !== next[id]?.hash,
-			);
-			state.definitions = next;
-			await persist();
-			return { added, changed, orphans };
+			return mutate((next) => {
+				const previous = new Set(Object.keys(next.definitions));
+				const definitionsById = Object.fromEntries(
+					definitions.map((schedule) => [schedule.id, { path: schedule.path, hash: schedule.hash }]),
+				);
+				const orphans = Object.keys(next.definitions).filter((id) => !(id in definitionsById));
+				const added = Object.keys(definitionsById).filter((id) => !previous.has(id));
+				const changed = Object.keys(definitionsById).filter(
+					(id) => previous.has(id) && next.definitions[id]?.hash !== definitionsById[id]?.hash,
+				);
+				next.definitions = definitionsById;
+				return { added, changed, orphans };
+			});
 		},
 
 		async claim(scheduleId, scheduledFor, firedAt, manual) {
-			if (state.runs.some((run) => run.scheduleId === scheduleId && run.scheduledFor === scheduledFor))
-				return undefined;
-			if (state.runs.some((run) => run.scheduleId === scheduleId && ACTIVE.has(run.status))) return undefined;
-			const run = createRun(scheduleId, scheduledFor, firedAt, "claimed", manual);
-			state.runs.push(run);
-			prune();
-			await persist();
-			return { ...run };
+			return mutate((next) => {
+				const existing = next.runs.find(
+					(run) => run.scheduleId === scheduleId && run.scheduledFor === scheduledFor,
+				);
+				if (existing) return { action: "existing" as const, run: { ...existing } };
+				if (next.runs.some((run) => run.scheduleId === scheduleId && ACTIVE.has(run.status))) {
+					return { action: "active" as const };
+				}
+				const run = createRun(scheduleId, scheduledFor, firedAt, "claimed", manual);
+				next.runs.push(run);
+				prune(next);
+				return { action: "claimed" as const, run: { ...run } };
+			});
 		},
 
 		async skip(scheduleId, scheduledFor, firedAt, error) {
-			const run = createRun(scheduleId, scheduledFor, firedAt, "skipped");
-			run.error = error;
-			run.finishedAt = firedAt;
-			state.runs.push(run);
-			prune();
-			await persist();
-			return { ...run };
+			return mutate((next) => {
+				const run = createRun(scheduleId, scheduledFor, firedAt, "skipped");
+				run.error = error;
+				run.finishedAt = firedAt;
+				next.runs.push(run);
+				prune(next);
+				return { ...run };
+			});
 		},
 
 		async update(id, patch) {
-			const run = state.runs.find((candidate) => candidate.id === id);
-			if (!run) throw new Error(`Unknown schedule run: ${id}`);
-			if (patch.status && !TRANSITIONS[run.status].has(patch.status)) {
-				throw new Error(`Invalid schedule run transition: ${run.status} -> ${patch.status}`);
-			}
-			if (TERMINAL.has(run.status) && patch.status === undefined) {
-				throw new Error(`Cannot update terminal schedule run: ${run.id}`);
-			}
-			Object.assign(run, patch);
-			const result = { ...run };
-			if (TERMINAL.has(run.status)) prune();
-			await persist();
-			return result;
+			return mutate((next) => {
+				const run = next.runs.find((candidate) => candidate.id === id);
+				if (!run) throw new Error(`Unknown schedule run: ${id}`);
+				if (patch.status && !TRANSITIONS[run.status].has(patch.status)) {
+					throw new Error(`Invalid schedule run transition: ${run.status} -> ${patch.status}`);
+				}
+				if (TERMINAL.has(run.status) && patch.status === undefined) {
+					throw new Error(`Cannot update terminal schedule run: ${run.id}`);
+				}
+				Object.assign(run, patch);
+				const result = { ...run };
+				if (TERMINAL.has(run.status)) prune(next);
+				return result;
+			});
 		},
 
 		hasOccurrence(scheduleId, scheduledFor) {

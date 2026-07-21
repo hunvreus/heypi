@@ -86,6 +86,26 @@ describe("runtime mirror", () => {
 		await expect(access(join(remote, "workspace", "deleted.txt"))).rejects.toThrow();
 	});
 
+	it("replaces remote skills without accepting writes or syncing changes back", async () => {
+		const host = await mkdtemp(join(tmpdir(), "heypi-mirror-skills-host-"));
+		const skills = await mkdtemp(join(tmpdir(), "heypi-mirror-skills-source-"));
+		const remote = await mkdtemp(join(tmpdir(), "heypi-mirror-skills-remote-"));
+		await writeFile(join(skills, "review.md"), "Review instructions\n");
+		const mirror = createRuntimeMirror(remoteFileSystem(remote), { workspace: host, skills });
+
+		await mirror.upload();
+		expect(await readFile(join(remote, "agent", "skills", "review.md"), "utf8")).toBe("Review instructions\n");
+		await expect(mirror.fs.writeFile("/agent/skills/review.md", "changed\n")).rejects.toThrow("path is read-only");
+		await writeFile(join(remote, "agent", "skills", "review.md"), "runtime change\n");
+		await writeFile(join(remote, "agent", "skills", "extra.md"), "runtime addition\n");
+		await mirror.download();
+		await mirror.upload();
+
+		expect(await readFile(join(skills, "review.md"), "utf8")).toBe("Review instructions\n");
+		expect(await readFile(join(remote, "agent", "skills", "review.md"), "utf8")).toBe("Review instructions\n");
+		await expect(access(join(remote, "agent", "skills", "extra.md"))).rejects.toThrow();
+	});
+
 	it("propagates deletion of files created through mirrored file tools", async () => {
 		const host = await mkdtemp(join(tmpdir(), "heypi-mirror-write-host-"));
 		const remote = await mkdtemp(join(tmpdir(), "heypi-mirror-write-remote-"));

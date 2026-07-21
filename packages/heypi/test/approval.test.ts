@@ -6,6 +6,7 @@ import {
 	createApprovalExtension,
 	inputHash,
 	renderApprovalMessage,
+	settleApproval,
 } from "../src/approval.js";
 import type { ApprovalRequestedRecord, ApprovalResolvedRecord } from "../src/channel.js";
 import type { ApprovalContext } from "../src/types.js";
@@ -41,6 +42,37 @@ describe("renderApprovalMessage", () => {
 				"- Approved by: @Ronan",
 			].join("\n"),
 		);
+	});
+});
+
+describe("approval settlement", () => {
+	it("resolves a claimed decision when its platform update fails", async () => {
+		let pending = true;
+		let resolved = false;
+		let updateError: unknown;
+		const timer = setTimeout(() => undefined, 10_000);
+
+		await expect(
+			settleApproval({
+				claim: () => {
+					if (!pending) return false;
+					pending = false;
+					return true;
+				},
+				timer,
+				update: async () => {
+					throw new Error("annotation failed");
+				},
+				updateFailed: (error) => {
+					updateError = error;
+				},
+				resolve: () => {
+					resolved = true;
+				},
+			}),
+		).resolves.toBe(true);
+		expect(resolved).toBe(true);
+		expect(updateError).toEqual(new Error("annotation failed"));
 	});
 });
 

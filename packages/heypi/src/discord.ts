@@ -1,5 +1,11 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import {
+	approvalActorAllowed,
+	approvalRows,
+	approvalTitle,
+	renderApprovalMessage,
+	settleApproval,
+} from "./approval.js";
 import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
 import type { AdapterEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
@@ -209,31 +215,39 @@ export function discord(config: DiscordConfig): Adapter {
 				],
 				partials: [Partials.Channel],
 			});
-			client.on("messageCreate", async (message) => {
-				const botUserId = client?.user?.id ?? config.clientId;
-				const normalized = discordMessage(
-					{
-						id: message.id,
-						channelId: message.channelId,
-						content: message.content,
-						author: { id: message.author.id, username: message.author.username, bot: message.author.bot },
-						guildId: message.guildId,
-						parentChannelId: message.channel.isThread() ? message.channel.parentId : undefined,
-						replyTo: message.reference?.messageId,
-						mentions: { has: (userId) => message.mentions.users.has(userId) },
-						attachments: [...message.attachments.values()].map((attachment) => ({
-							id: attachment.id,
-							name: attachment.name,
-							url: attachment.url,
-							contentType: attachment.contentType,
-						})),
-					},
-					botUserId,
-					adapterId,
-				);
-				if (normalized.user.isSelf) return;
-				if (!normalized.dm && !normalized.mentioned && !normalized.replyTo) return;
-				await nextContext.receive(normalized);
+			const reportError = (error: unknown) => {
+				nextContext.logger.error("adapter_discord_error", {
+					message: error instanceof Error ? error.message : String(error),
+				});
+			};
+			client.on("error", reportError);
+			client.on("messageCreate", (message) => {
+				void (async () => {
+					const botUserId = client?.user?.id ?? config.clientId;
+					const normalized = discordMessage(
+						{
+							id: message.id,
+							channelId: message.channelId,
+							content: message.content,
+							author: { id: message.author.id, username: message.author.username, bot: message.author.bot },
+							guildId: message.guildId,
+							parentChannelId: message.channel.isThread() ? message.channel.parentId : undefined,
+							replyTo: message.reference?.messageId,
+							mentions: { has: (userId) => message.mentions.users.has(userId) },
+							attachments: [...message.attachments.values()].map((attachment) => ({
+								id: attachment.id,
+								name: attachment.name,
+								url: attachment.url,
+								contentType: attachment.contentType,
+							})),
+						},
+						botUserId,
+						adapterId,
+					);
+					if (normalized.user.isSelf) return;
+					if (!normalized.dm && !normalized.mentioned && !normalized.replyTo) return;
+					await (nextContext.enqueue ?? nextContext.receive)(normalized);
+				})().catch(reportError);
 			});
 			client.on("interactionCreate", async (interaction) => {
 				if (!interaction.isButton()) return;
@@ -251,22 +265,30 @@ export function discord(config: DiscordConfig): Adapter {
 					)
 				)
 					return;
-				pending.delete(id);
-				if (approval.timer) clearTimeout(approval.timer);
-				await interaction.update(
-					discordApprovalPayload({
-						...approval.view,
-						state: approved ? "approved" : "rejected",
-						resolvedBy,
-					}),
-				);
-				approval.resolve({
-					approved,
-					messageIds: approval.message ? [approval.message.id] : undefined,
-					resolvedBy,
-					resolvedById: interaction.user.id,
-					roles,
-					reason: approved ? undefined : "Rejected in Discord.",
+				await settleApproval({
+					claim: () => pending.delete(id),
+					timer: approval.timer,
+					update: () =>
+						interaction.update(
+							discordApprovalPayload({
+								...approval.view,
+								state: approved ? "approved" : "rejected",
+								resolvedBy,
+							}),
+						),
+					updateFailed: (error) =>
+						nextContext.logger.warn("adapter_discord_approval_update_failed", {
+							message: error instanceof Error ? error.message : String(error),
+						}),
+					resolve: () =>
+						approval.resolve({
+							approved,
+							messageIds: approval.message ? [approval.message.id] : undefined,
+							resolvedBy,
+							resolvedById: interaction.user.id,
+							roles,
+							reason: approved ? undefined : "Rejected in Discord.",
+						}),
 				});
 			});
 			await client.login(config.token);

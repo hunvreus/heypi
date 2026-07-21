@@ -16,7 +16,7 @@ import {
 	truncateHead,
 	truncateLine,
 } from "@earendil-works/pi-coding-agent";
-import { GUEST_WORKSPACE, guestPath, type RuntimeRoots } from "./runtime-path.js";
+import { assertWritableGuestPath, GUEST_WORKSPACE, guestPath, type RuntimeRoots } from "./runtime-path.js";
 import { globPattern } from "./runtime-util.js";
 
 export type RuntimeFileSystem = {
@@ -175,6 +175,7 @@ function createRuntimeGrep(fs: RuntimeFileSystem, roots: RuntimeRoots) {
 /** Build Pi's core tools over a sandbox filesystem and command backend. */
 export function createRuntimeToolDefinitions(options: RuntimeToolOptions): ToolDefinition<any, any, any>[] {
 	const resolve = (path: string) => guestPath(options.roots, path);
+	const writable = (path: string) => assertWritableGuestPath(options.roots, path);
 	const exists = async (path: string) => {
 		const resolved = resolve(path);
 		try {
@@ -189,8 +190,8 @@ export function createRuntimeToolDefinitions(options: RuntimeToolOptions): ToolD
 		readFile: async (path: string) => buffer(await options.fs.readFile(resolve(path))),
 	};
 	const write = {
-		mkdir: (path: string) => options.fs.mkdir(resolve(path)),
-		writeFile: (path: string, content: string) => options.fs.writeFile(resolve(path), content),
+		mkdir: (path: string) => options.fs.mkdir(writable(path)),
+		writeFile: (path: string, content: string) => options.fs.writeFile(writable(path), content),
 	};
 
 	return [

@@ -1,6 +1,12 @@
 import { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
-import { approvalActorAllowed, approvalRows, approvalTitle, renderApprovalMessage } from "./approval.js";
+import {
+	approvalActorAllowed,
+	approvalRows,
+	approvalTitle,
+	renderApprovalMessage,
+	settleApproval,
+} from "./approval.js";
 import { materializeAttachments } from "./attachments.js";
 import { type AdapterEvents, busyEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
@@ -238,6 +244,10 @@ export function slackMessage(
 	};
 }
 
+export function slackMessageMentionsBot(event: SlackEvent, self: SlackBotIdentity): boolean {
+	return Boolean(self.userId && event.text?.includes(`<@${self.userId}>`));
+}
+
 export function slack(config: SlackConfig): Adapter {
 	let app: App | undefined;
 	let context: AdapterContext | undefined;
@@ -299,6 +309,7 @@ export function slack(config: SlackConfig): Adapter {
 				const event = message as SlackEvent;
 				if (!slackMessageEventAllowed(event)) return;
 				if (event.channel_type !== "im" && !event.thread_ts) return;
+				if (slackMessageMentionsBot(event, self)) return;
 				const normalized = slackMessage(event, false, self, id);
 				if (normalized.user.isSelf) return;
 				await context?.receive(normalized);
@@ -312,14 +323,22 @@ export function slack(config: SlackConfig): Adapter {
 				const resolvedById = bodyUserId(body);
 				if (!approvalActorAllowed({ approved: true, resolvedBy, resolvedById }, config.approvers, config.admins))
 					return;
-				pending.delete(id);
-				if (approval.timer) clearTimeout(approval.timer);
-				await app?.client.chat.update({
-					channel: approval.channel,
-					ts: approval.message,
-					...slackApprovalPayload({ ...approval.view, state: "approved", resolvedBy }),
+				await settleApproval({
+					claim: () => pending.delete(id),
+					timer: approval.timer,
+					update: async () => {
+						await app?.client.chat.update({
+							channel: approval.channel,
+							ts: approval.message,
+							...slackApprovalPayload({ ...approval.view, state: "approved", resolvedBy }),
+						});
+					},
+					updateFailed: (error) =>
+						context?.logger.warn("adapter_slack_approval_update_failed", {
+							message: error instanceof Error ? error.message : String(error),
+						}),
+					resolve: () => approval.resolve({ approved: true, resolvedBy, resolvedById }),
 				});
-				await approval.resolve({ approved: true, resolvedBy, resolvedById });
 			});
 			app.action(REJECT, async ({ ack, body }) => {
 				await ack();
@@ -330,18 +349,27 @@ export function slack(config: SlackConfig): Adapter {
 				const resolvedById = bodyUserId(body);
 				if (!approvalActorAllowed({ approved: false, resolvedBy, resolvedById }, config.approvers, config.admins))
 					return;
-				pending.delete(id);
-				if (approval.timer) clearTimeout(approval.timer);
-				await app?.client.chat.update({
-					channel: approval.channel,
-					ts: approval.message,
-					...slackApprovalPayload({ ...approval.view, state: "rejected", resolvedBy }),
-				});
-				await approval.resolve({
-					approved: false,
-					resolvedBy,
-					resolvedById,
-					reason: "Rejected in Slack.",
+				await settleApproval({
+					claim: () => pending.delete(id),
+					timer: approval.timer,
+					update: async () => {
+						await app?.client.chat.update({
+							channel: approval.channel,
+							ts: approval.message,
+							...slackApprovalPayload({ ...approval.view, state: "rejected", resolvedBy }),
+						});
+					},
+					updateFailed: (error) =>
+						context?.logger.warn("adapter_slack_approval_update_failed", {
+							message: error instanceof Error ? error.message : String(error),
+						}),
+					resolve: () =>
+						approval.resolve({
+							approved: false,
+							resolvedBy,
+							resolvedById,
+							reason: "Rejected in Slack.",
+						}),
 				});
 			});
 			await app.start();
@@ -446,10 +474,17 @@ export function slack(config: SlackConfig): Adapter {
 					cancel,
 					async resolve(decision) {
 						cleanup();
-						if (decision.reason !== APPROVAL_CANCELED) {
-							await activity.resume({ conversation: view.conversation ?? "", thread: view.thread });
+						try {
+							if (decision.reason !== APPROVAL_CANCELED) {
+								await activity.resume({ conversation: view.conversation ?? "", thread: view.thread });
+							}
+						} catch (error) {
+							context?.logger.warn("adapter_slack_approval_status_failed", {
+								message: error instanceof Error ? error.message : String(error),
+							});
+						} finally {
+							resolve(decision);
 						}
-						resolve(decision);
 					},
 				};
 				const timeoutMs = config.approvals?.timeoutMs;

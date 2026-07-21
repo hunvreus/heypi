@@ -23,6 +23,33 @@ function runtimeFs(fs: IFileSystem): RuntimeFileSystem {
 	};
 }
 
+const MUTATING_FS_METHODS = new Set([
+	"appendFile",
+	"chmod",
+	"cp",
+	"link",
+	"mkdir",
+	"mv",
+	"rm",
+	"symlink",
+	"utimes",
+	"writeFile",
+]);
+
+function readOnly(fs: IFileSystem): IFileSystem {
+	return new Proxy(fs, {
+		get(target, property) {
+			if (typeof property === "string" && MUTATING_FS_METHODS.has(property)) {
+				return async () => {
+					throw new Error("read-only filesystem");
+				};
+			}
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+}
+
 /** Run Pi's core file and bash tools inside the just-bash interpreter. */
 export function justBash(options: JustBashRuntimeOptions = {}): RuntimeConfig {
 	const { workspace, env, ...bashOptions } = options;
@@ -34,6 +61,7 @@ export function justBash(options: JustBashRuntimeOptions = {}): RuntimeConfig {
 			const fs = new MountableFs({ base: new InMemoryFs() });
 			fs.mount("/workspace", new ReadWriteFs({ root: context.workspace }));
 			if (context.shared) fs.mount("/shared", new ReadWriteFs({ root: context.shared }));
+			if (context.skills) fs.mount("/agent/skills", readOnly(new ReadWriteFs({ root: context.skills })));
 			const bash = new Bash({ ...bashOptions, cwd: "/workspace", env: context.env, fs });
 			return {
 				tools: createRuntimeToolDefinitions({

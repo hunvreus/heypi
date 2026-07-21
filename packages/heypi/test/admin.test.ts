@@ -217,6 +217,21 @@ describe("admin", () => {
 		await expect(admin.start()).rejects.toThrow("Admin token is required");
 	});
 
+	it("serves wildcard bindings through explicitly allowed hosts", async () => {
+		const state = await makeDir("admin-wildcard");
+		const port = freePort();
+		const admin = createAdmin({ stateDir: state, host: "0.0.0.0", hosts: ["127.0.0.1"], port, token: "secret" });
+		await admin.start();
+		try {
+			const response = await fetch(`http://127.0.0.1:${port}/admin`, {
+				headers: { authorization: "Bearer secret" },
+			});
+			expect(response.status).toBe(200);
+		} finally {
+			await admin.stop();
+		}
+	});
+
 	it("serves an HTML dashboard to browsers", async () => {
 		const state = await makeDir("admin-html");
 		const logDir = join(state, "adapters", "local", "conversations", "room", "sessions", "room-session");

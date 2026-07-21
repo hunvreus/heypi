@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureChatStorage, executionKey, storageFor, storageSegment, userMemoryDir } from "../src/storage.js";
+import { ensureChatStorage, executionKey, storageForAddress, storageSegment, userMemoryDir } from "../src/storage.js";
 import type { AgentConfig, ChatMessage } from "../src/types.js";
 
 const message: ChatMessage = {
@@ -35,7 +35,7 @@ describe("chat storage", () => {
 
 	it("derives adapterId, surface, and thread session paths", () => {
 		const state = makeState();
-		const storage = storageFor(agent, state, message);
+		const storage = storageForAddress(agent, state, message);
 
 		expect(storage.adapterDir).toBe(join(state, "adapters", "workspace"));
 		expect(storage.sharedDir).toBe(join(state, "adapters", "workspace", "shared"));
@@ -52,15 +52,15 @@ describe("chat storage", () => {
 	it("uses configured runtime workspace as the workspace root", () => {
 		const state = makeState();
 		const workspace = join(state, "workspaces");
-		const storage = storageFor({ ...agent, runtime: { workspace } }, state, message);
+		const storage = storageForAddress({ ...agent, runtime: { workspace } }, state, message);
 
 		expect(storage.workspaceDir).toBe(join(workspace, "workspace", "conversations", "C123"));
 	});
 
 	it("shares workspace by surface but isolates logs by execution key", () => {
 		const state = makeState();
-		const first = storageFor(agent, state, { ...message, thread: "1710000000.000100" });
-		const second = storageFor(agent, state, { ...message, thread: "1710000000.000200" });
+		const first = storageForAddress(agent, state, { ...message, thread: "1710000000.000100" });
+		const second = storageForAddress(agent, state, { ...message, thread: "1710000000.000200" });
 
 		expect(first.workspaceDir).toBe(second.workspaceDir);
 		expect(first.logPath).not.toBe(second.logPath);
@@ -69,8 +69,8 @@ describe("chat storage", () => {
 
 	it("shares workspace and memory across native containers with the same parent channel", () => {
 		const state = makeState();
-		const first = storageFor(agent, state, { ...message, conversation: "thread-1", channel: "parent" });
-		const second = storageFor(agent, state, { ...message, conversation: "thread-2", channel: "parent" });
+		const first = storageForAddress(agent, state, { ...message, conversation: "thread-1", channel: "parent" });
+		const second = storageForAddress(agent, state, { ...message, conversation: "thread-2", channel: "parent" });
 
 		expect(first.workspaceDir).toBe(second.workspaceDir);
 		expect(first.memoryDir).toBe(second.memoryDir);
@@ -84,7 +84,7 @@ describe("chat storage", () => {
 	});
 
 	it("creates storage directories", async () => {
-		const storage = storageFor(agent, makeState(), message);
+		const storage = storageForAddress(agent, makeState(), message);
 
 		await ensureChatStorage(storage);
 

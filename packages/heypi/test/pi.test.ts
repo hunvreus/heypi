@@ -20,20 +20,34 @@ describe("Pi host", () => {
 			agentDir: "/host/state/agent",
 			workspaceDir: "/host/state/workspace",
 			sharedDir: "/host/state/shared",
+			skillsDir: "/host/resources/skills",
 			sessionDir: "/host/state/sessions/thread",
 		});
-		await extension({ on } as unknown as ExtensionAPI);
+		await extension({
+			on,
+			getActiveTools: () => ["todo"],
+			getAllTools: () => [
+				{
+					name: "todo",
+					description: "Replace the visible task list.",
+					promptGuidelines: ["Update the list before using another tool."],
+				},
+			],
+		} as unknown as ExtensionAPI);
 		const rewrite = on.mock.calls[0]?.[1] as (event: {
 			systemPrompt: string;
+			systemPromptOptions: { customPrompt?: string };
 		}) => { systemPrompt: string } | undefined;
 
 		expect(
 			rewrite({
 				systemPrompt:
-					"Current working directory: /host/state/workspace\n/host/state/shared/x\n/host/state/agent\n/host/state/sessions/thread",
+					"Current working directory: /host/state/workspace\n/host/state/shared/x\n/host/resources/skills/review/SKILL.md\n/host/state/agent\n/host/state/sessions/thread",
+				systemPromptOptions: { customPrompt: "Custom" },
 			}),
 		).toEqual({
-			systemPrompt: "Current working directory: /workspace\n/shared/x\n/agent\n/sessions",
+			systemPrompt:
+				"Current working directory: /workspace\n/shared/x\n/agent/skills/review/SKILL.md\n/agent\n/sessions\n\n## Tool guidance\n\n- Update the list before using another tool.",
 		});
 	});
 

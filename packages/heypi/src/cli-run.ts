@@ -21,7 +21,7 @@ import {
 import { booleanFlag, type CliContext, type CliFlags, type CliResult, flag } from "./cli-types.js";
 import { listTemplates, scaffold } from "./scaffold.js";
 
-const VALUE_FLAGS = new Set(["env-file", "query", "mode", "url", "guild", "timeout"]);
+const VALUE_FLAGS = new Set(["env-file", "query", "guild", "timeout"]);
 const BOOLEAN_FLAGS = new Set(["json", "help", "no-install", "private", "bots", "force"]);
 
 export type CliIo = {
@@ -51,7 +51,7 @@ function usage(): string {
   heypi slack check
   heypi slack channels [--query text] [--private]
   heypi slack users [--query text] [--bots]
-  heypi slack manifest [--mode socket|http] [--url url]
+  heypi slack manifest
   heypi slack env-example
   heypi discord check
   heypi discord guilds
@@ -168,7 +168,7 @@ async function platformCommand(
 		if (command === "check") return slackCheck(context);
 		if (command === "channels") return slackChannels(context, flags);
 		if (command === "users") return slackUsers(context, flags);
-		if (command === "manifest") return slackManifest(flags);
+		if (command === "manifest") return slackManifest();
 		if (command === "env-example") return slackEnvExample();
 	}
 	if (platform === "discord") {

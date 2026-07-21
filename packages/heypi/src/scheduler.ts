@@ -143,18 +143,14 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
 	async function claimAndStart(schedule: LoadedSchedule, scheduledFor: Date, manual = false): Promise<ScheduleRun> {
 		const scheduled = scheduledFor.toISOString();
 		const firedAt = new Date().toISOString();
-		if (options.store.hasOccurrence(schedule.id, scheduled)) {
-			const existing = options.store.runs(schedule.id).find((run) => run.scheduledFor === scheduled);
-			if (!existing) throw new Error(`Schedule occurrence was claimed without a run: ${schedule.id}`);
-			return existing;
-		}
-		if (options.store.active(schedule.id)) {
+		const claim = await options.store.claim(schedule.id, scheduled, firedAt, manual);
+		if (claim.action === "existing") return claim.run;
+		if (claim.action === "active") {
 			const skipped = await options.store.skip(schedule.id, scheduled, firedAt, "previous run still active");
 			options.logger.warn("schedule_run_skipped", { schedule: schedule.id, run: skipped.id, reason: skipped.error });
 			return skipped;
 		}
-		const run = await options.store.claim(schedule.id, scheduled, firedAt, manual);
-		if (!run) throw new Error(`Schedule occurrence could not be claimed: ${schedule.id}`);
+		const run = claim.run;
 		options.logger.info("schedule_run_claimed", { schedule: schedule.id, run: run.id, scheduledFor: scheduled });
 		const task = execute(schedule, run);
 		track(task);

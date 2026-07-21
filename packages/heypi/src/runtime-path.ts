@@ -2,10 +2,12 @@ import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 export const GUEST_WORKSPACE = "/workspace";
 export const GUEST_SHARED = "/shared";
+export const GUEST_SKILLS = "/agent/skills";
 
 export type RuntimeRoots = {
 	workspace: string;
 	shared?: string;
+	skills?: string;
 };
 
 function inside(root: string, path: string): boolean {
@@ -23,7 +25,9 @@ export function assertGuestPath(path: string): string {
 		normalized !== GUEST_WORKSPACE &&
 		!normalized.startsWith(`${GUEST_WORKSPACE}/`) &&
 		normalized !== GUEST_SHARED &&
-		!normalized.startsWith(`${GUEST_SHARED}/`)
+		!normalized.startsWith(`${GUEST_SHARED}/`) &&
+		normalized !== GUEST_SKILLS &&
+		!normalized.startsWith(`${GUEST_SKILLS}/`)
 	) {
 		throw new Error(`path escapes runtime workspace: ${path}`);
 	}
@@ -37,7 +41,18 @@ function rootForGuestPath(roots: RuntimeRoots, inputPath: string): { guest: stri
 	if (roots.shared && (inputPath === GUEST_SHARED || inputPath.startsWith(`${GUEST_SHARED}/`))) {
 		return { guest: GUEST_SHARED, host: roots.shared };
 	}
+	if (roots.skills && (inputPath === GUEST_SKILLS || inputPath.startsWith(`${GUEST_SKILLS}/`))) {
+		return { guest: GUEST_SKILLS, host: roots.skills };
+	}
 	return undefined;
+}
+
+export function assertWritableGuestPath(roots: RuntimeRoots, inputPath: string): string {
+	const path = guestPath(roots, inputPath);
+	if (path === GUEST_SKILLS || path.startsWith(`${GUEST_SKILLS}/`)) {
+		throw new Error(`path is read-only: ${path}`);
+	}
+	return path;
 }
 
 export function guestPath(roots: RuntimeRoots, inputPath: string): string {

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { approvalActorAllowed, renderApprovalMessage } from "./approval.js";
+import { approvalActorAllowed, renderApprovalMessage, settleApproval } from "./approval.js";
 import { materializeAttachments as materializeAdapterAttachments } from "./attachments.js";
 import type { AdapterEvents } from "./events.js";
 import { chunkText, formatOutgoingText, splitLocalAttachments } from "./message.js";
@@ -22,6 +22,7 @@ const APPROVE = "heypi_approve";
 const REJECT = "heypi_reject";
 const APPROVAL_CANCELED = "Approval canceled.";
 const TELEGRAM_TEXT_LIMIT = 4_096;
+const TELEGRAM_UPDATE_ATTEMPTS = 3;
 const IDEMPOTENT_TELEGRAM_METHODS = new Set([
 	"answerCallbackQuery",
 	"editMessageText",
@@ -104,6 +105,8 @@ type PendingApproval = {
 	resolve(decision: ApprovalDecision): void;
 };
 
+type TelegramRequest = <T>(url: string, init: RequestInit, consume: (response: Response) => Promise<T>) => Promise<T>;
+
 export type TelegramApprovalPayload = {
 	chat_id: string;
 	message_thread_id?: number;
@@ -185,7 +188,7 @@ async function uploadTelegramAttachment(
 	message: { conversation: string; thread?: string; replyTo?: string },
 	attachment: { localPath?: string; name?: string; mime?: string },
 	caption?: string,
-	request?: (url: string, init: RequestInit) => Promise<Response>,
+	request?: TelegramRequest,
 	stopSignal?: AbortSignal,
 	retryOptions?: RetryConfig | false,
 ): Promise<number> {
@@ -202,16 +205,25 @@ async function uploadTelegramAttachment(
 		if (message.replyTo) form.set("reply_parameters", JSON.stringify({ message_id: Number(message.replyTo) }));
 		if (caption) form.set("caption", caption);
 		form.set(field, new Blob([data], { type: attachment.mime ?? "application/octet-stream" }), attachment.name);
-		const response = await (request ?? fetch)(`https://api.telegram.org/bot${token}/${method}`, {
-			method: "POST",
-			body: form,
-		});
-		const payload = (await response.json()) as {
-			ok?: boolean;
-			result?: { message_id: number };
-			description?: string;
-			parameters?: { retry_after?: number };
-		};
+		const execute: TelegramRequest =
+			request ??
+			(async (url, init, consume) => {
+				const response = await fetch(url, init);
+				return consume(response);
+			});
+		const { response, payload } = await execute(
+			`https://api.telegram.org/bot${token}/${method}`,
+			{ method: "POST", body: form },
+			async (response) => ({
+				response,
+				payload: (await response.json()) as {
+					ok?: boolean;
+					result?: { message_id: number };
+					description?: string;
+					parameters?: { retry_after?: number };
+				},
+			}),
+		);
 		if ((response.status === 429 || payload.parameters?.retry_after !== undefined) && attempt < retry.attempts) {
 			const retryAfter = payload.parameters?.retry_after;
 			await retryWait(
@@ -250,6 +262,7 @@ export function telegram(config: TelegramConfig): Adapter {
 	let offset = 0;
 	let self: TelegramBotIdentity = { username: config.botUsername };
 	const pending = new Map<string, PendingApproval>();
+	const failedUpdates = new Map<number, number>();
 	const pollMs = config.pollMs ?? 1500;
 	const api = `https://api.telegram.org/bot${config.token}`;
 	const fileApi = `https://api.telegram.org/file/bot${config.token}`;
@@ -257,7 +270,7 @@ export function telegram(config: TelegramConfig): Adapter {
 	const requestControllers = new Set<AbortController>();
 	let stopController = new AbortController();
 
-	async function request(url: string, init: RequestInit): Promise<Response> {
+	const request: TelegramRequest = async (url, init, consume) => {
 		if (stopping) throw new Error("Telegram adapter is stopping");
 		const controller = new AbortController();
 		requestControllers.add(controller);
@@ -266,30 +279,37 @@ export function telegram(config: TelegramConfig): Adapter {
 			config.timeoutMs ?? 30_000,
 		);
 		try {
-			return await fetch(url, { ...init, signal: controller.signal });
+			const response = await fetch(url, { ...init, signal: controller.signal });
+			return await consume(response);
 		} finally {
 			clearTimeout(timeout);
 			requestControllers.delete(controller);
 		}
-	}
+	};
 
 	async function call<T>(method: string, body: Record<string, unknown>): Promise<T> {
 		const retry = retryConfig(config.retry);
 		const idempotent = IDEMPOTENT_TELEGRAM_METHODS.has(method);
 		for (let attempt = 1; attempt <= retry.attempts; attempt++) {
 			let response: Response;
+			let text: string;
 			try {
-				response = await request(`${api}/${method}`, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify(body),
-				});
+				const result = await request(
+					`${api}/${method}`,
+					{
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify(body),
+					},
+					async (response) => ({ response, text: await response.text() }),
+				);
+				response = result.response;
+				text = result.text;
 			} catch (error) {
 				if (stopping || !idempotent || attempt === retry.attempts) throw error;
 				await retryWait(retryDelay(retry, attempt), stopController.signal);
 				continue;
 			}
-			const text = await response.text();
 			let payload: {
 				ok?: boolean;
 				result?: T;
@@ -337,17 +357,42 @@ export function telegram(config: TelegramConfig): Adapter {
 			try {
 				const updates = await call<TelegramUpdate[]>("getUpdates", { timeout: 20, offset });
 				for (const update of updates) {
-					offset = Math.max(offset, update.update_id + 1);
-					if (update.edited_message || update.edited_channel_post) continue;
-					if (update.callback_query) {
-						await handleCallback(update.callback_query);
-						continue;
+					try {
+						if (update.edited_message || update.edited_channel_post) {
+							failedUpdates.delete(update.update_id);
+							offset = Math.max(offset, update.update_id + 1);
+							continue;
+						}
+						if (update.callback_query) {
+							await handleCallback(update.callback_query);
+							failedUpdates.delete(update.update_id);
+							offset = Math.max(offset, update.update_id + 1);
+							continue;
+						}
+						if (!update.message) {
+							failedUpdates.delete(update.update_id);
+							offset = Math.max(offset, update.update_id + 1);
+							continue;
+						}
+						const message = telegramMessage(update.message, self, adapterId);
+						if (!message.user.isSelf && (message.dm || message.mentioned || message.replyTo))
+							await receive(message);
+						failedUpdates.delete(update.update_id);
+						offset = Math.max(offset, update.update_id + 1);
+					} catch (error) {
+						const attempts = (failedUpdates.get(update.update_id) ?? 0) + 1;
+						if (attempts < TELEGRAM_UPDATE_ATTEMPTS) {
+							failedUpdates.set(update.update_id, attempts);
+							throw error;
+						}
+						failedUpdates.delete(update.update_id);
+						offset = Math.max(offset, update.update_id + 1);
+						logger.error("adapter_telegram_update_dropped", {
+							update: update.update_id,
+							attempts,
+							error: error instanceof Error ? error.message : String(error),
+						});
 					}
-					if (!update.message) continue;
-					const message = telegramMessage(update.message, self, adapterId);
-					if (message.user.isSelf) continue;
-					if (!message.dm && !message.mentioned && !message.replyTo) continue;
-					await receive(message);
 				}
 			} catch (error) {
 				if (!running) break;
@@ -370,26 +415,35 @@ export function telegram(config: TelegramConfig): Adapter {
 			await call("answerCallbackQuery", { callback_query_id: callback.id });
 			return;
 		}
-		pending.delete(id);
-		if (approval.timer) clearTimeout(approval.timer);
-		await call("answerCallbackQuery", { callback_query_id: callback.id });
-		if (callback.message) {
-			await call("editMessageText", {
-				chat_id: callback.message.chat.id,
-				message_id: callback.message.message_id,
-				text: renderApprovalMessage({
-					...approval.view,
-					state: approved ? "approved" : "rejected",
-					resolvedBy,
+		await settleApproval({
+			claim: () => pending.delete(id),
+			timer: approval.timer,
+			update: async () => {
+				await call("answerCallbackQuery", { callback_query_id: callback.id });
+				if (callback.message) {
+					await call("editMessageText", {
+						chat_id: callback.message.chat.id,
+						message_id: callback.message.message_id,
+						text: renderApprovalMessage({
+							...approval.view,
+							state: approved ? "approved" : "rejected",
+							resolvedBy,
+						}),
+					});
+				}
+			},
+			updateFailed: (error) =>
+				context?.logger.warn("adapter_telegram_approval_update_failed", {
+					message: error instanceof Error ? error.message : String(error),
 				}),
-			});
-		}
-		approval.resolve({
-			approved,
-			messageIds: approval.message === undefined ? undefined : [String(approval.message)],
-			resolvedBy,
-			resolvedById,
-			reason: approved ? undefined : "Rejected in Telegram.",
+			resolve: () =>
+				approval.resolve({
+					approved,
+					messageIds: approval.message === undefined ? undefined : [String(approval.message)],
+					resolvedBy,
+					resolvedById,
+					reason: approved ? undefined : "Rejected in Telegram.",
+				}),
 		});
 	}
 

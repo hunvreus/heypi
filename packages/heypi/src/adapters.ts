@@ -13,7 +13,7 @@ import type {
 } from "./types.js";
 
 export type LocalMessage = Omit<ChatMessage, "adapterId" | "adapter" | "conversation" | "dm" | "mentioned"> &
-	Partial<Pick<ChatMessage, "adapterId" | "adapter" | "conversation" | "dm" | "mentioned">>;
+	Partial<Pick<ChatMessage, "conversation" | "dm" | "mentioned">>;
 
 export type LocalAdapter = Adapter & {
 	receive(message: LocalMessage): Promise<void>;
@@ -151,8 +151,9 @@ function webhookMessage(input: unknown, adapterId: string): ChatMessage {
 	const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 	const user = record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>) : {};
 	const isSelf = user.isSelf === true;
+	if (typeof record.id !== "string" || !record.id.trim()) throw new Error("Webhook message id is required");
 	return {
-		id: typeof record.id === "string" ? record.id : `webhook-${Date.now()}`,
+		id: record.id,
 		adapter: "webhook",
 		adapterId,
 		conversation: typeof record.conversation === "string" ? record.conversation : "default",
@@ -229,7 +230,7 @@ export function webhook(config: WebhookConfig): WebhookAdapter {
 					const body = await readBody(request);
 					if (secret) verifyWebhook(request, body.raw, secret, toleranceMs);
 					const message = webhookMessage(body.json, id);
-					await context?.receive(message);
+					await (context?.enqueue ?? context?.receive)?.(message);
 					json(response, 202, { ok: true });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);

@@ -1,7 +1,14 @@
 import { spawn } from "node:child_process";
 import { posix } from "node:path";
 import type { BashOperations, FindOperations } from "@earendil-works/pi-coding-agent";
-import { assertGuestPath, GUEST_SHARED, GUEST_WORKSPACE, guestPath, type RuntimeRoots } from "./runtime-path.js";
+import {
+	assertGuestPath,
+	GUEST_SHARED,
+	GUEST_SKILLS,
+	GUEST_WORKSPACE,
+	guestPath,
+	type RuntimeRoots,
+} from "./runtime-path.js";
 import { createRuntimeToolDefinitions, type RuntimeFileSystem } from "./runtime-provider.js";
 import { globPattern, run, runBuffer } from "./runtime-util.js";
 import type { RuntimeConfig, RuntimeInstance } from "./types.js";
@@ -20,6 +27,7 @@ async function dockerContainer(
 		"-v",
 		`${roots.workspace}:${GUEST_WORKSPACE}`,
 		...(roots.shared ? ["-v", `${roots.shared}:${GUEST_SHARED}`] : []),
+		...(roots.skills ? ["-v", `${roots.skills}:${GUEST_SKILLS}:ro`] : []),
 		...Object.entries(runtime.env ?? {}).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
 		image,
 		"sleep",

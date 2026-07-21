@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FileHandle } from "node:fs/promises";
-import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rm, truncate } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ChatJob, TurnCause } from "./events.js";
 import type { BusyMode, ChatMessage, SendMessage } from "./types.js";
@@ -104,6 +104,7 @@ export type Channel = {
 	load(): Promise<void>;
 	close(): Promise<void>;
 	accepts(message: ChatMessage): boolean;
+	hasMessage(id: string): boolean;
 	ingest(message: ChatMessage, busy?: BusyMode): Promise<IngestResult>;
 	trigger(input: TrustedTurn): Promise<{ action: "started" | "queued"; id: string }>;
 	next(): Turn | undefined;
@@ -119,8 +120,6 @@ export type Channel = {
 	): Promise<ApprovalResolvedRecord>;
 	complete(reply?: string): Promise<void>;
 	fail(error: string): Promise<void>;
-	activeMessageId(): string | undefined;
-	activeUser(): { id: string; name?: string } | undefined;
 	findHistory(
 		query?: ChatHistoryQuery,
 	): Array<ChannelRecord & ({ type: "message_inbound" } | { type: "message_outbound" })>;
@@ -190,8 +189,8 @@ export function createChannel(options: ChannelOptions): Channel {
 		if (options.lockPath) await rm(options.lockPath, { force: true });
 	}
 	async function append(record: ChannelRecord): Promise<void> {
-		records.push(record);
 		await appendFile(options.logPath, `${JSON.stringify(record)}\n`, "utf8");
+		records.push(record);
 	}
 
 	function isInbound(record: ChannelRecord): record is ChannelRecord & { type: "message_inbound" } {
@@ -204,12 +203,21 @@ export function createChannel(options: ChannelOptions): Channel {
 		return record.type === "message_inbound" || record.type === "message_outbound";
 	}
 
-	function activeMessage(): (ChannelRecord & { type: "message_inbound" }) | undefined {
-		if (!active) return undefined;
-		const trigger = active.trigger;
-		return records.find((record): record is ChannelRecord & { type: "message_inbound" } => {
-			return isInbound(record) && record.record === trigger;
-		});
+	function messageHandled(id: string): boolean {
+		return records
+			.filter(isInbound)
+			.filter((record) => record.id === id)
+			.some(
+				(inbound) =>
+					!shouldTrigger(inbound) ||
+					records.some(
+						(record) =>
+							(record.type === "turn_queued" ||
+								record.type === "turn_steered" ||
+								record.type === "turn_rejected") &&
+							record.trigger === inbound.record,
+					),
+			);
 	}
 
 	function activeTrigger(): (ChannelRecord & ({ type: "message_inbound" } | { type: "turn_trigger" })) | undefined {
@@ -251,6 +259,14 @@ export function createChannel(options: ChannelOptions): Channel {
 		return message.text.trim().length > 0 || Boolean(message.attachments?.length);
 	}
 
+	function escapeTagText(value: string): string {
+		return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+	}
+
+	function contextJson(value: unknown): string {
+		return JSON.stringify(value).replaceAll("&", "\\u0026").replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+	}
+
 	function followsTriggeredConversation(message: ChatMessage): boolean {
 		if (!message.session || message.session === message.id || message.dm) return false;
 		if (message.replyTo) return true;
@@ -261,12 +277,46 @@ export function createChannel(options: ChannelOptions): Channel {
 	}
 
 	function formatMessage(message: ChannelRecord & { type: "message_inbound" }): string {
-		const lines = [`- [uid:${message.user.id}] ${message.user.name ?? "unknown"}: ${message.text || "(no text)"}`];
+		const kind = message.dm ? "dm" : message.session ? "thread" : message.channel ? "channel" : "conversation";
+		const trigger = message.dm
+			? "direct_message"
+			: message.mentioned
+				? "mention"
+				: message.session || message.replyTo
+					? "reply"
+					: "message";
+		const context = {
+			adapter: message.adapter,
+			account: message.adapterId,
+			trigger,
+			conversation: {
+				id: message.conversation,
+				kind,
+				channel: message.channel,
+				thread: message.thread ?? (kind === "thread" ? message.session : undefined),
+				replyTo: message.replyTo,
+			},
+			actor: {
+				id: message.user.id,
+				name: message.user.name,
+				groups: message.user.groups,
+				...(message.user.isBot ? { bot: true } : {}),
+			},
+			time: message.time,
+		};
+		const lines = [
+			"<chat_context>",
+			contextJson(context),
+			"</chat_context>",
+			"<chat_messages>",
+			`- [uid:${escapeTagText(message.user.id)}] ${escapeTagText(message.user.name ?? "unknown")}: ${escapeTagText(message.text || "(no text)")}`,
+		];
 		if (message.attachments?.length) {
 			lines.push("  attachments:");
 			for (const attachment of message.attachments)
-				lines.push(`  - ${attachment.path ?? attachment.url ?? attachment.name}`);
+				lines.push(`  - ${escapeTagText(attachment.path ?? attachment.url ?? attachment.name ?? "attachment")}`);
 		}
+		lines.push("</chat_messages>");
 		return lines.join("\n");
 	}
 
@@ -308,14 +358,24 @@ export function createChannel(options: ChannelOptions): Channel {
 			await lockChannel();
 			try {
 				const text = await readFile(options.logPath, "utf8");
-				records = text
-					.split("\n")
-					.filter(Boolean)
-					.map((line) => JSON.parse(line) as ChannelRecord);
+				const lines = text.split("\n");
+				const loaded: ChannelRecord[] = [];
+				for (const [position, line] of lines.entries()) {
+					if (!line) continue;
+					try {
+						loaded.push(JSON.parse(line) as ChannelRecord);
+					} catch (error) {
+						if (position !== lines.length - 1 || text.endsWith("\n")) throw error;
+						await truncate(options.logPath, Buffer.byteLength(text.slice(0, text.lastIndexOf("\n") + 1)));
+					}
+				}
+				records = loaded;
 				nextRecord = records.reduce((max, record) => Math.max(max, record.record), 0) + 1;
 				await failInterruptedTurns();
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+				await releaseLock().catch(() => undefined);
+				throw error;
 			}
 		},
 
@@ -327,7 +387,12 @@ export function createChannel(options: ChannelOptions): Channel {
 			return shouldTrigger(message);
 		},
 
+		hasMessage(id) {
+			return messageHandled(id);
+		},
+
 		async ingest(message, busy = "queue") {
+			if (messageHandled(message.id)) return { action: "ignored" };
 			const record: ChannelRecord = {
 				type: "message_inbound",
 				record: nextRecord++,
@@ -345,8 +410,8 @@ export function createChannel(options: ChannelOptions): Channel {
 				return { action: "steer", id: active.id, prompt: buildPrompt(record.record) };
 			}
 			const turn = { id: randomUUID(), trigger: record.record };
-			queued.push(turn);
 			await append({ type: "turn_queued", record: nextRecord++, id: turn.id, trigger: turn.trigger });
+			queued.push(turn);
 			return { action: active ? "queued" : "started", id: turn.id };
 		},
 
@@ -359,8 +424,8 @@ export function createChannel(options: ChannelOptions): Channel {
 			};
 			await append(record);
 			const turn = { id: randomUUID(), trigger: record.record };
-			queued.push(turn);
 			await append({ type: "turn_queued", record: nextRecord++, id: turn.id, trigger: turn.trigger });
+			queued.push(turn);
 			return { action: active ? "queued" : "started", id: turn.id };
 		},
 
@@ -370,7 +435,10 @@ export function createChannel(options: ChannelOptions): Channel {
 			if (!turn) return undefined;
 			active = turn;
 			const trigger = activeTrigger();
-			if (!trigger) return undefined;
+			if (!trigger) {
+				active = undefined;
+				return undefined;
+			}
 			const message = trigger.type === "message_inbound" ? trigger : undefined;
 			const actor = trigger.type === "message_inbound" ? trigger.user : trigger.actor;
 			const cause: TurnCause =
@@ -398,7 +466,7 @@ export function createChannel(options: ChannelOptions): Channel {
 		},
 
 		async cancelQueued(reason) {
-			const turns = queued.splice(0, queued.length);
+			const turns = [...queued];
 			const jobs = turns.map((turn) => jobFor(turn, "queued")).filter((job): job is ChatJob => Boolean(job));
 			for (const turn of turns) {
 				await append({
@@ -408,6 +476,7 @@ export function createChannel(options: ChannelOptions): Channel {
 					trigger: turn.trigger,
 					reason,
 				});
+				queued.shift();
 			}
 			return jobs;
 		},
@@ -467,17 +536,6 @@ export function createChannel(options: ChannelOptions): Channel {
 			if (!active) return;
 			await append({ type: "turn_failed", record: nextRecord++, id: active.id, trigger: active.trigger, error });
 			active = undefined;
-		},
-
-		activeMessageId() {
-			const message = activeMessage();
-			return message?.thread;
-		},
-
-		activeUser() {
-			const user = activeMessage()?.user;
-			if (!user) return undefined;
-			return { id: user.id, name: user.name };
 		},
 
 		findHistory(query = {}) {

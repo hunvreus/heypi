@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdapterEvent, AdapterEventContext, AdapterEventHandler, AdapterEvents } from "../src/events.js";
-import { createSlackActivity, slackApprovalPayload, slackMessage, slackMessageEventAllowed } from "../src/slack.js";
+import {
+	createSlackActivity,
+	slackApprovalPayload,
+	slackMessage,
+	slackMessageEventAllowed,
+	slackMessageMentionsBot,
+} from "../src/slack.js";
 
 async function emit(events: AdapterEvents, event: AdapterEvent, context: AdapterEventContext): Promise<void> {
 	const handler = events[event.type] as AdapterEventHandler | false | undefined;
@@ -252,6 +258,11 @@ describe("Slack activity", () => {
 });
 
 describe("slackMessage", () => {
+	it("routes bot mentions only through the app mention handler", () => {
+		expect(slackMessageMentionsBot({ text: "hey <@UBOT>" }, { userId: "UBOT" })).toBe(true);
+		expect(slackMessageMentionsBot({ text: "hey <@UOTHER>" }, { userId: "UBOT" })).toBe(false);
+	});
+
 	it("normalizes Slack app mentions", () => {
 		expect(
 			slackMessage(

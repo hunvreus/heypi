@@ -75,8 +75,48 @@ function encryptedSecretReply(url: string, secret: string): string {
 }
 
 describe("createHeypi", () => {
+	it("does not restart activity for a redelivered message", async () => {
+		const events: string[] = [];
+		const state = await makeDir("app-redelivery-state");
+		let accept: (() => void) | undefined;
+		let release: (() => void) | undefined;
+		const accepted = new Promise<void>((resolve) => (accept = resolve));
+		const blocked = new Promise<void>((resolve) => (release = resolve));
+		const adapter = local({
+			todo: false,
+			events: {
+				async message_accepted() {
+					events.push("accepted");
+					accept?.();
+					await blocked;
+				},
+				message_completed: () => {
+					events.push("completed");
+				},
+			},
+		});
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(await makeDir("app-redelivery-agent"), { id: "agent", state: { dir: state } }),
+			piHost: () => replyHost(),
+		});
+		await app.start();
+		try {
+			const first = adapter.receive({ id: "same", user: { id: "u1" }, text: "hello" });
+			await accepted;
+			await adapter.receive({ id: "same", user: { id: "u1" }, text: "hello" });
+			await adapter.receive({ id: "same", user: { id: "u1" }, text: "hello" });
+			release?.();
+			await first;
+			expect(events).toEqual(["accepted", "completed"]);
+		} finally {
+			await app.stop();
+		}
+	});
+
 	it("terminates activity when attachment intake fails", async () => {
 		const events: string[] = [];
+		const state = await makeDir("app-intake-failure-state");
 		const adapter = local({
 			todo: false,
 			events: {
@@ -93,7 +133,7 @@ describe("createHeypi", () => {
 		};
 		const app = await createHeypi({
 			adapters: [adapter],
-			agent: loadAgent(await makeDir("app-intake-failure-agent"), { id: "agent" }),
+			agent: loadAgent(await makeDir("app-intake-failure-agent"), { id: "agent", state: { dir: state } }),
 			piHost: () => replyHost(),
 		});
 		await app.start();
@@ -227,7 +267,9 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(prompts).toEqual(["- [uid:u1] Ronan: hello"]);
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain('"adapter":"local"');
+		expect(prompts[0]).toContain("[uid:u1] Ronan: hello");
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 		expect(piOptions).toHaveLength(1);
 		expect(piOptions[0]?.customTools).toHaveLength(3);
@@ -450,6 +492,108 @@ describe("createHeypi", () => {
 		expect(aborts).toBe(1);
 		expect(app.jobs()).toEqual([]);
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Canceled: user canceled" }]);
+		await app.stop();
+	});
+
+	it("cancels an active turn while its Pi runtime is starting", async () => {
+		const root = await makeDir("app-cancel-starting-agent");
+		const state = await makeDir("app-cancel-starting-state");
+		const adapter = local({ todo: false });
+		let releaseStart: (() => void) | undefined;
+		let startObserved: (() => void) | undefined;
+		const starting = new Promise<void>((resolve) => {
+			startObserved = resolve;
+		});
+		const startGate = new Promise<void>((resolve) => {
+			releaseStart = resolve;
+		});
+		let sends = 0;
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost() {
+				return {
+					async start() {
+						startObserved?.();
+						await startGate;
+					},
+					async send() {
+						sends += 1;
+					},
+					subscribe() {
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		const turn = adapter.receive({ id: "m1", user: { id: "u1" }, text: "first" });
+		await starting;
+		await expect(app.cancelActive("user canceled")).resolves.toBe(1);
+		releaseStart?.();
+		await turn;
+
+		expect(sends).toBe(0);
+		expect(adapter.sent.at(-1)?.text).toBe("Canceled: user canceled");
+		await app.stop();
+	});
+
+	it("continues queued work when reply and failure notifications both fail", async () => {
+		const root = await makeDir("app-send-failure-queue-agent");
+		const state = await makeDir("app-send-failure-queue-state");
+		const adapter = local({ todo: false, events: { message_queued: false } });
+		const send = adapter.send.bind(adapter);
+		let sendAttempts = 0;
+		adapter.send = async (message) => {
+			sendAttempts += 1;
+			if (sendAttempts <= 2) throw new Error("adapter unavailable");
+			return send(message);
+		};
+		let releaseFirst: (() => void) | undefined;
+		let firstObserved: (() => void) | undefined;
+		const firstStarted = new Promise<void>((resolve) => {
+			firstObserved = resolve;
+		});
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		let piSends = 0;
+		const app = await createHeypi({
+			adapters: [adapter],
+			agent: loadAgent(root, { id: "agent", state: { dir: state } }),
+			piHost() {
+				const listeners: PiListener[] = [];
+				return {
+					async start() {},
+					async send() {
+						piSends += 1;
+						if (piSends === 1) {
+							firstObserved?.();
+							await firstGate;
+						}
+						emitAssistant(listeners, `reply ${piSends}`);
+					},
+					subscribe(listener) {
+						listeners.push(listener);
+						return () => {};
+					},
+					async stop() {},
+				};
+			},
+		});
+
+		await app.start();
+		const first = adapter.receive({ id: "m1", user: { id: "u1" }, text: "first" });
+		await firstStarted;
+		await adapter.receive({ id: "m2", user: { id: "u1" }, text: "second" });
+		releaseFirst?.();
+		await first;
+
+		expect(piSends).toBe(2);
+		expect(sendAttempts).toBe(3);
+		expect(adapter.sent.at(-1)?.text).toBe("reply 2");
 		await app.stop();
 	});
 
@@ -679,7 +823,9 @@ describe("createHeypi", () => {
 		});
 		await app.stop();
 
-		expect(prompts).toEqual(["- [uid:bot-1] Allowed bot: allowed bot request"]);
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain('"bot":true');
+		expect(prompts[0]).toContain("[uid:bot-1] Allowed bot: allowed bot request");
 		expect(adapter.sent).toEqual([{ conversation: "local", thread: undefined, text: "Done." }]);
 	});
 
@@ -776,6 +922,7 @@ describe("createHeypi", () => {
 
 	it("waits for message intake before snapshotting channels during shutdown", async () => {
 		const base = local({ todo: false });
+		const state = await makeDir("app-stop-intake-state");
 		let release: (() => void) | undefined;
 		let started: (() => void) | undefined;
 		const intakeStarted = new Promise<void>((resolve) => {
@@ -794,7 +941,7 @@ describe("createHeypi", () => {
 		};
 		const app = await createHeypi({
 			adapters: [adapter],
-			agent: loadAgent(await makeDir("app-stop-intake-agent"), { id: "agent" }),
+			agent: loadAgent(await makeDir("app-stop-intake-agent"), { id: "agent", state: { dir: state } }),
 			piHost: () => replyHost(),
 		});
 		await app.start();

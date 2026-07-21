@@ -125,22 +125,33 @@ function secureCompare(left: string, right: string): boolean {
 	return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function hostAllowed(request: IncomingMessage, host: string, port: number): boolean {
-	if (!hostHeaderAllowed(request, host, port)) return false;
+function allowedHosts(host: string, port: number, configured: string[] = []): Set<string> {
 	const allowed = new Set([`${host}:${port}`, host]);
+	for (const value of configured) {
+		const candidate = value.trim().toLowerCase();
+		if (!candidate) continue;
+		allowed.add(candidate);
+		if (!candidate.includes(":")) allowed.add(`${candidate}:${port}`);
+	}
+	return allowed;
+}
+
+function hostAllowed(request: IncomingMessage, host: string, port: number, configured?: string[]): boolean {
+	if (!hostHeaderAllowed(request, host, port, configured)) return false;
+	const allowed = allowedHosts(host, port, configured);
 	const origin = request.headers.origin;
 	if (typeof origin !== "string") return true;
 	try {
-		return allowed.has(new URL(origin).host);
+		return allowed.has(new URL(origin).host.toLowerCase());
 	} catch {
 		return false;
 	}
 }
 
-function hostHeaderAllowed(request: IncomingMessage, host: string, port: number): boolean {
-	const allowed = new Set([`${host}:${port}`, host]);
+function hostHeaderAllowed(request: IncomingMessage, host: string, port: number, configured?: string[]): boolean {
+	const allowed = allowedHosts(host, port, configured);
 	const header = request.headers.host;
-	return typeof header !== "string" || allowed.has(header);
+	return typeof header !== "string" || allowed.has(header.toLowerCase());
 }
 
 function authorized(request: IncomingMessage, token: string | undefined): boolean {
@@ -282,12 +293,16 @@ export function createAdmin(
 	return {
 		async start() {
 			if (!isLoopback(host) && !token) throw new Error("Admin token is required for non-loopback hosts");
+			if ((host === "0.0.0.0" || host === "::") && !config.hosts?.length) {
+				throw new Error("Admin hosts are required for wildcard bindings");
+			}
 			server = createServer(async (request, response) => {
 				try {
 					if (!request.url) return sendJson(response, 404, { error: "not_found" });
 					const url = new URL(request.url, `http://${host}:${port}`);
 					if (config.secret && url.pathname === joinUrl(path, "/secret")) {
-						if (!hostHeaderAllowed(request, host, port)) return sendJson(response, 403, { error: "forbidden" });
+						if (!hostHeaderAllowed(request, host, port, config.hosts))
+							return sendJson(response, 403, { error: "forbidden" });
 						if (request.method === "OPTIONS") return sendCors(response);
 						if (request.method === "GET") return sendHtml(response, 200, config.secret.pageHtml());
 						if (request.method === "POST") {
@@ -298,7 +313,8 @@ export function createAdmin(
 							return sendCorsJson(response, 200, { ok: true, name: stored.name });
 						}
 					}
-					if (!hostAllowed(request, host, port)) return sendJson(response, 403, { error: "forbidden" });
+					if (!hostAllowed(request, host, port, config.hosts))
+						return sendJson(response, 403, { error: "forbidden" });
 					if (!authorized(request, token)) return sendJson(response, 401, { error: "unauthorized" });
 					if (request.method === "POST" && url.pathname === joinUrl(path, "/jobs/cancel")) {
 						if (!config.cancel) return sendJson(response, 404, { error: "not_found" });
