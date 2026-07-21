@@ -27,6 +27,7 @@ corepack pnpm run build
   Sandbox execution.
 - [`@hunvreus/heypi-runtime-cloudflare`](packages/heypi-runtime-cloudflare) adapts a caller-owned
   Cloudflare Sandbox SDK instance.
+- [`create-heypi`](packages/create-heypi) scaffolds a new agent project.
 
 ## Quick start
 

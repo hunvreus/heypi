@@ -26,8 +26,16 @@ import { defineSchedule } from "@hunvreus/heypi/authoring";
 
 const prompt = readFileSync(new URL("./weekly.md", import.meta.url), "utf8");
 
-export default defineSchedule({ cron: "0 9 * * 1", timezone: "UTC", prompt });
+export default defineSchedule({
+	cron: "0 9 * * 1",
+	timezone: "UTC",
+	prompt,
+	dependencies: ["./weekly.md"],
+});
 ```
+
+Declare every file read by a schedule in `dependencies` so changes become part of its definition
+hash.
 
 ## Dispatch to chat
 

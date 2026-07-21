@@ -27,6 +27,10 @@ const agent = loadAgent("./agent", {
 unless set to `false`. Admin is disabled unless configured. Omitting `runtime` selects host execution
 and emits a warning.
 
+The admin server is unauthenticated only on loopback. Non-loopback binds require `admin.token`.
+Wildcard binds such as `host: "0.0.0.0"` also require `hosts`, an explicit allowlist of accepted HTTP
+hostnames.
+
 ## Adapters
 
 Adapters own service credentials and chat behavior:

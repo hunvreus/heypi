@@ -31,6 +31,10 @@ configured through `reaction`.
 Inbound files are materialized under the active conversation workspace. Outbound files use
 `chat_attach` and native upload APIs when supported.
 
+Webhook payloads require a stable, non-empty `id`; retries with the same id are deduplicated. A
+successful request returns `202` after durable intake and continues processing asynchronously.
+Configure `secret` for HMAC authentication; non-loopback webhook binds require it.
+
 Configure inbound attachment limits per adapter:
 
 ```ts

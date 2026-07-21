@@ -31,5 +31,7 @@ default for that event.
 
 ## Runtime paths
 
-Pi sees `/workspace` and optional `/shared`. The default state root is `.heypi`; source agent files
-are staged before Pi loads them.
+Pi sees writable `/workspace`, optional writable `/shared`, and managed `/agent/skills`. Sandboxed
+local providers mount skills read-only; host and remote providers use disposable copies that do
+not synchronize changes into staged content. The default state root is `.heypi`; source agent
+files are staged before Pi loads them, and host source paths are not exposed to the model.

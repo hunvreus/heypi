@@ -12,9 +12,9 @@
 
 ## Architecture and modules
 - Keep API route handlers thin.
-- Put validation, permissions, and database behavior in server-side service modules.
-- Back data models with Drizzle schemas and migrations.
-- Generate Drizzle migrations with the project command (`pnpm --filter @hunvreus/heypi run db:generate` for heypi); do not hand-write or edit migration SQL unless explicitly requested.
+- Put validation, permissions, and persistence behavior in server-side service modules.
+- Keep durable coordination state append-only or copy-on-write, and persist it before exposing the
+  corresponding in-memory state.
 - Prefer function-first modules and small files over class-heavy designs.
 - Keep module responsibilities narrow: orchestration in one place, side effects in clear adapters.
 - Define explicit boundary contracts (typed inputs/outputs, error shape, side effects) and keep interface surfaces small and stable.

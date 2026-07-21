@@ -54,7 +54,7 @@ heypi check
 heypi slack check
 heypi slack channels --query project --private
 heypi slack users --query alice
-heypi slack manifest --mode socket
+heypi slack manifest
 heypi slack env-example
 
 heypi discord check
@@ -113,9 +113,12 @@ The agent folder is copied into a clean Pi-visible bundle under `.heypi`. Pi loa
 from that bundle; heypi does not expose host source paths to the model. Staging excludes `.git`,
 `.heypi`, and `node_modules`.
 
-`skills/` and `extensions/` are copied into the staged Pi bundle for Pi-native discovery. Files in
-`tools/` are loaded as authored Pi extension files. `schedules/` contains trusted application code
-and is loaded by heypi without being exposed as a Pi resource.
+`skills/` and `extensions/` are copied into the staged Pi bundle for Pi-native discovery. The full
+skill tree, including scripts and assets, is exposed to runtime tools at managed
+`/agent/skills`. Sandboxed local providers mount it read-only; host and remote providers use
+disposable copies that never synchronize changes into staged agent content. Files in `tools/` are
+loaded as authored Pi extension files. `schedules/` contains trusted application code and is loaded
+by heypi without being exposed as a Pi resource.
 
 ## Storage
 
@@ -339,7 +342,8 @@ the endpoints directly:
 
 Loopback admin servers are unauthenticated by default for local development. If admin is bound to a
 non-loopback host, configure `admin.token`; requests must include `Authorization: Bearer <token>` or
-`X-Heypi-Admin-Token: <token>`.
+`X-Heypi-Admin-Token: <token>`. Wildcard binds such as `host: "0.0.0.0"` also require an explicit
+`hosts` allowlist containing the accepted HTTP hostnames.
 
 ## Adapters
 
@@ -359,9 +363,21 @@ const adapter = webhook({
 });
 ```
 
+Send a stable, non-empty `id` with each message so transport retries can be deduplicated:
+
+```json
+{
+	"id": "request-123",
+	"text": "Summarize the latest report",
+	"conversation": "reports",
+	"actor": { "id": "service", "name": "Reporting service" }
+}
+```
+
 When `secret` is set, clients must send `X-Heypi-Timestamp` and `X-Heypi-Signature`.
 The signature is `sha256=<hmac_sha256(secret, timestamp + "." + rawBody)>`. Non-loopback webhook
-hosts require a secret.
+hosts require a secret. A successful request returns `202` after durable intake; processing
+continues asynchronously.
 
 Slack uses Socket Mode:
 

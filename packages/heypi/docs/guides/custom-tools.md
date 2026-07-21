@@ -21,7 +21,9 @@ export default function register(pi: ExtensionAPI) {
 }
 ```
 
-Keep schemas narrow and results compact. Tool modules are trusted application code.
+Keep schemas narrow and results compact. Put tool-specific usage rules in the tool description so
+they travel with the schema. Reserve `promptGuidelines` for short invariants that must also appear
+in Pi's system guidance. Tool modules are trusted application code.
 
 ## Side effects and approvals
 

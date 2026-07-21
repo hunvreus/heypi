@@ -28,9 +28,14 @@ export function remote(workspace: string): RuntimeConfig {
 }
 ```
 
-The guest roots are `/workspace` and optional `/shared`. Confine every path to those roots, forward
-abort signals and command output, and release resources in `cleanup()`. Use `prepare()` to refresh a
-reused remote sandbox before each turn.
+The guest roots are writable `/workspace`, optional writable `/shared`, and managed
+`/agent/skills`. `context.skills` is the trusted staged host source for that skill tree. A provider
+must mount it read-only or upload a disposable copy before a turn, preserve file modes, reject
+escaping symlinks, and never synchronize runtime changes back to the host source.
+`createRuntimeMirror()` implements those copy semantics for remote filesystems.
+
+Confine every path to declared roots, forward abort signals and command output, and release
+resources in `cleanup()`. Use `prepare()` to refresh a reused remote sandbox before each turn.
 
 Runtime `env` is visible to model-driven code and is not secret-safe. Add credentials only when that
 exposure is acceptable or implement a backend credential broker.

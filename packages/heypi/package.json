@@ -56,8 +56,8 @@
 		"typecheck": "corepack pnpm run build && tsc --noEmit",
 		"test": "vitest --run",
 		"pack:dry": "npm pack --dry-run",
-		"publish:dry": "npm publish --dry-run --access public --tag beta",
-		"publish:beta": "npm publish --access public --tag beta",
+		"publish:dry": "npm publish --dry-run --access public",
+		"publish:release": "npm publish --access public",
 		"prepack": "corepack pnpm run build"
 	},
 	"dependencies": {
