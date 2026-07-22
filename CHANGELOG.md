@@ -5,6 +5,14 @@ incompatible with the previous beta architecture, configuration, persistence, an
 
 ## [Unreleased]
 
+## [0.3.0-beta.2] - 2026-07-21
+
+### Changed
+
+- Reduced the core package README to installation, quickstart, capabilities, and top-level
+  documentation links instead of duplicating the documentation site's navigation and reference.
+- Made aggregate publishing build the workspace once before publishing package artifacts.
+
 ## [0.3.0-beta.1] - 2026-07-21
 
 ### Changed
@@ -60,6 +68,7 @@ incompatible with the previous beta architecture, configuration, persistence, an
   webhook signatures, required authentication for non-loopback admin binds, and warned on
   unrestricted host execution or approval policies without approvers.
 
-[Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.2...HEAD
+[0.3.0-beta.2]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.1...0.3.0-beta.2
 [0.3.0-beta.1]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.0...0.3.0-beta.1
 [0.3.0-beta.0]: https://github.com/hunvreus/heypi/releases/tag/0.3.0-beta.0

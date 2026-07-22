@@ -1,6 +1,6 @@
 {
 	"name": "create-heypi",
-	"version": "0.3.0-beta.1",
+	"version": "0.3.0-beta.2",
 	"description": "Create a Heypi project from a bundled template.",
 	"license": "MIT",
 	"type": "module",
@@ -35,7 +35,7 @@
 		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "^0.3.0-beta.1"
+		"@hunvreus/heypi": "^0.3.0-beta.2"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.1",

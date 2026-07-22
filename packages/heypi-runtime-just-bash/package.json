@@ -1,6 +1,6 @@
 {
 	"name": "@hunvreus/heypi-runtime-just-bash",
-	"version": "0.3.0-beta.1",
+	"version": "0.3.0-beta.2",
 	"description": "just-bash runtime provider for HeyPi.",
 	"license": "MIT",
 	"homepage": "https://heypi.dev/docs/configuration/runtimes/",
@@ -38,7 +38,7 @@
 		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "^0.3.0-beta.1",
+		"@hunvreus/heypi": "^0.3.0-beta.2",
 		"just-bash": "^3.1.0"
 	},
 	"devDependencies": {
