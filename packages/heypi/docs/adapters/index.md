@@ -1,54 +1,30 @@
 # Adapters
 
-Adapters normalize chat services into one message contract and render replies, activity, approvals,
-todos, and attachments through native platform APIs.
+Adapters authenticate platform events, normalize them into `ChatMessage`, and render replies,
+activity, approvals, todos, and attachments through native APIs.
 
-| Adapter | Transport | Default trigger |
-| --- | --- | --- |
-| `local()` | In-process | Every received message |
-| `webhook()` | HTTP | Every authenticated request |
-| `slack()` | Socket Mode | DMs and app mentions |
-| `discord()` | Gateway | DMs and bot mentions |
-| `telegram()` | Long polling | DMs and bot mentions |
+| Adapter | Transport | Default trigger | Continuation |
+| --- | --- | --- | --- |
+| [Slack](slack.md) | Socket Mode | DMs and app mentions | Native thread |
+| [Discord](discord.md) | Gateway | DMs, mentions, and replies | Reply chain |
+| [Telegram](telegram.md) | Long polling | Private chat, mentions, and replies | Reply chain or forum topic |
+| [Webhook](webhook.md) | HTTP | Every accepted request | Supplied session/thread IDs |
+| [Local](local.md) | In-process | Every received message | Supplied IDs |
 
-Supported thread or reply-chain follow-ups continue the originating Pi session without another
-mention. Bot self-messages never trigger a turn; other bots are controlled by `allow.bots`.
+Bot self-messages never trigger a turn. Other bots are denied unless enabled by `allow.bots`.
 
-## Shared options
+## Shared configuration
 
-- `id`: stable storage and routing identity.
-- `allow`: DM, channel, user, group, and bot filters.
-- `admins`: actors with administrative and approval privileges.
-- `approvers`: additional actors who may answer approvals.
-- `approvals`: native layout and timeout.
-- `busy`: `queue`, `steer`, or `reject` while a conversation is active.
-- `events`: override or disable normalized adapter event handlers.
+- `id`: stable storage and routing identity;
+- `allow`: DM, channel, user, group, and bot filters;
+- `admins`: actors with administrative and approval privileges;
+- `approvers`: additional actors who may answer approvals;
+- `approvals`: native layout and timeout;
+- `busy`: queue, steer, or reject follow-ups during active work;
+- `events`: replace or disable normalized lifecycle handlers.
 
-Slack uses native assistant status; Discord and Telegram refresh native typing indicators. These
-surfaces can be disabled with `status: false` or `typing: false`. Slack mention reactions are
-configured through `reaction`.
+See [Access control](../configuration/access.md), [Approvals](../configuration/approvals.md), and
+[Conversation behavior](../configuration/activity.md) for shared semantics.
 
-Inbound files are materialized under the active conversation workspace. Outbound files use
-`chat_attach` and native upload APIs when supported.
-
-Webhook payloads require a stable, non-empty `id`; retries with the same id are deduplicated. A
-successful request returns `202` after durable intake and continues processing asynchronously.
-Configure `secret` for HMAC authentication; non-loopback webhook binds require it.
-
-Configure inbound attachment limits per adapter:
-
-```ts
-slack({
-	// credentials omitted
-	attachments: {
-		maxBytes: 20 * 1024 * 1024,
-		mimeTypes: ["image/*", "application/pdf", "text/plain"],
-	},
-});
-```
-
-Built-in adapters restrict downloads to their service hosts by default. `hosts` replaces that
-allowlist, including redirect destinations. Downloads use bounded retries; Telegram also honors API
-rate-limit retry metadata and bounds API requests with `timeoutMs`.
-
-Use the [custom adapter guide](../guides/custom-adapters.md) for another transport.
+Use stable adapter IDs. Changing an ID creates a new storage, memory, workspace, and conversation
+namespace.

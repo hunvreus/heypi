@@ -11,17 +11,17 @@
 		"packages/create-heypi"
 	],
 	"scripts": {
-		"build": "corepack pnpm -r --filter \"./packages/*\" run build",
-		"build:all": "corepack pnpm -r --filter \"./packages/*\" run build",
-		"dev:codex-tag": "corepack pnpm --filter @hunvreus/heypi run build && corepack pnpm --filter heypi-example-codex-tag run dev",
-		"prepack": "corepack pnpm run build",
+		"build": "pnpm -r --filter \"./packages/*\" run build",
+		"build:all": "pnpm -r --filter \"./packages/*\" run build",
+		"dev:codex-tag": "pnpm --filter @hunvreus/heypi run build && pnpm --filter heypi-example-codex-tag run dev",
+		"prepack": "pnpm run build",
 		"pack:dry": "npm pack --workspaces --dry-run",
 		"publish:dry": "npm publish --workspaces --dry-run --access public --tag latest",
 		"publish:packages": "npm publish --workspaces --access public --tag latest",
 		"check": "biome check .",
 		"fmt": "biome format --write .",
-		"typecheck": "corepack pnpm -r --filter \"./packages/*\" run typecheck",
-		"test": "corepack pnpm --filter @hunvreus/heypi run build && corepack pnpm -r --filter \"./packages/*\" run test"
+		"typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
+		"test": "pnpm --filter @hunvreus/heypi run build && pnpm -r --filter \"./packages/*\" run test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",

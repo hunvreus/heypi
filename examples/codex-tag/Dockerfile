@@ -13,5 +13,5 @@ RUN apt-get update \
 	&& git config --system credential.helper '!gh auth git-credential' \
 	&& git config --system user.name 'Codex Tag' \
 	&& git config --system user.email 'codex@example.com' \
-	&& corepack enable \
+	&& npm install --global pnpm@10.17.1 \
 	&& rm -rf /var/lib/apt/lists/*

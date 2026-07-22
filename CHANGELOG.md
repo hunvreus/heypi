@@ -5,6 +5,15 @@ incompatible with the previous beta architecture, configuration, persistence, an
 
 ## [Unreleased]
 
+## [0.3.0-beta.1] - 2026-07-21
+
+### Changed
+
+- Rebuilt the documentation around architecture, conversations, storage, focused configuration
+  topics, platform-specific adapters, deployment, and CLI reference.
+- Made repository and package READMEs user-facing, linked hosted documentation from every package,
+  and removed Corepack wrappers from development and package lifecycle scripts.
+
 ## [0.3.0-beta.0] - 2026-07-21
 
 ### Added
@@ -51,5 +60,6 @@ incompatible with the previous beta architecture, configuration, persistence, an
   webhook signatures, required authentication for non-loopback admin binds, and warned on
   unrestricted host execution or approval policies without approvers.
 
-[Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.0...HEAD
+[Unreleased]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.1...HEAD
+[0.3.0-beta.1]: https://github.com/hunvreus/heypi/compare/0.3.0-beta.0...0.3.0-beta.1
 [0.3.0-beta.0]: https://github.com/hunvreus/heypi/releases/tag/0.3.0-beta.0

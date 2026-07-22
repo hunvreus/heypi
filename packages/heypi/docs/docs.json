@@ -10,78 +10,53 @@
 		{
 			"title": "Getting started",
 			"pages": [
-				{
-					"title": "Introduction",
-					"slug": "",
-					"file": "index.md",
-					"icon": "info"
-				},
-				{
-					"title": "Quickstart",
-					"slug": "getting-started",
-					"file": "getting-started/index.md",
-					"icon": "zap"
-				},
-				{
-					"title": "Agent files",
-					"slug": "getting-started/agent-files",
-					"file": "getting-started/agent-files.md"
-				}
+				{ "title": "Introduction", "slug": "", "file": "index.md", "icon": "info" },
+				{ "title": "Quickstart", "slug": "getting-started", "file": "getting-started/index.md", "icon": "zap" }
 			]
 		},
 		{
 			"title": "Configuration",
 			"pages": [
-				{
-					"title": "Overview",
-					"slug": "configuration",
-					"file": "configuration/index.md"
-				},
-				{
-					"title": "Scheduling",
-					"slug": "configuration/scheduling",
-					"file": "configuration/scheduling.md"
-				}
+				{ "title": "Overview", "slug": "configuration", "file": "configuration/index.md" },
+				{ "title": "Agent", "slug": "configuration/agent", "file": "configuration/agent.md" },
+				{ "title": "Runtimes", "slug": "configuration/runtimes", "file": "configuration/runtimes.md" },
+				{ "title": "Tools", "slug": "configuration/tools", "file": "configuration/tools.md" },
+				{ "title": "Approvals", "slug": "configuration/approvals", "file": "configuration/approvals.md" },
+				{ "title": "Access", "slug": "configuration/access", "file": "configuration/access.md" },
+				{ "title": "Conversation behavior", "slug": "configuration/activity", "file": "configuration/activity.md" },
+				{ "title": "Memory", "slug": "configuration/memory", "file": "configuration/memory.md" },
+				{ "title": "Attachments", "slug": "configuration/attachments", "file": "configuration/attachments.md" },
+				{ "title": "Secrets", "slug": "configuration/secrets", "file": "configuration/secrets.md" },
+				{ "title": "Scheduling", "slug": "configuration/scheduling", "file": "configuration/scheduling.md" },
+				{ "title": "Admin and audit", "slug": "configuration/admin", "file": "configuration/admin.md" }
 			]
 		},
 		{
 			"title": "Adapters",
 			"pages": [
-				{
-					"title": "Overview",
-					"slug": "adapters",
-					"file": "adapters/index.md"
-				}
+				{ "title": "Overview", "slug": "adapters", "file": "adapters/index.md" },
+				{ "title": "Slack", "slug": "adapters/slack", "file": "adapters/slack.md" },
+				{ "title": "Discord", "slug": "adapters/discord", "file": "adapters/discord.md" },
+				{ "title": "Telegram", "slug": "adapters/telegram", "file": "adapters/telegram.md" },
+				{ "title": "Webhook", "slug": "adapters/webhook", "file": "adapters/webhook.md" },
+				{ "title": "Local", "slug": "adapters/local", "file": "adapters/local.md" }
 			]
 		},
 		{
 			"title": "Guides",
 			"pages": [
-				{
-					"title": "Custom tools",
-					"slug": "guides/custom-tools",
-					"file": "guides/custom-tools.md"
-				},
-				{
-					"title": "Custom adapters",
-					"slug": "guides/custom-adapters",
-					"file": "guides/custom-adapters.md"
-				},
-				{
-					"title": "Custom runtimes",
-					"slug": "guides/custom-runtimes",
-					"file": "guides/custom-runtimes.md"
-				}
+				{ "title": "Deployment", "slug": "guides/deployment", "file": "guides/deployment.md" },
+				{ "title": "Custom tools", "slug": "guides/custom-tools", "file": "guides/custom-tools.md" },
+				{ "title": "Custom adapters", "slug": "guides/custom-adapters", "file": "guides/custom-adapters.md" },
+				{ "title": "Custom runtimes", "slug": "guides/custom-runtimes", "file": "guides/custom-runtimes.md" }
 			]
 		},
 		{
 			"title": "Reference",
 			"pages": [
-				{
-					"title": "Entrypoints and events",
-					"slug": "reference",
-					"file": "reference/index.md"
-				}
+				{ "title": "API", "slug": "reference", "file": "reference/index.md" },
+				{ "title": "CLI", "slug": "reference/cli", "file": "reference/cli.md" },
+				{ "title": "Architecture", "slug": "reference/architecture", "file": "reference/architecture.md" }
 			]
 		}
 	]

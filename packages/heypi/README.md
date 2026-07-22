@@ -14,6 +14,15 @@ heypi is a thin product shell around Pi. Pi owns the model loop, session state, 
 tools, extensions, and transcript. heypi owns agent folder loading, resource staging, chat adapters,
 approval UI, and small adapter coordination.
 
+[Documentation](https://heypi.dev/docs/) · [Quickstart](https://heypi.dev/docs/getting-started/) ·
+[GitHub](https://github.com/hunvreus/heypi)
+
+## Install
+
+```sh
+npm install @hunvreus/heypi
+```
+
 ## Usage
 
 ```ts
@@ -36,16 +45,16 @@ Every project under the repository's `examples/` directory is also a standalone 
 Codex Tag and install its dependencies with:
 
 ```sh
-pnpm create heypi codex-tag
+npm create heypi@latest -- codex-tag
 ```
 
 Use a different destination or skip installation when needed:
 
 ```sh
-pnpm create heypi codex-tag my-agent --no-install
+npm create heypi@latest -- codex-tag my-agent --no-install
 ```
 
-The equivalent lower-level command is `pnpm dlx @hunvreus/heypi create codex-tag`. Run
+The equivalent lower-level command is `npx @hunvreus/heypi create codex-tag`. Run
 `heypi templates` to list bundled templates after installing the package. Templates declare the
 published heypi version they support. Inside this monorepo, pnpm links that same dependency to the
 local workspace package when the semver range matches, so the checked-in files are also the files
@@ -88,11 +97,14 @@ refuses to run while a webhook is configured.
 
 ## Documentation
 
-- **Getting started:** [Quickstart](docs/getting-started/index.md), [agent files](docs/getting-started/agent-files.md)
-- **Configuration:** [Overview](docs/configuration/index.md), [scheduling](docs/configuration/scheduling.md)
-- **Adapters:** [Overview](docs/adapters/index.md)
-- **Guides:** [Custom tools](docs/guides/custom-tools.md), [custom adapters](docs/guides/custom-adapters.md), [custom runtimes](docs/guides/custom-runtimes.md)
-- **Reference:** [Public entrypoints and events](docs/reference/index.md)
+- **Getting started:** [Introduction](docs/index.md), [quickstart](docs/getting-started/index.md)
+- **Configuration:** [Overview](docs/configuration/index.md), [runtimes](docs/configuration/runtimes.md), [approvals](docs/configuration/approvals.md), [scheduling](docs/configuration/scheduling.md)
+- **Adapters:** [Overview](docs/adapters/index.md), [Slack](docs/adapters/slack.md), [Discord](docs/adapters/discord.md), [Telegram](docs/adapters/telegram.md), [webhook](docs/adapters/webhook.md)
+- **Guides:** [Deployment](docs/guides/deployment.md), [custom tools](docs/guides/custom-tools.md), [custom adapters](docs/guides/custom-adapters.md), [custom runtimes](docs/guides/custom-runtimes.md)
+- **Reference:** [API](docs/reference/index.md), [CLI](docs/reference/cli.md), [architecture](docs/reference/architecture.md)
+
+These files are packaged with `@hunvreus/heypi`. Browse the rendered version at
+[heypi.dev/docs](https://heypi.dev/docs/).
 
 `createHeypi()` accepts an optional `piHost` factory for tests and future runtime providers. The
 factory must return the Pi host contract; heypi still sends chat deltas to Pi instead of running its
@@ -378,7 +390,7 @@ Send a stable, non-empty `id` with each message so transport retries can be dedu
 	"id": "request-123",
 	"text": "Summarize the latest report",
 	"conversation": "reports",
-	"actor": { "id": "service", "name": "Reporting service" }
+	"user": { "id": "service", "name": "Reporting service" }
 }
 ```
 

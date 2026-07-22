@@ -1,9 +1,9 @@
 {
 	"name": "@hunvreus/heypi-runtime-cloudflare",
-	"version": "0.3.0-beta.0",
+	"version": "0.3.0-beta.1",
 	"description": "Cloudflare Sandbox runtime provider for HeyPi.",
 	"license": "MIT",
-	"homepage": "https://github.com/hunvreus/heypi#readme",
+	"homepage": "https://heypi.dev/docs/configuration/runtimes/",
 	"repository": {
 		"type": "git",
 		"url": "git+ssh://git@github.com/hunvreus/heypi.git",
@@ -35,11 +35,11 @@
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
 		"publish:release": "npm publish --access public",
-		"prepack": "corepack pnpm run build"
+		"prepack": "npm run build"
 	},
 	"dependencies": {
 		"@cloudflare/sandbox": "^0.12.3",
-		"@hunvreus/heypi": "^0.3.0-beta.0"
+		"@hunvreus/heypi": "^0.3.0-beta.1"
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.1",

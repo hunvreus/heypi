@@ -1,57 +1,43 @@
 # Configuration
 
-Configuration lives in TypeScript. heypi does not split settings across a JSON manifest and an
+Configuration lives in TypeScript. heypi does not split settings between a JSON manifest and an
 entrypoint.
 
-## Agent
-
-Pass model and execution settings to `loadAgent()`:
-
 ```ts
+import { approval, docker, loadAgent, modelFromEnv, runHeypi, slack } from "@hunvreus/heypi";
+
 const agent = loadAgent("./agent", {
 	id: "support",
 	model: modelFromEnv(),
-	runtime: docker({ image: "node:22-bookworm" }),
+	runtime: docker({ workspace: "./workspace", image: "node:22-bookworm" }),
 	state: { dir: ".heypi" },
 	admin: {},
 	tools: {
 		bash: { approve: approval.command() },
 		write: false,
 	},
-	todo: true,
-	memory: true,
-});
-```
-
-`id` defaults to the agent folder name. State defaults to `.heypi`. Todo and memory are enabled
-unless set to `false`. Admin is disabled unless configured. Omitting `runtime` selects host execution
-and emits a warning.
-
-The admin server is unauthenticated only on loopback. Non-loopback binds require `admin.token`.
-Wildcard binds such as `host: "0.0.0.0"` also require `hosts`, an explicit allowlist of accepted HTTP
-hostnames.
-
-## Adapters
-
-Adapters own service credentials and chat behavior:
-
-```ts
-const chat = slack({
-	id: "company-slack",
-	token: process.env.SLACK_BOT_TOKEN!,
-	appToken: process.env.SLACK_APP_TOKEN!,
-	allow: { channels: ["C0123456789"] },
-	admins: { users: ["U_ADMIN"] },
-	approvers: { users: ["U_DEPLOYER"] },
-	approvals: { layout: "message", timeoutMs: 60_000 },
-	busy: "queue",
 });
 
-await runHeypi(agent, [chat]);
+await runHeypi(agent, [
+	slack({
+		id: "company-slack",
+		token: process.env.SLACK_BOT_TOKEN!,
+		appToken: process.env.SLACK_APP_TOKEN!,
+		allow: { channels: ["C0123456789"] },
+		busy: "queue",
+	}),
+]);
 ```
 
-`allow` controls who can trigger the agent. `admins` receive administrative privileges and may
-approve. `approvers` adds approval-only actors. Tool policy decides whether approval is required;
-adapter configuration decides who can answer and how the request is rendered.
+## Topics
 
-See [adapters](../adapters/index.md) for shared behavior and [scheduling](scheduling.md) for cron jobs.
+- [Agent](agent.md): model, state, feature toggles, and agent resources.
+- [Runtimes](runtimes.md): host, Docker, Gondolin, just-bash, Vercel, and Cloudflare execution.
+- [Tools](tools.md): built-in tools, authored tools, and tool overrides.
+- [Approvals](approvals.md): policies, approvers, layouts, and failure behavior.
+- [Access](access.md): DM, channel, user, group, and bot allowlists.
+- [Conversation behavior](activity.md): status, typing, reactions, queueing, steering, and events.
+- [Memory](memory.md), [attachments](attachments.md), and [secrets](secrets.md).
+- [Scheduling](scheduling.md) and [admin and audit](admin.md).
+
+Adapter credentials and platform-specific behavior live under [Adapters](../adapters/index.md).

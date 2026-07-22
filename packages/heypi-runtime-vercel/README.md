@@ -3,7 +3,12 @@
 Runs HeyPi's Pi core tools in a Vercel Sandbox. The provider uploads the durable host roots at startup,
 mirrors direct file-tool writes, downloads files after bash commands, and stops the sandbox on cleanup.
 
+```sh
+npm install @hunvreus/heypi-runtime-vercel
+```
+
 ```ts
+import { loadAgent } from "@hunvreus/heypi";
 import { vercel } from "@hunvreus/heypi-runtime-vercel";
 
 const agent = loadAgent("./agent", {
@@ -19,3 +24,5 @@ mirror refreshes before each turn, preserves modes and root-confined symlinks, p
 deletions, and leaves unrelated host files intact. Runtime `env` values are model-visible and are not
 secret brokering.
 Commands run with `/bin/bash -lc`; the selected Vercel runtime must include Bash.
+
+See the [runtime documentation](https://heypi.dev/docs/configuration/runtimes/).

@@ -1,9 +1,9 @@
 {
 	"name": "@hunvreus/heypi-runtime-vercel",
-	"version": "0.3.0-beta.0",
+	"version": "0.3.0-beta.1",
 	"description": "Vercel Sandbox runtime provider for HeyPi.",
 	"license": "MIT",
-	"homepage": "https://github.com/hunvreus/heypi#readme",
+	"homepage": "https://heypi.dev/docs/configuration/runtimes/",
 	"repository": {
 		"type": "git",
 		"url": "git+ssh://git@github.com/hunvreus/heypi.git",
@@ -35,10 +35,10 @@
 		"pack:dry": "npm pack --dry-run",
 		"publish:dry": "npm publish --dry-run --access public",
 		"publish:release": "npm publish --access public",
-		"prepack": "corepack pnpm run build"
+		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"@hunvreus/heypi": "^0.3.0-beta.0",
+		"@hunvreus/heypi": "^0.3.0-beta.1",
 		"@vercel/sandbox": "2.6.0"
 	},
 	"devDependencies": {

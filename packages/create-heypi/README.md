@@ -3,14 +3,16 @@
 Create a Heypi project from a bundled template:
 
 ```sh
-pnpm create heypi codex-tag
+npm create heypi@latest -- codex-tag
 ```
 
 Choose a destination or skip dependency installation:
 
 ```sh
-pnpm create heypi codex-tag my-agent --no-install
+npm create heypi@latest -- codex-tag my-agent --no-install
 ```
 
-Run `pnpm dlx @hunvreus/heypi templates` to list templates. This package delegates to the
+Run `npx @hunvreus/heypi templates` to list templates. This package delegates to the
 scaffolder shipped by `@hunvreus/heypi`.
+
+See the [quickstart](https://heypi.dev/docs/getting-started/) for setup and configuration.

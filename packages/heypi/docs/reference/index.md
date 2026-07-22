@@ -1,14 +1,16 @@
-# Reference
+# API
 
-## Entrypoints
+## Package entrypoints
 
 | Import | Purpose |
 | --- | --- |
-| `@hunvreus/heypi` | Agent loading, app lifecycle, adapters, built-in runtimes, approvals, and public types |
+| `@hunvreus/heypi` | Agent lifecycle, adapters, host/Docker runtimes, approvals, schedules, audit readers, and public types |
 | `@hunvreus/heypi/authoring` | Pi `defineTool`, extension types, TypeBox `Type`, and `defineSchedule` |
-| `@hunvreus/heypi/runtime` | Runtime provider contracts and runtime-backed Pi core tools |
+| `@hunvreus/heypi/runtime` | Runtime contracts, mirrors, path helpers, and runtime-backed Pi core tools |
 
-The exported TypeScript declarations are the authoritative API reference.
+The package's exported TypeScript declarations are the authoritative symbol reference. The main
+application path is `loadAgent()` plus `runHeypi()`. Use `createHeypi()` when an embedding host needs
+to control startup or inject a Pi host factory.
 
 ## Adapter events
 
@@ -26,12 +28,27 @@ Stable event discriminants:
 - `turn_canceled`
 - `turn_failed`
 
-Set an adapter event handler to `false` to disable its default. A custom handler replaces the
-default for that event.
+Pi-derived events are normalized before adapters receive them. A custom event handler replaces the
+adapter default; setting an event to `false` disables it.
 
-## Runtime paths
+```ts
+slack({
+	token,
+	appToken,
+	events: {
+		message_queued: false,
+	},
+});
+```
 
-Pi sees writable `/workspace`, optional writable `/shared`, and managed `/agent/skills`. Sandboxed
-local providers mount skills read-only; host and remote providers use disposable copies that do
-not synchronize changes into staged content. The default state root is `.heypi`; source agent
-files are staged before Pi loads them, and host source paths are not exposed to the model.
+## Core contracts
+
+- `Adapter` owns transport lifecycle, delivery, optional updates, attachment materialization, and
+  approval UI.
+- `ChatMessage` is normalized inbound identity and routing data.
+- `RuntimeProvider` owns every Pi file and command tool for one runtime instance.
+- `ApprovalPolicy` returns allow, approval, or block decisions at a tool boundary.
+- `ScheduleDefinition` describes a cron prompt or trusted handler.
+
+See the [custom adapter](../guides/custom-adapters.md), [custom runtime](../guides/custom-runtimes.md),
+and [custom tool](../guides/custom-tools.md) guides for implementations.
